@@ -1,0 +1,18 @@
+# Development overrides: run only infrastructure, not the application itself.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# In development the backend and frontend are started locally via `npm run dev`.
+# Only PostgreSQL (and optionally fiskaltrust) run inside Docker.
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  fiskaltrust:
+    ports:
+      - "1500:1500"
+
+  backend:
+    # Exclude the backend container in dev — run it locally instead.
+    profiles: ["production-only"]

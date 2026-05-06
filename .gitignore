@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.env
+*.local
+
+# SvelteKit
+.svelte-kit/
+packages/frontend/build/
+
+# Docker
+.docker-data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/

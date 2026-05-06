@@ -1,0 +1,47 @@
+services:
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Backend: Fastify API + SvelteKit SPA (static files) + Print Worker
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fiskaltrust:
+        condition: service_started
+
+  # fiskaltrust Middleware: bridges backend REST calls to the Swissbit USB TSE.
+  # The TSE USB stick must be passed through to this container via devices.
+  # TODO: verify exact image name and required configuration volume before first run.
+  fiskaltrust:
+    image: fiskaltrust/middleware:latest
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./fiskaltrust/config:/config:ro
+    # Pass the USB TSE device through to the container.
+    # Adjust the device path to match the actual USB device on the host.
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+
+volumes:
+  # Named volume so PostgreSQL data lives inside the WSL2 VM (Linux permissions required).
+  postgres_data:

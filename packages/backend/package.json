@@ -1,0 +1,26 @@
+{
+  "name": "@fairpos/backend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../.env --import tsx/esm --watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:migrate": "node --env-file=../../.env --import tsx/esm src/db/migrate.ts",
+    "db:seed": "node --env-file=../../.env --import tsx/esm src/db/seed.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fairpos/shared": "*",
+    "@fastify/cookie": "^10.0.0",
+    "@fastify/static": "^8.0.0",
+    "fastify": "^5.0.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "*"
+  }
+}
