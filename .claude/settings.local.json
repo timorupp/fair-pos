@@ -45,7 +45,14 @@
       "WebFetch(domain:www.fuer-gruender.de)",
       "WebFetch(domain:www.kassensystemevergleich.com)",
       "Bash(npm run *)",
-      "Bash(npx svelte-kit *)"
+      "Bash(npx svelte-kit *)",
+      "Bash(npx tsc *)",
+      "Bash(npx svelte-check *)",
+      "Bash(npm test *)",
+      "Bash(npx vitest *)",
+      "Bash(npm install *)",
+      "Bash(npm audit *)",
+      "Bash(grep -n \"closings: {\\\\|cancellations: {\\\\|reprint: \\\\|pdfUrl: \\\\|},$\" packages/frontend/src/lib/api.ts)"
     ]
   }
 }

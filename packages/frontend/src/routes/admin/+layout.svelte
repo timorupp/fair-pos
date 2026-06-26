@@ -1,8 +1,49 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { currentUser } from '$lib/stores/user';
+  import { adminUser } from '$lib/stores/user';
   import { api } from '$lib/api';
+
+  /** Whether the layout is still verifying the admin session on first load. */
+  let checking = true;
+
+  /** Pending-Z-Bon summary, refreshed on mount and on route change. */
+  let pendingSummary: { total_pending_registers: number; total_pending_days: number } | null = null;
+  let pendingRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Loads the pending-Z-Bon summary so the global warning banner can show
+   * how many days/registers are awaiting an Abschluss. Silent on errors —
+   * the banner simply hides if the call fails.
+   */
+  async function loadPending() {
+    try { pendingSummary = await api.admin.closings.pending(); }
+    catch { pendingSummary = null; }
+  }
+
+  onMount(async () => {
+    // Verify the admin session BEFORE rendering any sidebar items — otherwise
+    // an unauthenticated visitor would briefly see the admin shell.
+    try {
+      const user = await api.auth.admin.me();
+      adminUser.set(user);
+    } catch {
+      adminUser.set(null);
+      goto('/login');
+      return;
+    } finally {
+      checking = false;
+    }
+    loadPending();
+    // Auto-refresh every 5 minutes so a freshly arrived day pushes into the banner.
+    pendingRefreshTimer = setInterval(loadPending, 5 * 60 * 1000);
+  });
+
+  onDestroy(() => { if (pendingRefreshTimer) clearInterval(pendingRefreshTimer); });
+
+  // Re-check whenever the URL changes (e.g. operator went through "Alle Ausstehenden abschließen").
+  $: $page.url.pathname, loadPending();
 
   /** Whether a path is the active route (exact or prefix match). */
   function isActive(href: string, exact = false): boolean {
@@ -16,21 +57,46 @@
     return hrefs.some((h) => $page.url.pathname.startsWith(h));
   }
 
+  /** Sidebar groups — auto-expanded when one of their items is the active route. */
   let reportsOpen = false;
   let exportsOpen = false;
+  let articlesOpen = false;
+  let registersOpen = false;
   let settingsOpen = false;
 
   $: reportsOpen = groupActive(['/admin/reports']);
   $: exportsOpen = groupActive(['/admin/exports']);
-  $: settingsOpen = groupActive(['/admin/settings']);
+  $: articlesOpen = groupActive([
+    '/admin/events',
+    '/admin/settings/floor-plan',
+    '/admin/settings/categories',
+    '/admin/articles',
+    '/admin/settings/cancellation-reasons',
+  ]);
+  $: registersOpen = groupActive([
+    '/admin/settings/layouts',
+    '/admin/registers',
+    '/admin/cancellations',
+    '/admin/users',
+  ]);
+  $: settingsOpen = groupActive([
+    '/admin/settings/company',
+    '/admin/settings/print-queue',
+    '/admin/settings/printers',
+    '/admin/settings/system',
+  ]);
 
+  /** Clears only the admin session cookie; a parallel register session remains intact. */
   async function logout() {
-    await api.auth.logout();
-    currentUser.set(null);
+    await api.auth.admin.logout();
+    adminUser.set(null);
     goto('/login');
   }
 </script>
 
+{#if checking}
+  <div class="checking">Prüfe Sitzung…</div>
+{:else}
 <div class="shell">
   <aside>
     <div class="brand">FairPOS</div>
@@ -65,14 +131,36 @@
         {/if}
       </div>
 
-      <div class="nav-divider"></div>
+      <div class="nav-group">
+        <button class="nav-group-btn" class:active={articlesOpen} on:click={() => (articlesOpen = !articlesOpen)}>
+          <span>Artikel &amp; Saalplan</span>
+          <span class="chevron" class:open={articlesOpen}>›</span>
+        </button>
+        {#if articlesOpen}
+          <div class="nav-sub">
+            <a href="/admin/events" class:active={isActive('/admin/events')}>Veranstaltungen</a>
+            <a href="/admin/settings/floor-plan" class:active={isActive('/admin/settings/floor-plan')}>Saalplan</a>
+            <a href="/admin/settings/categories" class:active={isActive('/admin/settings/categories')}>Artikelgruppen</a>
+            <a href="/admin/articles" class:active={isActive('/admin/articles')}>Artikel</a>
+            <a href="/admin/settings/cancellation-reasons" class:active={isActive('/admin/settings/cancellation-reasons')}>Stornogründe</a>
+          </div>
+        {/if}
+      </div>
 
-      <a href="/admin/registers" class:active={isActive('/admin/registers')}>Kassen</a>
-      <a href="/admin/articles" class:active={isActive('/admin/articles')}>Artikel</a>
-      <a href="/admin/events" class:active={isActive('/admin/events')}>Veranstaltungen</a>
-      <a href="/admin/users" class:active={isActive('/admin/users')}>Benutzer</a>
-
-      <div class="nav-divider"></div>
+      <div class="nav-group">
+        <button class="nav-group-btn" class:active={registersOpen} on:click={() => (registersOpen = !registersOpen)}>
+          <span>Kassen &amp; Benutzer</span>
+          <span class="chevron" class:open={registersOpen}>›</span>
+        </button>
+        {#if registersOpen}
+          <div class="nav-sub">
+            <a href="/admin/settings/layouts" class:active={isActive('/admin/settings/layouts')}>Kassenlayouts</a>
+            <a href="/admin/registers" class:active={isActive('/admin/registers')}>Kassen</a>
+            <a href="/admin/cancellations" class:active={isActive('/admin/cancellations')}>Bonstorno</a>
+            <a href="/admin/users" class:active={isActive('/admin/users')}>Benutzer</a>
+          </div>
+        {/if}
+      </div>
 
       <div class="nav-group">
         <button class="nav-group-btn" class:active={settingsOpen} on:click={() => (settingsOpen = !settingsOpen)}>
@@ -81,12 +169,9 @@
         </button>
         {#if settingsOpen}
           <div class="nav-sub">
-            <a href="/admin/settings/categories" class:active={isActive('/admin/settings/categories')}>Artikelgruppen</a>
-            <a href="/admin/settings/layouts" class:active={isActive('/admin/settings/layouts')}>Kassenlayouts</a>
-            <a href="/admin/settings/printers" class:active={isActive('/admin/settings/printers')}>Drucker</a>
-            <a href="/admin/settings/floor-plan" class:active={isActive('/admin/settings/floor-plan')}>Saalplan</a>
-            <a href="/admin/settings/cancellation-reasons" class:active={isActive('/admin/settings/cancellation-reasons')}>Stornogründe</a>
             <a href="/admin/settings/company" class:active={isActive('/admin/settings/company')}>Unternehmensdaten</a>
+            <a href="/admin/settings/print-queue" class:active={isActive('/admin/settings/print-queue')}>Druckwarteschlange</a>
+            <a href="/admin/settings/printers" class:active={isActive('/admin/settings/printers')}>Drucker</a>
             <a href="/admin/settings/system" class:active={isActive('/admin/settings/system')}>System</a>
           </div>
         {/if}
@@ -94,15 +179,23 @@
     </nav>
 
     <div class="sidebar-footer">
-      <span class="user-name">{$currentUser?.name}</span>
+      <span class="user-name">{$adminUser?.name}</span>
       <button class="btn-logout" on:click={logout}>Abmelden</button>
     </div>
   </aside>
 
   <main>
+    {#if pendingSummary && pendingSummary.total_pending_registers > 0}
+      <a class="closing-banner" href="/admin/registers">
+        <strong>⚠ {pendingSummary.total_pending_days} Tagesabschluss{pendingSummary.total_pending_days === 1 ? '' : '/üsse'} ausstehend</strong>
+        ({pendingSummary.total_pending_registers} Kasse{pendingSummary.total_pending_registers === 1 ? '' : 'n'} gesperrt)
+        — bitte nachholen, damit weiter kassiert werden kann.
+      </a>
+    {/if}
     <slot />
   </main>
 </div>
+{/if}
 
 <style>
   .shell { display: flex; min-height: 100dvh; }
@@ -129,7 +222,6 @@
   nav > a:hover { background: var(--color-surface-2); color: var(--color-text); }
   nav > a.active { background: rgba(79,124,255,0.12); color: var(--color-primary); font-weight: 500; }
 
-  .nav-divider { height: 1px; background: var(--color-border); margin: 0.4rem 0.25rem; }
 
   .nav-group { display: flex; flex-direction: column; }
 
@@ -228,4 +320,21 @@
   :global(.field-check label) { font-size: 0.9rem; color: var(--color-text); cursor: pointer; }
 
   :global(.modal-actions) { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
+
+  /* Pending-Z-Bon warning banner — bright amber, full width of the main content area. */
+  .closing-banner {
+    display: block;
+    background: #f59e0b22;
+    border: 1px solid #f59e0b88;
+    color: var(--color-text);
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    text-decoration: none;
+    transition: background 0.1s;
+  }
+  .closing-banner:hover { background: #f59e0b33; }
+  .closing-banner strong { color: #c87a00; }
+  .checking { display: flex; align-items: center; justify-content: center; min-height: 100dvh; color: var(--color-text-muted); }
 </style>

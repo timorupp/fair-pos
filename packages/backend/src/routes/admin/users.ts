@@ -90,7 +90,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
 
-    if (id === req.user.id) {
+    if (id === req.adminUser.id) {
       return reply.status(400).send({ error: 'Du kannst deinen eigenen Benutzer nicht löschen' });
     }
 

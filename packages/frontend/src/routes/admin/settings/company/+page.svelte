@@ -1,17 +1,26 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
+  import type { Printer } from '@fairpos/shared';
+  import Modal from '$lib/components/Modal.svelte';
 
   let settings: Record<string, string> = {};
+  /** All configured printers — used by the logo testdruck dropdown. */
+  let printers: Printer[] = [];
   let loading = true;
   let saving = false;
   let error = '';
   let success = false;
 
   onMount(async () => {
-    try { settings = await api.admin.settings.get(); }
-    catch (e) { error = e instanceof Error ? e.message : 'Fehler'; }
-    finally { loading = false; }
+    try {
+      [settings, printers] = await Promise.all([
+        api.admin.settings.get(),
+        api.admin.printers.list(),
+      ]);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Fehler';
+    } finally { loading = false; }
   });
 
   async function save() {
@@ -29,6 +38,93 @@
       value: settings[key] ?? '',
       oninput: (e: Event) => { settings[key] = (e.target as HTMLInputElement).value; success = false; },
     };
+  }
+
+  /** Whether the receipt-preview modal is currently visible. */
+  let previewOpen = false;
+
+  /**
+   * Reload-counter appended as a query parameter to the preview URL so the browser
+   * pulls a fresh PDF every time the operator opens the modal (rather than the cached one).
+   */
+  let previewVersion = 0;
+
+  /**
+   * Opens the inline receipt preview. Bumps `previewVersion` so the `<embed>` re-fetches.
+   */
+  function openPreview() {
+    previewVersion += 1;
+    previewOpen = true;
+  }
+
+  // ── Logo ────────────────────────────────────────────────────────────────
+  /** Cache-buster appended to the preview image URL so a fresh upload shows up immediately. */
+  let logoVersion = 0;
+  /** True once the preview image has actually loaded; lets us hide the "no logo" hint. */
+  let logoExists = false;
+  let logoBusy = false;
+  let logoError = '';
+  /** Bound to the hidden `<input type="file">` so we can clear it after upload. */
+  let logoFileInput: HTMLInputElement;
+
+  /**
+   * Uploads the file selected via the file picker, refreshes the preview,
+   * and clears the input so the same file can be picked again later.
+   */
+  async function onLogoUpload(): Promise<void> {
+    const file = logoFileInput.files?.[0];
+    if (!file) return;
+    logoBusy = true; logoError = '';
+    try {
+      await api.admin.logo.upload(file);
+      logoVersion += 1;
+      logoExists = true;
+    } catch (e) {
+      logoError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      logoBusy = false;
+      logoFileInput.value = '';
+    }
+  }
+
+  /**
+   * Removes the stored logo after confirmation, then hides the preview.
+   */
+  async function removeLogo(): Promise<void> {
+    if (!confirm('Logo wirklich entfernen?')) return;
+    logoBusy = true; logoError = '';
+    try {
+      await api.admin.logo.remove();
+      logoExists = false;
+      logoVersion += 1;
+    } catch (e) {
+      logoError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      logoBusy = false;
+    }
+  }
+
+  /** Currently chosen printer for the logo test print. */
+  let testPrintPrinterId = '';
+  let testPrintFeedback = '';
+  let testPrintBusy = false;
+
+  /**
+   * Enqueues a test page on the chosen printer. The backend's test-print
+   * endpoint always embeds the configured logo (independent of the per-bon
+   * flags), so this is also the canonical way to verify the logo renders.
+   */
+  async function runLogoTestPrint(): Promise<void> {
+    if (!testPrintPrinterId) { testPrintFeedback = 'Bitte Drucker wählen.'; return; }
+    testPrintBusy = true; testPrintFeedback = '';
+    try {
+      await api.admin.printers.testPrint(testPrintPrinterId);
+      testPrintFeedback = '✓ Testdruck wurde in die Druckwarteschlange gestellt.';
+    } catch (e) {
+      testPrintFeedback = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      testPrintBusy = false;
+    }
   }
 </script>
 
@@ -105,6 +201,108 @@
       </section>
 
       <section>
+        <h2>Logo</h2>
+        <p class="hint">
+          Bild (PNG oder JPG, max. 2 MB) — wird mittig oben über dem Firmennamen auf den ausgewählten
+          Beleg- und Bon-Typen gedruckt. Wir skalieren es automatisch auf eine bondruckergerechte Größe.
+        </p>
+
+        <div class="logo-row">
+          {#if logoExists}
+            <img
+              class="logo-preview"
+              src="{api.admin.logo.previewUrl()}?v={logoVersion}"
+              alt="Logo"
+              on:load={() => (logoExists = true)}
+              on:error={() => (logoExists = false)}
+            />
+          {:else}
+            <!-- Initial probe: try to load once. If 404, the onerror flips logoExists to false. -->
+            <img
+              class="logo-preview hidden-probe"
+              src="{api.admin.logo.previewUrl()}?v={logoVersion}"
+              alt=""
+              on:load={() => (logoExists = true)}
+              on:error={() => (logoExists = false)}
+            />
+            <p class="muted">Noch kein Logo hinterlegt.</p>
+          {/if}
+
+          <div class="logo-actions">
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              bind:this={logoFileInput}
+              on:change={onLogoUpload}
+              disabled={logoBusy || saving}
+            />
+            {#if logoExists}
+              <button type="button" class="btn-ghost danger" on:click={removeLogo} disabled={logoBusy || saving}>
+                Logo entfernen
+              </button>
+            {/if}
+          </div>
+        </div>
+        {#if logoError}<p class="error-text">{logoError}</p>{/if}
+
+        <h3 class="logo-flags-title">Größe</h3>
+        <div class="field field-short">
+          <label for="s-logo-zoom">Zoom (%)</label>
+          <input id="s-logo-zoom" type="number" min="1" max="500" step="1"
+                 value={settings['logo_zoom_percent'] ?? '100'}
+                 on:input={(e) => { settings['logo_zoom_percent'] = e.currentTarget.value; success = false; }}
+                 disabled={saving} />
+          <p class="hint">
+            100 % = volle Bonbreite (Standard). Werte über 100 % werden hardwareseitig auf die maximale Druckbreite begrenzt; kleiner als 100 % verkleinert das Logo proportional. Änderung wird nach „Speichern" wirksam.
+          </p>
+        </div>
+
+        <h3 class="logo-flags-title">Logo drucken auf …</h3>
+        {#if !logoExists}
+          <p class="muted small">Erst ein Logo hochladen — solange keines hinterlegt ist, werden die Häkchen ignoriert.</p>
+        {/if}
+        <div class="logo-flags">
+          <label><input type="checkbox" checked={settings['logo_on_receipt'] === 'true'}
+            on:change={(e) => { settings['logo_on_receipt'] = e.currentTarget.checked ? 'true' : 'false'; success = false; }}
+            disabled={saving} /> Kassenbon (Rechnung)</label>
+          <label><input type="checkbox" checked={settings['logo_on_cancellation'] === 'true'}
+            on:change={(e) => { settings['logo_on_cancellation'] = e.currentTarget.checked ? 'true' : 'false'; success = false; }}
+            disabled={saving} /> Stornobeleg</label>
+          <label><input type="checkbox" checked={settings['logo_on_z_bon'] === 'true'}
+            on:change={(e) => { settings['logo_on_z_bon'] = e.currentTarget.checked ? 'true' : 'false'; success = false; }}
+            disabled={saving} /> Z-Bon (Tagesabschluss)</label>
+          <label><input type="checkbox" checked={settings['logo_on_order_slip'] === 'true'}
+            on:change={(e) => { settings['logo_on_order_slip'] = e.currentTarget.checked ? 'true' : 'false'; success = false; }}
+            disabled={saving} /> Bestellbon (Bedienung)</label>
+          <label><input type="checkbox" checked={settings['logo_on_pickup_slip'] === 'true'}
+            on:change={(e) => { settings['logo_on_pickup_slip'] = e.currentTarget.checked ? 'true' : 'false'; success = false; }}
+            disabled={saving} /> Selbstabholerbon (Bonkasse)</label>
+          <label><input type="checkbox" checked={settings['logo_on_deposit_slip'] === 'true'}
+            on:change={(e) => { settings['logo_on_deposit_slip'] = e.currentTarget.checked ? 'true' : 'false'; success = false; }}
+            disabled={saving} /> Pfandbon</label>
+        </div>
+
+        <h3 class="logo-flags-title">Testdruck</h3>
+        <p class="hint">
+          Druckt eine Testseite mit Logo (sofern hochgeladen) auf dem gewählten Drucker. Nützlich, um
+          Größe und Druckqualität des Logos vor dem produktiven Einsatz zu prüfen.
+        </p>
+        <div class="logo-actions">
+          <select bind:value={testPrintPrinterId} disabled={testPrintBusy}>
+            <option value="">— Drucker wählen —</option>
+            {#each printers as p}
+              <option value={p.id}>{p.name}</option>
+            {/each}
+          </select>
+          <button type="button" class="btn-ghost" on:click={runLogoTestPrint}
+                  disabled={!testPrintPrinterId || testPrintBusy}>
+            {testPrintBusy ? 'Sende…' : 'Testdruck'}
+          </button>
+        </div>
+        {#if testPrintFeedback}<p class="hint">{testPrintFeedback}</p>{/if}
+      </section>
+
+      <section>
         <h2>Pfand</h2>
         <div class="field field-short">
           <label for="s-vat-deposit">Umsatzsteuersatz Pfand (%)</label>
@@ -118,11 +316,29 @@
       {#if success}<p class="success-text">Gespeichert.</p>{/if}
 
       <div class="form-footer">
+        <button type="button" class="btn-ghost" on:click={openPreview}>Bon-Vorschau (PDF)</button>
+        <div class="spacer"></div>
         <button type="submit" class="btn-primary" disabled={saving}>{saving ? 'Speichern…' : 'Speichern'}</button>
       </div>
     </form>
   {/if}
 </div>
+
+<Modal bind:open={previewOpen} title="Bon-Vorschau (PDF)">
+  <embed
+    title="Bon-Vorschau"
+    src="/api/admin/settings/receipt-preview?v={previewVersion}"
+    type="application/pdf"
+    class="preview-embed"
+  />
+  <div class="preview-actions">
+    <a class="btn-ghost"
+       href="/api/admin/settings/receipt-preview?v={previewVersion}"
+       target="_blank" rel="noopener">In neuem Tab öffnen</a>
+    <div class="spacer"></div>
+    <button class="btn-primary" on:click={() => (previewOpen = false)}>Schließen</button>
+  </div>
+</Modal>
 
 <style>
   .settings-form { display: flex; flex-direction: column; gap: 2rem; max-width: 560px; }
@@ -135,5 +351,17 @@
   .field-short { max-width: 180px; flex: 0 0 auto !important; }
   .hint { font-size: 0.8rem; color: var(--color-text-muted); margin-top: -0.5rem; margin-bottom: 0.75rem; }
   .success-text { color: #4caf7d; font-size: 0.875rem; }
-  .form-footer { padding-top: 0.5rem; }
+  .form-footer { display: flex; gap: 0.5rem; align-items: center; padding-top: 0.5rem; }
+  .form-footer .spacer { flex: 1; }
+  .preview-embed { width: 100%; height: 60vh; min-height: 400px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+  .preview-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.75rem; }
+  .preview-actions .spacer { flex: 1; }
+  .logo-row { display: flex; flex-direction: column; gap: 0.75rem; }
+  .logo-preview { max-width: 200px; max-height: 100px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #fff; padding: 0.25rem; }
+  .logo-preview.hidden-probe { display: none; }
+  .logo-actions { display: flex; gap: 0.5rem; align-items: center; }
+  .logo-flags-title { font-size: 0.85rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; }
+  .logo-flags { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem 1rem; font-size: 0.9rem; }
+  .logo-flags label { display: flex; align-items: center; gap: 0.4rem; }
+  .small { font-size: 0.8rem; }
 </style>

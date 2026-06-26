@@ -24,7 +24,7 @@ export type PaymentMethod = 'cash' | 'card';
 export type PrintJobStatus = 'pending' | 'printing' | 'done' | 'failed';
 
 /** Type of document a print job produces. */
-export type PrintJobType = 'order_slip' | 'receipt' | 'daily_closing';
+export type PrintJobType = 'order_slip' | 'receipt' | 'daily_closing' | 'test_print';
 
 // ── Domain types ─────────────────────────────────────────────────────────────
 
@@ -75,13 +75,18 @@ export interface ProductOption {
   price_surcharge: number;
 }
 
-/** A dining table on the floor plan. */
+/** Visibility and booking status of a dining table. */
+export type TableStatus = 'active' | 'inactive' | 'hidden';
+
+/** A dining table positioned in the grid-based floor plan. */
 export interface DiningTable {
   id: string;
   name: string;
-  pos_x: number;
-  pos_y: number;
-  is_active: boolean;
+  col_label: string;
+  row_label: string;
+  col_order: number;
+  row_order: number;
+  status: TableStatus;
 }
 
 /** An ESC/POS network printer. */
@@ -157,6 +162,26 @@ export interface CancellationReason {
   name: string;
   booking_type: BookingType;
   is_active: boolean;
+}
+
+/** A configurable article grid layout for a register. */
+export interface RegisterLayout {
+  id: string;
+  name: string;
+  grid_cols: number;
+  grid_rows: number;
+  created_at: string;
+}
+
+/** One placed article in a register layout grid. */
+export interface RegisterLayoutSlot {
+  id: string;
+  register_layout_id: string;
+  article_id: string;
+  article_name: string;
+  grid_row: number;
+  grid_col: number;
+  color: string;
 }
 
 /** An event used as a reporting period; does not affect live operations. */

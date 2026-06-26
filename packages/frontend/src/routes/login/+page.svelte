@@ -1,20 +1,55 @@
 <script lang="ts">
+  /**
+   * Combined login page. Two flows:
+   *  - `?token=…` query → exchanges the QR token via `auth.register.token` and
+   *    redirects to `/register` (cash-register UI).
+   *  - Username + password form → admin login via `auth.admin.login` and
+   *    redirect to `/admin` (admin UI).
+   *
+   * Each flow only writes to its own session cookie; the other (if any) is
+   * untouched.
+   */
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { currentUser } from '$lib/stores/user';
+  import { page } from '$app/stores';
+  import { adminUser, registerUser } from '$lib/stores/user';
   import { api } from '$lib/api';
 
   let name = '';
   let password = '';
   let error = '';
   let loading = false;
+  /** Hides the password form while we're exchanging a token from the URL. */
+  let exchangingToken = false;
 
+  onMount(async () => {
+    const token = $page.url.searchParams.get('token');
+    if (!token) return;
+
+    exchangingToken = true;
+    try {
+      const user = await api.auth.register.token(token);
+      registerUser.set(user);
+      // QR-token logins land in the cash-register UI, not the admin area.
+      goto('/register', { replaceState: true });
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Token ungültig oder abgelaufen';
+    } finally {
+      exchangingToken = false;
+    }
+  });
+
+  /**
+   * Submits the admin login form. On success, stores the admin user and routes
+   * to `/admin`.
+   */
   async function handleLogin() {
     error = '';
     loading = true;
     try {
-      const user = await api.auth.login(name, password);
-      currentUser.set(user);
-      goto('/');
+      const user = await api.auth.admin.login(name, password);
+      adminUser.set(user);
+      goto('/admin');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Anmeldung fehlgeschlagen';
     } finally {
@@ -31,6 +66,12 @@
       <p class="brand-sub">Kassensystem</p>
     </div>
 
+    {#if exchangingToken}
+      <div class="exchanging">
+        <span class="btn-spinner" />
+        <span>Token wird geprüft…</span>
+      </div>
+    {:else}
     <form on:submit|preventDefault={handleLogin}>
       <div class="field">
         <label for="name">Benutzername</label>
@@ -72,6 +113,7 @@
         {/if}
       </button>
     </form>
+    {/if}
   </div>
 </main>
 
@@ -216,4 +258,10 @@
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
+
+  .exchanging {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0.6rem; padding: 1rem; color: var(--color-text-muted);
+  }
+  .exchanging .btn-spinner { border-top-color: var(--color-primary); }
 </style>

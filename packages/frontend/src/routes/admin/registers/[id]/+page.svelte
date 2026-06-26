@@ -8,11 +8,22 @@
   type RegisterDetail = {
     id: string; name: string; type: string;
     printer_name: string | null;
+    /** Either the assigned printer or — if none — the system-default printer. */
+    effective_printer_name: string | null;
     total_deposits: number; total_withdrawals: number;
+  };
+
+  type ClosingRow = {
+    id: string; z_number: number;
+    created_at: string; business_date: string;
+    is_zero_closing: boolean;
+    total_gross: number; total_cash: number; total_cancellations: number;
+    created_by: string;
   };
 
   let register: RegisterDetail | null = null;
   let transactions: CashTransaction[] = [];
+  let closings: ClosingRow[] = [];
   let loading = true;
   let error = '';
 
@@ -23,20 +34,91 @@
   let txError = '';
   let txSaving = false;
 
+  let closing = false;
+  let closingError = '';
+  let lastClosing: { z_number: number; is_zero_closing: boolean; print_job_id: string | null } | null = null;
+
+  /** Past calendar days that still need a Z-Bon (oldest first). */
+  let pendingDays: string[] = [];
+  let catchingUp = false;
+  let catchUpError = '';
+
   $: id = ($page.params['id'] ?? '') as string;
+
+  /**
+   * Most recent closing whose `created_at` falls on the current local calendar day,
+   * used by the UI to warn the operator about a duplicate Z-Bon issuance.
+   * `null` when no closing exists for today.
+   */
+  $: closedToday = (() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const start = today.getTime();
+    const end = start + 24 * 60 * 60 * 1000;
+    return closings.find((c) => {
+      const t = new Date(c.created_at).getTime();
+      return t >= start && t < end;
+    }) ?? null;
+  })();
 
   onMount(load);
 
+  /** Loads register details, cash transactions, past closings AND the pending-day list in parallel. */
   async function load() {
     loading = true;
     try {
-      [register, transactions] = await Promise.all([
+      const [reg, txs, cls, pend] = await Promise.all([
         api.admin.registers.get(id),
         api.admin.registers.listTransactions(id),
+        api.admin.closings.listForRegister(id),
+        api.admin.closings.pending(),
       ]);
+      register = reg;
+      transactions = txs;
+      closings = cls.closings;
+      pendingDays = pend.registers.find((r) => r.register_id === id)?.pending_days ?? [];
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally { loading = false; }
+  }
+
+  /**
+   * Catches up every outstanding past day for this register in oldest-first order.
+   * Each day produces a separate Z-Bon. Stops on the first error so the operator
+   * can intervene.
+   */
+  async function catchUp() {
+    if (pendingDays.length === 0) return;
+    if (!confirm(`Für die ${pendingDays.length} ausstehenden Tage jeweils einen Z-Bon erstellen?`)) return;
+    catchingUp = true; catchUpError = '';
+    try {
+      await api.admin.closings.closePending(id);
+      await load();
+    } catch (e) {
+      catchUpError = e instanceof Error ? e.message : 'Fehler';
+      await load();
+    } finally { catchingUp = false; }
+  }
+
+  /**
+   * Closes the day for this register and reloads the page state.
+   * Shows the operator the new Z-number and whether a print job was queued.
+   */
+  async function closeDay() {
+    if (!confirm('Tagesabschluss jetzt durchführen?')) return;
+    closing = true; closingError = ''; lastClosing = null;
+    try {
+      const result = await api.admin.closings.closeRegister(id);
+      lastClosing = {
+        z_number: result.z_number,
+        is_zero_closing: result.is_zero_closing,
+        print_job_id: result.print_job_id,
+      };
+      await load();
+    } catch (e) {
+      closingError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      closing = false;
+    }
   }
 
   function openDeposit() { txType = 'deposit'; txAmount = ''; txNote = ''; txError = ''; txModal = true; }
@@ -58,8 +140,33 @@
 
   const fmt = (n: number) => n.toLocaleString('de-DE', { minimumFractionDigits: 2 });
   const fmtDate = (iso: string) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+  /** Formats a `YYYY-MM-DD` business-date as `DD.MM.YYYY` without timezone games. */
+  function fmtBusinessDate(iso: string): string {
+    const [y, m, d] = iso.split('-');
+    return `${d}.${m}.${y}`;
+  }
   const typeLabel = (t: string) => t === 'receipt_register' ? 'Bonkasse' : 'Bedienungskasse';
   const txLabel = (t: string) => t === 'deposit' ? 'Einlage' : 'Entnahme';
+
+  /** Tracks which closing row is being reprinted so we can disable its button. */
+  let reprintingClosingId: string | null = null;
+  let reprintClosingError = '';
+
+  /**
+   * Re-queues an ESC/POS print job for the given Z-Bon.
+   *
+   * @param closingId - The closing row id.
+   */
+  async function reprintClosing(closingId: string): Promise<void> {
+    reprintingClosingId = closingId; reprintClosingError = '';
+    try {
+      await api.admin.closings.reprint(closingId);
+    } catch (e) {
+      reprintClosingError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      reprintingClosingId = null;
+    }
+  }
 </script>
 
 <div class="page">
@@ -95,6 +202,87 @@
       <button class="btn-primary" on:click={openDeposit}>+ Einlage / Wechselgeld</button>
       <button class="btn-ghost" on:click={openWithdrawal}>Entnahme</button>
     </div>
+
+    {#if pendingDays.length > 0}
+      <section class="catchup-card">
+        <h3>🔒 Kasse gesperrt — {pendingDays.length} Tag{pendingDays.length === 1 ? '' : 'e'} ausstehend</h3>
+        <p>
+          Bevor an dieser Kasse weiter kassiert werden kann, müssen die Tagesabschlüsse
+          für folgende Kalendertage nachgeholt werden:
+        </p>
+        <ul class="pending-list">
+          {#each pendingDays as day}
+            <li>{day}</li>
+          {/each}
+        </ul>
+        <button class="btn-primary" on:click={catchUp} disabled={catchingUp}>
+          {catchingUp ? 'Hole nach…' : `Alle ${pendingDays.length} Z-Bons jetzt erstellen`}
+        </button>
+        {#if catchUpError}<p class="error-text">{catchUpError}</p>{/if}
+      </section>
+    {/if}
+
+    <h2 class="section-title">Tagesabschluss</h2>
+    <div class="closing-actions">
+      <button class="btn-primary" on:click={closeDay} disabled={closing || pendingDays.length > 0}>
+        {closing ? 'Wird abgeschlossen…' : 'Tagesabschluss jetzt durchführen'}
+      </button>
+      {#if pendingDays.length > 0}
+        <p class="warn small">Erst die ausstehenden Tage oben nachholen, dann kann der heutige Tag manuell abgeschlossen werden.</p>
+      {/if}
+      {#if closedToday}
+        <p class="warn small">Heute wurde für diese Kasse bereits ein Abschluss erstellt (Z-Nr. {closedToday.z_number}). Ein erneuter Abschluss vergibt eine neue Z-Nummer.</p>
+      {/if}
+      {#if !register?.effective_printer_name}
+        <p class="muted small">Weder dieser Kasse noch dem System ist ein Drucker zugeordnet — der Z-Bon wird nicht gedruckt, sondern nur gespeichert.</p>
+      {:else if !register?.printer_name}
+        <p class="muted small">Diese Kasse hat keinen eigenen Drucker — der Z-Bon wird auf dem Standarddrucker „{register.effective_printer_name}" gedruckt.</p>
+      {/if}
+    </div>
+    {#if closingError}<p class="error-text">{closingError}</p>{/if}
+    {#if lastClosing}
+      <p class="success-text small">
+        ✓ Z-Bon Nr. {lastClosing.z_number} erstellt{lastClosing.is_zero_closing ? ' (Nullabschluss)' : ''}{lastClosing.print_job_id ? ' und in Druckwarteschlange gestellt' : ''}.
+      </p>
+    {/if}
+
+    {#if closings.length > 0}
+      <table class="closings-table">
+        <thead>
+          <tr>
+            <th class="num">Z-Nr.</th>
+            <th>Geschäftstag</th>
+            <th>Erstellt</th>
+            <th>Benutzer</th>
+            <th class="num">Brutto</th>
+            <th class="num">Bar</th>
+            <th class="num">Stornos</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each closings as c}
+            <tr class:zero={c.is_zero_closing}>
+              <td class="num">{c.z_number}</td>
+              <td>{fmtBusinessDate(c.business_date)}</td>
+              <td>{fmtDate(c.created_at)}</td>
+              <td>{c.created_by}</td>
+              <td class="num">{fmt(c.total_gross)} €</td>
+              <td class="num">{fmt(c.total_cash)} €</td>
+              <td class="num">{fmt(c.total_cancellations)} €</td>
+              <td class="actions">
+                <a class="btn-ghost" href={api.admin.closings.pdfUrl(c.id)} target="_blank" rel="noopener">PDF</a>
+                <button class="btn-ghost" on:click={() => reprintClosing(c.id)} disabled={reprintingClosingId === c.id}>
+                  {reprintingClosingId === c.id ? '…' : 'Drucken'}
+                </button>
+                {#if c.is_zero_closing}<span class="muted small">Null</span>{/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      {#if reprintClosingError}<p class="error-text small">{reprintClosingError}</p>{/if}
+    {/if}
 
     <h2 class="section-title">Transaktionshistorie</h2>
     {#if transactions.length === 0}
@@ -154,6 +342,18 @@
   .amount-positive { color: #4caf7d; }
   .amount-negative { color: var(--color-danger); }
   .tx-actions { display: flex; gap: 0.5rem; }
-  .section-title { font-size: 0.9rem; font-weight: 600; color: var(--color-text-muted); }
+  .section-title { font-size: 0.9rem; font-weight: 600; color: var(--color-text-muted); margin-top: 1.5rem; }
   .spacer { flex: 1; }
+  .closing-actions { display: flex; flex-direction: column; gap: 0.4rem; }
+  .small { font-size: 0.85rem; }
+  .success-text { color: #4caf7d; font-size: 0.85rem; }
+  .closings-table tr.zero { color: var(--color-text-muted); }
+  .warn { color: #c87a00; }
+  .catchup-card {
+    background: #f59e0b22; border: 1px solid #f59e0b88; border-radius: var(--radius);
+    padding: 1rem 1.25rem; margin: 1rem 0; max-width: 600px;
+  }
+  .catchup-card h3 { margin: 0 0 0.5rem 0; font-size: 1rem; color: #c87a00; }
+  .catchup-card p { margin: 0.25rem 0 0.5rem 0; font-size: 0.9rem; }
+  .pending-list { margin: 0 0 0.75rem 1.25rem; font-family: monospace; font-size: 0.9rem; }
 </style>

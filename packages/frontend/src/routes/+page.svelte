@@ -1,18 +1,26 @@
 <script lang="ts">
+  /**
+   * Landing page — pure router. Probes both sessions:
+   *   - admin session → `/admin`
+   *   - register session → `/register`
+   *   - no session → `/login`
+   *
+   * Doesn't show any UI other than a transient "Weiterleiten…" message.
+   */
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { currentUser } from '$lib/stores/user';
+  import { api } from '$lib/api';
 
-  onMount(() => {
-    if ($currentUser?.is_admin) goto('/admin', { replaceState: true });
+  onMount(async () => {
+    try { await api.auth.admin.me(); goto('/admin', { replaceState: true }); return; } catch { /* no admin */ }
+    try { await api.auth.register.me(); goto('/register', { replaceState: true }); return; } catch { /* no register */ }
+    goto('/login', { replaceState: true });
   });
 </script>
 
-{#if $currentUser && !$currentUser.is_admin}
-  <main>
-    <p class="hint">Bediener-Ansicht folgt…</p>
-  </main>
-{/if}
+<main>
+  <p class="hint">Weiterleiten…</p>
+</main>
 
 <style>
   main {

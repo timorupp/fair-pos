@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import { currentUser } from '$lib/stores/user';
+  import { adminUser } from '$lib/stores/user';
   import type { User, Register } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
@@ -99,7 +99,7 @@
     }
   }
 
-  const isSelf = (u: User) => u.id === $currentUser?.id;
+  const isSelf = (u: User) => u.id === $adminUser?.id;
 
   const typeLabel = (t: string) => t === 'receipt_register' ? 'Bonkasse' : 'Bedienungskasse';
 </script>
@@ -158,12 +158,14 @@
         <span class="field-label">Zugewiesene Kassen</span>
         <div class="register-list">
           {#each registers as r}
-            <label class="register-item">
+            {@const selected = formRegisterIds.includes(r.id)}
+            <label class="register-item" class:selected>
               <input type="checkbox"
-                     checked={formRegisterIds.includes(r.id)}
+                     checked={selected}
                      on:change={() => toggleRegister(r.id)}
                      disabled={saving || deleting} />
-              <span>{r.name} <span class="muted-inline">({typeLabel(r.type)})</span></span>
+              <span class="register-name">{r.name}</span>
+              <span class="register-type-badge type-{r.type}">{typeLabel(r.type)}</span>
             </label>
           {/each}
         </div>
@@ -186,10 +188,13 @@
 <Modal bind:open={tokenModal} title="QR-Login-Link">
   <div class="token-box">
     <p class="muted">Dieser Link ist 10 Minuten gültig und kann nur einmal verwendet werden.</p>
+    {#if tokenUrl}
+      <img class="token-qr" src="/api/admin/qr.png?data={encodeURIComponent(tokenUrl)}&size=320" alt="QR-Code für den Login-Link" />
+    {/if}
     <code class="token-url">{tokenUrl}</code>
     <div class="modal-actions">
       <button class="btn-ghost" on:click={() => (tokenModal = false)}>Schließen</button>
-      {#if $currentUser && tokenUrl.includes(`token=`)}
+      {#if $adminUser && tokenUrl.includes(`token=`)}
         <button class="btn-ghost" on:click={openTokenInTab}>In neuem Tab öffnen</button>
       {/if}
       <button class="btn-primary" on:click={copyToken}>Link kopieren</button>
@@ -203,7 +208,11 @@
     background: rgba(79,124,255,0.12); color: var(--color-primary);
     border-radius: 4px; margin-left: 0.35rem; vertical-align: middle;
   }
-  .token-box { display: flex; flex-direction: column; gap: 1rem; }
+  .token-box { display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
+  .token-qr {
+    align-self: center; width: 220px; height: 220px;
+    background: white; padding: 0.5rem; border-radius: var(--radius-sm);
+  }
   .token-url {
     display: block; padding: 0.75rem;
     background: var(--color-surface-2); border: 1px solid var(--color-border);
@@ -212,10 +221,46 @@
   }
   .spacer { flex: 1; }
   .field-label { font-size: 0.8rem; color: var(--color-text-muted); display: block; margin-bottom: 0.4rem; }
-  .register-list { display: flex; flex-direction: column; gap: 0.35rem; }
+  /* Register assignment list — each row is a full-width clickable card laid out
+     as a 3-column grid (checkbox · name · type-badge) so the columns line up
+     across rows instead of drifting to the centre. */
+  .register-list { display: flex; flex-direction: column; gap: 0.4rem; }
   .register-item {
-    display: flex; align-items: center; gap: 0.5rem;
-    font-size: 0.9rem; cursor: pointer;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center; gap: 0.75rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem; cursor: pointer; text-align: left;
+    transition: background 0.1s, border-color 0.1s;
   }
-  .muted-inline { color: var(--color-text-muted); font-size: 0.8em; }
+  .register-item:hover { background: var(--color-surface-hover); border-color: var(--color-primary); }
+  .register-item.selected {
+    background: rgba(79, 124, 255, 0.10);
+    border-color: var(--color-primary);
+  }
+  .register-item input[type="checkbox"] {
+    /* Pin the checkbox to its grid cell so it doesn't get auto-stretched. */
+    margin: 0; justify-self: start;
+  }
+  .register-name { font-weight: 500; }
+  .register-type-badge {
+    font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+    color: var(--color-text-muted);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
+  }
+  .register-type-badge.type-receipt_register {
+    color: #4f7cff;
+    background: rgba(79, 124, 255, 0.08);
+    border-color: rgba(79, 124, 255, 0.3);
+  }
+  .register-type-badge.type-service_register {
+    color: #4caf7d;
+    background: rgba(76, 175, 125, 0.08);
+    border-color: rgba(76, 175, 125, 0.3);
+  }
 </style>

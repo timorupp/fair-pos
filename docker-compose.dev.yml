@@ -9,9 +9,9 @@ services:
     ports:
       - "5432:5432"
 
-  fiskaltrust:
-    ports:
-      - "1500:1500"
+  # fiskaltrust:
+  #   ports:
+  #     - "1500:1500"
 
   backend:
     # Exclude the backend container in dev — run it locally instead.

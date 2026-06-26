@@ -1,54 +1,74 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import type { Register, Printer, RegisterType } from '@fairpos/shared';
+  import type { Register, Printer, RegisterType, RegisterLayout } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
-  type RegisterRow = Register & { printer_name: string | null };
+  type RegisterRow = Register & { printer_name: string | null; layout_name: string | null; layout_id: string | null };
 
   let registers: RegisterRow[] = [];
   let printers: Printer[] = [];
+  let layouts: RegisterLayout[] = [];
   let loading = true;
   let error = '';
+
+  let closingAll = false;
+  let closeAllError = '';
+  let closeAllResult: { closings: { z_number: number; is_zero_closing: boolean }[] } | null = null;
 
   let modalOpen = false;
   let editing: RegisterRow | null = null;
   let formName = '';
   let formType = 'receipt_register';
   let formPrinterId = '';
+  let formLayoutId = '';
   let formError = '';
   let saving = false;
   let deleting = false;
 
+  /** Map from register id → list of pending Z-Bon days (oldest first). Empty array = no rückstand. */
+  let pendingByRegister: Record<string, string[]> = {};
+
   onMount(load);
 
+  /** Loads registers, printers, layouts AND the pending-Z-Bon list in parallel. */
   async function load() {
     loading = true;
     try {
-      [registers, printers] = await Promise.all([
+      const [regs, prts, lays, pend] = await Promise.all([
         api.admin.registers.list(),
         api.admin.printers.list(),
+        api.admin.layouts.list(),
+        api.admin.closings.pending(),
       ]);
+      registers = regs as RegisterRow[];
+      printers = prts;
+      layouts = lays;
+      pendingByRegister = Object.fromEntries(pend.registers.map((r) => [r.register_id, r.pending_days]));
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally { loading = false; }
   }
 
   function openCreate() {
-    editing = null; formName = ''; formType = 'receipt_register'; formPrinterId = ''; formError = '';
+    editing = null; formName = ''; formType = 'receipt_register'; formPrinterId = ''; formLayoutId = ''; formError = '';
     modalOpen = true;
   }
 
   function openEdit(r: RegisterRow) {
     editing = r; formName = r.name; formType = r.type;
-    formPrinterId = r.printer_id ?? ''; formError = '';
+    formPrinterId = r.printer_id ?? ''; formLayoutId = r.layout_id ?? ''; formError = '';
     modalOpen = true;
   }
 
   async function save() {
     formError = ''; saving = true;
     try {
-      const data = { name: formName, type: formType as RegisterType, printer_id: formPrinterId || null };
+      const data = {
+        name: formName, type: formType as RegisterType,
+        printer_id: formPrinterId || null,
+        layout_id: formLayoutId || null,
+      };
       if (editing) { await api.admin.registers.update(editing.id, data); }
       else { await api.admin.registers.create(data); }
       modalOpen = false; await load();
@@ -67,13 +87,41 @@
   }
 
   const typeLabel = (t: string) => t === 'receipt_register' ? 'Bonkasse' : 'Bedienungskasse';
+
+  /**
+   * Runs the system-wide "close all registers" shortcut. Shows the count of
+   * issued Z-Bons (regular + zero closings) on success.
+   */
+  async function closeAll() {
+    if (!confirm('Wirklich alle Kassen jetzt abschließen?')) return;
+    closingAll = true; closeAllError = ''; closeAllResult = null;
+    try {
+      closeAllResult = await api.admin.closings.closeAll();
+    } catch (e) {
+      closeAllError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      closingAll = false;
+    }
+  }
 </script>
 
 <div class="page">
   <div class="page-header">
     <h1>Kassen</h1>
-    <button class="btn-primary" on:click={openCreate}>+ Neu</button>
+    <div class="header-actions">
+      <button class="btn-ghost" on:click={closeAll} disabled={closingAll}>
+        {closingAll ? 'Schließe ab…' : 'Alle Kassen abschließen'}
+      </button>
+      <button class="btn-primary" on:click={openCreate}>+ Neu</button>
+    </div>
   </div>
+  {#if closeAllResult}
+    <p class="success-text">
+      ✓ {closeAllResult.closings.length} Z-Bon{closeAllResult.closings.length === 1 ? '' : 's'} erstellt
+      ({closeAllResult.closings.filter((c) => c.is_zero_closing).length} Nullabschlüsse).
+    </p>
+  {/if}
+  {#if closeAllError}<p class="error-text">{closeAllError}</p>{/if}
 
   {#if loading}
     <p class="muted">Lade…</p>
@@ -82,14 +130,25 @@
   {:else}
     <table>
       <thead>
-        <tr><th>Name</th><th>Typ</th><th>Drucker</th><th></th></tr>
+        <tr><th>Name</th><th>Typ</th><th>Drucker</th><th>Layout</th><th>Status</th><th></th></tr>
       </thead>
       <tbody>
         {#each registers as r}
-          <tr>
+          {@const pending = pendingByRegister[r.id] ?? []}
+          <tr class:locked-row={pending.length > 0}>
             <td>{r.name}</td>
             <td>{typeLabel(r.type)}</td>
             <td>{r.printer_name ?? '—'}</td>
+            <td>{r.layout_name ?? '—'}</td>
+            <td>
+              {#if pending.length > 0}
+                <span class="lock-badge" title={pending.join(', ')}>
+                  🔒 {pending.length} Tag{pending.length === 1 ? '' : 'e'} ausstehend
+                </span>
+              {:else}
+                <span class="muted small">aktiv</span>
+              {/if}
+            </td>
             <td class="actions">
               <a href="/admin/registers/{r.id}" class="btn-ghost">Detail</a>
               <button class="btn-ghost" on:click={() => openEdit(r)}>Bearbeiten</button>
@@ -114,12 +173,23 @@
         <option value="service_register">Bedienungskasse</option>
       </select>
     </div>
+    {#if formType === 'receipt_register'}
+      <div class="field">
+        <label for="reg-printer">Drucker</label>
+        <select id="reg-printer" bind:value={formPrinterId} disabled={saving || deleting}>
+          <option value="">— Standarddrucker verwenden —</option>
+          {#each printers as p}
+            <option value={p.id}>{p.name}{p.is_default ? ' (Standard)' : ''}</option>
+          {/each}
+        </select>
+      </div>
+    {/if}
     <div class="field">
-      <label for="reg-printer">Drucker (optional)</label>
-      <select id="reg-printer" bind:value={formPrinterId} disabled={saving || deleting}>
-        <option value="">— kein Drucker —</option>
-        {#each printers as p}
-          <option value={p.id}>{p.name}</option>
+      <label for="reg-layout">Kassenlayout (optional, überschreibt Standardlayout)</label>
+      <select id="reg-layout" bind:value={formLayoutId} disabled={saving || deleting}>
+        <option value="">— Standardlayout —</option>
+        {#each layouts as l}
+          <option value={l.id}>{l.name} ({l.grid_cols}×{l.grid_rows})</option>
         {/each}
       </select>
     </div>
@@ -138,6 +208,10 @@
 </Modal>
 
 <style>
-
   .spacer { flex: 1; }
+  .header-actions { display: flex; gap: 0.5rem; align-items: center; }
+  .success-text { color: #4caf7d; font-size: 0.875rem; margin: 0.5rem 0; }
+  .lock-badge { color: #c87a00; font-weight: 600; font-size: 0.85rem; }
+  .small { font-size: 0.85rem; }
+  tr.locked-row { background: #f59e0b11; }
 </style>

@@ -8,8 +8,12 @@ import { config } from '../config.js';
 export const pool = new pg.Pool({ connectionString: config.databaseUrl });
 
 /**
- * Executes a single SQL query against the shared pool.
- * Use this for simple queries that don't need an explicit transaction.
+ * Executes a single SQL query against the shared pool. Use this for simple
+ * queries that don't need an explicit transaction.
+ *
+ * @param sql - Parameterised SQL string; use `$1`, `$2`… for placeholders.
+ * @param params - Optional positional parameters matching the placeholders.
+ * @returns The pg query result; the row type is the generic parameter.
  */
 export async function query<T extends pg.QueryResultRow>(
   sql: string,
@@ -19,8 +23,12 @@ export async function query<T extends pg.QueryResultRow>(
 }
 
 /**
- * Runs a callback inside a database transaction.
- * Automatically commits on success or rolls back on error.
+ * Runs a callback inside a database transaction. Automatically `COMMIT`s on
+ * success or `ROLLBACK`s if the callback throws. The pooled client is always
+ * released back to the pool, even on error.
+ *
+ * @param fn - Callback that performs queries using the given client.
+ * @returns Whatever `fn` returned (forwarded only on success).
  */
 export async function withTransaction<T>(
   fn: (client: pg.PoolClient) => Promise<T>,

@@ -25,22 +25,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      fiskaltrust:
-        condition: service_started
 
   # fiskaltrust Middleware: bridges backend REST calls to the Swissbit USB TSE.
-  # The TSE USB stick must be passed through to this container via devices.
-  # TODO: verify exact image name and required configuration volume before first run.
-  fiskaltrust:
-    image: fiskaltrust/middleware:latest
-    restart: unless-stopped
-    env_file: .env
-    volumes:
-      - ./fiskaltrust/config:/config:ro
-    # Pass the USB TSE device through to the container.
-    # Adjust the device path to match the actual USB device on the host.
-    devices:
-      - /dev/bus/usb:/dev/bus/usb
+  # Uncomment when TSE integration (task #4) is implemented.
+  # The USB TSE stick must be passed through to this container via 'devices'.
+  #
+  # fiskaltrust:
+  #   image: fiskaltrust/middleware:latest
+  #   restart: unless-stopped
+  #   env_file: .env
+  #   volumes:
+  #     - ./fiskaltrust/config:/config:ro
+  #   devices:
+  #     - /dev/bus/usb:/dev/bus/usb
 
 volumes:
   # Named volume so PostgreSQL data lives inside the WSL2 VM (Linux permissions required).

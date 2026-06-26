@@ -1,5 +1,6 @@
--- FairPOS: Initial database schema
--- Matches Datenmodell.dbml (May 2026)
+-- FairPOS: Initial database schema (consolidated 2026-06-24).
+-- This single migration replaces the prior 0001–0007 sequence; the schema was
+-- still pre-production so there was no value in keeping the patch history.
 
 -- ── Users ────────────────────────────────────────────────────────────────────
 
@@ -26,18 +27,31 @@ CREATE TABLE printer (
 
 CREATE TABLE article_category (
   id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  name       VARCHAR(100) NOT NULL,
+  name       VARCHAR(100) NOT NULL UNIQUE,
   tax_rate   DECIMAL(5,2) NOT NULL,
   created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- ── Register layouts ──────────────────────────────────────────────────────────
+-- Layouts are standalone objects; registers optionally reference one.
+
+CREATE TABLE register_layout (
+  id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       VARCHAR(100) NOT NULL,
+  grid_cols  SMALLINT     NOT NULL DEFAULT 4,
+  grid_rows  SMALLINT     NOT NULL DEFAULT 4,
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
 -- ── Registers ─────────────────────────────────────────────────────────────────
+-- `layout_id` may override the per-type default layout configured in system_setting.
 
 CREATE TABLE register (
   id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   name       VARCHAR(100) NOT NULL,
   type       VARCHAR(20)  NOT NULL CHECK (type IN ('receipt_register', 'service_register')),
   printer_id UUID         REFERENCES printer(id),
+  layout_id  UUID         REFERENCES register_layout(id),
   created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
@@ -62,33 +76,25 @@ CREATE TABLE register_access_token (
 -- ── Articles ──────────────────────────────────────────────────────────────────
 
 CREATE TABLE article (
-  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
-  category_id   UUID          NOT NULL REFERENCES article_category(id),
-  name          VARCHAR(100)  NOT NULL,
-  price         DECIMAL(10,2) NOT NULL,
-  deposit_price DECIMAL(10,2),
-  printer_id    UUID          REFERENCES printer(id),
-  is_active     BOOLEAN       NOT NULL DEFAULT true,
-  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+  id                    UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  category_id           UUID          NOT NULL REFERENCES article_category(id),
+  name                  VARCHAR(100)  NOT NULL,
+  receipt_text          VARCHAR(200),
+  price                 DECIMAL(10,2) NOT NULL,
+  deposit_price         DECIMAL(10,2),
+  print_deposit_receipt BOOLEAN       NOT NULL DEFAULT false,
+  printer_id            UUID          REFERENCES printer(id),
+  is_active             BOOLEAN       NOT NULL DEFAULT true,
+  created_at            TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
--- ── Product options ────────────────────────────────────────────────────────────
+-- ── Product options ───────────────────────────────────────────────────────────
 
 CREATE TABLE product_option (
   id              UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   article_id      UUID          NOT NULL REFERENCES article(id),
   name            VARCHAR(100)  NOT NULL,
   price_surcharge DECIMAL(10,2) NOT NULL DEFAULT 0
-);
-
--- ── Register layouts ──────────────────────────────────────────────────────────
-
-CREATE TABLE register_layout (
-  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  register_id UUID         NOT NULL REFERENCES register(id),
-  name        VARCHAR(100) NOT NULL,
-  is_default  BOOLEAN      NOT NULL DEFAULT false,
-  created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 CREATE TABLE register_layout_slot (
@@ -101,14 +107,30 @@ CREATE TABLE register_layout_slot (
   UNIQUE (register_layout_id, grid_row, grid_col)
 );
 
--- ── Floor plan tables ─────────────────────────────────────────────────────────
+-- ── Floor plan (D-001 final shape) ────────────────────────────────────────────
+-- Columns and rows are first-class entities, each carrying its own order. A
+-- dining table lives at the intersection of one column and one row. Foreign
+-- keys with ON DELETE CASCADE mean "delete column" / "delete row" naturally
+-- removes every table in that axis.
+
+CREATE TABLE floor_plan_column (
+  label     VARCHAR(10) PRIMARY KEY,
+  col_order INT         NOT NULL UNIQUE
+);
+
+CREATE TABLE floor_plan_row (
+  label     VARCHAR(10) PRIMARY KEY,
+  row_order INT         NOT NULL UNIQUE
+);
 
 CREATE TABLE dining_table (
-  id        UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  name      VARCHAR(50) NOT NULL,
-  pos_x     INT         NOT NULL,
-  pos_y     INT         NOT NULL,
-  is_active BOOLEAN     NOT NULL DEFAULT true
+  id        UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name      VARCHAR(50)  NOT NULL,
+  col_label VARCHAR(10)  NOT NULL REFERENCES floor_plan_column(label) ON DELETE CASCADE,
+  row_label VARCHAR(10)  NOT NULL REFERENCES floor_plan_row(label)    ON DELETE CASCADE,
+  status    VARCHAR(20)  NOT NULL DEFAULT 'active'
+            CHECK (status IN ('active', 'inactive', 'hidden')),
+  UNIQUE (col_label, row_label)
 );
 
 -- ── Daily closings (Z-Bon) ────────────────────────────────────────────────────
@@ -184,12 +206,37 @@ CREATE TABLE order_item (
   cancelled_at           TIMESTAMPTZ
 );
 
+-- ── Cash transactions (Wechselgeldeinlage / Entnahme) ─────────────────────────
+
+CREATE TABLE cash_transaction (
+  id          UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  register_id UUID          NOT NULL REFERENCES register(id),
+  user_id     UUID          REFERENCES "user"(id),
+  type        VARCHAR(20)   NOT NULL CHECK (type IN ('deposit', 'withdrawal')),
+  amount      DECIMAL(10,2) NOT NULL,
+  note        VARCHAR(200),
+  created_at  TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON cash_transaction (register_id);
+
+-- ── Events (reporting periods) ────────────────────────────────────────────────
+
+CREATE TABLE event (
+  id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       VARCHAR(200) NOT NULL,
+  start_time TIMESTAMPTZ  NOT NULL,
+  end_time   TIMESTAMPTZ  NOT NULL,
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  CONSTRAINT event_end_after_start CHECK (end_time > start_time)
+);
+
 -- ── Print queue ───────────────────────────────────────────────────────────────
 
 CREATE TABLE print_job (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   printer_id      UUID        NOT NULL REFERENCES printer(id),
-  type            VARCHAR(20) NOT NULL CHECK (type IN ('order_slip', 'receipt', 'daily_closing')),
+  type            VARCHAR(20) NOT NULL CHECK (type IN ('order_slip', 'receipt', 'daily_closing', 'test_print')),
   content         TEXT        NOT NULL,
   reference_id    UUID,
   status          VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'printing', 'done', 'failed')),
@@ -216,8 +263,8 @@ CREATE INDEX ON print_job (status);
 CREATE INDEX ON invoice (receipt_number);
 
 -- ── Print notification trigger ────────────────────────────────────────────────
-
 -- Notifies the print worker via pg_notify whenever a new print job is inserted.
+
 CREATE FUNCTION notify_print_job()
 RETURNS TRIGGER AS $$
 BEGIN

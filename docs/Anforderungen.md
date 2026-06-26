@@ -168,7 +168,7 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
   - Ort
   - Steuernummer (Finanzamt)
   - USt-IdNr. (optional, falls vorhanden)
-  - **Logo** — wird auf dem Kassenbon gedruckt (hochladbare Bilddatei)
+  - **Logo** — hochladbare Bilddatei (PNG/JPG, max. 2 MB); wird beim Upload einmalig in zwei Druck-Varianten umgerechnet (Farbe für PDF, 1-Bit-Raster für ESC/POS) und zusätzlich im Original gespeichert, damit Zoom-Änderungen ohne Re-Upload möglich sind. Position auf dem Beleg: mittig oben über dem Firmennamen. Größe konfigurierbar über **Zoom (1–500 %)**, Default 100 % = volle Bonbreite. Werte > 100 % werden hardwareseitig auf die maximale Druckkopfbreite begrenzt. Pro Beleg-/Bon-Typ einzeln per Checkbox aktivierbar — Optionen: Kassenbon, Stornobeleg, Z-Bon, Bestellbon (Bedienung), Selbstabholerbon (Bonkasse), Pfandbon. Default-Flags: aus. Zusätzliche Funktion „Testdruck mit Logo" auf einem ausgewählten Drucker — unabhängig von den Flags, damit Operator das Logo vor produktiver Nutzung prüfen kann.
   - **Belegnummer-Präfix** (frei wählbar, z.B. „RE-" oder „2024-")
   - **Belegnummer-Zähler** (Startwert konfigurierbar; wird je ausgestellter Rechnung automatisch um 1 erhöht; resultierendes Format z.B. „RE-00042")
   - **Umsatzsteuersatz Pfand** (global konfigurierbar, da Pfand ggf. einem anderen Steuersatz unterliegt als der zugehörige Artikel)
@@ -444,6 +444,14 @@ Rechnungsdaten (strukturiertes Objekt)
 - **PDF-Renderer:** erzeugt ein PDF aus einem HTML-Template (`puppeteer` oder `pdfkit`); wird verwendet für den QR-Code auf dem Kassierungsdialog, die UI-Vorschau sowie zukünftige Export-Funktionen
 - Beide Renderer arbeiten auf denselben Quelldaten — Layout und Inhalt eines Bons müssen nur einmal definiert werden
 
+#### Zwei getrennte PDF-Endpunkte (Kunde vs. Admin)
+
+Die PDF-Auslieferung ist bewusst in zwei Endpunkte aufgeteilt, weil sie zwei verschiedene Konsumenten mit unterschiedlichen Zugriffsmodellen bedienen:
+
+- **`GET /receipt/:token`** — *öffentlich, token-authentisiert.* Das ist der Pfad, den der Kunde aus dem QR-Code aufruft. Die URL kann hinter einem externen Reverse-Proxy enden (damit Kundengeräte ohne WLAN-Beitritt darauf zugreifen können); die Server-Adresse für den QR-Code ist daher in den Systemeinstellungen konfigurierbar. Schutz: der Token ist zufällig und einmalig pro Rechnung.
+- **`GET /api/admin/invoices/:id/pdf`** — *Admin-Session-geschützt.* Das ist der Pfad, den die Admin-UI für „PDF anzeigen" in der Rechnungs-Auswertung verwendet. Adressiert wird per Invoice-ID; Zugriffsschutz ist die Admin-Session, nicht ein Token. **Wichtig:** die Admin-UI darf den Token-Pfad **nicht** verwenden, weil dieser unter Umständen einen anderen Hostnamen / Proxy hat als die Admin-API.
+- **`GET /api/admin/print-jobs/:id/pdf`** — *Admin-Session-geschützt, nur für `receipt`-Jobs.* Bietet eine PDF-Vorschau direkt aus der Druckwarteschlange; löst über `reference_id` die Quell-Rechnung auf. Für Bestellbons / Z-Bon / Testdrucke gibt es derzeit keine PDF-Vorschau.
+
 ### Druckwarteschlange
 - Druckaufträge werden in der PostgreSQL-Datenbank in einer Tabelle `print_jobs` gespeichert
 - Felder: ID, Drucker, ESC/POS-Inhalt, Status (`pending` / `printing` / `done` / `failed`), Erstellungszeitpunkt, Anzahl Versuche, Fehlertext
@@ -502,7 +510,17 @@ An der Bonkasse werden keine Bestellbons gedruckt — die Bestellung ist sofort 
 ## Funktionale Anforderungen — Kassenpersonal (Kasse vom Typ Bonkasse)
 
 ### Grundprinzip
-Die Bonkasse ist für Selbstabholer: Artikel werden sofort kassiert und ein Bon wird direkt gedruckt. Es gibt kein "Bestellung aufnehmen und später kassieren". An der Bonkasse werden keine Bestellbons gedruckt — nur der Selbstabholerbon für den Kunden.
+Die Bonkasse ist für Selbstabholer: Artikel werden sofort kassiert und ein Bon wird direkt gedruckt. Es gibt kein "Bestellung aufnehmen und später kassieren". An der Bonkasse werden keine Bestellbons gedruckt — nur Selbstabholerbons für den Kunden.
+
+### Selbstabholerbon-Druckregeln (Bonkasse)
+Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — unabhängig davon, ob der Kunde zusätzlich eine Rechnung drucken oder per QR-Code scannen möchte. Diese Regeln unterscheiden sich bewusst von der Bedienungskasse:
+
+- **Ein Bon je Artikel-Einheit** — keine Gruppierung identischer Artikel auf einem Bon. Bei 3× Bier werden 3 separate Selbstabholerbons gedruckt, damit der Kunde sie an der Ausgabe einzeln einlösen kann.
+- **Drucker = der Kasse zugeordnete Drucker** (Fallback: Standarddrucker). Der pro Artikel hinterlegte Drucker wird an der Bonkasse **nicht** verwendet — im Gegensatz zur Bedienungskasse, wo Bestellbons artikelweise auf den jeweils konfigurierten Artikel-Drucker (z.B. Küche/Theke) gehen.
+- **Pfand-Behandlung** je Einheit (steuert über das Artikel-Stammdatenflag „Pfandbon separat drucken"):
+  - Kein Pfand (`deposit_price` leer/0) → ein Bon mit dem Artikel, ohne Pfandzeile.
+  - Pfand gesetzt, Flag aus → ein Bon mit Artikel- und „+ Pfand X.XX EUR"-Zeile.
+  - Pfand gesetzt, Flag an → zwei Bons: ein Artikelbon (ohne Pfandzeile) und ein separater Pfandbon (`PFAND`-Header). So bleiben Artikel und Pfand bei Ausgabe an unterschiedlichen Theken trennbar.
 
 ### Bestellansicht
 - **Artikelraster:** Konfiguriertes Kassenlayout mit farbigen Artikeltasten

@@ -6,9 +6,12 @@ import { runMigrations } from './db/migrate.js';
 import { buildApp } from './app.js';
 import { config } from './config.js';
 import { startPrintWorker } from './workers/print-worker.js';
+import { ensureSystemSerial, initReceiptCounter } from './system/bootstrap.js';
 
 async function main(): Promise<void> {
   await runMigrations();
+  await ensureSystemSerial();
+  await initReceiptCounter();
 
   const app = await buildApp();
   await app.listen({ port: config.port, host: '0.0.0.0' });

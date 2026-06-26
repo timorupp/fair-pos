@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { selectPendingMigrations } from './migrate.helpers.js';
 
 const DATABASE_URL = process.env['DATABASE_URL'];
 if (!DATABASE_URL) throw new Error('Missing required environment variable: DATABASE_URL');
@@ -44,13 +45,10 @@ export async function runMigrations(): Promise<void> {
     await ensureMigrationsTable(client);
     const applied = await appliedMigrations(client);
 
-    const files = (await fs.readdir(MIGRATIONS_DIR))
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
+    const allFiles = await fs.readdir(MIGRATIONS_DIR);
+    const pending = selectPendingMigrations(allFiles, applied);
 
-    for (const filename of files) {
-      if (applied.has(filename)) continue;
-
+    for (const filename of pending) {
       console.log(`[migrate] applying ${filename}`);
       const sql = await fs.readFile(path.join(MIGRATIONS_DIR, filename), 'utf-8');
 

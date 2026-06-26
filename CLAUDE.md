@@ -34,22 +34,83 @@ UI-Texte, Kommentare, Dokumentation und Git-Commit-Messages dürfen deutsch sein
 
 Übersetzungen immer aus `Dictionary.md` entnehmen, um Konsistenz zu gewährleisten.
 
-### Kommentare
+### Inline-Dokumentation (JSDoc, Englisch)
 
-Über jeder Funktion, Methode und jedem Objekt (Klasse, Interface, Type)
-steht mindestens ein Kommentar — Minimum: ein erklärender Satz.
+Über jeder exportierten Funktion, Methode und jedem benannten Objekt
+(Klasse, Interface, Type) steht ein **JSDoc-Block auf Englisch** mit:
+
+1. Beschreibung dessen, was die Funktion tut.
+2. Pro Eingangsparameter eine `@param`-Zeile.
+3. Eine `@returns`-Zeile (entfällt nur bei `void`).
+4. Für Types/Interfaces reicht eine Beschreibung; einzelne Felder erhalten
+   inline JSDoc, wenn ihr Zweck nicht aus dem Namen ersichtlich ist.
 
 ```typescript
-/** Runs all pending SQL migration files in alphabetical order. */
-export async function runMigrations(): Promise<void> { ... }
+/**
+ * Computes the next receipt number from the existing maximum
+ * and the configured starting counter.
+ *
+ * @param existingMax - Current max receipt_number in the database, or
+ *   `null` if no invoices exist yet.
+ * @param configuredStart - Counter start value from system settings.
+ * @returns The next sequential receipt number to assign.
+ */
+export function computeNextReceiptNumber(
+  existingMax: number | null,
+  configuredStart: number,
+): number { ... }
 
-/** Shared PostgreSQL connection pool. */
+/** Shared PostgreSQL connection pool. Reused across the application lifetime. */
 export const pool = new pg.Pool(...);
 ```
 
+**Pflicht bei Signaturänderung:** Wird eine Funktion umbenannt, ein
+Parameter hinzugefügt/entfernt/umtypisiert oder der Rückgabewert
+geändert, **muss** der JSDoc-Block in derselben Änderung mitgepflegt
+werden. Veraltete `@param`-Zeilen für nicht mehr existierende Parameter
+sind ein Defekt.
+
+**Ausnahmen** (kein JSDoc erforderlich):
+- Triviale Pfeilfunktionen innerhalb größerer Funktionen
+- Offensichtliche Getter ohne Parameter
+
 **Warum:** Zukünftige Administratoren haben möglicherweise keinen
-deutschsprachigen Programmier-Hintergrund; Englisch + Kommentare
-maximieren die Wartbarkeit.
+deutschsprachigen Programmier-Hintergrund; vollständige Parameter-Docs
+erscheinen als IDE-Hover-Tooltips und machen Signaturen selbst-
+dokumentierend; explizite Return-Doku fängt stille Vertragsbrüche bei
+Refactorings ab.
+
+### Tests (Pflicht parallel zur Implementierung)
+
+Zwei Test-Kategorien laufen nebeneinander:
+
+- **Unit-Tests** (`*.test.ts`) für reine Funktionen — `npm test`.
+- **Integration-Tests** (`*.integration.test.ts`) für DB-getriebene Pfade —
+  `npm run test:integration`. Startet einen Postgres-Container über
+  `testcontainers` (siehe `src/test/global-setup.ts`); pro Test wird mit
+  `truncateAllTables()` aufgeräumt.
+
+**Beim Schreiben eines neuen Features gehören die Tests zur selben Änderung:**
+
+- Reine Helfer/Aggregations-/Format-Funktionen → Unit-Test.
+- Route-Handler, DB-Helpers, Bootstrap-Hooks → Integration-Test.
+
+Beide Suiten müssen vor jedem Commit grün sein.
+
+### Datenbank-Migrationen
+
+Schema-Änderungen werden **immer** als neue, nummerierte SQL-Datei in
+`packages/backend/src/db/migrations/` angelegt (z.B. `0008_add_xyz.sql`).
+Die Nummer ist `max+1` der existierenden Dateien.
+
+**Niemals** rückwirkend an einer bereits ausgelieferten Migration schrauben —
+der Runner trackt angewendete Dateien per Dateiname in `schema_migrations`,
+nachträgliche Änderungen werden ignoriert und führen zu Schema-Drift in
+existierenden DBs.
+
+Bei strukturellen Refactors (Spalten umbenennen, Tabellen umbauen): drei
+Schritte in einer Migration — neue Struktur anlegen, Daten migrieren, alte
+Struktur entfernen. So bleiben bestehende Daten erhalten.
 
 ---
 

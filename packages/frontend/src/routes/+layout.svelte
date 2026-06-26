@@ -1,34 +1,15 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import { currentUser } from '$lib/stores/user';
-  import { api } from '$lib/api';
-
-  let checking = true;
-
-  onMount(async () => {
-    try {
-      const user = await api.auth.me();
-      currentUser.set(user);
-    } catch {
-      currentUser.set(null);
-      if ($page.url.pathname !== '/login') {
-        goto('/login');
-      }
-    } finally {
-      checking = false;
-    }
-  });
+  /**
+   * Root layout — intentionally has no session check.
+   *
+   * Two completely separate sessions exist (admin vs. register). Each sub-area
+   * runs its own auth gate in `+layout.svelte`. The root only ships the global
+   * CSS reset and theme variables so even the public `/receipt/:token` PDF page
+   * and the login page can render before any auth API is touched.
+   */
 </script>
 
-{#if checking}
-  <div class="splash">
-    <span class="spinner" />
-  </div>
-{:else}
-  <slot />
-{/if}
+<slot />
 
 <style>
   :global(*, *::before, *::after) {
@@ -70,22 +51,7 @@
     cursor: pointer;
   }
 
-  .splash {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100dvh;
-  }
-
-  .spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid var(--color-border);
-    border-top-color: var(--color-primary);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
+  /* Spinner animation reused across sub-layouts and the login page. */
   @keyframes spin {
     to { transform: rotate(360deg); }
   }

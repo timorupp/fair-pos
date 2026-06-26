@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import type { Article, ArticleCategory, Printer } from '@fairpos/shared';
+  import type { Article, ArticleCategory, Printer, ProductOption } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
   type ArticleRow = Article & { category_name: string; tax_rate: number };
@@ -25,6 +25,12 @@
   let formError = '';
   let saving = false;
   let deleting = false;
+
+  /** Product options for the currently-edited article (empty for "new" articles). */
+  let options: ProductOption[] = [];
+  let optionsLoading = false;
+  let newOptionName = '';
+  let addingOption = false;
 
   onMount(load);
 
@@ -50,10 +56,11 @@
     formName = ''; formReceiptText = ''; formCategoryId = categories[0]?.id ?? '';
     formPrice = ''; formDepositPrice = ''; formPrintDepositReceipt = false;
     formPrinterId = ''; formActive = true; formError = '';
+    options = []; newOptionName = '';
     modalOpen = true;
   }
 
-  function openEdit(a: ArticleRow) {
+  async function openEdit(a: ArticleRow) {
     editing = a;
     formName = a.name;
     formReceiptText = a.receipt_text ?? '';
@@ -64,7 +71,48 @@
     formPrinterId = a.printer_id ?? '';
     formActive = a.is_active;
     formError = '';
+    newOptionName = '';
     modalOpen = true;
+    await loadOptions();
+  }
+
+  /** Loads the product options for the currently-edited article. Silent on errors — the section just stays empty. */
+  async function loadOptions() {
+    if (!editing) { options = []; return; }
+    optionsLoading = true;
+    try { options = await api.admin.articles.listOptions(editing.id); }
+    catch { options = []; }
+    finally { optionsLoading = false; }
+  }
+
+  /**
+   * Adds a new product option to the currently-edited article. Validates that the
+   * input is non-empty and refreshes the list on success.
+   */
+  async function addOption() {
+    if (!editing || !newOptionName.trim()) return;
+    addingOption = true;
+    try {
+      await api.admin.articles.createOption(editing.id, { name: newOptionName.trim() });
+      newOptionName = '';
+      await loadOptions();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Fehler');
+    } finally { addingOption = false; }
+  }
+
+  /**
+   * Removes a product option after operator confirmation.
+   *
+   * @param opt - The option to delete.
+   */
+  async function removeOption(opt: ProductOption) {
+    if (!editing) return;
+    if (!confirm(`Option "${opt.name}" wirklich löschen?`)) return;
+    try {
+      await api.admin.articles.deleteOption(editing.id, opt.id);
+      await loadOptions();
+    } catch (e) { alert(e instanceof Error ? e.message : 'Fehler'); }
   }
 
   async function save() {
@@ -184,6 +232,46 @@
       <input type="checkbox" id="art-active" bind:checked={formActive} disabled={saving || deleting} />
       <label for="art-active">Aktiv</label>
     </div>
+
+    {#if editing}
+      <section class="options-section">
+        <h3>Produktoptionen</h3>
+        <p class="hint">
+          Gelten ausschließlich für Bestellungen über die Bedienungskasse, nicht an der Bonkasse.
+          Mehrfachauswahl pro Bestellung möglich.
+        </p>
+        {#if optionsLoading}
+          <p class="muted">Lade…</p>
+        {:else if options.length === 0}
+          <p class="muted">Noch keine Optionen.</p>
+        {:else}
+          <ul class="option-list">
+            {#each options as opt}
+              <li>
+                <span class="opt-name">{opt.name}</span>
+                <button type="button" class="btn-ghost danger small" on:click={() => removeOption(opt)}>Löschen</button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        <div class="add-option-row">
+          <input
+            type="text"
+            placeholder="Neue Option (z. B. mit Ketchup)"
+            bind:value={newOptionName}
+            on:keydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOption(); } }}
+            disabled={addingOption}
+          />
+          <button type="button" class="btn-ghost" on:click={addOption}
+                  disabled={addingOption || !newOptionName.trim()}>
+            {addingOption ? '…' : 'Hinzufügen'}
+          </button>
+        </div>
+      </section>
+    {:else}
+      <p class="hint">Produktoptionen können nach dem ersten Speichern angelegt werden.</p>
+    {/if}
+
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">
       {#if editing}
@@ -201,4 +289,26 @@
 <style>
   .inactive td { opacity: 0.45; }
   .spacer { flex: 1; }
+  /* Product-options block inside the edit modal */
+  .options-section {
+    border-top: 1px solid var(--color-border);
+    margin-top: 1.25rem; padding-top: 1rem;
+  }
+  .options-section h3 {
+    font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--color-text-muted); margin: 0 0 0.5rem 0;
+  }
+  .hint { font-size: 0.85rem; color: var(--color-text-muted); margin: 0 0 0.75rem 0; }
+  .option-list { list-style: none; padding: 0; margin: 0 0 0.75rem 0; display: flex; flex-direction: column; gap: 0.35rem; }
+  .option-list li {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+  .opt-name { flex: 1; }
+  .small { font-size: 0.8rem; padding: 0.25rem 0.5rem; }
+  .add-option-row { display: flex; gap: 0.5rem; }
+  .add-option-row input { flex: 1; }
 </style>
