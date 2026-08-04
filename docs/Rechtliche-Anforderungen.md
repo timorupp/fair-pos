@@ -1,6 +1,6 @@
 # FairPOS — Rechtliche Anforderungen & Empfehlungen
 
-Stand: Mai 2026 | Rechtsgrundlagen: KassenSichV, § 146a AO, DSFinV-K v2.4, GoBD
+Stand: August 2026 | Rechtsgrundlagen: KassenSichV, § 146a AO, DSFinV-K v2.4, GoBD, AEAO zu § 146a AO (Neufassung 30.06.2023)
 
 ---
 
@@ -38,6 +38,12 @@ Seit 01.01.2020 gilt Belegausgabepflicht bei jeder Transaktion. Der Bon muss fol
 
 Ausgabeform: Papier, QR-Code oder elektronisch zulässig. Kunde muss den Bon nicht annehmen, er muss aber angeboten werden.
 
+**✅ Geprüft (August 2026):** Alle 11 Pflichtangaben sind in `ReceiptData`
+(`packages/backend/src/receipt/types.ts`) modelliert und werden von
+`escpos-receipt.ts`/`pdf.ts` gedruckt. Kein Feld fehlt. Details und Quelle
+(§ 6 KassenSichV, verbatim geprüft): `docs/Anforderungen.md` → „Pflichtangaben
+auf dem Kassenbon".
+
 ---
 
 ## 3. Meldepflichten
@@ -74,6 +80,50 @@ Ausgabeform: Papier, QR-Code oder elektronisch zulässig. Kunde muss den Bon nic
 Die TSE ist kein separater Meldungsgegenstand bei der BSI. Die TSE-Daten werden im Rahmen der Kassenmeldung nach § 146a Abs. 4 AO mit übermittelt. Die BSI-Zertifizierung muss jedoch nachgewiesen werden können.
 
 **Empfehlung:** An-/Abmeldung über ELSTER selbst durchführen oder über einen Steuerberater abwickeln.
+
+### 3.3 Ausfall der TSE
+
+Rechtsgrundlage: **AEAO zu § 146a AO, Nr. 1.14** (Neufassung, BMF-Schreiben vom
+30. Juni 2023, GZ IV D 2 - S 0316-a/20/10003 :006, wirksam ab 1. Januar 2024).
+Verbatim geprüft (August 2026) gegen das offizielle BMF-Schreiben.
+
+**Kernaussage: Weiterbetrieb ohne funktionsfähige TSE ist ausdrücklich
+zulässig — kein Verkaufsstopp, keine Pflicht, Vorgänge später in die TSE
+nachzutragen.** Konkret (Nr. 1.14.1–1.14.4):
+
+1. **Dokumentationspflicht:** Ausfallzeiten und -grund einer TSE sind zu
+   dokumentieren — „Diese Dokumentation kann auch automatisiert durch das
+   elektronische Aufzeichnungssystem erfolgen" (Nr. 1.14.1).
+2. **Kennzeichnung auf dem Beleg:** Kann das System ohne funktionsfähige TSE
+   weiterbetrieben werden, muss der Ausfall auf dem Beleg erkennbar sein —
+   „durch die fehlende Transaktionsnummer oder durch eine sonstige eindeutige
+   Kennzeichnung" (Nr. 1.14.2). FairPOS: Die Transaktionsnummer entfällt beim
+   Bon einfach (kein zusätzlicher Hinweistext nötig) — siehe
+   `escpos-receipt.ts`, das die Zeile nur druckt, wenn eine Nummer vorliegt.
+3. **Kein Blockieren des Verkaufs:** „Soweit der Ausfall lediglich die TSE
+   betrifft, wird es nicht beanstandet, wenn das elektronische
+   Aufzeichnungssystem bis zur Beseitigung des Ausfallgrundes weiterhin
+   genutzt wird. Die grundsätzliche Belegausgabepflicht bleibt von dem
+   Ausfall unberührt" (Nr. 1.14.3). Datum/Uhrzeit auf dem Beleg müssen in
+   diesem Fall vom Kassensystem selbst kommen, nicht von der TSE.
+4. **Unverzügliche Behebung:** Der Betreiber muss die Ausfallursache
+   „unverzüglich" beheben und Maßnahmen treffen, um die Anforderungen des
+   § 146a AO „schnellstmöglich wieder" einzuhalten (Nr. 1.14.4).
+
+**Explizit NICHT gefordert:** ein Nachtragen/Nachsignieren der während des
+Ausfalls erfassten Vorgänge in die TSE, sobald sie wieder funktioniert — wäre
+mit der TSE-Architektur (Signatur nur für live ablaufende Vorgänge, mit
+TSE-eigenem Zeitstempel) technisch auch nicht sinnvoll möglich.
+
+**Konsequenz für FairPOS** (siehe `docs/TSE-Integration.md` → „TSE-Ausfall"
+für das technische Konzept): Kein TSE-Aufruf darf einen Kassiervorgang
+blockieren. Bei Fehler oder fehlender Konfiguration wird der Verkauf mit
+`tse_*`-Feldern = `null` gebucht (bereits umgesetzt für die Bonkasse, siehe
+`routes/register-session.ts`); eine Warnung im UI macht den Zustand für das
+Bedienpersonal sichtbar, damit Punkt 4 (unverzügliche Behebung) organisatorisch
+umgesetzt werden kann.
+
+Quelle: [Neufassung des Anwendungserlasses zu § 146a AO, 30.06.2023](https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Weitere_Steuerthemen/Abgabenordnung/AO-Anwendungserlass/2023-06-30-AEAO-Par-146-AO.pdf), Nr. 1.14.
 
 ---
 
@@ -173,6 +223,26 @@ Für FairPOS relevante Typen:
 | `Einzahlung` | Allgemeine Einzahlung in die Kasse |
 | `Auszahlung` | Entnahme aus der Kasse |
 | `DifferenzSollIst` | Kassendifferenz beim Abschluss |
+
+**Kundendaten:** DSFinV-K sieht optionale `KUNDE_*`-Felder im Bonkopf vor
+(Name, Anschrift, USt-IdNr. des Leistungsempfängers — v.a. für B2B-Rechnungen).
+FairPOS erfasst bewusst keine Kundendaten (anonymer Barverkauf); diese Felder
+bleiben im Export leer. Das entspricht der Organisationsvorgabe, niemals
+personenbezogene Daten von Kunden zu verwenden.
+
+**Datenmodell-Abgleich (August 2026):** Gegen die offizielle Spezifikation
+v2.4 geprüft (`Bonkopf`/`Bonkopf_USt`/`Bonpos`/`Bonpos_USt`). Zwei konkrete,
+noch offene Lücken im aktuellen Schema für die Export-Implementierung
+(Task #13) — betreffen NICHT den gedruckten Bon, der bereits vollständig ist:
+1. `BON_START`/`BON_ENDE` müssen laut Spezifikation vom Aufzeichnungssystem
+   selbst kommen, ausdrücklich nicht von der TSE — aktuell speichert
+   `invoice` nur `tse_start_time`/`tse_end_time`. Für die Bedienungskasse
+   (Tisch ggf. lange vor dem Kassieren geöffnet) braucht es dafür einen
+   eigenen App-Zeitstempel.
+2. `GV_TYP` (Geschäftsvorfalltyp je Position) ist auf `order_item` noch nicht
+   als eigene Spalte abgebildet — der Pfandanteil einer Position müsste dafür
+   ggf. als eigene Zeile mit eigenem `GV_TYP` (`Pfand`/`PfandRueckzahlung`,
+   s.o.) exportiert werden statt wie aktuell als Zuschlag auf der Artikelzeile.
 
 ---
 

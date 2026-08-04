@@ -470,10 +470,15 @@ export const api = {
       pending_days: string[];
     }> => request('GET', `/register-session/registers/${id}`),
 
-    /** Posts a checkout. Returns the new invoice id + receipt number + token. */
+    /**
+     * Posts a checkout. Returns the new invoice id + receipt number + token.
+     * `tse_warning` is set (invoice still created successfully) when a
+     * configured TSE failed to sign the sale — the sale is never blocked on a
+     * TSE failure, see docs/TSE-Integration.md → "TSE-Ausfall".
+     */
     checkout: (registerId: string, positions: { article_id: string; quantity: number }[]): Promise<{
       invoice_id: string; receipt_number: number; receipt_number_formatted: string;
-      receipt_token: string;
+      receipt_token: string; slip_printer_missing: boolean; tse_warning: string | null;
     }> => request('POST', `/register-session/registers/${registerId}/checkout`, { positions }),
 
     /** Enqueues a print job for the given invoice on the register's assigned printer. */

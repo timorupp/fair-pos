@@ -75,7 +75,8 @@ export interface ReceiptData {
   totalGross: number;
   taxBreakdown: TaxBreakdownRow[];
 
-  // ── TSE (all null until task #4 is implemented) ───────────────────────────
+  // ── TSE (null when the sale wasn't signed — TSE unconfigured or an outage;
+  //    see docs/TSE-Integration.md → "TSE-Ausfall") ──────────────────────────
   tseSerial: string | null;
   tseTransactionNumber: number | null;
   tseSignatureCounter: number | null;

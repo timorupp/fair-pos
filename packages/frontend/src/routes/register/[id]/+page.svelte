@@ -36,6 +36,8 @@
   let lastReceiptNumber: string | null = null;
   let printing = false;
   let printDone = false;
+  /** Set when a configured TSE failed to sign the sale — the sale still went through, see docs/TSE-Integration.md. */
+  let tseWarning: string | null = null;
 
   $: registerId = ($page.params['id'] ?? '') as string;
   $: total = computeOrderTotal(order, articles);
@@ -117,6 +119,7 @@
     printDone = false;
     printing = false;
     checkoutError = '';
+    tseWarning = null;
   }
 
   async function startCheckout() {
@@ -129,6 +132,7 @@
       );
       lastInvoiceId = result.invoice_id;
       lastReceiptNumber = result.receipt_number_formatted;
+      tseWarning = result.tse_warning;
       checkoutOpen = true;
     } catch (e) {
       checkoutError = e instanceof Error ? e.message : 'Fehler';
@@ -272,6 +276,7 @@
         <div class="muted small">{order.reduce((s, l) => s + l.quantity, 0)} Artikel</div>
       </div>
     </div>
+    {#if tseWarning}<p class="warning-text">⚠ {tseWarning}</p>{/if}
     {#if checkoutError}<p class="error-text">{checkoutError}</p>{/if}
     {#if printDone}<p class="success-text">✓ Bon wird gedruckt</p>{/if}
 
@@ -365,4 +370,6 @@
   .modal-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
   .modal-actions .spacer { flex: 1; }
   .success-text { color: #4caf7d; font-size: 0.9rem; margin-top: 0.5rem; }
+  .error-text { color: var(--color-danger); font-size: 0.9rem; margin-top: 0.5rem; }
+  .warning-text { color: #f59e0b; font-size: 0.9rem; margin-top: 0.5rem; font-weight: 600; }
 </style>

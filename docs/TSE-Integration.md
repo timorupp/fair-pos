@@ -207,6 +207,63 @@ Das Node-seitige `client.ts` kennt nur die für den Betrieb relevanten Fälle
 explizit (z.B. `WORM_ERROR_CERTIFICATE_EXPIRED`, `WORM_ERROR_STORE_FULL_INTERNAL`)
 und wirft ansonsten einen generischen Fehler mit dem Rohcode für die Logs.
 
+### 8.1 TSE-Ausfall — verbindliches Muster für JEDEN Aufrufer (August 2026)
+
+**Rechtsgrundlage** (verbatim geprüft, siehe `Rechtliche-Anforderungen.md`
+Abschnitt 3.3 für die vollständigen Zitate): AEAO zu § 146a AO, Nr. 1.14.
+Kernaussage — Weiterbetrieb ohne funktionsfähige TSE ist ausdrücklich
+zulässig ("nicht beanstandet"), solange nur die TSE (nicht das gesamte
+System) betroffen ist. Es besteht **keine** Pflicht, Vorgänge während eines
+Ausfalls zu puffern und später in die TSE nachzutragen — das wäre mit der
+TSE-Architektur (Live-Signatur mit TSE-eigenem Zeitstempel) auch technisch
+nicht sinnvoll möglich.
+
+**Verbindliche Regel für jede Stelle, die `tse/client.ts` aufruft** (aktuell
+`routes/register-session.ts` Bonkasse-Checkout; künftig auch die
+Bedienungskasse-Flows aus Task #41):
+
+1. **Niemals blockieren.** Jeder Aufruf von `startTransaction`/
+   `finishTransaction`/etc. steht in einem `try/catch`. Ein Fehler (TSE
+   unerreichbar, Timeout, `TseError`) darf den zugrunde liegenden
+   Geschäftsvorgang (Kassieren, Bestellung aufnehmen, Storno) **nicht**
+   abbrechen — kein `503`, kein Rollback der DB-Transaktion deswegen.
+2. **Ohne Signatur weiterbuchen.** Bei einem Fehler bleiben die `tse_*`-Spalten
+   `null` — exakt wie im (Dev/Test-)Fall einer fehlenden Konfiguration. Aus
+   Compliance-Sicht sind beide Fälle gleich zu behandeln: keine Signatur ist
+   keine Signatur, unabhängig vom Grund.
+3. **Keine zusätzliche Beleg-Markierung nötig.** Die fehlende
+   Transaktionsnummer auf dem Bon ist laut Nr. 1.14.2 bereits eine zulässige
+   Kennzeichnung — die Renderer (`escpos-receipt.ts`, `pdf.ts`) drucken die
+   Zeile ohnehin nur `if (d.tseTransactionNumber !== null)`. Datum/Uhrzeit
+   auf dem Bon kommen so oder so vom Kassensystem, nicht von der TSE
+   (`invoice.created_at`, nicht `tse_start_time`).
+4. **Immer eine Warnung zurückgeben — auch bei fehlender Konfiguration.**
+   Jeder Endpunkt, der eine TSE-Signierung versucht (oder mangels
+   Konfiguration übersprungen hat), gibt ein `tse_warning: string | null`
+   Feld in der Response zurück (Vorbild: das bestehende
+   `slip_printer_missing`-Muster). `null` nur, wenn tatsächlich signiert
+   wurde. Das macht JEDEN unsignierten Verkauf im UI sichtbar, damit die
+   Ursache "unverzüglich" (Nr. 1.14.4) behoben werden kann — unabhängig
+   davon, ob es ein echter Ausfall oder schlicht keine konfigurierte TSE ist.
+5. **Fehler loggen, nicht schlucken.** `req.log.error({ err }, '...')` (oder
+   äquivalent) beim Catch, damit ein Ausfallmuster im Server-Log
+   nachvollziehbar bleibt — das ist zugleich ein einfacher Anfang für die in
+   Nr. 1.14.1 geforderte Ausfall-Dokumentation (Zeit + Grund), auch wenn ein
+   dediziertes Ausfall-Log (Start-/Ende-Zeitpunkt, automatisiert) noch nicht
+   gebaut ist (siehe „Nicht in diesem Dokument" unten).
+
+Referenzimplementierung: `routes/register-session.ts` (Bonkasse-Checkout,
+Task #40) — TSE-Signierung läuft vor der DB-Transaktion, ein Fehlschlag
+setzt nur `tseWarning`, die Rechnung wird trotzdem angelegt. Tests:
+`register-session.integration.test.ts` → Describe-Block „TSE-Signierung".
+
+**Noch offen (nicht Teil dieses Musters, für eine spätere Iteration):** ein
+automatisiertes Ausfall-Log (Start-/Ende-Zeitstempel + Grund als eigene
+Tabelle, befüllt an einer zentralen Stelle statt pro Aufrufer) für eine
+vollständige, maschinenlesbare Umsetzung von Nr. 1.14.1. Aktuell erfüllt das
+Server-Log (Punkt 5) die Dokumentationspflicht manuell/lesbar, aber nicht
+strukturiert abfragbar.
+
 ---
 
 ## 9. Testen ohne echte Hardware

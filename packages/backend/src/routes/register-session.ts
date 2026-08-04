@@ -174,10 +174,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    * Sequence:
    *  1. Fetches and validates the referenced articles.
    *  2. If a TSE is configured (`TSE_MOUNT_POINT`/`TSE_CLIENT_ID`), signs a
-   *     `Kassenbeleg-V1` transaction BEFORE opening the DB transaction — a TSE
-   *     failure aborts the checkout with no DB side effects. Without a
-   *     configured TSE (dev/test only), signing is skipped and the invoice's
-   *     `tse_*` columns stay `null`.
+   *     `Kassenbeleg-V1` transaction BEFORE opening the DB transaction. A TSE
+   *     failure does NOT block the sale (AEAO zu § 146a Nr. 1.14.3 explicitly
+   *     tolerates continued operation without a working TSE) — the invoice's
+   *     `tse_*` columns stay `null` and `tse_warning` in the response tells the
+   *     operator to get the TSE fixed. Same fallback when the TSE isn't
+   *     configured at all (dev/test). See docs/TSE-Integration.md → „TSE-Ausfall".
    *  3. Inside a single DB transaction: acquires an advisory xact lock so the
    *     receipt-number sequence is race-free, computes the next receipt
    *     number, generates a cryptographic `receipt_token`, inserts the
@@ -243,15 +245,24 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         }
       }
 
-      // TSE-Signierung (Kassenbeleg-V1) läuft VOR der DB-Transaktion: schlägt die
-      // Signierung fehl, entsteht keine Rechnung. Umgekehrt — falls die DB-Transaktion
-      // nach erfolgreicher Signierung fehlschlägt — bleibt ein signierter, aber nicht
-      // verwendeter TSE-Log-Eintrag zurück; das ist unkritisch (Über- statt
-      // Untersignierung) und lässt sich bei Bedarf nachvollziehen.
+      // TSE-Signierung (Kassenbeleg-V1) läuft VOR der DB-Transaktion, blockiert den
+      // Kassiervorgang bei einem TSE-Fehler aber NICHT: laut AEAO zu § 146a Nr. 1.14.3
+      // ist der Weiterbetrieb ohne funktionsfähige TSE ausdrücklich "nicht beanstandet",
+      // solange nur die TSE (nicht das gesamte System) betroffen ist — es besteht keine
+      // Pflicht, den Verkauf zu stoppen oder den Vorgang später in die TSE nachzutragen.
+      // Bei einem Fehler bleiben die tse_*-Spalten der Rechnung null (wie bei fehlender
+      // Konfiguration) — die fehlende Transaktionsnummer auf dem Bon ist laut Nr. 1.14.2
+      // bereits eine zulässige Kennzeichnung des Ausfalls, es wird also keine zusätzliche
+      // Markierung benötigt. `tseWarning` in der Response macht JEDEN Fall ohne
+      // TSE-Signatur für das Bedienpersonal sichtbar — sowohl einen echten Ausfall als
+      // auch eine fehlende Konfiguration, da beide aus Compliance-Sicht gleich zu
+      // behandeln sind —, damit die Ursache "unverzüglich" (Nr. 1.14.4) behoben werden
+      // kann. Siehe docs/TSE-Integration.md Abschnitt „TSE-Ausfall".
       let tse: {
         transactionNumber: number; signatureCounter: number; signature: string;
         serialNumber: string; startTime: Date; endTime: Date;
       } | null = null;
+      let tseWarning: string | null = null;
       if (config.tseMountPoint && config.tseClientId) {
         const snapshot = buildKassenbelegProcessData({
           registerId,
@@ -279,9 +290,15 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             startTime: new Date(start.logTime * 1000),
             endTime: new Date(finish.logTime * 1000),
           };
-        } catch {
-          return reply.status(503).send({ error: 'Kassenbon konnte nicht signiert werden (TSE-Fehler). Bitte erneut versuchen.' });
+        } catch (e) {
+          req.log.error({ err: e }, 'TSE-Signierung fehlgeschlagen — Kassenbon wird ohne TSE-Signatur gebucht');
+          tseWarning = 'TSE nicht erreichbar — Kassenbon wurde ohne TSE-Signatur gebucht. Bitte Störung schnellstmöglich beheben.';
         }
+      } else {
+        // Missing configuration is functionally the same as an outage from a
+        // compliance standpoint — the receipt is issued without a TSE
+        // signature either way, so it gets the same visible warning.
+        tseWarning = 'TSE ist nicht konfiguriert — Kassenbon wurde ohne TSE-Signatur gebucht.';
       }
 
       const result = await withTransaction(async (client) => {
@@ -386,6 +403,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         receipt_number_formatted: formatReceiptNumber(result.receipt_number, prefix),
         slips_enqueued: slipsEnqueued,
         slip_printer_missing: !slipPrinterId,
+        tse_warning: tseWarning,
       });
     },
   );

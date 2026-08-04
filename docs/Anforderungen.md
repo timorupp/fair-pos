@@ -338,6 +338,11 @@ Signiert wird nicht der „Kassenzustand", sondern **jeder fiskalisch relevante 
 - Bei Beleg-Storno: der neue Stornobeleg referenziert den Original-Beleg über `cancels_invoice_id`; die Original-Signatur wird NICHT verändert (KassenSichV verlangt Unveränderbarkeit der Kette).
 
 ### Pflichtangaben auf dem Kassenbon (ab 01.01.2024)
+
+Rechtsgrundlage: § 6 KassenSichV (Anforderungen an den Beleg) — nicht direkt
+die DSFinV-K, die den späteren Prüfungs-Export (Task #13) regelt, aber
+inhaltlich mit deren Bonkopf/Bonpos-Feldern überschneidend.
+
 - Name und Anschrift des Unternehmens
 - **Belegnummer** (fortlaufend, eindeutig; Präfix + Zähler)
 - Datum der Belegausstellung
@@ -351,6 +356,41 @@ Signiert wird nicht der „Kassenzustand", sondern **jeder fiskalisch relevante 
 - Prüfwert (Signatur)
 - Start- und Endzeitpunkt des Vorgangs
 - *(empfohlen: QR-Code mit TSE-Daten für Maschinenlesbarkeit)*
+
+**✅ Geprüft (August 2026):** Alle sieben Pflichtangaben aus § 6 Satz 1
+KassenSichV sind in `ReceiptData` (receipt/types.ts) modelliert und werden von
+`escpos-receipt.ts`/`pdf.ts` gedruckt — Firmenname/-anschrift, Belegdatum +
+Vorgangsbeginn/-ende, Menge/Art der Positionen, Belegnummer, Entgelt +
+Steuerbetrag je Steuersatz (`taxBreakdown`), Kassen- und TSE-Seriennummer,
+Prüfwert (`tseSignature`) + Signaturzähler. Kein Feld fehlt; keine Code-Änderung
+nötig. Quelle: [§ 6 KassenSichV](https://www.gesetze-im-internet.de/kassensichv/__6.html).
+
+**Abgrenzung zur DSFinV-K (für Task #13, nicht den aktuellen Bon betreffend):**
+Anhand der offiziellen DSFinV-K-Spezifikation v2.4 (Bonkopf/Bonkopf_USt/Bonpos/
+Bonpos_USt) wurde das bestehende Datenmodell (`invoice`, `order_item`)
+gegengeprüft. Die meisten Pflichtfelder sind bereits vorhanden (Belegnummer,
+Kasse/Terminal-ID über `register_id`, Bediener über `order_item.user_id`,
+Steuersatz-Aufschlüsselung deckt sich 1:1 mit `Bonkopf_USt`, „eine Zeile pro
+Artikel-Einheit" macht `MENGE` trivial `1`, Storno über `cancels_invoice_id` +
+gegenläufigen Zweitbeleg entspricht genau dem in der Spezifikation für
+TSE-geschützte Systeme vorgesehenen Verfahren). Zwei konkrete Lücken für die
+spätere Export-Implementierung, **nicht** für den Bon selbst:
+1. **`BON_START`/`BON_ENDE`** müssen laut Spezifikation vom Aufzeichnungssystem
+   selbst stammen und ausdrücklich **nicht** den TSE-Zeitstempeln entsprechen
+   (relevant v.a. bei der Bedienungskasse, wo ein Tisch lange vor dem
+   Kassieren geöffnet sein kann) — aktuell wird dafür kein eigener
+   App-Zeitstempel gespeichert, nur `tse_start_time`/`tse_end_time`.
+2. **`GV_TYP`** (Geschäftsvorfalltyp je Position, Anhang C der Spezifikation)
+   wird aktuell nicht auf `order_item` abgebildet — z.B. müsste ein Pfandanteil
+   ggf. als eigene Position mit eigenem GV_TYP exportiert werden, statt (wie
+   aktuell für den Bon-Druck ausreichend) als Zuschlag auf der Artikelzeile.
+
+**Kundendaten (KUNDE_NAME/KUNDE_ID/KUNDE_STRASSE/…):** DSFinV-K sieht optionale
+Felder für den Leistungsempfänger vor (v.a. für B2B-Rechnungen). FairPOS erfasst
+bewusst **keine** Kundendaten — anonymer Barverkauf an Vereinsfesten — diese
+Felder bleiben im späteren Export leer. Das deckt sich mit der
+Organisationsvorgabe, niemals personenbezogene Daten von Kunden zu verwenden.
+Quelle: [DSFinV-K Version 2.4](https://kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf).
 
 ### TSE-Optionen
 

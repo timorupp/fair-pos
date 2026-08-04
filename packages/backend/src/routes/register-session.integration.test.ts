@@ -4,6 +4,8 @@
  * locked due to pending Z-Bon" gate.
  */
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../db/client.js';
 import { truncateAllTables } from '../test/db-fixture.js';
@@ -12,6 +14,16 @@ import {
   assignRegisterToUser, createTestArticle, createTestPrinter,
   createTestRegister, createTestUser, seedReceiptCounter, setSystemSetting,
 } from '../test/fixtures.js';
+import { config } from '../config.js';
+
+/** Test double for native/tse-cli — see tse/client.test.ts for the same fixture. */
+const TSE_CLI_STUB_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'test',
+  'fixtures',
+  'tseCliStub.sh',
+);
 
 beforeAll(async () => { await getTestApp(); });
 afterAll(closeTestApp);
@@ -26,6 +38,14 @@ let printerId: string;
 beforeEach(async () => {
   await truncateAllTables();
   const app = await getTestApp();
+
+  // config.tseMountPoint/tseClientId are mutated in-place by applyTseSettings
+  // (see tse/settings.ts) and outlive truncateAllTables — reset explicitly so
+  // TSE tests don't leak configuration into unrelated checkout tests.
+  config.tseMountPoint = null;
+  config.tseClientId = null;
+  delete process.env['TSE_STUB_STDOUT'];
+  delete process.env['TSE_STUB_EXIT_CODE'];
 
   const u = await createTestUser({ isAdmin: false });
   userId = u.id;
@@ -207,6 +227,80 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
       `SELECT id FROM print_job WHERE type = 'order_slip'`,
     );
     expect(jobs.rowCount).toBe(0);
+  });
+});
+
+describe('Bonkasse checkout: TSE-Signierung', () => {
+  it('stores the TSE signature on the invoice when signing succeeds', async () => {
+    config.tseMountPoint = '/tmp/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: { transactionNumber: 7, signatureCounter: 3, logTime: 1735689600, signature: 'aa', serialNumber: 'bb' },
+    });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().tse_warning).toBeNull();
+
+    const invoice = await pool.query(
+      `SELECT tse_transaction_number, tse_signature, tse_signature_counter, tse_serial_number
+         FROM invoice WHERE id = $1`,
+      [response.json().invoice_id],
+    );
+    expect(invoice.rows[0]).toMatchObject({
+      tse_transaction_number: '7', tse_signature: 'aa', tse_signature_counter: '3', tse_serial_number: 'bb',
+    });
+  });
+
+  it('does NOT block the sale when the TSE call fails — invoice is created without a signature and a warning is returned', async () => {
+    // AEAO zu § 146a Nr. 1.14.3: continued operation without a working TSE is
+    // explicitly tolerated as long as only the TSE (not the whole system)
+    // fails — see docs/TSE-Integration.md → "TSE-Ausfall".
+    config.tseMountPoint = '/tmp/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({ ok: false, error: { code: 1234, message: 'boom' } });
+    process.env['TSE_STUB_EXIT_CODE'] = '1';
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().tse_warning).toBeTruthy();
+
+    const invoice = await pool.query(
+      `SELECT tse_transaction_number, tse_signature FROM invoice WHERE id = $1`,
+      [response.json().invoice_id],
+    );
+    expect(invoice.rows[0]).toMatchObject({ tse_transaction_number: null, tse_signature: null });
+
+    const items = await pool.query(
+      `SELECT id FROM order_item WHERE invoice_id = $1`, [response.json().invoice_id],
+    );
+    expect(items.rowCount).toBe(1);
+  });
+
+  it('surfaces a warning when the TSE is not configured at all — sale still succeeds', async () => {
+    // Missing configuration is treated the same as an outage: no TSE data
+    // means no signature either way, so the operator gets the same warning.
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().tse_warning).toMatch(/nicht konfiguriert/);
   });
 });
 
