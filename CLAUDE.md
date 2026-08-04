@@ -18,6 +18,8 @@ Veranstaltungen und Festen.
 - `docs/Datenmodell.dbml` — Datenbankschema (dbdiagram.io)
 - `docs/Dictionary.md` — Deutsch ↔ Englisch Übersetzungsreferenz (verbindlich)
 - `docs/SETUP.md` — Technisches Setup, Architektur, Deployment
+- `docs/TSE-Integration.md` — TSE-Architekturkonzept (CLI-Subprozess, Vendoring, Lifecycle, aktueller Umsetzungsstand)
+- `docs/Rechtliche-Anforderungen.md` / `docs/Organisatorische-Anleitung.md` — KassenSichV-/GoBD-Vorgaben und Betriebsabläufe
 
 ---
 
@@ -122,7 +124,7 @@ Struktur entfernen. So bleiben bestehende Daten erhalten.
 | Backend    | Node.js + Fastify v5                           |
 | Datenbank  | PostgreSQL 16, rohes SQL (kein ORM)            |
 | Drucken    | ESC/POS über TCP, Print Worker im Backend      |
-| TSE        | fiskaltrust Middleware als Docker-Image        |
+| TSE        | Swissbit USB-TSE, eigener CLI-Subprozess (`native/tse-cli`) — siehe `docs/TSE-Integration.md` |
 | Packaging  | npm Workspaces (shared / backend / frontend)   |
 
 ---
@@ -135,3 +137,4 @@ Struktur entfernen. So bleiben bestehende Daten erhalten.
 - **SSE statt WebSockets** für Echtzeit-Updates (Server → Client)
 - **Migrationen** — nummerierte `.sql`-Dateien, eigener Runner, kein Migrationstool
 - **Einmal Bestellung, einmal Rechnung** — `order_item` (eine Zeile pro Artikel-Einheit) + `invoice` (Snapshot mit TSE-Daten)
+- **TSE via CLI-Subprozess** — Swissbit USB-TSE, eigener minimaler C++-Wrapper (`packages/backend/native/tse-cli`), vom Backend per `child_process.execFile` aufgerufen. fiskaltrust-Middleware wurde verworfen (zu teuer, August 2026). Details, Umsetzungsstand und offene Punkte: `docs/TSE-Integration.md`.

@@ -18,6 +18,7 @@ function baseData(overrides: Partial<ReceiptData> = {}): ReceiptData {
     logoPng: null,
     logoWidth: 0,
     logoHeight: 0,
+    logoWidthFactor: 0,
     logoEscPos: null,
     positions: [],
     totalGross: 0,

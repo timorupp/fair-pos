@@ -94,6 +94,8 @@
   }
 </script>
 
+<svelte:head><title>POS-Administration — FairPOS</title></svelte:head>
+
 {#if checking}
   <div class="checking">Prüfe Sitzung…</div>
 {:else}

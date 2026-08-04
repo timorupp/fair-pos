@@ -18,7 +18,13 @@ export interface ExportSourceRow {
 
 /** One aggregated row in the Excel sheet. */
 export interface ExportRow {
-  receipt_number: number;
+  /**
+   * Belegnummer as it appears on the printed receipt — i.e. the prefix from
+   * the system settings plus the zero-padded sequence number (e.g. `POS-00042`).
+   * Stored as a string so the spreadsheet shows the same value the customer
+   * sees on the bon.
+   */
+  receipt_number: string;
   /** ISO timestamp; the workbook builder formats it. */
   created_at: string;
   table_name: string;
@@ -41,9 +47,11 @@ export interface ExportRow {
  * on the printed bon. Row order: invoices in input order, positions in first-occurrence order.
  *
  * @param items - Raw rows joined from `order_item`, `invoice`, `register`, `dining_table`, `user`.
+ * @param receiptPrefix - Prefix from the system settings (e.g. `POS-`). Combined with the
+ *   zero-padded sequence number to mirror what's printed on the bon.
  * @returns One row per aggregated invoice position, ready for the workbook builder.
  */
-export function buildExportRows(items: ExportSourceRow[]): ExportRow[] {
+export function buildExportRows(items: ExportSourceRow[], receiptPrefix: string = ''): ExportRow[] {
   /** Result accumulator and lookup index — keyed by `invoice_id|article|options|price|deposit|tax`. */
   const out: ExportRow[] = [];
   const index = new Map<string, ExportRow>();
@@ -69,7 +77,7 @@ export function buildExportRows(items: ExportSourceRow[]): ExportRow[] {
     }
 
     const row: ExportRow = {
-      receipt_number: item.receipt_number,
+      receipt_number: `${receiptPrefix}${String(item.receipt_number).padStart(5, '0')}`,
       created_at: toIso(item.invoice_created_at),
       table_name: item.table_name ?? '',
       ordering_user_name: item.ordering_user_name ?? '',

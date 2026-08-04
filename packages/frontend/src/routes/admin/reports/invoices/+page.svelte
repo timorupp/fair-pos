@@ -7,7 +7,7 @@
   import EventSelector from '$lib/components/EventSelector.svelte';
 
   type InvoiceRow = {
-    id: string; receipt_number: number; receipt_type: string;
+    id: string; receipt_number: number; receipt_number_formatted: string; receipt_type: string;
     payment_method: string; created_at: string; register_name: string;
     receipt_token: string | null; total_gross: number;
   };
@@ -138,7 +138,7 @@
       <tbody>
         {#each invoices as inv}
           <tr>
-            <td class="num">{inv.receipt_number}</td>
+            <td class="num">{inv.receipt_number_formatted}</td>
             <td>{timeLabel(inv.created_at)}</td>
             <td>{typeLabel(inv.receipt_type)}</td>
             <td>{paymentLabel(inv.payment_method)}</td>

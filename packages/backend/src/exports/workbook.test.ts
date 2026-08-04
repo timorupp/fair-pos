@@ -6,13 +6,13 @@ import type { ExportRow } from './rows.js';
 
 const sampleRows: ExportRow[] = [
   {
-    receipt_number: 42,
+    receipt_number: 'POS-00042',
     created_at: new Date(2026, 5, 24, 18, 30, 0).toISOString(),
     table_name: 'A1', ordering_user_name: 'Anna', register_name: 'Theke',
     article_name: 'Bier', quantity: 3, unit_price: 4.5, unit_deposit: 2, tax_rate: 19, line_total: 19.5,
   },
   {
-    receipt_number: 42,
+    receipt_number: 'POS-00042',
     created_at: new Date(2026, 5, 24, 18, 30, 0).toISOString(),
     table_name: 'A1', ordering_user_name: 'Anna', register_name: 'Theke',
     article_name: 'Brezel', quantity: 1, unit_price: 2.5, unit_deposit: 0, tax_rate: 7, line_total: 2.5,
@@ -60,7 +60,7 @@ describe('buildExcelWorkbook', () => {
     await wb.xlsx.load(buf as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
     // Row 4 — first data row
-    expect(sheet.getCell(4, 1).value).toBe(42);          // Belegnummer
+    expect(sheet.getCell(4, 1).value).toBe('POS-00042'); // Belegnummer (prefix + padded sequence)
     expect(sheet.getCell(4, 7).value).toBe('Bier');      // Artikelname
     expect(sheet.getCell(4, 8).value).toBe(3);           // Menge
     expect(sheet.getCell(4, 12).value).toBe(19.5);       // Gesamtbetrag

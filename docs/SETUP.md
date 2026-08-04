@@ -21,8 +21,9 @@ Dieses Dokument beschreibt Projektstruktur, Entwicklungsumgebung und Deployment.
 
 ## Überblick
 
-FairPOS ist ein KassenSichV-konformes Kassensystem für Vereine. Es besteht aus drei
-Docker-Containern, die zusammen eine vollständige Kassenlösung bilden:
+FairPOS ist ein KassenSichV-konformes Kassensystem für Vereine. Es besteht aus
+zwei Docker-Containern (Backend + PostgreSQL) plus einer direkt angeschlossenen
+Swissbit USB-TSE — keine dritte Middleware-Komponente:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -35,12 +36,14 @@ Docker-Containern, die zusammen eine vollständige Kassenlösung bilden:
 │  • REST-API unter /api                                       │
 │  • Statische SPA-Dateien unter /                             │
 │  • Print Worker (PostgreSQL LISTEN/NOTIFY → ESC/POS TCP)     │
+│  • TSE-Anbindung: ruft native/tse-cli als Subprozess auf     │
+│    (kein separater Dienst — siehe docs/TSE-Integration.md)   │
 └───────────┬──────────────────────────┬───────────────────────┘
-            │ pg (node-postgres)       │ HTTP
+            │ pg (node-postgres)       │ Dateisystem (Mount-Punkt)
 ┌───────────▼──────────┐  ┌───────────▼───────────────────────┐
-│  postgres (PG 16)    │  │  fiskaltrust Middleware            │
-│  Primärdaten         │  │  TSE-Bridge (Swissbit USB → REST)  │
-│  Print-Queue         │  │  Port 1500                         │
+│  postgres (PG 16)    │  │  Swissbit USB-TSE                  │
+│  Primärdaten         │  │  als Dateisystem gemountet,         │
+│  Print-Queue         │  │  kein eigener Docker-Container      │
 └──────────────────────┘  └───────────────────────────────────┘
 ```
 
@@ -52,10 +55,14 @@ Docker-Containern, die zusammen eine vollständige Kassenlösung bilden:
 |------------|----------------|------------------------------------|
 | Node.js    | 20.x           | Backend + Frontend Build           |
 | npm        | 10.x           | Paketmanager (Workspaces)          |
-| Docker     | 24.x           | PostgreSQL + fiskaltrust           |
+| Docker     | 24.x           | PostgreSQL + Backend               |
 | Docker Compose | V2 (Plugin) | `docker compose` (ohne Bindestrich) |
+| g++ (C++11) | —             | Nur für den TSE-CLI-Build, siehe docs/TSE-Integration.md Abschnitt 10 |
 
-Für die Produktion wird kein lokales Node.js benötigt — nur Docker.
+Für die Produktion wird kein lokales Node.js benötigt — nur Docker. Für echte
+TSE-Hardware-Tests wird zusätzlich ein natives Linux-Hostsystem benötigt (siehe
+Abschnitt „TSE-Hardware-Tests" unten) — WSL2 kann USB-Geräte nicht ohne
+Weiteres durchreichen.
 
 ---
 
@@ -65,11 +72,9 @@ Für die Produktion wird kein lokales Node.js benötigt — nur Docker.
 club-pos/
 ├── package.json                  # Root-Workspace, gemeinsame Skripte
 ├── tsconfig.base.json            # Gemeinsame TS-Optionen für alle Pakete
-├── docker-compose.yml            # Produktions-Stack (3 Container)
-├── docker-compose.dev.yml        # Dev-Overrides (nur PG + fiskaltrust)
+├── docker-compose.yml            # Produktions-Stack (Postgres + Backend)
+├── docker-compose.dev.yml        # Dev-Overrides (nur Postgres in Docker)
 ├── .env.example                  # Vorlage für Umgebungsvariablen
-├── fiskaltrust/
-│   └── config/                   # fiskaltrust-Konfiguration (Volume-Mount)
 │
 ├── packages/
 │   ├── shared/                   # @fairpos/shared — geteilte TypeScript-Typen
@@ -77,12 +82,19 @@ club-pos/
 │   │
 │   ├── backend/                  # @fairpos/backend — Fastify API + Print Worker
 │   │   ├── Dockerfile            # 3-Stage-Build (frontend → backend → prod)
+│   │   ├── native/tse-cli/       # Minimaler C++-Wrapper um das Swissbit-SDK
+│   │   │   ├── src/tseCli.cpp    # CLI, vom Backend als Subprozess aufgerufen
+│   │   │   ├── build.sh          # Kompiliert gegen die vendorten SDK-Dateien
+│   │   │   └── vendor/           # gitignored — SDK-Header/-Lib + gebaute Binary,
+│   │   │                         # siehe vendor/PLACE_SDK_FILES_HERE.txt
 │   │   └── src/
 │   │       ├── index.ts          # Einstiegspunkt: Migrate → Server → Print Worker
 │   │       ├── app.ts            # Fastify-Factory, Plugins, Routing
 │   │       ├── config.ts         # Umgebungsvariablen (Pflichtfelder geprüft)
 │   │       ├── routes/
 │   │       │   └── health.ts     # GET /api/health
+│   │       ├── tse/              # TSE-Client (queue.ts, client.ts, settings.ts, …)
+│   │       │                     # siehe docs/TSE-Integration.md
 │   │       ├── workers/
 │   │       │   └── print-worker.ts  # LISTEN/NOTIFY → ESC/POS über TCP
 │   │       └── db/
@@ -101,10 +113,12 @@ club-pos/
 │               ├── +layout.svelte
 │               └── +page.svelte  # Startseite (Platzhalter)
 │
-├── Anforderungen.md              # Fachliche Anforderungen
-├── Datenmodell.dbml              # Datenmodell (dbdiagram.io)
-├── Dictionary.md                 # Deutsch ↔ Englisch Übersetzungsreferenz
-└── SETUP.md                      # Dieses Dokument
+└── docs/
+    ├── Anforderungen.md           # Fachliche Anforderungen
+    ├── Datenmodell.dbml           # Datenmodell (dbdiagram.io)
+    ├── Dictionary.md              # Deutsch ↔ Englisch Übersetzungsreferenz
+    ├── TSE-Integration.md         # TSE-Architekturkonzept (CLI-Subprozess, Vendoring, Lifecycle)
+    └── SETUP.md                  # Dieses Dokument
 ```
 
 ---
@@ -123,12 +137,15 @@ Für die lokale Entwicklung muss `DATABASE_URL` den Postgres-Container auf
 
 ```env
 DATABASE_URL=postgresql://fairpos:changeme@localhost:5432/fairpos
-TSE_MIDDLEWARE_URL=http://localhost:1500
 ```
+
+`TSE_MOUNT_POINT`/`TSE_CLIENT_ID` sind optional — ohne physische TSE (lokale
+Entwicklung, CI) einfach weglassen; das Backend überspringt die Signierung dann
+und lässt die `tse_*`-Spalten der Rechnung `null`. Siehe docs/TSE-Integration.md.
 
 ### 2. Infrastruktur starten
 
-Nur PostgreSQL und fiskaltrust laufen in Docker; das Backend läuft lokal.
+Nur PostgreSQL läuft in Docker; das Backend läuft lokal.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
@@ -237,18 +254,40 @@ Das `packages/backend/Dockerfile` baut in drei Stufen:
 Im finalen Image enthält `/app/dist` das Backend-Kompilat und `/app/public`
 die kompilierten Frontend-Dateien (von Fastify als Static Files ausgeliefert).
 
-### fiskaltrust TSE-Anbindung
+### Swissbit USB-TSE-Anbindung
 
-```
-TODO: Exakten Image-Namen und Konfiguration vor dem ersten Produktivbetrieb prüfen.
-```
+Kein eigener Container, keine Middleware — das Backend ruft
+`packages/backend/native/tse-cli` als Subprozess auf. Details (Architektur,
+Concurrency-Modell, Vendoring, Lifecycle) stehen vollständig in
+docs/TSE-Integration.md; hier nur das Deployment-relevante:
 
-- Das fiskaltrust-Middleware-Image (`fiskaltrust/middleware:latest`) muss das
-  Swissbit-USB-Gerät als Device-Passthrough erhalten.
-- In `docker-compose.yml` ist `/dev/bus/usb` gemappt — ggf. auf den
-  tatsächlichen USB-Pfad des Hostsystems anpassen.
-- Die Middleware-Konfiguration liegt im Volume-Mount `./fiskaltrust/config`.
-- `TSE_MIDDLEWARE_URL` zeigt auf den Container (`http://fiskaltrust:1500`).
+- Die TSE muss auf dem Docker-Host als Dateisystem gemountet sein
+  (`TSE_MOUNT_POINT`), bevor der Backend-Container startet.
+- In `docker-compose.yml` ist ein `volumes`-Eintrag für den Mount-Punkt
+  auskommentiert — Host-Pfad einkommentieren/anpassen, damit der Container
+  darauf zugreifen kann.
+- `TSE_MOUNT_POINT` in `.env` muss auf den **Container-seitigen** Pfad zeigen
+  (rechte Seite des `volumes`-Mappings), nicht auf den Host-Pfad.
+- `TSE_CLIENT_ID` ist ein frei wählbarer Bezeichner für diese Kasse (z.B.
+  `FairPOS-1`) — muss bei der einmaligen TSE-Inbetriebnahme (`setup`)
+  registriert werden.
+- Mount-Pfad, Client-ID und der (laut KassenSichV dauerhaft speicherbare)
+  TimeAdmin-PIN lassen sich alternativ bequem über Systemeinstellungen →
+  System in der Admin-UI konfigurieren — das wirkt sofort, ohne Neustart
+  (siehe docs/TSE-Integration.md Abschnitt 7).
+- `native/tse-cli/vendor/bin/tseCli` (die kompilierte Binary) muss im
+  Docker-Image vorhanden sein — entweder im `packages/backend/Dockerfile`
+  mitgebaut oder vorab gebaut und ins Image kopiert werden. Das SDK selbst ist
+  gitignored (siehe `vendor/PLACE_SDK_FILES_HERE.txt`) und muss vor dem Build
+  lokal bereitgestellt werden.
+
+### TSE-Hardware-Tests
+
+Für echte Hardware-Tests (nicht nur den gemockten CLI-Subprozess in den
+Unit-Tests) wird ein natives Linux-Hostsystem benötigt — WSL2 kann USB-Geräte
+nicht ohne `usbipd-win` durchreichen. Das Team plant einen Wechsel auf ein
+natives Ubuntu-System für diese Tests; die Swissbit Developer-TSE-Hardware
+dafür ist bereits bestellt (Stand August 2026).
 
 ---
 
@@ -266,7 +305,8 @@ die beim Backend-Start fehlen, führen zu einem sofortigen Fehler.
 | `SESSION_SECRET`     | ja      | —                         | Signierungsschlüssel für Cookies     |
 | `PORT`               | nein    | `3000`                    | HTTP-Port des Backends               |
 | `NODE_ENV`           | nein    | `development`             | `development` oder `production`      |
-| `TSE_MIDDLEWARE_URL` | nein    | `http://localhost:1500`   | URL der fiskaltrust Middleware       |
+| `TSE_MOUNT_POINT`    | nein    | —                         | Mount-Pfad der Swissbit USB-TSE (container-seitig). Ohne diesen Wert wird die TSE-Signierung übersprungen. Auch über die Admin-UI konfigurierbar. |
+| `TSE_CLIENT_ID`      | nein    | —                         | Frei wählbarer Client-Bezeichner für diese Kasse, z.B. `FairPOS-1`. Auch über die Admin-UI konfigurierbar. |
 
 `SESSION_SECRET` sollte mindestens 32 zufällige Zeichen enthalten.
 Generieren z.B. mit: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
@@ -325,9 +365,12 @@ Für Echtzeit-Updates (z.B. Tischstatus-Aktualisierungen im Browser) werden
 Server-Sent Events (SSE) eingesetzt. SSE ist unidirektional (Server → Client),
 einfacher als WebSockets und ausreichend für diesen Anwendungsfall.
 
-### fiskaltrust als Docker-Image
+### Swissbit USB-TSE über CLI-Subprozess (kein Middleware-Container)
 
-Die TSE-Anbindung erfolgt über die fiskaltrust Middleware, die als
-Docker-Container läuft und die Swissbit USB-TSE über ein Device-Passthrough
-anspricht. Das Backend kommuniziert über REST mit der Middleware. Kein Java
-oder proprietäres SDK im Backend-Code notwendig.
+fiskaltrust wurde als zu teuer verworfen (August 2026). Stattdessen spricht das
+Backend eine Swissbit USB-TSE direkt an: ein minimaler, selbst geschriebener
+C++-Wrapper (`packages/backend/native/tse-cli`) linkt gegen das offizielle
+Swissbit-SDK und wird vom Node-Prozess per `child_process.execFile`
+aufgerufen — kein separater Dienst, kein natives Node-Addon, kein REST-Bridge.
+Details, Entscheidungsverlauf und das vollständige Architekturkonzept stehen in
+docs/TSE-Integration.md.

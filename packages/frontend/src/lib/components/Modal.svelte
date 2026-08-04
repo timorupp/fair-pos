@@ -1,13 +1,26 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
+
   /** Whether the modal is visible. Use bind:open to control from parent. */
   export let open = false;
   /** Title shown in the modal header. */
   export let title = '';
 
-  function close() { open = false; }
+  const dispatch = createEventDispatcher<{ close: void }>();
+
+  /**
+   * Closes the modal AND emits a `close` event. Callers that need to react to
+   * the user dismissing the modal (X / backdrop / Escape) should listen for
+   * `on:close` — relying on `bind:open` alone gives a reactive cascade that
+   * Svelte doesn't always sequence consistently across nested updates.
+   */
+  function close(): void {
+    open = false;
+    dispatch('close');
+  }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') close();
+    if (open && e.key === 'Escape') close();
   }
 </script>
 

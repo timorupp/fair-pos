@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import type { Article } from '@fairpos/shared';
   import { num } from '$lib/order';
+  import { currentRegisterName } from '$lib/stores/page-title';
   import Modal from '$lib/components/Modal.svelte';
 
   type Slot = { article_id: string; grid_row: number; grid_col: number; color: string };
@@ -50,6 +51,7 @@
     loading = true; error = '';
     try {
       const ctx = await api.registerSession.register(registerId);
+      currentRegisterName.set(ctx.register.name);
       if (ctx.layout) {
         hasLayout = true;
         gridCols = ctx.layout.grid_cols;

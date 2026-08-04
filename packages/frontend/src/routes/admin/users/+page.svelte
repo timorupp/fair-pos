@@ -126,7 +126,7 @@
             <td>{u.is_admin ? 'Administrator' : 'Bediener'}</td>
             <td class="num">{new Date(u.created_at).toLocaleDateString('de-DE')}</td>
             <td class="actions">
-              <button class="btn-ghost" on:click={() => generateToken(u)}>QR-Code</button>
+              <button class="btn-primary login-btn" on:click={() => generateToken(u)}>Login</button>
               <button class="btn-ghost" on:click={() => openEdit(u)}>Bearbeiten</button>
             </td>
           </tr>

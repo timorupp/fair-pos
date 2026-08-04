@@ -28,7 +28,7 @@
   let confirmationOpen = false;
   let busy = false;
   let lastInvoiceId: string | null = null;
-  let lastReceiptNumber: number | null = null;
+  let lastReceiptNumber: string | null = null;
   let printDone = false;
   let printing = false;
 
@@ -102,7 +102,7 @@
     try {
       const result = await api.registerSession.chargeTable(registerId, tableId, selectedQuantities());
       lastInvoiceId = result.invoice_id;
-      lastReceiptNumber = result.receipt_number;
+      lastReceiptNumber = result.receipt_number_formatted;
       confirmationOpen = true;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';

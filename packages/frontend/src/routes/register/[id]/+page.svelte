@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import type { Article } from '@fairpos/shared';
   import { adjustQuantity, computeOrderTotal, num, type OrderLine } from '$lib/order';
+  import { currentRegisterName } from '$lib/stores/page-title';
   import Modal from '$lib/components/Modal.svelte';
 
   type Slot = { article_id: string; grid_row: number; grid_col: number; color: string };
@@ -32,16 +33,19 @@
   let checkoutBusy = false;
   let checkoutError = '';
   let lastInvoiceId: string | null = null;
-  let lastReceiptNumber: number | null = null;
+  let lastReceiptNumber: string | null = null;
   let printing = false;
   let printDone = false;
 
   $: registerId = ($page.params['id'] ?? '') as string;
   $: total = computeOrderTotal(order, articles);
-
-  // If the modal was dismissed without using the two action buttons, clear state so the
-  // cash register is ready for the next customer. The invoice itself remains persisted.
-  $: if (!checkoutOpen && lastInvoiceId) reset();
+  // Reset the order any time the receipt dialog closes — regardless of how
+  // (X button, backdrop click, Escape). Listening for the Modal's explicit
+  // `close` event is more reliable than the previous reactive cascade
+  // (`$: if (!checkoutOpen && lastInvoiceId) reset();`), which had Svelte
+  // update-ordering quirks that left the total stale while the order list
+  // was already cleared.
+  function onCheckoutClosed(): void { reset(); }
 
   // Lookup helpers
   $: articleById = new Map(articles.map((a) => [a.id, a]));
@@ -59,6 +63,7 @@
     try {
       const ctx = await api.registerSession.register(registerId);
       registerName = ctx.register.name;
+      currentRegisterName.set(registerName);
       registerType = ctx.register.type;
       locked = ctx.locked;
       pendingDays = ctx.pending_days;
@@ -123,7 +128,7 @@
         order.map((l) => ({ article_id: l.article_id, quantity: l.quantity })),
       );
       lastInvoiceId = result.invoice_id;
-      lastReceiptNumber = result.receipt_number;
+      lastReceiptNumber = result.receipt_number_formatted;
       checkoutOpen = true;
     } catch (e) {
       checkoutError = e instanceof Error ? e.message : 'Fehler';
@@ -255,7 +260,7 @@
 </div>
 
 <!-- Checkout dialog ─────────────────────────────────────────────────────── -->
-<Modal bind:open={checkoutOpen} title="Rechnung {lastReceiptNumber ?? ''}">
+<Modal bind:open={checkoutOpen} title="Rechnung {lastReceiptNumber ?? ''}" on:close={onCheckoutClosed}>
   {#if lastInvoiceId}
     <div class="checkout-body">
       <div class="qr-wrap">

@@ -16,7 +16,7 @@ import type { ClosingTotals } from './totals.js';
  */
 export async function renderZBonPdf(
   ctx: ClosingContext, totals: ClosingTotals, businessDate: string,
-  logo: { pdfPng: Buffer; pdfWidth: number; pdfHeight: number } | null = null,
+  logo: { pdfPng: Buffer; pdfWidth: number; pdfHeight: number; pdfWidthFactor: number } | null = null,
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -36,16 +36,16 @@ export async function renderZBonPdf(
 /** Lays out the full Z-Bon onto the document. */
 function layout(
   doc: PDFKit.PDFDocument, ctx: ClosingContext, totals: ClosingTotals, businessDate: string,
-  logo: { pdfPng: Buffer; pdfWidth: number; pdfHeight: number } | null,
+  logo: { pdfPng: Buffer; pdfWidth: number; pdfHeight: number; pdfWidthFactor: number } | null,
 ): void {
   const W = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const x0 = doc.page.margins.left;
 
-  if (logo) {
-    // PDFKit doesn't advance `doc.y` when image() is called with an explicit
-    // (x, y), so we have to bump the cursor past the image manually — otherwise
-    // the title below would overdraw it. See `receipt/pdf.ts` for the same fix.
-    const targetWidth  = Math.min(logo.pdfWidth, W);
+  if (logo && logo.pdfWidthFactor > 0 && logo.pdfWidth > 0 && logo.pdfHeight > 0) {
+    // Target width comes from the bon width × zoom factor (clamped 0–1), not
+    // the PNG's pixel size — same logic as receipt/pdf.ts. PDFKit needs an
+    // explicit cursor advance after image(x, y, …).
+    const targetWidth  = W * logo.pdfWidthFactor;
     const targetHeight = targetWidth * logo.pdfHeight / logo.pdfWidth;
     const topY = doc.y;
     doc.image(logo.pdfPng, x0 + (W - targetWidth) / 2, topY, { width: targetWidth });

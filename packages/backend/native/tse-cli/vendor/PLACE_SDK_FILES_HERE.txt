@@ -1,0 +1,49 @@
+FairPOS — Swissbit TSE SDK: benötigte Dateien
+================================================
+
+Dieses Verzeichnis (native/tse-cli/vendor/) ist komplett gitignored, weil
+FairPOS ein öffentliches Repository ist und wir ohne anwaltliche Prüfung des
+Swissbit-Lizenzvertrags keine Fremdbibliotheken/Header committen wollen.
+Details zur Begründung: docs/TSE-Integration.md, Abschnitt 3.
+
+Um die TSE-Anbindung lokal zu bauen und zu betreiben, müssen folgende Dateien
+aus dem offiziellen Swissbit-TSE-SDK-Download hierher kopiert werden. Der
+SDK-Download läuft über den Swissbit-Vertrag ("Implementierungspaket") —
+Bezugsquelle liegt außerhalb dieses Repos.
+
+Referenz-Download, mit dem dieses Projekt entwickelt wurde:
+  Swissbit_TSE_v6.0.0_LAN_TSE_v2.0.13 / Swissbit_TSE_API_v6.0.0 / sdk-offline
+
+Benötigte Dateien (Pfade relativ zum SDK-Root "sdk-offline/sdk/"):
+
+  1. c/include/WormDLL/WormDLL.h
+  2. c/include/WormDLL/WormDLL_publicTypes.h
+  3. c/include/WormDLL/wormError.h
+  4. c/linux64/lib/libWormAPI.so
+
+Zielstruktur in diesem Verzeichnis (vendor/):
+
+  vendor/
+    include/
+      WormDLL/
+        WormDLL.h
+        WormDLL_publicTypes.h
+        wormError.h
+    lib/
+      libWormAPI.so
+    bin/                     <- wird von build.sh automatisch angelegt
+      tseCli                 <- Build-Ergebnis (unser eigenes CLI-Tool)
+
+Kurz: die drei Header-Dateien nach vendor/include/WormDLL/, die .so nach
+vendor/lib/. Danach ../build.sh ausführen (siehe native/tse-cli/build.sh).
+
+WICHTIG:
+- WormDLL.hpp (C++-Convenience-Header) wird NICHT benötigt — unser Code nutzt
+  ausschließlich die reine C-API (WormDLL.h).
+- Die von Swissbit mitgelieferte Beispiel-CLI (examples/wormCli/) und deren
+  Quellcode (wormCli.cpp) werden NICHT benötigt und sollen NICHT hierher
+  kopiert werden — unser eigenes tseCli.cpp (../src/tseCli.cpp, im Repo
+  eingecheckt) ist eine unabhängige Neuentwicklung.
+- Falls sich die SDK-Version ändert und sich Funktionssignaturen in WormDLL.h
+  ändern, muss ../src/tseCli.cpp ggf. angepasst werden. Vor einem SDK-Upgrade:
+  CHANGELOG.md des SDK-Downloads auf Breaking Changes prüfen.

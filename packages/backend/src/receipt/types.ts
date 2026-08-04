@@ -54,10 +54,17 @@ export interface ReceiptData {
   // ── Optional company logo (loaded conditionally per-document-type) ────────
   /** PNG bytes for the PDF renderer, or `null` to omit. */
   logoPng: Buffer | null;
-  /** Width of `logoPng` in pixels (only meaningful when `logoPng` is set). */
+  /** Width of `logoPng` in pixels (only used by the renderer for aspect ratio). */
   logoWidth: number;
   /** Height of `logoPng` in pixels. */
   logoHeight: number;
+  /**
+   * Fraction (0–1) of the printable bon width the logo should occupy on the
+   * PDF. The renderer multiplies the available width by this factor — that
+   * way zoom < 100 % shrinks the logo, and the maximum 1.0 always covers the
+   * full bon, regardless of the source PNG's pixel dimensions.
+   */
+  logoWidthFactor: number;
   /** Complete ESC/POS raster command sequence, or `null` to omit. */
   logoEscPos: Buffer | null;
 

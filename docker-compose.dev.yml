@@ -2,16 +2,14 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
 # In development the backend and frontend are started locally via `npm run dev`.
-# Only PostgreSQL (and optionally fiskaltrust) run inside Docker.
+# Only PostgreSQL runs inside Docker. The Swissbit USB-TSE isn't a Docker
+# service at all (see docs/TSE-Integration.md) — in dev, `TSE_MOUNT_POINT` in
+# `.env` just needs to point at wherever the TSE is mounted on the host.
 
 services:
   postgres:
     ports:
       - "5432:5432"
-
-  # fiskaltrust:
-  #   ports:
-  #     - "1500:1500"
 
   backend:
     # Exclude the backend container in dev — run it locally instead.

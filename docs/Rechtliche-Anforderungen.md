@@ -211,7 +211,7 @@ Jede buchführungspflichtige Organisation muss eine **schriftliche Verfahrensdok
 - Netzwerkaufbau und IP-Adressen
 - TSE: Modell, BSI-Zertifizierungs-ID, Seriennummer, Aktivierungsdatum
 - FairPOS-Softwareversion und Lizenzdaten
-- Datenfluss: Kassensystem → fiskaltrust Middleware → Swissbit TSE
+- Datenfluss: Kassensystem (FairPOS-Backend) → TSE-CLI-Subprozess (`native/tse-cli`) → Swissbit USB-TSE (siehe docs/TSE-Integration.md; fiskaltrust wurde als zu teuer verworfen, August 2026)
 
 ### D. Betriebsdokumentation
 - Backup-Konzept und Ablageort der Datensicherungen
@@ -248,7 +248,7 @@ Ein gemeinnütziger Verein ist in vier steuerliche Bereiche aufgeteilt:
 ## 10. Checkliste: Inbetriebnahme FairPOS
 
 - [ ] Swissbit USB-TSE beschaffen und aktivieren
-- [ ] fiskaltrust Middleware installieren und konfigurieren
+- [ ] TSE-CLI-Binary bauen (`native/tse-cli/build.sh`) und `TSE_MOUNT_POINT`/`TSE_CLIENT_ID` konfigurieren (Systemeinstellungen → System oder `.env`, siehe docs/TSE-Integration.md)
 - [ ] FairPOS-Seriennummer und Softwareversion dokumentieren
 - [ ] Unternehmensdaten und Steuernummer im System hinterlegen
 - [ ] Alle Steuersätze korrekt konfigurieren
@@ -268,4 +268,3 @@ Ein gemeinnütziger Verein ist in vier steuerliche Bereiche aufgeteilt:
 - DSFinV-K v2.4: bzst.de (Digitale Schnittstelle der Finanzverwaltung)
 - GoBD BMF-Schreiben 28.11.2019: bundesfinanzministerium.de
 - ELSTER Kassenmeldung: elster.de/eportal/formulare-leistungen/alleformulare/aufzeichnung146a
-- fiskaltrust DSFinV-K Dokumentation: docs.fiskaltrust.cloud

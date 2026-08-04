@@ -39,15 +39,17 @@ function layout(doc: PDFKit.PDFDocument, d: ReceiptData, qrPng: Buffer): void {
   const x0 = doc.page.margins.left;
 
   // ── Logo ───────────────────────────────────────────────────────────────────
-  // Optional centred logo above the company name. Width is capped so the
-  // receipt header doesn't blow up if the operator uploaded a huge image.
+  // Optional centred logo above the company name. The target width is derived
+  // from the configured `logoWidthFactor` (zoom / 100, clamped to ≤ 1) and the
+  // printable bon width — that way zoom < 100 % shrinks the logo, ≥ 100 %
+  // fills the full bon, independent of the source PNG's pixel size.
   //
   // PDFKit does NOT advance `doc.y` when `image()` is called with an explicit
   // (x, y) — only the implicit-position form moves the cursor. So we compute
   // the rendered height from the source aspect ratio and bump `doc.y` ourselves;
   // otherwise the company-name line would overdraw the logo.
-  if (d.logoPng && d.logoWidth > 0 && d.logoHeight > 0) {
-    const targetWidth  = Math.min(d.logoWidth, W);
+  if (d.logoPng && d.logoWidth > 0 && d.logoHeight > 0 && d.logoWidthFactor > 0) {
+    const targetWidth  = W * d.logoWidthFactor;
     const targetHeight = targetWidth * d.logoHeight / d.logoWidth;
     const topY = doc.y;
     doc.image(d.logoPng, x0 + (W - targetWidth) / 2, topY, { width: targetWidth });

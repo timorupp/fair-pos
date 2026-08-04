@@ -25,6 +25,7 @@ export function buildDemoReceipt(now: Date = new Date()): ReceiptData {
     logoPng: null,
     logoWidth: 0,
     logoHeight: 0,
+    logoWidthFactor: 0,
     logoEscPos: null,
     positions,
     totalGross: computeTotalGross(positions),

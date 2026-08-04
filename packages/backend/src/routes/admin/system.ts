@@ -1,4 +1,4 @@
-/** Admin routes for read-only system information (serial, timezone, server time, TSE status placeholder). */
+/** Admin routes for read-only system information (serial, timezone, server time). */
 
 import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
@@ -12,8 +12,6 @@ interface SystemStatus {
   timezone: string;
   /** ISO-8601 timestamp of the current server time at the moment of the request. */
   server_time: string;
-  /** TSE status — `null` until task #4 implements the integration. */
-  tse: null;
 }
 
 /** Registers /api/admin/system routes. */
@@ -30,7 +28,6 @@ export async function systemAdminRoute(app: FastifyInstance): Promise<void> {
       system_serial: result.rows[0]?.value ?? '(noch nicht initialisiert)',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       server_time: new Date().toISOString(),
-      tse: null,
     };
     return reply.send(status);
   });

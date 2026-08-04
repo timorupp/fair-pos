@@ -51,10 +51,17 @@ const LF = 0x0a;
 export interface CompanyLogo {
   /** PNG bytes ready for PDFKit `doc.image()`. */
   pdfPng: Buffer;
-  /** Width of `pdfPng` in pixels. Used by the renderer to centre the image. */
+  /** Width of `pdfPng` in pixels. Only used by the renderer to compute the aspect ratio. */
   pdfWidth: number;
-  /** Height of `pdfPng` in pixels. Used by the renderer to reserve vertical space. */
+  /** Height of `pdfPng` in pixels. Only used by the renderer to compute the aspect ratio. */
   pdfHeight: number;
+  /**
+   * Fraction (0–1) of the printable bon width the logo should occupy.
+   * 1.0 = full width (zoom ≥ 100 %); smaller values shrink the logo
+   * proportionally. The PDF renderer multiplies the page-width-minus-margins
+   * by this factor to get the actual draw width.
+   */
+  pdfWidthFactor: number;
   /** Complete ESC/POS command sequence (GS v 0 header + raster bytes + LF). */
   escposBytes: Buffer;
 }
@@ -187,6 +194,8 @@ export async function rerenderStoredLogo(zoomPercent: number): Promise<boolean> 
 
 /**
  * Reads the singleton logo row. Returns `null` when no logo has been uploaded.
+ * The width factor is derived from the current `logo_zoom_percent` setting
+ * and clamped to [0, 1] — the PDF renderer never draws wider than the bon.
  *
  * @returns Stored variants, or `null` if the table is empty.
  */
@@ -196,10 +205,12 @@ export async function loadCompanyLogo(): Promise<CompanyLogo | null> {
   );
   if (result.rows.length === 0) return null;
   const row = result.rows[0]!;
+  const zoom = await readZoomPercent();
   return {
     pdfPng: row.pdf_data,
     pdfWidth: row.pdf_width,
     pdfHeight: row.pdf_height,
+    pdfWidthFactor: Math.min(1, zoom / 100),
     escposBytes: row.escpos_data,
   };
 }

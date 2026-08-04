@@ -15,7 +15,7 @@ export interface WorkbookMeta {
 
 /** Column definitions shared by all export sheets. Header text matches the German Anforderungen wording. */
 const COLUMNS: { header: string; key: keyof ExportRow | 'date' | 'time'; width: number; numFmt?: string; align?: 'left' | 'right' }[] = [
-  { header: 'Belegnummer',    key: 'receipt_number',    width: 14, align: 'right' },
+  { header: 'Belegnummer',    key: 'receipt_number',    width: 14, align: 'left' },
   { header: 'Datum',          key: 'date',              width: 12 },
   { header: 'Uhrzeit',        key: 'time',              width: 10 },
   { header: 'Tisch',          key: 'table_name',        width: 10 },

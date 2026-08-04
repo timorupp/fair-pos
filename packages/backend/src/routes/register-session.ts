@@ -22,6 +22,10 @@ import {
 } from '../print/order-slip.js';
 import { resolvePrinterForRegister } from '../print/resolve-printer.js';
 import { loadLogoFor } from '../logo/visibility.js';
+import { config } from '../config.js';
+import { startTransaction, finishTransaction } from '../tse/client.js';
+import { buildKassenbelegProcessData } from '../tse/processData.js';
+import { formatReceiptNumber, readReceiptPrefix } from '../receipt/format-receipt-number.js';
 import { makeGroupKey, pickItemsToCharge } from '../order/grouping.js';
 import { isRegisterUnlocked, findPendingDaysForRegister } from '../closing/pending-db.js';
 
@@ -167,12 +171,18 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    *
    * Body: `{ positions: [{ article_id, quantity }] }`
    *
-   * Inside a single transaction the endpoint:
-   *  1. Acquires an advisory xact lock so the receipt-number sequence is race-free.
-   *  2. Computes the next receipt number from the existing max and the configured start.
-   *  3. Generates a cryptographic `receipt_token` for the public PDF URL.
-   *  4. Inserts the invoice.
-   *  5. Inserts one `order_item` row per ordered unit, copying the article snapshot.
+   * Sequence:
+   *  1. Fetches and validates the referenced articles.
+   *  2. If a TSE is configured (`TSE_MOUNT_POINT`/`TSE_CLIENT_ID`), signs a
+   *     `Kassenbeleg-V1` transaction BEFORE opening the DB transaction — a TSE
+   *     failure aborts the checkout with no DB side effects. Without a
+   *     configured TSE (dev/test only), signing is skipped and the invoice's
+   *     `tse_*` columns stay `null`.
+   *  3. Inside a single DB transaction: acquires an advisory xact lock so the
+   *     receipt-number sequence is race-free, computes the next receipt
+   *     number, generates a cryptographic `receipt_token`, inserts the
+   *     invoice (including the TSE signature fields, if any), and inserts one
+   *     `order_item` row per ordered unit, copying the article snapshot.
    */
   app.post<{ Params: { id: string }; Body: { positions: { article_id: string; quantity: number }[] } }>(
     '/registers/:id/checkout',
@@ -208,6 +218,72 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       const slipUnits: { name: string; priceEuros: number; depositEuros: number | null; separateDepositSlip: boolean }[] = [];
       let registerName = '';
 
+      // Articles are fetched once, up front, so the same snapshot can be used
+      // both to build the TSE process-data payload and for the order_item
+      // inserts inside the transaction below.
+      const articleIds = [...new Set(positions.map((p) => p.article_id))];
+      const articlesResult = await query<{
+        id: string; name: string; receipt_text: string | null; price: string;
+        deposit_price: string | null; print_deposit_receipt: boolean;
+        printer_id: string | null;
+        category_name: string; tax_rate: string;
+      }>(
+        `SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price,
+                a.print_deposit_receipt, a.printer_id,
+                c.name AS category_name, c.tax_rate
+           FROM article a
+           JOIN article_category c ON c.id = a.category_id
+          WHERE a.id = ANY($1)`,
+        [articleIds],
+      );
+      const articleById = new Map(articlesResult.rows.map((a) => [a.id, a]));
+      for (const pos of positions) {
+        if (!articleById.has(pos.article_id)) {
+          return reply.status(400).send({ error: `Artikel ${pos.article_id} nicht gefunden` });
+        }
+      }
+
+      // TSE-Signierung (Kassenbeleg-V1) läuft VOR der DB-Transaktion: schlägt die
+      // Signierung fehl, entsteht keine Rechnung. Umgekehrt — falls die DB-Transaktion
+      // nach erfolgreicher Signierung fehlschlägt — bleibt ein signierter, aber nicht
+      // verwendeter TSE-Log-Eintrag zurück; das ist unkritisch (Über- statt
+      // Untersignierung) und lässt sich bei Bedarf nachvollziehen.
+      let tse: {
+        transactionNumber: number; signatureCounter: number; signature: string;
+        serialNumber: string; startTime: Date; endTime: Date;
+      } | null = null;
+      if (config.tseMountPoint && config.tseClientId) {
+        const snapshot = buildKassenbelegProcessData({
+          registerId,
+          paymentMethod: 'cash',
+          positions: positions.map((p) => {
+            const article = articleById.get(p.article_id)!;
+            return {
+              articleId: article.id,
+              name: article.receipt_text ?? article.name,
+              quantity: p.quantity,
+              unitPriceEuros: Number(article.price),
+              depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
+              taxRatePercent: Number(article.tax_rate),
+            };
+          }),
+        });
+        try {
+          const start = await startTransaction('Kassenbeleg-V1', snapshot);
+          const finish = await finishTransaction(start.transactionNumber, 'Kassenbeleg-V1', snapshot);
+          tse = {
+            transactionNumber: finish.transactionNumber,
+            signatureCounter: finish.signatureCounter,
+            signature: finish.signature,
+            serialNumber: finish.serialNumber,
+            startTime: new Date(start.logTime * 1000),
+            endTime: new Date(finish.logTime * 1000),
+          };
+        } catch {
+          return reply.status(503).send({ error: 'Kassenbon konnte nicht signiert werden (TSE-Fehler). Bitte erneut versuchen.' });
+        }
+      }
+
       const result = await withTransaction(async (client) => {
         // Atomic increment of the global receipt counter — row-level lock held
         // only for the duration of the UPDATE itself, not the whole checkout.
@@ -215,10 +291,18 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         const receiptToken = generateReceiptToken();
 
         const invoiceResult = await client.query<{ id: string }>(
-          `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, receipt_token)
-           VALUES ($1, $2, 'sales_receipt', 'cash', $3)
+          `INSERT INTO invoice (
+             register_id, receipt_number, receipt_type, payment_method, receipt_token,
+             tse_transaction_number, tse_start_time, tse_end_time,
+             tse_signature, tse_signature_counter, tse_serial_number
+           )
+           VALUES ($1, $2, 'sales_receipt', 'cash', $3, $4, $5, $6, $7, $8, $9)
            RETURNING id`,
-          [registerId, receiptNumber, receiptToken],
+          [
+            registerId, receiptNumber, receiptToken,
+            tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
+            tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+          ],
         );
         const invoiceId = invoiceResult.rows[0]!.id;
 
@@ -229,27 +313,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         );
         registerName = regNameResult.rows[0]?.name ?? '';
 
-        // Fetch all articles at once and order_item-insert per unit.
-        const articleIds = [...new Set(positions.map((p) => p.article_id))];
-        const articles = await client.query<{
-          id: string; name: string; receipt_text: string | null; price: string;
-          deposit_price: string | null; print_deposit_receipt: boolean;
-          printer_id: string | null;
-          category_name: string; tax_rate: string;
-        }>(
-          `SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price,
-                  a.print_deposit_receipt, a.printer_id,
-                  c.name AS category_name, c.tax_rate
-             FROM article a
-             JOIN article_category c ON c.id = a.category_id
-            WHERE a.id = ANY($1)`,
-          [articleIds],
-        );
-        const byId = new Map(articles.rows.map((a) => [a.id, a]));
-
         for (const pos of positions) {
-          const article = byId.get(pos.article_id);
-          if (!article) throw new Error(`Artikel ${pos.article_id} nicht gefunden`);
+          const article = articleById.get(pos.article_id)!;
           const displayName = article.receipt_text ?? article.name;
           for (let i = 0; i < pos.quantity; i++) {
             await client.query(
@@ -315,8 +380,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         }
       }
 
+      const prefix = await readReceiptPrefix();
       return reply.send({
         ...result,
+        receipt_number_formatted: formatReceiptNumber(result.receipt_number, prefix),
         slips_enqueued: slipsEnqueued,
         slip_printer_missing: !slipPrinterId,
       });
@@ -556,6 +623,16 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const slipItems: OrderSlipItem[] = [];
 
     await withTransaction(async (client) => {
+      // One `service_order` per Bestellvorgang — TSE-Vorbereitung: hier wird
+      // später eine AVBestellung-Transaktion signiert. Alle in diesem Aufruf
+      // erfassten Positionen verweisen auf dieselbe service_order.
+      const soResult = await client.query<{ id: string }>(
+        `INSERT INTO service_order (register_id, dining_table_id, user_id)
+         VALUES ($1, $2, $3) RETURNING id`,
+        [registerId, tableId, req.registerUser.id],
+      );
+      const serviceOrderId = soResult.rows[0]!.id;
+
       const articleIds = [...new Set(positions.map((p) => p.article_id))];
       const articles = await client.query<{
         id: string; name: string; receipt_text: string | null; price: string;
@@ -578,12 +655,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         for (let i = 0; i < pos.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (
-               dining_table_id, register_id, user_id, article_id,
+               service_order_id, dining_table_id, register_id, user_id, article_id,
                article_name, article_category_name, tax_rate, price, deposit_price,
                options, status
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'open')`,
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'open')`,
             [
-              tableId, registerId, req.registerUser.id, article.id,
+              serviceOrderId, tableId, registerId, req.registerUser.id, article.id,
               article.receipt_text ?? article.name, article.category_name,
               article.tax_rate, article.price, article.deposit_price,
               options,
@@ -593,6 +670,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             name: article.receipt_text ?? article.name,
             options,
             printer_id: article.printer_id,
+            category_name: article.category_name,
           });
         }
       }
@@ -695,7 +773,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     });
 
     if ('error' in result) return reply.status(result.status).send({ error: result.error });
-    return reply.send(result);
+    const prefix = await readReceiptPrefix();
+    return reply.send({
+      ...result,
+      receipt_number_formatted: formatReceiptNumber(result.receipt_number, prefix),
+    });
   });
 
   /**
@@ -761,11 +843,26 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       }
 
       const nextStatus = reason.booking_type === 'cancellation' ? 'cancelled' : 'free';
+
+      // One `order_cancellation` per Stornovorgang — TSE-Vorbereitung: hier
+      // wird später eine AVSonstige-Transaktion signiert. Alle vom aktuellen
+      // Aufruf betroffenen order_items zeigen auf diesen einen Vorgang.
+      const cancellationResult = await client.query<{ id: string }>(
+        `INSERT INTO order_cancellation (register_id, cancellation_reason_id, cancelled_by)
+         VALUES ($1, $2, $3) RETURNING id`,
+        [registerId, cancellation_reason_id, req.registerUser.id],
+      );
+      const cancellationId = cancellationResult.rows[0]!.id;
+
       await client.query(
         `UPDATE order_item
-            SET status = $1, cancellation_reason_id = $2, cancelled_by = $3, cancelled_at = now()
+            SET status = $1,
+                cancellation_reason_id = $2,
+                cancelled_by = $3,
+                cancelled_at = now(),
+                order_cancellation_id = $5
           WHERE id = ANY($4)`,
-        [nextStatus, cancellation_reason_id, req.registerUser.id, ids],
+        [nextStatus, cancellation_reason_id, req.registerUser.id, ids, cancellationId],
       );
 
       return { items_cancelled: ids.length, booking_type: reason.booking_type };

@@ -9,6 +9,7 @@ import fastifyStatic from '@fastify/static';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
+import { loadTseSettingsFromDb } from './tse/settings.js';
 import { healthRoute } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { usersAdminRoute } from './routes/admin/users.js';
@@ -30,6 +31,7 @@ import { cancellationsAdminRoute } from './routes/admin/cancellations.js';
 import { logoAdminRoute } from './routes/admin/logo.js';
 import { qrAdminRoute } from './routes/admin/qr.js';
 import { printJobsAdminRoute } from './routes/admin/print-jobs.js';
+import { tseAdminRoute } from './routes/admin/tse.js';
 import { receiptRoutes } from './routes/receipt.js';
 import { registerSessionRoutes } from './routes/register-session.js';
 
@@ -45,6 +47,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.isDev ? 'info' : 'warn' },
   });
+
+  // Overlay `config`'s TSE fields with whatever the admin has configured via
+  // the Settings UI, so a DB-stored value always wins over the env-var default.
+  await loadTseSettingsFromDb();
 
   await app.register(fastifyCookie, {
     secret: config.sessionSecret,
@@ -96,6 +102,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         await admin.register(logoAdminRoute, { prefix: '/logo' });
         await admin.register(qrAdminRoute);
         await admin.register(printJobsAdminRoute, { prefix: '/print-jobs' });
+        await admin.register(tseAdminRoute, { prefix: '/tse' });
       }, { prefix: '/admin' });
     },
     { prefix: '/api' },

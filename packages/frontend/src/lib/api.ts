@@ -8,6 +8,33 @@ import type {
   DiningTable,
 } from '@fairpos/shared';
 
+/** Snapshot of TSE health/status, mirroring `packages/backend/src/tse/types.ts`. */
+export interface TseInfo {
+  hasPassedSelfTest: boolean;
+  hasValidTime: boolean;
+  startedTransactions: number;
+  maxStartedTransactions: number;
+  remainingSignatures: number;
+  maxSignatures: number;
+  /** Unix seconds. */
+  certificateExpirationDate: number;
+  /** Seconds until the next mandatory self test. */
+  timeUntilNextSelfTest: number;
+  /** Seconds until the next mandatory time synchronization. */
+  timeUntilNextTimeSynchronization: number;
+  tseCertificationId: string;
+  formFactor: string;
+  /** Hex-encoded TSE serial number. */
+  tseSerialNumber: string;
+}
+
+/** Response shape of `GET /api/admin/tse/status`. */
+export interface TseStatus {
+  configured: boolean;
+  info?: TseInfo;
+  error?: string;
+}
+
 /** Sends a JSON request to the backend and returns the parsed response. Exported for testing. */
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, credentials: 'include' };
@@ -201,8 +228,16 @@ export const api = {
     },
 
     system: {
-      status: (): Promise<{ system_serial: string; timezone: string; server_time: string; tse: null }> =>
+      status: (): Promise<{ system_serial: string; timezone: string; server_time: string }> =>
         request('GET', '/admin/system/status'),
+    },
+
+    tse: {
+      /**
+       * On-demand connection test — actually calls into the TSE hardware, so
+       * only invoke it from an explicit user action ("TSE testen"), not on page load.
+       */
+      status: (): Promise<TseStatus> => request('GET', '/admin/tse/status'),
     },
 
     closings: {
@@ -262,8 +297,12 @@ export const api = {
         cancellation_reason_id: string;
         note?: string;
         items: { article_id: string; quantity: number }[];
-      }): Promise<{ invoice_id: string; receipt_number: number; receipt_token: string }> =>
-        request('POST', '/admin/cancellations', body),
+      }): Promise<{
+        invoice_id: string;
+        receipt_number: number;
+        receipt_number_formatted: string;
+        receipt_token: string;
+      }> => request('POST', '/admin/cancellations', body),
     },
 
     invoices: {
@@ -343,7 +382,8 @@ export const api = {
       invoices: (eventId?: string): Promise<{
         event: { id: string; start: string; end: string } | null;
         invoices: {
-          id: string; receipt_number: number; receipt_type: string;
+          id: string; receipt_number: number; receipt_number_formatted: string;
+          receipt_type: string;
           payment_method: string; created_at: string; register_name: string;
           receipt_token: string | null; total_gross: number;
         }[];
@@ -432,7 +472,8 @@ export const api = {
 
     /** Posts a checkout. Returns the new invoice id + receipt number + token. */
     checkout: (registerId: string, positions: { article_id: string; quantity: number }[]): Promise<{
-      invoice_id: string; receipt_number: number; receipt_token: string;
+      invoice_id: string; receipt_number: number; receipt_number_formatted: string;
+      receipt_token: string;
     }> => request('POST', `/register-session/registers/${registerId}/checkout`, { positions }),
 
     /** Enqueues a print job for the given invoice on the register's assigned printer. */
@@ -482,7 +523,8 @@ export const api = {
 
     /** Charges a (possibly partial) set of open items at the table. Returns the new invoice. */
     chargeTable: (registerId: string, tableId: string, quantities: { group_key: string; count: number }[]): Promise<{
-      invoice_id: string; receipt_number: number; receipt_token: string; items_charged: number;
+      invoice_id: string; receipt_number: number; receipt_number_formatted: string;
+      receipt_token: string; items_charged: number;
     }> => request('POST', `/register-session/registers/${registerId}/tables/${tableId}/checkout`, { quantities }),
 
     /** Cancels or marks-as-free a (possibly partial) set of open items at the table. */

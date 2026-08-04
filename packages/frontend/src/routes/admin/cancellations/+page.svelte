@@ -27,7 +27,7 @@
   let loading = true;
   let saving = false;
   let error = '';
-  let success: { receipt_number: number; total: number } | null = null;
+  let success: { receipt_number: string; total: number } | null = null;
 
   onMount(async () => {
     try {
@@ -95,7 +95,7 @@
         items,
         ...(trimmedNote ? { note: trimmedNote } : {}),
       });
-      success = { receipt_number: result.receipt_number, total };
+      success = { receipt_number: result.receipt_number_formatted, total };
       // Reset for the next cancellation.
       lines = [{ article_id: '', quantity: 1 }];
       note = '';

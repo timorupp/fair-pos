@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { pickDefaultEventId, type EventLike } from '../../reports/event-select.js';
+import { formatReceiptNumber, readReceiptPrefix } from '../../receipt/format-receipt-number.js';
 
 /**
  * Returns the time range (ISO strings) of the event identified by `eventId`, or `null`
@@ -175,11 +176,13 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
        ORDER BY i.created_at DESC
     `, [ev.start, ev.end]);
 
+    const prefix = await readReceiptPrefix();
     return reply.send({
       event: { id: ev.id, start: ev.start, end: ev.end },
       invoices: result.rows.map((r) => ({
         id: r.id,
         receipt_number: Number(r.receipt_number),
+        receipt_number_formatted: formatReceiptNumber(Number(r.receipt_number), prefix),
         receipt_type: r.receipt_type,
         payment_method: r.payment_method,
         created_at: r.created_at.toISOString(),

@@ -10,6 +10,7 @@ const item = (overrides: Partial<OrderSlipItem> = {}): OrderSlipItem => ({
   name: 'Bier',
   options: null,
   printer_id: 'p-bar',
+  category_name: 'Getränke',
   ...overrides,
 });
 
@@ -18,11 +19,28 @@ describe('bucketItemsByPrinter', () => {
     expect(bucketItemsByPrinter([], 'p-default')).toEqual([]);
   });
 
-  it('groups items targeting the same printer', () => {
-    const buckets = bucketItemsByPrinter([item(), item(), item({ name: 'Pommes', printer_id: 'p-kitchen' })], 'p-default');
+  it('groups items targeting the same printer and same category', () => {
+    const buckets = bucketItemsByPrinter([item(), item(), item({ name: 'Pommes', printer_id: 'p-kitchen', category_name: 'Speisen' })], 'p-default');
     expect(buckets).toHaveLength(2);
     const bar = buckets.find((b) => b.printer_id === 'p-bar')!;
     expect(bar.lines[0]!.quantity).toBe(2);
+  });
+
+  it('splits the same printer into separate buckets per Artikelgruppe', () => {
+    // Two categories share one kitchen printer — the kitchen still wants
+    // physically separate slips so Speisen and Snacks aren't mixed up.
+    const buckets = bucketItemsByPrinter([
+      item({ name: 'Schnitzel', printer_id: 'p-kitchen', category_name: 'Speisen' }),
+      item({ name: 'Pommes',    printer_id: 'p-kitchen', category_name: 'Snacks'  }),
+      item({ name: 'Pommes',    printer_id: 'p-kitchen', category_name: 'Snacks'  }),
+    ], 'p-default');
+    expect(buckets).toHaveLength(2);
+    const speisen = buckets.find((b) => b.category_name === 'Speisen')!;
+    const snacks  = buckets.find((b) => b.category_name === 'Snacks')!;
+    expect(speisen.printer_id).toBe('p-kitchen');
+    expect(snacks.printer_id).toBe('p-kitchen');
+    expect(speisen.lines[0]!.name).toBe('Schnitzel');
+    expect(snacks.lines[0]!.quantity).toBe(2);
   });
 
   it('routes items without a printer to the default', () => {
@@ -63,7 +81,7 @@ describe('buildOrderSlipEscPos', () => {
 
   it('starts with ESC @ initialise and ends with GS V 0 cut', () => {
     const buf = buildOrderSlipEscPos(
-      { printer_id: 'p', lines: [{ name: 'Bier', options: null, quantity: 2 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 2 }] },
       ctx,
     );
     expect(buf[0]).toBe(0x1b); expect(buf[1]).toBe(0x40);
@@ -73,7 +91,7 @@ describe('buildOrderSlipEscPos', () => {
 
   it('contains table name, server name and timestamp', () => {
     const ascii = buildOrderSlipEscPos(
-      { printer_id: 'p', lines: [{ name: 'Bier', options: null, quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 1 }] },
       ctx,
     ).toString('ascii');
     expect(ascii).toContain('Tisch A5');
@@ -83,7 +101,7 @@ describe('buildOrderSlipEscPos', () => {
 
   it('renders quantity x name lines for each entry', () => {
     const ascii = buildOrderSlipEscPos(
-      { printer_id: 'p', lines: [{ name: 'Bier', options: null, quantity: 3 }, { name: 'Pommes', options: null, quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 3 }, { name: 'Pommes', options: null, quantity: 1 }] },
       ctx,
     ).toString('ascii');
     expect(ascii).toContain('3x Bier');
@@ -92,7 +110,7 @@ describe('buildOrderSlipEscPos', () => {
 
   it('renders option lines indented under their parent', () => {
     const ascii = buildOrderSlipEscPos(
-      { printer_id: 'p', lines: [{ name: 'Pommes', options: 'mit Ketchup', quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Pommes', options: 'mit Ketchup', quantity: 1 }] },
       ctx,
     ).toString('ascii');
     expect(ascii).toContain('1x Pommes');
@@ -101,7 +119,7 @@ describe('buildOrderSlipEscPos', () => {
 
   it('encodes umlauts as CP858 bytes (not as ASCII transliteration)', () => {
     const buf = buildOrderSlipEscPos(
-      { printer_id: 'p', lines: [{ name: 'Käsesemmel', options: 'mit Soße', quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Käsesemmel', options: 'mit Soße', quantity: 1 }] },
       ctx,
     );
     // CP858: ä=0x84, ö=0x94, ü=0x81, ß=0xe1
@@ -111,7 +129,7 @@ describe('buildOrderSlipEscPos', () => {
 
   it('selects CP858 as code page at the start of the stream', () => {
     const buf = buildOrderSlipEscPos(
-      { printer_id: 'p', lines: [{ name: 'X', options: null, quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'X', options: null, quantity: 1 }] },
       ctx,
     );
     expect(buf.subarray(0, 5).equals(Buffer.from([0x1b, 0x40, 0x1b, 0x74, 0x13]))).toBe(true);

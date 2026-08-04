@@ -256,7 +256,7 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
 - **Systemeinstellungen:**
   - **Zeitzone** — Zeitzone des Servers (relevant für Zeitstempel auf Bons, TSE und Auswertungen)
   - **Datum und Uhrzeit** — manuelle Einstellung oder Synchronisation mit NTP-Server
-  - **TSE-Status** — zeigt den aktuellen Verbindungsstatus zur fiskaltrust Middleware und der Swissbit USB-TSE (online/offline, Seriennummer, BSI-Zertifizierungs-ID, Ablaufdatum); keine manuelle Konfiguration nötig — Verbindung wird automatisch über Docker Compose hergestellt
+  - **TSE-Verbindung + Status** — Mount-Pfad, Client-ID und TimeAdmin-PIN der Swissbit USB-TSE sind manuell konfigurierbar (wirkt sofort, kein Neustart nötig); ein „TSE testen"-Button ruft den aktuellen Status live ab (Self-Test bestanden, Seriennummer, BSI-Zertifizierungs-ID, Restsignaturen, Zertifikatsablauf) — implementiert, siehe docs/TSE-Integration.md
   - **Kassensystem-Seriennummer** — automatisch generiert beim ersten Serverstart; nur angezeigt, nicht bearbeitbar; Format: `FairPOS-{Jahr}-{10-stellig, Großbuchstaben + Ziffern}`
   - **Server-Adresse (QR-Code)** — lokale Netzwerkadresse des Servers (z.B. `192.168.1.10` oder `fairpos.local`); wird für die Bon-URL im QR-Code verwendet; manuell konfigurierbar
   - **Backup-Verzeichnis** — Zieldverzeichnis für automatische tägliche Backups; konfigurierbar
@@ -299,6 +299,44 @@ Die TSE gibt zurück:
 - **Start- und Endzeitpunkt** des Vorgangs
 - **TSE-Seriennummer**
 
+### Zu signierende Vorgänge in FairPOS
+
+Signiert wird nicht der „Kassenzustand", sondern **jeder fiskalisch relevante Vorgang** — auch solche ohne unmittelbaren Geldfluss (basiert auf § 146a AO, KassenSichV, DSFinV-K und AEAO zu § 146a). Für unsere zwei Kassenmodi gilt konkret:
+
+**Vorgangstypen laut DSFinV-K, relevant für FairPOS:**
+- `Kassenbeleg-V1` — Kassenbeleg mit Zahlung (auch bei Storno-Belegen)
+- `AVBestellung` — Bestellung aufnehmen, noch nicht kassiert (fiskalisch relevant, aber ohne Zahlung)
+- `AVSonstige` — sonstige Vorgänge (z.B. Storno einer offenen Bestellposition, kostenfreie Abgabe vor Kassierung)
+- `AVBelegabbruch` — abgebrochener Beleg
+
+**Szenario 1 — Bonkasse (einfacher Einkauf):**
+
+| Vorgang | TSE-Transaktion? | processType | Beleg-Ausgabe |
+|---|---|---|---|
+| Kassiervorgang | **1× pro Beleg** | `Kassenbeleg-V1` | Kassenbeleg mit TSE-QR |
+| Selbstabholerbon / Pfandbon | nein — interne Doubletten | — | ohne TSE-Angaben |
+
+**Szenario 2 — Bedienungskasse (Bestellung → ggf. Storno → Kassieren mit Split):**
+
+| Vorgang | TSE-Transaktion? | processType | Beleg-Ausgabe |
+|---|---|---|---|
+| Bestellung aufnehmen (offen, unbezahlt) | **1× pro Bestellvorgang** (nicht pro Position) | `AVBestellung` | interner Bestellbon (Küche/Theke), ohne TSE-QR nötig |
+| Storno einer offenen Position | **1× pro Stornovorgang** | `AVSonstige` (mit Storno-Referenz) | interner Vermerk |
+| Kassieren, ggf. mit Rechnungssplit | **1× pro Teilrechnung** | `Kassenbeleg-V1` | Kassenbeleg je Teilrechnung mit TSE-QR |
+| Bonstorno (nachträglicher Storno eines abgeschlossenen Belegs) | **1× pro Stornobeleg** | `Kassenbeleg-V1` mit `receipt_type='cancellation'` und `cancels_invoice_id`-Referenz | Stornobeleg mit TSE-QR |
+
+**Datenmodell-Konsequenzen** (bereits weitgehend im Schema angelegt):
+- `invoice.tse_transaction_number`, `tse_signature_counter`, `tse_signature`, `tse_start_time`, `tse_end_time`, `tse_serial_number` — für Kassenbeleg-V1-Vorgänge (Kassiervorgang, Storno, nachträglicher Storno)
+- `invoice.receipt_type` mit `'sales_receipt' | 'cancellation' | 'training'` und `cancels_invoice_id` für die Verkettung
+- **Noch zu ergänzen:** eigene Entität `order` mit TSE-Feldern für `AVBestellung`-Vorgänge (aktuell werden Bestellpositionen ohne übergeordnete Order-Entität und ohne eigene TSE-Referenz erfasst)
+- **Noch zu ergänzen:** eigene Entität `order_cancellation` mit TSE-Feldern für `AVSonstige`-Vorgänge (Storno offener Positionen), damit der Vorgang unabhängig vom späteren Kassierbeleg dokumentiert bleibt
+
+**Signaturregeln (generisch, unabhängig von TSE-Hardware):**
+- **Transaktionsnummer** und **Signaturzähler** sind global über alle Vorgangstypen fortlaufend und werden von der TSE vergeben.
+- **Start-** und **Endzeitpunkt** kommen von der TSE (nicht vom Kassensystem), damit Manipulationen an der Systemzeit erkennbar bleiben.
+- Ein Vorgang der zwischen Start und Finish abbricht, muss als `AVBelegabbruch` finalisiert werden — er bleibt in der TSE-Kette dokumentiert.
+- Bei Beleg-Storno: der neue Stornobeleg referenziert den Original-Beleg über `cancels_invoice_id`; die Original-Signatur wird NICHT verändert (KassenSichV verlangt Unveränderbarkeit der Kette).
+
 ### Pflichtangaben auf dem Kassenbon (ab 01.01.2024)
 - Name und Anschrift des Unternehmens
 - **Belegnummer** (fortlaufend, eindeutig; Präfix + Zähler)
@@ -326,10 +364,68 @@ Die TSE gibt zurück:
 - **Achtung beim Kauf:** Auf „5 Jahre ab Herstellung" achten, nicht auf festes Ablaufdatum (ältere Epson-Modelle hatten feste Daten bis 2025/2026)
 
 **fiskaltrust Middleware zur TSE-Anbindung:**
-- **Software (Open Source, EUPL 1.2):** kostenlos — stellt lokale REST/gRPC-API bereit, übernimmt TSE-Kommunikation mit Swissbit oder Epson; kein eigenes Java-SDK nötig
+
+> ✅ **Geklärt (August 2026):** Der Verdacht hat sich bestätigt — laut Rückmeldung von fiskaltrust ist der produktive Betrieb für uns **zu teuer** (Details zum Angebot nicht dokumentiert, da nicht mehr relevant für die Entscheidung). fiskaltrust ist damit **verworfen**. Alle „kostenlos"-Angaben unten sind nur noch als historischer Kontext zu lesen, nicht als gültige Option.
+
+- **Software (Open Source, EUPL 1.2):** die Middleware-Codebasis selbst ist kostenlos — stellt lokale REST/gRPC-API bereit, übernimmt TSE-Kommunikation mit Swissbit oder Epson; kein eigenes Java-SDK nötig. Ob der produktive Betrieb ohne kostenpflichtigen Cloud-Vertrag möglich ist: **ungeklärt, s.o.**
 - **Sorglos-Paket (kostenpflichtig):** Bundle aus Middleware + Cloud-TSE + Archiv + Kassenmeldung als Jahresabo — nur relevant wenn fiskaltrust auch die TSE bereitstellen soll
-- **Für FairPOS relevant:** Kostenlose Middleware-Software + separat gekaufte Swissbit USB-TSE → keine Middleware-Kosten
-- **Architektur:** `Backend → fiskaltrust Middleware (kostenlos) → Swissbit USB-TSE`
+- **Freemium Bundle (Option, ggf. nicht vollständig kostenlos — s.o.):** alternative Cashbox-Tarifstufe von fiskaltrust ([Produktseite](https://fiskaltrust.eu/de-de/partner/product/bundle/freemiumbundle/)). Laut Produktseite: Open-Source-Middleware unter MIT-Lizenz; Fair-Use-Grenze 10.000 Belege/Monat pro Verkaufsstelle; Audit-/Journal-Export (DSFinV-K-relevant), digitale Quittungen, Offline-Fallback via MQTT-Broker, Portal-Selbstverwaltung. Kein SLA / kein persönlicher Support. **Ob die Portal-/Cashbox-Nutzung selbst gebührenfrei ist, ist nicht verifiziert.** Vor Einsatz zusätzlich prüfen, ob Swissbit USB-TSE im Freemium-Tarif als Hardware-Backend zugelassen ist.
+- **Carefree Bundle (Option, Cloud-TSE):** Komplett Cloud-basierte Lösung — keine USB-Hardware nötig. 300–499 €/Jahr pro Standort, bis zu 10.000 Belege/Monat. Inklusive Cloud-Archivierung (10 Jahre), CloudCashBox-Verwaltung, Audit-Reports, digitalen Quittungen, Offline-Fallback. Voraussetzung: Internet am Veranstaltungsort. Für FairPOS-Vereinsfeste über 5 Jahre teurer als lokale Swissbit-Variante, daher nur sinnvoll wenn (a) Internet sicher verfügbar, (b) Hardware-Wartung vermieden werden soll oder (c) revisionssichere Cloud-Archivierung gewünscht ist.
+- **Für FairPOS relevant, sofern die obige Klärung positiv ausfällt:** Kostenlose Middleware-Software + separat gekaufte Swissbit USB-TSE → keine Middleware-Kosten. **Falls die Klärung ergibt, dass eine kostenpflichtige Cashbox zwingend ist, muss der Kostenvergleich mit der Epson-nativen Option (unten) neu bewertet werden.**
+- **Architektur:** `Backend → fiskaltrust Middleware → Swissbit USB-TSE`
+
+**Wie fiskaltrust die Swissbit-TSE technisch anspricht** (recherchiert Juli 2026, [fiskaltrust interface-doc](https://github.com/fiskaltrust/interface-doc/blob/master/doc/middleware-de-kassensichv/operation-modes/scu/swissbit.md)): über das **von der TSE emulierte Dateisystem** (USB-Mass-Storage), konfiguriert per `devicePath` (z.B. Laufwerksbuchstabe unter Windows). **Kein Socket/TCP** — das widerlegt eine frühere, unverifizierte Annahme in diesem Dokument, Swissbit ginge „vermutlich auch über einen lokalen Socket". Praktisch heißt das: fiskaltrust übernimmt diese dateibasierte Kommunikation vollständig für uns — genau der Teil, der bei einer Eigenintegration (s.u.) aufwändig wäre.
+
+#### Direkte Swissbit-SDK-Integration über CLI-Subprozess (Option, ohne fiskaltrust)
+
+**Status: verifiziert anhand des echten Swissbit-SDK** (User hat `Swissbit_TSE_v6.0.0_LAN_TSE_v2.0.13` lokal bereitgestellt, August 2026 geprüft — löst die vorherige unverifizierte Einschätzung ab). Enthält u.a.:
+- `sdk/c/linux64/bin/wormCli` + `libWormAPI.so` — **vorkompilierte 64-Bit-ELF-Binaries für Linux**, sofort startklar, kein eigener Build nötig
+- `sdk/examples/wormCli/src/wormCli.cpp` — vollständiger Referenz-Quellcode (871 Zeilen) der CLI-Beispielimplementierung
+- `sdk/c/include/WormDLL/WormDLL.h` — kommentierter C-API-Header mit allen Funktionssignaturen
+
+**Architektur — lokal, ohne Netzwerk:**
+- `worm_init(mountPoint)` verbindet zur TSE über einen **lokalen Dateisystem-Mount-Pfad** (unter Linux: Pfad ohne abschließenden Slash) — bestätigt: kein Socket, kein TCP für den lokalen Modus.
+- Swissbit bietet zusätzlich einen **LAN-Modus** (`worm_init_lan(url, apiToken)`, HTTPS + API-Token) — das ist Swissbits eigenes Pendant zu Epsons EPS TSE Server, für unser Ein-Server-Setup aber nicht nötig.
+
+**CLI-Kommandos dieser Beispielimplementierung decken unseren Bedarf ab:**
+- `startTransaction PROCESS_DATA`, `updateTransaction TRANSACTION_NUMBER PROCESS_DATA`, `finishTransaction TRANSACTION_NUMBER PROCESS_DATA` — liefert Timestamp, Transaktionsnummer, Signaturzähler, Signatur, TSE-Seriennummer
+- `info` — **bereits strukturiertes JSON** mit allen TSE-Metadaten (`hasPassedSelfTest`, `remainingSignatures`, `maxSignatures`, `certificateExpirationDate`, `tseSerialNumber`, `startedTransactions`, …) — direkt nutzbar für die geplante TSE-Status-Anzeige in den Systemeinstellungen
+- `tseSetup`, `tseRunSelfTest`, `updateTime`, `listRegisteredClients`, `exportTar` (Rohdaten-TAR — DSFinV-K-Formatierung bleibt wie erwartet unsere Aufgabe, Task #13)
+
+**Umsetzungsidee (User-Vorschlag, August 2026):** `wormCli` (ggf. leicht angepasste Fork mit JSON-Output auch für die Transaktions-Kommandos, da die Referenzimplementierung dafür aktuell Klartext statt JSON ausgibt — kleiner Patch, da der Code intern bereits `nlohmann::json` nutzt) als **Subprozess aus Node.js aufrufen** (`child_process.execFile`), statt einen eigenen Dienst/Daemon zu betreiben oder native N-API-Bindings zu bauen. Vorteil: kein zusätzlicher Service zu warten; Overhead durch Prozessstart pro Aufruf ist bei unserem Transaktionsvolumen (Vereinsfest, keine Hochlast) vernachlässigbar.
+
+**Wichtige Einschränkung — Concurrency (aus `WormDLL.h`, wörtlich):** „The Swissbit TSE hardware can not be operated from multiple threads or processes at the same time, as it allows only one command to be active at any given time and rejects all further commands." → **Alle CLI-Aufrufe müssen serialisiert werden** (eine Async-Queue im Backend, analog zur bestehenden atomaren Belegnummer-Vergabe) — es darf nie mehr als ein `wormCli`-Prozess gleichzeitig mit derselben TSE sprechen.
+
+**Lizenz — geklärt, unproblematisch:** „Device Driver Distribution Agreement v1.1" (im SDK enthalten): **royalty-free, perpetual, worldwide** Lizenz zur Nutzung „für die Entwicklung eigener Treiber-Software in Verbindung mit Swissbit-Produkten". Keine Kosten für unseren Eigenbetrieb. (Zusätzliche Distributionsauflagen gelten nur, falls wir die Treiber-Software an Dritte weitergeben würden — für FairPOS als Eigenbetrieb irrelevant.)
+
+**Aufwand-Einordnung ggü. vorheriger Annahme:** Diese Variante ist **einfacher als ursprünglich angenommen** — kein N-API/FFI-Binding nötig, da wir nicht die Library direkt einbinden, sondern das fertige CLI-Tool als Subprozess aufrufen. Verbleibender Aufwand: kleiner JSON-Output-Patch an `wormCli.cpp`, Serialisierungs-Queue im Backend, TSE-Lifecycle-Logik (Setup, Self-Test-Monitoring, Zeit-Sync) — vergleichbar mit dem, was Epsons natives Protokoll an Eigenentwicklung verlangt hätte, aber ohne Netzwerk-Protokoll-Implementierung und ohne Windows-Abhängigkeit irgendeiner Art.
+
+#### Epson-natives TSE-Protokoll (Option, ohne kommerzielle Middleware)
+
+Epson bietet als Alternative zu fiskaltrust eine eigene, herstellerspezifische Integration an ([TSE Developer's Guide, Rev. 1.0.1](../docs/GermanFiscal_TSE_Developers_Guide_en_RevB.pdf)). Geprüft, weil auf den ersten Blick „ohne kommerzielle Middleware" verlockend klingt — Abwägung unten zeigt aber erheblichen Mehraufwand.
+
+**Architektur:**
+- Ein „TSE-Host" hält die eigentliche TSE-Hardware und stellt sie übers Netzwerk bereit. Drei Varianten:
+  1. TSE im Bondrucker eingebaut (TM-m30/II, TM-T88VI-iHub) — koppelt TSE-Verfügbarkeit an Drucker-Verfügbarkeit, für uns unattraktiv (siehe unten)
+  2. **EPS TSE Server** — eigenständige Netzwerk-Appliance (SEH, 3- oder 8-Port), hält die TSE unabhängig vom Drucker
+  3. TSE an Windows-PC über Epson-Treiber — nur Windows, für unser Linux-Setup irrelevant
+- Protokoll: **ePOS Device XML** — kein REST/HTTP, sondern rohes TCP-Socket (Port 8009 unverschlüsselt / 8143 SSL), XML-Umschlag mit eingebettetem JSON-Payload, NULL-terminierte Nachrichten. Laut Hersteller plattformunabhängig inkl. Linux, keine SDK-Installation nötig — „anything that can open a socket is supported"
+- Funktionsumfang: `StartTransaction`/`UpdateTransaction`/`FinishTransaction`, Challenge-Response-Login (SHA256-Hash aus Challenge + Shared Secret), `ArchiveExport`/`GetExportData`/`FinalizeExport` für DSFinV-K-Rohdaten — inhaltlich deckungsgleich mit dem, was fiskaltrust abstrahiert
+
+**Abwägung gegenüber fiskaltrust + Swissbit USB:**
+
+| | Epson-natives Protokoll | fiskaltrust + Swissbit USB |
+|---|---|---|
+| Middleware-/Betriebskosten | **0 € gesichert** — Protokoll gehört zum Gerät, kein Cloud-Portal-Zwang erkennbar in der Herstellerdokumentation | **ungeklärt** — Middleware-Software kostenlos, aber ob die produktive Cashbox-Registrierung im fiskaltrust-Portal kostenpflichtig ist, ist NICHT verifiziert (s. Warnhinweis oben) |
+| Hardware | Epson-Drucker mit TSE oder EPS TSE Server-Appliance | Swissbit USB-Stick (~185–205 €) |
+| TSE-Protokoll implementieren | **selbst** (Login, PIN/PUK-Setup, Self-Test-Handling, Export-Funktionen) | übernimmt fiskaltrust vollständig |
+| DSFinV-K-Formatierung (Task #13) | **selbst** — Rohdaten aus `ArchiveExport` sind unstrukturiert (Base64-TAR) | übernimmt fiskaltrust |
+| Vendor-Lock | ja, an Epson-Hardware | nein — Middleware abstrahiert Swissbit/Epson/Cloud austauschbar |
+| Architektur-Entkopplung TSE↔Drucker | nur bei EPS TSE Server gegeben, nicht bei TSE-im-Drucker | immer (TSE ist eigenständiges USB-Gerät am Server) |
+
+**Einschätzung, final (August 2026):** fiskaltrust ist zu teuer und damit verworfen (s. Warnhinweis oben). Epson-natives Protokoll bleibt trotzdem **nicht** die gewählte Option — die direkte Swissbit-SDK-Integration über CLI-Subprozess (unten) ist für unseren Stack einfacher zu integrieren und ohne Hardware-Vendor-Lock. Epson-Hardware wird nicht weiterverfolgt.
+
+**Bezug zur direkten Swissbit-SDK-Integration (oben) — final, August 2026:** Swissbit liefert ein fertiges, vorkompiliertes CLI-Tool (`wormCli`) für Linux x64, das sich als Subprozess aus Node.js aufrufen lässt — ohne native Bindings, ohne Netzwerk-Protokoll-Implementierung. Das ist für unseren Stack einfacher als Epsons TCP/JSON-Protokoll (kein eigener Socket-Client nötig) und ohne Hardware-Vendor-Lock. Mit fiskaltrust verworfen (s. Warnhinweis oben) bleibt **Swissbit USB-TSE + direkte CLI-Integration die gewählte Option für Task #4** — Epson-natives Protokoll bringt keinen Vorteil mehr und wird nicht weiterverfolgt.
 
 #### Cloud-TSE
 Es gibt 3 BSI-zertifizierte Cloud-TSE-Anbieter (Stand Mai 2026); alle erfordern permanente Internetverbindung:
@@ -364,7 +460,7 @@ Es gibt 3 BSI-zertifizierte Cloud-TSE-Anbieter (Stand Mai 2026); alle erfordern 
 - Günstigste Option: fiskaly mit monatlicher Kündigung (~10–30 €/Jahr) + DSFinV-K inklusive
 - Zweitbeste Option: Swissbit Cloud Typ S (200 € / 3 Jahre, wartungsarm)
 
-**Entscheidung:** Hardware-TSE (Swissbit USB-Stick + fiskaltrust Middleware). Cloud-TSE aufgrund höherer laufender Kosten verworfen.
+**Entscheidung:** Hardware-TSE (Swissbit USB-Stick). Cloud-TSE aufgrund höherer laufender Kosten verworfen. Ursprünglich war eine fiskaltrust-Middleware als TSE-Adapter vorgesehen — **verworfen, August 2026, zu teuer** (siehe TSE-Optionen-Abschnitt oben); stattdessen direkte Swissbit-SDK-Integration über CLI-Subprozess (`native/tse-cli`), siehe docs/TSE-Integration.md.
 
 ---
 
@@ -377,7 +473,7 @@ Es gibt 3 BSI-zertifizierte Cloud-TSE-Anbieter (Stand Mai 2026); alle erfordern 
 | Datenbank | PostgreSQL | Robust, open source, ACID-transaktionssicher, komplexe Abfragen für DSFinV-K |
 | Echtzeit | Server-Sent Events (SSE) | Einweg-Push vom Server zum Browser reicht für alle Anwendungsfälle (Tischstatus, Druckwarteschlange); kein bidirektionaler Kanal nötig; keine Bibliothek erforderlich |
 | Druckdienst | Node.js Worker-Prozess | ESC/POS über TCP/IP via `@node-escpos/core`; via PostgreSQL LISTEN/NOTIFY getriggert |
-| TSE-Adapter | fiskaltrust Middleware (Docker) | Open-Source-Java-Dienst von fiskaltrust; läuft als fertiges Docker-Image ohne eigene Java-Entwicklung; stellt lokale REST-API bereit; Konfiguration nur über Umgebungsvariablen |
+| TSE-Adapter | Swissbit-SDK, eigener CLI-Subprozess (`native/tse-cli`) | Ursprünglich fiskaltrust Middleware vorgesehen — **verworfen (August 2026, zu teuer)**. Stattdessen minimaler, selbst geschriebener C++-Wrapper um das offizielle Swissbit-SDK, vom Backend per `child_process.execFile` aufgerufen; kein separater Container/Dienst. Details: docs/TSE-Integration.md |
 | Deployment | Docker Compose | Alle Dienste als Container, einfache Installation auf Linux-Server |
 | Projektstruktur | Monorepo | `packages/frontend`, `packages/backend`, `packages/shared` (gemeinsame TypeScript-Typen); ein Repository, ein Docker-Compose-File |
 
@@ -398,9 +494,9 @@ Es gibt 3 BSI-zertifizierte Cloud-TSE-Anbieter (Stand Mai 2026); alle erfordern 
 │       ┌─────────┴──────────┐                    │
 │       │                    │                    │
 │  ┌────▼─────────┐  ┌───────▼──────────────┐    │
-│  │  PostgreSQL  │  │  fiskaltrust         │    │
-│  │  (Datenbank) │  │  Middleware (Docker) │    │
-│  │              │  │  REST → USB-TSE      │    │
+│  │  PostgreSQL  │  │  native/tse-cli       │    │
+│  │  (Datenbank) │  │  (Subprozess)         │    │
+│  │              │  │  Dateisystem → USB-TSE│    │
 │  └──────────────┘  └──────────────────────┘    │
 └──────────────────────────────────────────────────┘
 ```
@@ -408,10 +504,10 @@ Es gibt 3 BSI-zertifizierte Cloud-TSE-Anbieter (Stand Mai 2026); alle erfordern 
 **Vereinfachungen gegenüber früheren Überlegungen:**
 - Print Worker läuft im selben Node.js-Prozess wie die API (kein separater Container)
 - SSE statt WebSockets — kein Upgrade-Handshake, kein Reconnect-Protokoll, native Browser-Unterstützung
-- fiskaltrust Middleware als fertiges Docker-Image — keine Java-Entwicklung, kein eigener TSE-Adapter-Code
+- Swissbit USB-TSE über selbst geschriebenen CLI-Subprozess (`native/tse-cli`) statt fiskaltrust-Middleware (verworfen, zu teuer) — kein dritter Container, kein natives Node-Addon
 - SvelteKit-SPA wird von Fastify mitausgeliefert — ein einziger HTTP-Dienst nach außen
 
-**TSE-Adapter:** Beim späteren Wechsel auf eine Cloud-TSE wird ausschließlich der fiskaltrust-Container ausgetauscht — der Rest der Anwendung bleibt unverändert.
+**TSE-Adapter:** `native/tse-cli` kapselt die Swissbit-SDK-Aufrufe hinter einem schlanken JSON-Contract (siehe docs/TSE-Integration.md) — ein späterer Wechsel des TSE-Anbieters würde nur dieses eine Modul betreffen, der Rest der Anwendung bliebe unverändert.
 
 ### Coding-Konventionen
 
@@ -497,8 +593,8 @@ Spätere Änderungen am Artikelstamm oder an Kategorien (Umbenennung, Preisände
 
 Obwohl die Datenhaltung positionsweise erfolgt, werden Bestellbons aggregiert gedruckt:
 
-1. Positionen werden nach **Drucker** sortiert (je Drucker ein Bon)
-2. Innerhalb eines Druckers werden Positionen nach **identischen Attributen** (Artikel + Produktoptionen) gruppiert
+1. Positionen werden nach **Drucker UND Artikelgruppe** sortiert — je Kombination ein eigener Bon. Wenn zwei Artikelgruppen denselben Drucker teilen (z.B. Küche druckt Speisen und Snacks), erhält die Küche trotzdem zwei physisch getrennte Bons. So bleiben Stationen sauber getrennt und Artikel verschiedener Gruppen lassen sich an der Ausgabe nicht vertauschen. Der Gruppenname erscheint als Untertitel direkt unter dem Tisch-Header.
+2. Innerhalb eines Bons werden Positionen nach **identischen Attributen** (Artikel + Produktoptionen) gruppiert
 3. Jede Gruppe erscheint als eine Zeile mit der jeweiligen Stückzahl
 
 Beispiel: 3× `BestellungPosition{Artikel: Bier, Optionen: []}` → eine Zeile „3× Bier" auf dem Bestellbon.
@@ -597,7 +693,7 @@ Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — una
 
 ## Offene Fragen
 
-1. ~~**TSE-Technologie**~~ — **Entschieden:** Hardware-TSE (USB); Empfehlung Swissbit USB-Stick + fiskaltrust Middleware (kostenlos). Cloud-TSE aufgrund höherer laufender Kosten verworfen.
+1. ~~**TSE-Technologie**~~ — **Entschieden (August 2026):** Hardware-TSE (USB), nicht Cloud-TSE (laufende Kosten). fiskaltrust verworfen (zu teuer, bestätigt durch Angebot). Gewählte Lösung: **Swissbit USB-TSE + direkte CLI-Subprozess-Integration** über das echte Swissbit-SDK (`wormCli`, verifiziert — royalty-free lizenziert, vorkompiliert für Linux x64, lokal über Dateisystem-Mount, keine Middleware, kein Netzwerkprotokoll). Details und Umsetzungsplan siehe TSE-Optionen-Abschnitt oben. Epson-natives Protokoll war Zwischenoption, nicht weiterverfolgt.
 
 2. ~~**QR-Code auf dem Kassierungsdialog**~~ — **Entschieden:** URL zum lokalen FairPOS-Server. Format: `http://{server-adresse}/receipt/{token}` — der Token ist ein zufälliger, einmaliger Wert pro Rechnung (schwer zu erraten, kein separater Login nötig). Der Endpunkt liefert die Rechnung als PDF. Voraussetzung: Kundengerät ist im selben WLAN wie der Server. Server-Adresse wird manuell in den Systemeinstellungen konfiguriert.
 
@@ -610,7 +706,7 @@ Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — una
 
 - ~~**DSFinV-K-Export**~~ — Technisches Implementierungsdetail; Mapping dokumentiert in `Rechtliche-Anforderungen.md`; keine weiteren Entscheidungen ausstehend
 
-- ~~**TSE-Konfiguration**~~ — Technisches Implementierungsdetail; Verbindung zur fiskaltrust Middleware wird automatisch über Docker Compose konfiguriert (beide Komponenten laufen lokal im selben Stack); kein manueller Eingriff durch den Benutzer nötig
+- ~~**TSE-Konfiguration**~~ — **Entschieden/umgesetzt (August 2026):** Mount-Pfad, Client-ID und TimeAdmin-PIN der Swissbit USB-TSE werden manuell über Systemeinstellungen → System konfiguriert (kein fiskaltrust/Docker-Compose-Automatismus mehr — dieser Ansatz wurde mit fiskaltrust verworfen). Änderungen wirken sofort, ohne Backend-Neustart. Details: docs/TSE-Integration.md
 
 - ~~**Kassensystem-Seriennummer**~~ — **Entschieden:** Wird beim ersten Serverstart automatisch generiert und unveränderbar in der Datenbank gespeichert. Format: `FairPOS-{Jahr}-{10-stellig, Großbuchstaben + Ziffern}` (Beispiel: `FairPOS-2025-A3B7K2M9XQ`). In den Systemeinstellungen angezeigt, aber nicht bearbeitbar. Gilt für die gesamte Installation (nicht je Kasse); Kassen werden im DSFinV-K über `Z_KASSE_ID` unterschieden.
 

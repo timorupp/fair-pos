@@ -287,6 +287,10 @@
           Druckt eine Testseite mit Logo (sofern hochgeladen) auf dem gewählten Drucker. Nützlich, um
           Größe und Druckqualität des Logos vor dem produktiven Einsatz zu prüfen.
         </p>
+        <p class="hint warn">
+          ⚠ Änderungen am Zoom werden erst nach <strong>Speichern</strong> wirksam — also zuerst speichern,
+          dann Testdruck.
+        </p>
         <div class="logo-actions">
           <select bind:value={testPrintPrinterId} disabled={testPrintBusy}>
             <option value="">— Drucker wählen —</option>
@@ -364,4 +368,5 @@
   .logo-flags { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem 1rem; font-size: 0.9rem; }
   .logo-flags label { display: flex; align-items: center; gap: 0.4rem; }
   .small { font-size: 0.8rem; }
+  .hint.warn { color: #c87a00; }
 </style>

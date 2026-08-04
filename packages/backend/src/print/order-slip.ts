@@ -47,17 +47,26 @@ export interface OrderSlipItem {
   options: string | null;
   /** Target printer id — `null` means "no specific printer; route to default". */
   printer_id: string | null;
+  /** Article-category (Artikelgruppe) name. Used to split slips per category. */
+  category_name: string;
 }
 
-/** Result of grouping: one entry per target printer. */
+/** Result of grouping: one entry per (printer, category) combination. */
 export interface OrderSlipBucket {
   printer_id: string | null;
+  /** Article-category for this bucket; printed as a sub-header on the slip. */
+  category_name: string;
   /** Aggregated lines, sorted by display order (article+options first appearance). */
   lines: { name: string; options: string | null; quantity: number }[];
 }
 
 /**
- * Buckets items by their target printer and merges identical lines per bucket.
+ * Buckets items by `(printer, category)` and merges identical lines per bucket.
+ *
+ * Per the Anforderungen (Bedienungskasse): each printer × Artikelgruppe combo
+ * gets its own slip. So if two categories ("Speisen", "Snacks") happen to
+ * share a kitchen printer, the kitchen still receives two physically separate
+ * receipts — easier to dispatch and to keep work areas separated.
  *
  * Routing fallback: items with `printer_id === null` go to `defaultPrinterId`.
  * If that is also null, the item ends up in a bucket keyed by `null` so the
@@ -68,16 +77,19 @@ export interface OrderSlipBucket {
  *
  * @param items - The flat list of one-unit-per-row order items.
  * @param defaultPrinterId - System-default printer id, or `null` when none configured.
- * @returns One bucket per distinct target printer; lines aggregated.
+ * @returns One bucket per distinct `(printer, category)`; lines aggregated.
  */
 export function bucketItemsByPrinter(items: OrderSlipItem[], defaultPrinterId: string | null): OrderSlipBucket[] {
-  const buckets = new Map<string | null, OrderSlipBucket>();
+  const buckets = new Map<string, OrderSlipBucket>();
   for (const item of items) {
     const printerId = item.printer_id ?? defaultPrinterId;
-    let bucket = buckets.get(printerId);
+    // Use a delimiter that can't appear in either field; the printer id is a
+    // UUID and the category is a free-text DB column without ``.
+    const key = `${printerId ?? ''}${item.category_name}`;
+    let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { printer_id: printerId, lines: [] };
-      buckets.set(printerId, bucket);
+      bucket = { printer_id: printerId, category_name: item.category_name, lines: [] };
+      buckets.set(key, bucket);
     }
     const existing = bucket.lines.find((l) => l.name === item.name && (l.options ?? '') === (item.options ?? ''));
     if (existing) existing.quantity += 1;
@@ -102,10 +114,13 @@ export function buildOrderSlipEscPos(
 
   if (logoEscPos) parts.push(ALIGN_CTR, logoEscPos, ALIGN_LFT);
 
-  // Header is just the table identifier — extra-large via GS ! 0x22 (3× wide,
-  // 3× tall) so it's readable across the kitchen/bar. No "Bestellung" label
-  // above; the slip's purpose is obvious from context.
+  // Header is the table identifier — extra-large via GS ! 0x22 (3× wide,
+  // 3× tall) so it's readable across the kitchen/bar. The Artikelgruppe
+  // (category) sits as a smaller sub-header below; since each slip carries
+  // exactly one category now, the kitchen sees at a glance which station
+  // the order belongs to.
   parts.push(ALIGN_CTR, BOLD_ON, selectSize(0x22), line(`Tisch ${context.tableName}`), RESET_SIZE, BOLD_OFF);
+  parts.push(BOLD_ON, selectMode(0x10), line(bucket.category_name), selectMode(0x00), BOLD_OFF);
   parts.push(ALIGN_LFT, divider());
 
   for (const lineItem of bucket.lines) {

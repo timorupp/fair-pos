@@ -9,11 +9,15 @@
   import { page } from '$app/stores';
   import { api } from '$lib/api';
   import { registerUser } from '$lib/stores/user';
+  import { currentRegisterName } from '$lib/stores/page-title';
 
   let checking = true;
   // Hide the "Kasse wechseln" button on the register-picker page itself —
   // there is nothing to switch back to from there.
   $: onRegisterPicker = $page.url.pathname === '/register';
+  // Browser-tab title — falls back to a generic label until a sub-page tells
+  // us which cash register the operator is on. See `lib/stores/page-title.ts`.
+  $: tabTitle = $currentRegisterName ? `${$currentRegisterName} — FairPOS` : 'Kasse — FairPOS';
 
   onMount(async () => {
     try {
@@ -35,6 +39,8 @@
     goto('/login');
   }
 </script>
+
+<svelte:head><title>{tabTitle}</title></svelte:head>
 
 <div class="shell">
   <header class="topbar">

@@ -8,6 +8,19 @@ import { buildExportRows, type ExportSourceRow } from '../../exports/rows.js';
 import { buildExcelWorkbook } from '../../exports/workbook.js';
 
 /**
+ * Reads the configured receipt-number prefix from system_setting. Empty string
+ * fallback so the export still works on a freshly-bootstrapped DB.
+ *
+ * @returns The prefix that gets prepended to the padded sequence number.
+ */
+async function readReceiptPrefix(): Promise<string> {
+  const result = await query<{ value: string }>(
+    `SELECT value FROM system_setting WHERE key = 'receipt_prefix'`,
+  );
+  return result.rows[0]?.value ?? '';
+}
+
+/**
  * Loads invoice + order_item rows in the inclusive-exclusive `[from, to)` window.
  * Only `sales_receipt` invoices contribute — cancellation/training invoices are not part
  * of the standard sales export.
@@ -138,7 +151,7 @@ export async function exportsAdminRoute(app: FastifyInstance): Promise<void> {
     if (!ev) return reply.status(404).send({ error: 'Keine Veranstaltung verfügbar' });
 
     const source = await loadExportSource(ev.start, ev.end);
-    const rows = buildExportRows(source);
+    const rows = buildExportRows(source, await readReceiptPrefix());
     const subtitleStart = new Date(ev.start).toLocaleDateString('de-DE');
     const subtitleEnd = new Date(ev.end).toLocaleDateString('de-DE');
     const buf = await buildExcelWorkbook({
@@ -167,7 +180,7 @@ export async function exportsAdminRoute(app: FastifyInstance): Promise<void> {
     if (!range) return reply.status(400).send({ error: 'Ungültiges Datum (erwartet YYYY-MM-DD)' });
 
     const source = await loadExportSource(range.from, range.to);
-    const rows = buildExportRows(source);
+    const rows = buildExportRows(source, await readReceiptPrefix());
 
     const dateLabel = new Date(range.from).toLocaleDateString('de-DE');
     const buf = await buildExcelWorkbook({

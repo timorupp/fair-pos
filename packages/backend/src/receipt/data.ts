@@ -121,7 +121,7 @@ function assembleReceiptData(
   },
   positions: ReceiptPosition[],
   settings: CompanySettings,
-  logo: { pdfPng: Buffer; pdfWidth: number; pdfHeight: number; escposBytes: Buffer } | null,
+  logo: { pdfPng: Buffer; pdfWidth: number; pdfHeight: number; pdfWidthFactor: number; escposBytes: Buffer } | null,
 ): ReceiptData {
   const isCancellation = row.receipt_type === 'cancellation';
   // For cancellation invoices, flip the sign on every amount the renderer
@@ -147,10 +147,11 @@ function assembleReceiptData(
     registerName: row.register_name,
     paymentMethod: row.payment_method,
     isCancellation,
-    logoPng:      logo?.pdfPng ?? null,
-    logoWidth:    logo?.pdfWidth ?? 0,
-    logoHeight:   logo?.pdfHeight ?? 0,
-    logoEscPos:   logo?.escposBytes ?? null,
+    logoPng:         logo?.pdfPng ?? null,
+    logoWidth:       logo?.pdfWidth ?? 0,
+    logoHeight:      logo?.pdfHeight ?? 0,
+    logoWidthFactor: logo?.pdfWidthFactor ?? 0,
+    logoEscPos:      logo?.escposBytes ?? null,
     positions: displayPositions,
     totalGross: computeTotalGross(displayPositions),
     taxBreakdown: computeTaxBreakdown(displayPositions),

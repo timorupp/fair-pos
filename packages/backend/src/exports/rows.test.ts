@@ -33,9 +33,15 @@ describe('buildExportRows', () => {
     const out = buildExportRows([
       row({ invoice_id: 'a', receipt_number: 1 }),
       row({ invoice_id: 'b', receipt_number: 2 }),
-    ]);
+    ], 'POS-');
     expect(out).toHaveLength(2);
-    expect(out.map((r) => r.receipt_number)).toEqual([1, 2]);
+    // Receipt number renders prefix + zero-padded sequence, matching the bon.
+    expect(out.map((r) => r.receipt_number)).toEqual(['POS-00001', 'POS-00002']);
+  });
+
+  it('uses an empty prefix when none is configured', () => {
+    const out = buildExportRows([row({ receipt_number: 7 })]);
+    expect(out[0]!.receipt_number).toBe('00007');
   });
 
   it('separates rows differing in options (Pommes mit Ketchup vs. Pommes mit Mayo)', () => {
@@ -97,9 +103,9 @@ describe('buildExportRows', () => {
       row({ invoice_id: 'i2', article_name: 'Pommes' }),
     ]);
     expect(out.map((r) => `${r.receipt_number}:${r.article_name}:${r.quantity}`)).toEqual([
-      '42:Pommes:2',
-      '42:Bier:1',
-      '42:Pommes:1',
+      '00042:Pommes:2',
+      '00042:Bier:1',
+      '00042:Pommes:1',
     ]);
   });
 });

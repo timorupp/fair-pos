@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api';
   import { columnsFromTables, rowsFromTables } from '$lib/floor-plan';
+  import { currentRegisterName } from '$lib/stores/page-title';
 
   type TableRow = {
     id: string; name: string;
@@ -41,6 +42,7 @@
       tables = floor.tables;
       locked = ctx.locked;
       pendingDays = ctx.pending_days;
+      currentRegisterName.set(ctx.register.name);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally {

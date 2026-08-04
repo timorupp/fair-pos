@@ -16,6 +16,7 @@ import { query, withTransaction } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { nextReceiptNumber } from '../../receipt/sequence.js';
 import { generateReceiptToken } from '../../receipt/numbering.js';
+import { formatReceiptNumber, readReceiptPrefix } from '../../receipt/format-receipt-number.js';
 
 /** Body schema for `POST /api/admin/cancellations`. */
 interface CreateCancellationBody {
@@ -132,6 +133,10 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       return { invoice_id: invoiceId, receipt_number: receiptNumber, receipt_token: receiptToken };
     });
 
-    return reply.status(201).send(result);
+    const prefix = await readReceiptPrefix();
+    return reply.status(201).send({
+      ...result,
+      receipt_number_formatted: formatReceiptNumber(result.receipt_number, prefix),
+    });
   });
 }

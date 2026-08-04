@@ -17,3 +17,9 @@ Thumbs.db
 # Editor
 .vscode/settings.json
 .idea/
+
+# Swissbit TSE SDK (third-party, license not legally cleared for a public
+# repo — see docs/TSE-Integration.md Abschnitt 3). Ignore everything in the
+# vendor directory except our own placeholder file explaining what to place there.
+packages/backend/native/tse-cli/vendor/*
+!packages/backend/native/tse-cli/vendor/PLACE_SDK_FILES_HERE.txt

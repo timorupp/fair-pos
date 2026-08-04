@@ -5,6 +5,7 @@ import { buildDemoReceipt } from '../../receipt/data.js';
 import { renderReceiptPdf } from '../../receipt/pdf.js';
 import { raiseCounterFloor } from '../../receipt/sequence.js';
 import { rerenderStoredLogo } from '../../logo/logo.js';
+import { applyTseSettings, TSE_SETTING_KEYS } from '../../tse/settings.js';
 
 /** Keys used in the system_setting table. */
 const ALLOWED_KEYS = new Set([
@@ -17,6 +18,9 @@ const ALLOWED_KEYS = new Set([
   'logo_on_order_slip', 'logo_on_pickup_slip', 'logo_on_deposit_slip',
   // Zoom (1–500 %) that scales the rendered logo relative to the bon width.
   'logo_zoom_percent',
+  // TSE connection (mount path, client id, persisted TimeAdmin-PIN — see
+  // docs/TSE-Integration.md Abschnitt 7).
+  ...TSE_SETTING_KEYS,
 ]);
 
 /** Admin routes for system settings (key-value store). */
@@ -64,6 +68,10 @@ export async function settingsAdminRoute(app: FastifyInstance): Promise<void> {
         await rerenderStoredLogo(Number(value));
       }
     }
+    // Mount path / client id are read synchronously from `config` on the hot
+    // checkout path (see tse/client.ts) — apply immediately so a save takes
+    // effect without a backend restart.
+    applyTseSettings(Object.fromEntries(entries));
     return reply.status(204).send();
   });
 

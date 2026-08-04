@@ -155,7 +155,7 @@ Alle Kassendaten (Transaktionen, Rechnungen, Kassenabschlüsse) müssen 10 Jahre
 
 ## 5. Inbetriebnahme-Checkliste (Ersteinrichtung)
 
-- [ ] Swissbit USB-TSE beschaffen und per fiskaltrust Middleware aktivieren
+- [ ] Swissbit USB-TSE beschaffen und über FairPOS (Systemeinstellungen → System bzw. `native/tse-cli`) aktivieren — siehe docs/TSE-Integration.md; fiskaltrust wurde als zu teuer verworfen (August 2026)
 - [ ] FairPOS installieren und konfigurieren (Unternehmensdaten, Steuernummer, Steuersätze)
 - [ ] Kassensystem-Seriennummer und Softwareversion notieren
 - [ ] Kassenmeldung über ELSTER einreichen (Frist beachten)
