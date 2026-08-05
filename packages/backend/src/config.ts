@@ -31,5 +31,9 @@ export const config = {
   // Override point for tests — points at a stub script instead of the real,
   // gitignored, hardware-dependent binary. Not meant to be set in production.
   tseCliPath: process.env['TSE_CLI_PATH'] ?? null,
+  // Override point for tests (points at a stub script) — production relies
+  // on `pg_dump` being on PATH (installed alongside the `postgresql-16`
+  // package, see docs/Installationsanleitung.md).
+  pgDumpPath: process.env['PG_DUMP_PATH'] ?? null,
   isDev: (process.env['NODE_ENV'] ?? 'development') === 'development',
 };

@@ -26,6 +26,12 @@ export interface TseInfo {
   formFactor: string;
   /** Hex-encoded TSE serial number. */
   tseSerialNumber: string;
+  /** Signature algorithm used by the TSE, e.g. `ecdsa-plain-SHA384`. */
+  signatureAlgorithm: string;
+  /** Log-time format used by the TSE, e.g. `unixTime`. */
+  logTimeFormat: string;
+  /** Base64-encoded public key, extracted from the TSE's certificate. */
+  publicKey: string;
 }
 
 /** Response shape of `GET /api/admin/tse/status`. */
@@ -33,6 +39,12 @@ export interface TseStatus {
   configured: boolean;
   info?: TseInfo;
   error?: string;
+}
+
+/** One currently-mounted removable filesystem — a candidate TSE mount point. */
+export interface TseMountCandidate {
+  mountPoint: string;
+  device: string;
 }
 
 /** Sends a JSON request to the backend and returns the parsed response. Exported for testing. */
@@ -232,12 +244,26 @@ export const api = {
         request('GET', '/admin/system/status'),
     },
 
+    backup: {
+      /**
+       * Kein automatisches/geplantes Backup — der Server läuft nicht 24/7,
+       * ein zeitbasierter Trigger würde regelmäßig verpasst (siehe
+       * docs/Anforderungen.md "Backup-Konzept"). Nur dieser manuelle Download.
+       */
+      downloadUrl: (): string => '/api/admin/backup',
+    },
+
     tse: {
       /**
        * On-demand connection test — actually calls into the TSE hardware, so
        * only invoke it from an explicit user action ("TSE testen"), not on page load.
        */
       status: (): Promise<TseStatus> => request('GET', '/admin/tse/status'),
+      /** Currently-mounted removable filesystems, for the Mount-Pfad dropdown. */
+      candidates: (): Promise<{ candidates: TseMountCandidate[] }> => request('GET', '/admin/tse/candidates'),
+      /** "Auto-erkennen" — probes every removable mount and returns the first one that's a real TSE, if any. */
+      detect: (): Promise<{ mountPoint: string | null; candidatesTried: number }> =>
+        request('POST', '/admin/tse/detect'),
     },
 
     closings: {

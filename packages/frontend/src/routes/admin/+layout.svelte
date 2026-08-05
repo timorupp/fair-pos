@@ -128,6 +128,7 @@
         {#if exportsOpen}
           <div class="nav-sub">
             <a href="/admin/exports/excel" class:active={isActive('/admin/exports/excel')}>Excel-Export</a>
+            <a href="/admin/exports/invoices" class:active={isActive('/admin/exports/invoices')}>Rechnungs-PDFs (ZIP)</a>
             <a href="/admin/exports/dsfinvk" class:active={isActive('/admin/exports/dsfinvk')}>DSFinV-K</a>
           </div>
         {/if}

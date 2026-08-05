@@ -241,7 +241,11 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
   Export pro Kassenabschluss (Z-Bon) als ZIP (15 CSV-Dateien + `index.xml`)
   über „DSFinV-K"-Link in der Kassendetailansicht. Vollständige Feldreferenz,
   Zitate und dokumentierte Vereinfachungen: `docs/Rechtliche-Anforderungen.md`
-  Abschnitt 6. Offen: TSE-Zertifikatsfelder + processData-Format (Task #46).
+  Abschnitt 6. `processData`-Format und die für die QR-Code-Prüfung nötigen
+  TSE-Zertifikatsfelder (Signaturalgorithmus, Zeitformat, Public Key) **✅
+  umgesetzt (Task #46)** — offen bleibt nur die volle Zertifikatskette
+  (`TSE_ZERTIFIKAT_I/II`), nicht für die QR-Code-Prüfung erforderlich, siehe
+  `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7.
 
 - **Excel-Exporte:** Veranstaltungsauswahl wie bei den Auswertungen (Standard: laufende bzw. zuletzt stattgefundene Veranstaltung)
   - Export für einen einzelnen Tag (Datum wählbar)
@@ -360,7 +364,7 @@ je Vorgangstyp einen eigenen Snapshot-Builder.
 **Signaturregeln (generisch, unabhängig von TSE-Hardware):**
 - **Transaktionsnummer** und **Signaturzähler** sind global über alle Vorgangstypen fortlaufend und werden von der TSE vergeben.
 - **Start-** und **Endzeitpunkt** kommen von der TSE (nicht vom Kassensystem), damit Manipulationen an der Systemzeit erkennbar bleiben.
-- Ein Vorgang der zwischen Start und Finish abbricht, muss als `AVBelegabbruch` finalisiert werden — er bleibt in der TSE-Kette dokumentiert. **✅ Umgesetzt (August 2026, processData-Format korrigiert September 2026):** Schlägt `finish` nach erfolgreichem `start` fehl, sendet `signTseTransaction` automatisch einen zweiten `finish`-Aufruf mit `processType='Kassenbeleg-V1'` und `processData='AVBelegabbruch^0.00_0.00_0.00_0.00_0.00^'` (Anhang I's eigenes Beispiel für diesen Fall — `AVBelegabbruch` ist hier der `<Vorgangstyp>` innerhalb der processData, kein eigener processType), um den auf der TSE offenen Vorgang zu schließen — Best-effort (schlägt auch dieser Aufruf fehl, z.B. weil die TSE komplett unerreichbar ist, wird das nur geloggt, ohne den Vorgang zu blockieren). Siehe `tse/signing.ts`, `tse/processData.ts` und `docs/TSE-Integration.md` Abschnitt 8.1.
+- Ein Vorgang der zwischen Start und Finish abbricht, muss als `AVBelegabbruch` finalisiert werden — er bleibt in der TSE-Kette dokumentiert. **✅ Umgesetzt (August 2026, processData-Format korrigiert 2026-08-05):** Schlägt `finish` nach erfolgreichem `start` fehl, sendet `signTseTransaction` automatisch einen zweiten `finish`-Aufruf mit `processType='Kassenbeleg-V1'` und `processData='AVBelegabbruch^0.00_0.00_0.00_0.00_0.00^'` (Anhang I's eigenes Beispiel für diesen Fall — `AVBelegabbruch` ist hier der `<Vorgangstyp>` innerhalb der processData, kein eigener processType), um den auf der TSE offenen Vorgang zu schließen — Best-effort (schlägt auch dieser Aufruf fehl, z.B. weil die TSE komplett unerreichbar ist, wird das nur geloggt, ohne den Vorgang zu blockieren). Siehe `tse/signing.ts`, `tse/processData.ts` und `docs/TSE-Integration.md` Abschnitt 8.1.
 - Bei Beleg-Storno: der neue Stornobeleg referenziert den Original-Beleg über `cancels_invoice_id`; die Original-Signatur wird NICHT verändert (KassenSichV verlangt Unveränderbarkeit der Kette). Der admin-Bonstorno-Pfad (`/api/admin/cancellations`) referenziert bewusst keinen einzelnen Original-Beleg (siehe Docstring dort) — `cancels_invoice_id` bleibt dort `null`.
 
 ### Pflichtangaben auf dem Kassenbon (ab 01.01.2024)
@@ -543,8 +547,8 @@ Es gibt 3 BSI-zertifizierte Cloud-TSE-Anbieter (Stand Mai 2026); alle erfordern 
 | Echtzeit | Server-Sent Events (SSE) | Einweg-Push vom Server zum Browser reicht für alle Anwendungsfälle (Tischstatus, Druckwarteschlange); kein bidirektionaler Kanal nötig; keine Bibliothek erforderlich |
 | Druckdienst | Node.js Worker-Prozess | ESC/POS über TCP/IP via `@node-escpos/core`; via PostgreSQL LISTEN/NOTIFY getriggert |
 | TSE-Adapter | Swissbit-SDK, eigener CLI-Subprozess (`native/tse-cli`) | Ursprünglich fiskaltrust Middleware vorgesehen — **verworfen (August 2026, zu teuer)**. Stattdessen minimaler, selbst geschriebener C++-Wrapper um das offizielle Swissbit-SDK, vom Backend per `child_process.execFile` aufgerufen; kein separater Container/Dienst. Details: docs/TSE-Integration.md |
-| Deployment | Docker Compose | Alle Dienste als Container, einfache Installation auf Linux-Server |
-| Projektstruktur | Monorepo | `packages/frontend`, `packages/backend`, `packages/shared` (gemeinsame TypeScript-Typen); ein Repository, ein Docker-Compose-File |
+| Deployment | Native Ubuntu-Installation | **Kein Docker in Produktion** (Entscheidung August 2026, revidiert gegenüber der ursprünglichen Docker-Compose-Planung) — der einzige Grund für Container (die USB-TSE) hätte Bind-Mount-Propagation für Hot-Plug-Hardware benötigt, ohne echten Nutzen auf einem einzelnen dedizierten Server. Details: docs/SETUP.md → "Production-Deployment", docs/Installationsanleitung.md. Docker bleibt nur für die lokale Entwicklung (PostgreSQL). |
+| Projektstruktur | Monorepo | `packages/frontend`, `packages/backend`, `packages/shared` (gemeinsame TypeScript-Typen); ein Repository |
 
 ### Komponentenübersicht
 
@@ -788,15 +792,25 @@ Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — una
   - **Ausgabe:** Z-Bon wird auf dem der Kasse zugeordneten Drucker gedruckt (bei Bonkassen); zusätzlich in der Admin-UI einsehbar
   - **Navigation:** Unter Kassen (Kassenübersicht + Kassendetailansicht)
 
-- ~~**Kassenmeldung (ELSTER)**~~ — Anleitung in `Organisatorische-Anleitung.md` dokumentiert; FairPOS stellt alle benötigten Daten in den Systemeinstellungen bereit (Softwareversion, Kassensystem-Seriennummer, TSE-Seriennummer, BSI-Zertifizierungs-ID, TSE-Aktivierungsdatum)
+- ~~**Kassenmeldung (ELSTER)**~~ — Anleitung in `Organisatorische-Anleitung.md` dokumentiert; FairPOS stellt die meisten benötigten Daten in den Systemeinstellungen bereit (Softwareversion, Kassensystem-Seriennummer, TSE-Seriennummer, BSI-Zertifizierungs-ID) — **Ausnahme: TSE-Aktivierungsdatum wird nicht gespeichert**, muss der Admin selbst notieren (siehe `Organisatorische-Anleitung.md` Abschnitt 1, dort korrigiert)
 
 - ~~**Verfahrensdokumentation**~~ — Erledigt: Anleitung in `Organisatorische-Anleitung.md` dokumentiert
 
-- ~~**Backup-Konzept**~~ — **Entschieden:** Kombination aus automatischem und manuellem Backup:
-  - **Automatisch:** Backup-Dienst im Docker-Stack erstellt täglich ein `pg_dump` und speichert es in einem konfigurierten lokalen Verzeichnis (z.B. gemountete USB-Festplatte oder NAS); Zieldverzeichnis in den Systemeinstellungen konfigurierbar
-  - **Manuell:** Administrator kann jederzeit über die Admin-UI ein vollständiges Datenbankexport herunterladen (z.B. vor Updates oder für Jahresarchive)
-  - **Anzeige:** Admin-UI zeigt Zeitpunkt des letzten automatischen Backups an
-  - Empfehlung in der Organisatorischen Anleitung: externer Datenträger regelmäßig vom Veranstaltungsort mitnehmen
+- ~~**Backup-Konzept**~~ — **✅ Umgesetzt (August 2026, revidiert gegenüber der
+  ursprünglichen Planung):** Rein manuelles Backup, kein automatischer Timer/Cron-Job.
+  Grund: Der Server läuft nicht 24/7, sondern nur rund um Veranstaltungen — ein
+  zeitbasierter Trigger (z.B. "täglich 3 Uhr") würde regelmäßig verpasst, wenn die
+  Maschine zu der Zeit aus ist; ein implizites Backup am Tagesabschluss-Ereignis wurde
+  ebenfalls bewusst verworfen (explizit zurückgestellt, nicht automatisch an einen
+  Anwendungsvorgang gekoppelt). `GET /api/admin/backup` (`backup/dump.ts` +
+  `backup/zip.ts`) ruft `pg_dump` auf (Passwort über `PGPASSWORD`, nicht als
+  Kommandozeilenargument — sonst über `ps` auf dem Server sichtbar) und liefert das
+  Ergebnis als ZIP mit `backup.sql` + `README.txt` (Wiederherstellungshinweis) aus.
+  - **Manuell:** Administrator kann jederzeit über die Admin-UI ein vollständiges
+    Datenbank-Backup als ZIP herunterladen (z.B. direkt nach dem Tagesabschluss, vor
+    Updates, oder für Jahresarchive)
+  - Empfehlung in der Organisatorischen Anleitung: externer Datenträger regelmäßig vom
+    Veranstaltungsort mitnehmen — die manuelle Download-Funktion ist genau dafür gedacht
 
 - ~~**Kassenabrechnung**~~ — **Entschieden:**
   - **Kassenabschluss:** Manuell on-demand vom Administrator auslösbar; erfasst Ist-Bestand (manuell eingetippt), berechnet automatisch Soll-Bestand und Differenz; kein Abschlussbon

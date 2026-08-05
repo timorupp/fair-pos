@@ -22,8 +22,9 @@ Dieses Dokument beschreibt Projektstruktur, Entwicklungsumgebung und Deployment.
 ## Überblick
 
 FairPOS ist ein KassenSichV-konformes Kassensystem für Vereine. Es besteht aus
-zwei Docker-Containern (Backend + PostgreSQL) plus einer direkt angeschlossenen
-Swissbit USB-TSE — keine dritte Middleware-Komponente:
+einem nativen Node.js-Backend, PostgreSQL (in Produktion ebenfalls nativ, in
+der Entwicklung bequem in Docker) und einer direkt angeschlossenen Swissbit
+USB-TSE — keine Container in Produktion, keine dritte Middleware-Komponente:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -43,7 +44,7 @@ Swissbit USB-TSE — keine dritte Middleware-Komponente:
 ┌───────────▼──────────┐  ┌───────────▼───────────────────────┐
 │  postgres (PG 16)    │  │  Swissbit USB-TSE                  │
 │  Primärdaten         │  │  als Dateisystem gemountet,         │
-│  Print-Queue         │  │  kein eigener Docker-Container      │
+│  Print-Queue         │  │  kein Container                     │
 └──────────────────────┘  └───────────────────────────────────┘
 ```
 
@@ -53,14 +54,15 @@ Swissbit USB-TSE — keine dritte Middleware-Komponente:
 
 | Tool       | Mindestversion | Zweck                              |
 |------------|----------------|------------------------------------|
-| Node.js    | 20.x           | Backend + Frontend Build           |
+| Node.js    | 20.x           | Backend + Frontend, Entwicklung UND Produktion |
 | npm        | 10.x           | Paketmanager (Workspaces)          |
-| Docker     | 24.x           | PostgreSQL + Backend               |
-| Docker Compose | V2 (Plugin) | `docker compose` (ohne Bindestrich) |
+| PostgreSQL | 16.x           | Produktion: nativ via PGDG-APT-Repo (siehe `docs/Installationsanleitung.md`) |
+| Docker + Docker Compose (V2, Plugin) | 24.x | **Nur Entwicklung** — startet ausschließlich PostgreSQL, siehe `docker-compose.yml` |
 | g++ (C++11) | —             | Nur für den TSE-CLI-Build, siehe docs/TSE-Integration.md Abschnitt 10 |
 
-Für die Produktion wird kein lokales Node.js benötigt — nur Docker. Für echte
-TSE-Hardware-Tests wird zusätzlich ein natives Linux-Hostsystem benötigt (siehe
+Produktion läuft komplett nativ auf Ubuntu (Node.js-Prozess + PostgreSQL +
+`tseCli`), **kein Docker**. Für echte TSE-Hardware-Tests während der
+Entwicklung wird zusätzlich ein natives Linux-Hostsystem benötigt (siehe
 Abschnitt „TSE-Hardware-Tests" unten) — WSL2 kann USB-Geräte nicht ohne
 Weiteres durchreichen.
 
@@ -72,8 +74,7 @@ Weiteres durchreichen.
 club-pos/
 ├── package.json                  # Root-Workspace, gemeinsame Skripte
 ├── tsconfig.base.json            # Gemeinsame TS-Optionen für alle Pakete
-├── docker-compose.yml            # Produktions-Stack (Postgres + Backend)
-├── docker-compose.dev.yml        # Dev-Overrides (nur Postgres in Docker)
+├── docker-compose.yml            # NUR Entwicklung — startet PostgreSQL (kein Docker in Produktion)
 ├── .env.example                  # Vorlage für Umgebungsvariablen
 │
 ├── packages/
@@ -81,7 +82,6 @@ club-pos/
 │   │   └── src/types.ts          # Alle Domain-Typen (OrderItemStatus, Invoice …)
 │   │
 │   ├── backend/                  # @fairpos/backend — Fastify API + Print Worker
-│   │   ├── Dockerfile            # 3-Stage-Build (frontend → backend → prod)
 │   │   ├── native/tse-cli/       # Minimaler C++-Wrapper um das Swissbit-SDK
 │   │   │   ├── src/tseCli.cpp    # CLI, vom Backend als Subprozess aufgerufen
 │   │   │   ├── build.sh          # Kompiliert gegen die vendorten SDK-Dateien
@@ -148,7 +148,7 @@ und lässt die `tse_*`-Spalten der Rechnung `null`. Siehe docs/TSE-Integration.m
 Nur PostgreSQL läuft in Docker; das Backend läuft lokal.
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+docker compose up -d
 ```
 
 ### 3. Abhängigkeiten installieren
@@ -229,57 +229,66 @@ bevor der HTTP-Server lauscht.
 
 ## Production-Deployment
 
-### Build & Start
+**Keine Containerisierung.** Backend und Frontend laufen als nativer
+Node.js-Prozess direkt auf einem dedizierten Ubuntu-Server, PostgreSQL nativ
+über das PGDG-APT-Repo installiert (kein Docker). Grund: der einzige Punkt,
+an dem Docker hier echten Mehraufwand verursacht hätte, ist die
+Swissbit-USB-TSE — ein Container hätte Bind-Mount-Propagation für
+hot-plug-fähige USB-Hardware benötigt (`rslave`), nur um ein Problem zu lösen,
+das auf einem einzelnen dedizierten Server ohne Skalierungsbedarf gar nicht
+existiert, wenn der Node-Prozess direkt auf dem Host läuft. Die vollständige,
+schrittweise Installationsanleitung (Postgres-Setup, systemd-Unit,
+Berechtigungen für den TSE-Mountpunkt, Automatisierungsskripte) steht in
+`docs/Installationsanleitung.md`.
+
+Kurzfassung für alle, die die Anleitung schon kennen:
 
 ```bash
-# Einmalig oder nach Änderungen
-cp .env.example .env   # Produktionswerte eintragen
-
-docker compose build
-docker compose up -d
+npm ci
+npm run build -w packages/shared
+npm run build -w packages/backend
+npm run build -w packages/frontend
+cp packages/frontend/build/* packages/backend/public/ -r   # siehe Installationsanleitung für den genauen Schritt
+npm run db:migrate -w packages/backend
 ```
 
-Die Anwendung ist dann unter `http://<server-ip>:3000` erreichbar.
+Danach startet ein systemd-Service `node packages/backend/dist/index.js`
+(Details, inkl. Unit-Datei-Vorlage: `docs/Installationsanleitung.md`). Die
+Anwendung ist dann unter `http://<server-ip>:3000` erreichbar.
 
-### Docker-Image (3-Stage-Build)
-
-Das `packages/backend/Dockerfile` baut in drei Stufen:
-
-| Stage              | Basis            | Ergebnis                          |
-|--------------------|------------------|-----------------------------------|
-| `frontend-builder` | node:20-alpine   | SvelteKit-Build (`/build`)        |
-| `backend-builder`  | node:20-alpine   | TypeScript-Kompilat (`/dist`)     |
-| Production         | node:20-alpine   | Nur Runtime-Artefakte, kein `src` |
-
-Im finalen Image enthält `/app/dist` das Backend-Kompilat und `/app/public`
-die kompilierten Frontend-Dateien (von Fastify als Static Files ausgeliefert).
+**Lokale Entwicklung** nutzt weiterhin `docker-compose.yml`, aber
+ausschließlich für PostgreSQL (siehe oben, Abschnitt "Lokale
+Entwicklungsumgebung") — Backend/Frontend laufen dort wie in Produktion nativ
+via `npm run dev`.
 
 ### Swissbit USB-TSE-Anbindung
 
-Kein eigener Container, keine Middleware — das Backend ruft
+Kein Container, keine Middleware — das Backend ruft
 `packages/backend/native/tse-cli` als Subprozess auf. Details (Architektur,
 Concurrency-Modell, Vendoring, Lifecycle) stehen vollständig in
 docs/TSE-Integration.md; hier nur das Deployment-relevante:
 
-- Die TSE muss auf dem Docker-Host als Dateisystem gemountet sein
-  (`TSE_MOUNT_POINT`), bevor der Backend-Container startet.
-- In `docker-compose.yml` ist ein `volumes`-Eintrag für den Mount-Punkt
-  auskommentiert — Host-Pfad einkommentieren/anpassen, damit der Container
-  darauf zugreifen kann.
-- `TSE_MOUNT_POINT` in `.env` muss auf den **Container-seitigen** Pfad zeigen
-  (rechte Seite des `volumes`-Mappings), nicht auf den Host-Pfad.
+- Die TSE muss auf dem Host als Dateisystem gemountet sein, bevor die
+  Signierung genutzt werden kann — der Node-Prozess liest/schreibt direkt auf
+  diesem Pfad, kein Container-Mapping dazwischen.
+- Mount-Pfad und Client-ID werden über Systemeinstellungen → System in der
+  Admin-UI konfiguriert (inkl. "Auto-erkennen"-Button, der die TSE unter den
+  aktuell gemounteten Wechseldatenträgern findet — kein manuelles Pfad-Tippen
+  nötig). `TSE_MOUNT_POINT`/`TSE_CLIENT_ID` in `.env` sind nur ein optionaler
+  initialer Seed-Wert. Beide Werte wirken sofort, ohne Neustart.
 - `TSE_CLIENT_ID` ist ein frei wählbarer Bezeichner für diese Kasse (z.B.
   `FairPOS-1`) — muss bei der einmaligen TSE-Inbetriebnahme (`setup`)
   registriert werden.
-- Mount-Pfad, Client-ID und der (laut KassenSichV dauerhaft speicherbare)
-  TimeAdmin-PIN lassen sich alternativ bequem über Systemeinstellungen →
-  System in der Admin-UI konfigurieren — das wirkt sofort, ohne Neustart
-  (siehe docs/TSE-Integration.md Abschnitt 7).
-- `native/tse-cli/vendor/bin/tseCli` (die kompilierte Binary) muss im
-  Docker-Image vorhanden sein — entweder im `packages/backend/Dockerfile`
-  mitgebaut oder vorab gebaut und ins Image kopiert werden. Das SDK selbst ist
-  gitignored (siehe `vendor/PLACE_SDK_FILES_HERE.txt`) und muss vor dem Build
-  lokal bereitgestellt werden.
+- Der (laut KassenSichV dauerhaft speicherbare) TimeAdmin-PIN wird ebenfalls
+  über die Admin-UI gesetzt (siehe docs/TSE-Integration.md Abschnitt 7).
+- `native/tse-cli/vendor/bin/tseCli` (die kompilierte Binary) muss auf dem
+  Server gebaut sein (`native/tse-cli/build.sh`, benötigt g++ + das
+  gitignored Swissbit-SDK, siehe `vendor/PLACE_SDK_FILES_HERE.txt`) — Details
+  in `docs/Installationsanleitung.md`.
+- Da der Server ggf. von mehreren Vereinen mit je eigener TSE genutzt wird,
+  gibt es bewusst **keine** feste udev-Regel, die eine bestimmte TSE auf einen
+  festen Mountpunkt pinnt — der Auto-erkennen-Button in der Admin-UI ersetzt
+  das, indem er bei Bedarf neu sucht.
 
 ### TSE-Hardware-Tests
 
@@ -293,19 +302,20 @@ dafür ist bereits bestellt (Stand August 2026).
 
 ## Umgebungsvariablen
 
-Alle Variablen werden aus `.env` geladen (Docker env_file). Pflichtfelder,
-die beim Backend-Start fehlen, führen zu einem sofortigen Fehler.
+Alle Variablen werden aus `.env` geladen (in der Entwicklung zusätzlich als
+Docker `env_file` für den Postgres-Container). Pflichtfelder, die beim
+Backend-Start fehlen, führen zu einem sofortigen Fehler.
 
 | Variable             | Pflicht | Standardwert              | Beschreibung                         |
 |----------------------|---------|---------------------------|--------------------------------------|
-| `POSTGRES_USER`      | ja      | —                         | DB-Benutzer (für Docker)             |
-| `POSTGRES_PASSWORD`  | ja      | —                         | DB-Passwort (für Docker)             |
-| `POSTGRES_DB`        | ja      | —                         | DB-Name (für Docker)                 |
+| `POSTGRES_USER`      | ja      | —                         | DB-Benutzer (Entwicklung: für den Docker-Container; Produktion: für die native `createuser`-Einrichtung, siehe Installationsanleitung) |
+| `POSTGRES_PASSWORD`  | ja      | —                         | DB-Passwort (dito)                   |
+| `POSTGRES_DB`        | ja      | —                         | DB-Name (dito)                       |
 | `DATABASE_URL`       | ja      | —                         | PostgreSQL-Connection-String         |
 | `SESSION_SECRET`     | ja      | —                         | Signierungsschlüssel für Cookies     |
 | `PORT`               | nein    | `3000`                    | HTTP-Port des Backends               |
 | `NODE_ENV`           | nein    | `development`             | `development` oder `production`      |
-| `TSE_MOUNT_POINT`    | nein    | —                         | Mount-Pfad der Swissbit USB-TSE (container-seitig). Ohne diesen Wert wird die TSE-Signierung übersprungen. Auch über die Admin-UI konfigurierbar. |
+| `TSE_MOUNT_POINT`    | nein    | —                         | Mount-Pfad der Swissbit USB-TSE auf dem Host. Nur ein optionaler initialer Seed-Wert — normalerweise über die Admin-UI gesetzt (inkl. "Auto-erkennen"-Button). Ohne Wert wird die TSE-Signierung übersprungen. |
 | `TSE_CLIENT_ID`      | nein    | —                         | Frei wählbarer Client-Bezeichner für diese Kasse, z.B. `FairPOS-1`. Auch über die Admin-UI konfigurierbar. |
 
 `SESSION_SECRET` sollte mindestens 32 zufällige Zeichen enthalten.

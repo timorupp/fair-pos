@@ -1,10 +1,22 @@
+# Local development only — PostgreSQL for `npm run dev`.
+#
+# The application itself (backend + frontend) is NOT containerized, in
+# development or production: `npm run dev` runs it directly on the host, and
+# production is a native Ubuntu installation (see docs/SETUP.md →
+# "Production-Deployment"). The Swissbit USB-TSE is a mounted filesystem the
+# backend process reads directly (see docs/TSE-Integration.md) — running the
+# app in a container would mean dealing with Docker bind-mount propagation
+# for hot-plugged USB hardware for no real benefit on a single dedicated
+# server, so this project deliberately doesn't containerize it at all.
+#
+# Usage: docker compose up -d
 services:
-
-  # PostgreSQL database
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     env_file: .env
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -12,27 +24,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  # Backend: Fastify API + SvelteKit SPA (static files) + Print Worker
-  backend:
-    build:
-      context: .
-      dockerfile: packages/backend/Dockerfile
-    restart: unless-stopped
-    env_file: .env
-    ports:
-      - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    # Swissbit USB-TSE: no separate service/middleware container — the backend
-    # process calls a small CLI (packages/backend/native/tse-cli) that talks to
-    # the TSE directly as a mounted filesystem. See docs/TSE-Integration.md.
-    # Uncomment and adjust the host-side mount point once the TSE is plugged
-    # in; TSE_MOUNT_POINT in .env must then point at the container-side path
-    # (the right-hand side below).
-    # volumes:
-    #   - /mnt/tse-usb:/mnt/tse-usb:rw
 
 volumes:
   # Named volume so PostgreSQL data lives inside the WSL2 VM (Linux permissions required).

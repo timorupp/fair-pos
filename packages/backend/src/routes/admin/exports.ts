@@ -1,6 +1,7 @@
-/** Export endpoints: Excel (Tagesexport + Veranstaltungsexport) and DSFinV-K. */
+/** Export endpoints: Excel (Tagesexport + Veranstaltungsexport), DSFinV-K, and Rechnungs-PDFs (ZIP). */
 
 import type { FastifyInstance } from 'fastify';
+import { ZipArchive } from 'archiver';
 import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { pickDefaultEventId } from '../../reports/event-select.js';
@@ -9,6 +10,8 @@ import { buildExcelWorkbook } from '../../exports/workbook.js';
 import { loadDsfinvkSource } from '../../exports/dsfinvk/load.js';
 import { buildDsfinvkExport } from '../../exports/dsfinvk/rows.js';
 import { buildDsfinvkZip } from '../../exports/dsfinvk/zip.js';
+import { loadReceiptById } from '../../receipt/data.js';
+import { renderReceiptPdf } from '../../receipt/pdf.js';
 
 /**
  * Reads the configured receipt-number prefix from system_setting. Empty string
@@ -138,6 +141,53 @@ function safeFilename(input: string): string {
 }
 
 /**
+ * Loads every invoice's id in the inclusive-exclusive `[from, to)` window,
+ * across all receipt types (sales_receipt, cancellation, training) — unlike
+ * the Excel sales export, this is meant as a complete archival record of
+ * every issued receipt, not a business-reporting view.
+ *
+ * @param from - ISO timestamp marking the start of the window (inclusive).
+ * @param to   - ISO timestamp marking the end of the window (exclusive).
+ * @returns Invoice ids, ordered by receipt number.
+ */
+async function loadInvoiceIdsInRange(from: string, to: string): Promise<string[]> {
+  const result = await query<{ id: string }>(`
+    SELECT id FROM invoice
+     WHERE created_at >= $1 AND created_at < $2
+     ORDER BY receipt_number
+  `, [from, to]);
+  return result.rows.map((r) => r.id);
+}
+
+/**
+ * Renders one PDF per invoice and packages them into a single ZIP archive,
+ * one entry per invoice named after its (formatted) receipt number.
+ *
+ * @param invoiceIds - Invoice ids to include, in the desired file order.
+ * @returns The complete ZIP archive as a Buffer.
+ */
+async function buildInvoicesZip(invoiceIds: string[]): Promise<Buffer> {
+  const archive = new ZipArchive({ zlib: { level: 9 } });
+  const chunks: Buffer[] = [];
+  archive.on('data', (chunk: Buffer) => chunks.push(chunk));
+  const done = new Promise<void>((resolve, reject) => {
+    archive.on('end', resolve);
+    archive.on('error', reject);
+  });
+
+  for (const id of invoiceIds) {
+    const data = await loadReceiptById(id);
+    if (!data) continue; // defends against a concurrent delete between the id query above and here — shouldn't happen in practice (invoices are never deleted)
+    const pdf = await renderReceiptPdf(data);
+    archive.append(pdf, { name: `${safeFilename(data.receiptNumber)}.pdf` });
+  }
+
+  await archive.finalize();
+  await done;
+  return Buffer.concat(chunks);
+}
+
+/**
  * Registers `/api/admin/exports/*` routes for the Excel exports.
  *
  * @param app - The Fastify scope under which to register the routes.
@@ -214,6 +264,50 @@ export async function exportsAdminRoute(app: FastifyInstance): Promise<void> {
     const zip = await buildDsfinvkZip(data);
 
     const filename = safeFilename(`dsfinvk_${source.registerName}_z${source.closing.zNumber}.zip`);
+    reply
+      .header('Content-Type', 'application/zip')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(zip);
+  });
+
+  /**
+   * GET /api/admin/exports/invoices/day — one PDF per invoice issued on a
+   * single calendar day, packaged as a ZIP. Includes every receipt type
+   * (sales_receipt, cancellation, training) — a complete archival record,
+   * not a business-reporting view.
+   * Query parameters: `date` (required) in `YYYY-MM-DD` form.
+   */
+  app.get<{ Querystring: { date?: string } }>('/invoices/day', async (req, reply) => {
+    if (!req.query.date) return reply.status(400).send({ error: 'Datum erforderlich (YYYY-MM-DD)' });
+    const range = dayRange(req.query.date);
+    if (!range) return reply.status(400).send({ error: 'Ungültiges Datum (erwartet YYYY-MM-DD)' });
+
+    const invoiceIds = await loadInvoiceIdsInRange(range.from, range.to);
+    if (invoiceIds.length === 0) return reply.status(404).send({ error: 'Keine Rechnungen an diesem Tag' });
+    const zip = await buildInvoicesZip(invoiceIds);
+
+    const filename = safeFilename(`fairpos_rechnungen_${req.query.date}.zip`);
+    reply
+      .header('Content-Type', 'application/zip')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(zip);
+  });
+
+  /**
+   * GET /api/admin/exports/invoices/event — one PDF per invoice issued
+   * during a Veranstaltung, packaged as a ZIP. Same scoping semantics as
+   * `/invoices/day` above, just windowed by the event's `[start, end)`.
+   * Query parameters: `event_id` (optional — defaults to current/last event).
+   */
+  app.get<{ Querystring: { event_id?: string } }>('/invoices/event', async (req, reply) => {
+    const ev = await resolveEvent(req.query.event_id);
+    if (!ev) return reply.status(404).send({ error: 'Keine Veranstaltung verfügbar' });
+
+    const invoiceIds = await loadInvoiceIdsInRange(ev.start, ev.end);
+    if (invoiceIds.length === 0) return reply.status(404).send({ error: 'Keine Rechnungen in dieser Veranstaltung' });
+    const zip = await buildInvoicesZip(invoiceIds);
+
+    const filename = safeFilename(`fairpos_rechnungen_${ev.name}.zip`);
     reply
       .header('Content-Type', 'application/zip')
       .header('Content-Disposition', `attachment; filename="${filename}"`)

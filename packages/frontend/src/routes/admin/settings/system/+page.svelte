@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { api, type TseStatus } from '$lib/api';
+  import { api, type TseStatus, type TseMountCandidate } from '$lib/api';
 
   // ── Read-only system status ────────────────────────────────────────────────
   let systemSerial = '';
@@ -10,7 +10,7 @@
   let statusError = '';
   let tick = 0; // re-renders the clock every second by changing a reactive dependency
 
-  // ── Editable settings (server_address, backup_directory, TSE connection) ──
+  // ── Editable settings (server_address, TSE connection) ──
   let settings: Record<string, string> = {};
   let editableLoading = true;
   let saving = false;
@@ -22,10 +22,17 @@
   let tseResult: TseStatus | null = null;
   let tseTestError = '';
 
+  // ── TSE mount-point candidates (dropdown + Auto-erkennen) ──────────────────
+  let tseCandidates: TseMountCandidate[] = [];
+  let candidatesLoading = false;
+  let candidatesError = '';
+  let detecting = false;
+  let detectMessage = '';
+
   let clockTimer: ReturnType<typeof setInterval> | null = null;
 
   onMount(async () => {
-    await Promise.all([loadStatus(), loadSettings()]);
+    await Promise.all([loadStatus(), loadSettings(), loadCandidates()]);
     clockTimer = setInterval(() => { tick++; }, 1000);
   });
 
@@ -57,7 +64,6 @@
     try {
       await api.admin.settings.save({
         server_address: settings['server_address'] ?? '',
-        backup_directory: settings['backup_directory'] ?? '',
         tse_mount_point: settings['tse_mount_point'] ?? '',
         tse_client_id: settings['tse_client_id'] ?? '',
         tse_time_admin_pin: settings['tse_time_admin_pin'] ?? '',
@@ -76,6 +82,45 @@
     } catch (e) {
       tseTestError = e instanceof Error ? e.message : 'Fehler';
     } finally { tseTesting = false; }
+  }
+
+  /** Lists currently-mounted removable filesystems for the dropdown — a cheap local `lsblk` call, not a TSE hardware access, so safe to run automatically. */
+  async function loadCandidates() {
+    candidatesLoading = true; candidatesError = '';
+    try {
+      const result = await api.admin.tse.candidates();
+      tseCandidates = result.candidates;
+    } catch (e) {
+      candidatesError = e instanceof Error ? e.message : 'Fehler';
+    } finally { candidatesLoading = false; }
+  }
+
+  /**
+   * "Auto-erkennen" — probes every removable mount point via the TSE
+   * hardware itself (worm_init validates whether it's really a TSE) and
+   * fills the Mount-Pfad field with the first one found. Doesn't save by
+   * itself — the admin still confirms via the usual "Speichern" button,
+   * consistent with every other field on this page.
+   */
+  async function detectTse() {
+    detecting = true; detectMessage = '';
+    try {
+      const result = await api.admin.tse.detect();
+      if (result.mountPoint) {
+        settings['tse_mount_point'] = result.mountPoint;
+        saveSuccess = false;
+        detectMessage = `TSE gefunden: ${result.mountPoint}. Bitte unten speichern.`;
+      } else if (result.candidatesTried === 0) {
+        detectMessage = 'Kein Wechseldatenträger gefunden — ist die TSE eingesteckt?';
+      } else {
+        detectMessage = `Keine TSE gefunden (${result.candidatesTried} Wechseldatenträger geprüft).`;
+      }
+    } catch (e) {
+      detectMessage = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      detecting = false;
+      await loadCandidates();
+    }
   }
 
   /** Formats a seconds-until countdown as whole days for readability. */
@@ -120,7 +165,7 @@
   <!-- Timezone & server time ─────────────────────────────────────────────────── -->
   <section class="card">
     <h2>Zeitzone &amp; Serverzeit</h2>
-    <p class="hint">Wird vom Betriebssystem des Servers übernommen. Änderung erfolgt in der Docker-/Linux-Konfiguration, nicht in der Anwendung.</p>
+    <p class="hint">Wird vom Betriebssystem des Servers übernommen. Änderung erfolgt in der Linux-Konfiguration des Servers, nicht in der Anwendung.</p>
     {#if statusLoading}
       <p class="muted">Lade…</p>
     {:else}
@@ -149,22 +194,17 @@
     {/if}
   </section>
 
-  <!-- Backup directory (editable) ───────────────────────────────────────────── -->
+  <!-- Manual database backup ───────────────────────────────────────────────── -->
   <section class="card">
-    <h2>Backup-Verzeichnis</h2>
-    <p class="hint">Zielverzeichnis für automatische tägliche Datenbank-Backups. Das Backup muss vom Container aus erreichbar sein (z. B. eingehängte USB-Festplatte oder NAS-Pfad).</p>
-    {#if editableLoading}
-      <p class="muted">Lade…</p>
-    {:else}
-      <div class="field">
-        <input
-          value={settings['backup_directory'] ?? ''}
-          on:input={(e) => { settings['backup_directory'] = e.currentTarget.value; saveSuccess = false; }}
-          placeholder="z. B. /mnt/backup/fairpos"
-          disabled={saving}
-        />
-      </div>
-    {/if}
+    <h2>Datenbank-Backup</h2>
+    <p class="hint">
+      Kein automatisches Backup — der Server läuft nicht 24/7, ein zeitbasierter
+      Trigger würde regelmäßig verpasst. Stattdessen jederzeit auf Abruf: lädt ein
+      vollständiges Datenbank-Backup als ZIP herunter (z. B. direkt nach dem
+      Tagesabschluss, vor Updates, oder um es auf einen externen Datenträger
+      mitzunehmen).
+    </p>
+    <a class="btn-primary" href={api.admin.backup.downloadUrl()}>Backup herunterladen</a>
   </section>
 
   <!-- TSE connection (editable) ─────────────────────────────────────────────── -->
@@ -187,6 +227,29 @@
           placeholder="z. B. /mnt/tse-usb"
           disabled={saving}
         />
+        <div class="tse-detect-row">
+          <select
+            aria-label="Gefundene Wechseldatenträger"
+            disabled={candidatesLoading || tseCandidates.length === 0}
+            on:change={(e) => {
+              if (e.currentTarget.value) { settings['tse_mount_point'] = e.currentTarget.value; saveSuccess = false; }
+            }}
+          >
+            <option value="">
+              {#if candidatesLoading}Lade Wechseldatenträger…
+              {:else if tseCandidates.length === 0}Keine Wechseldatenträger gefunden
+              {:else}Gefundenen Mount-Pfad wählen…{/if}
+            </option>
+            {#each tseCandidates as candidate}
+              <option value={candidate.mountPoint}>{candidate.mountPoint} ({candidate.device})</option>
+            {/each}
+          </select>
+          <button class="btn-ghost" type="button" on:click={detectTse} disabled={detecting}>
+            {detecting ? 'Suche…' : 'Auto-erkennen'}
+          </button>
+        </div>
+        {#if candidatesError}<p class="error-text">{candidatesError}</p>{/if}
+        {#if detectMessage}<p class="hint detect-message">{detectMessage}</p>{/if}
       </div>
       <div class="field">
         <label for="tse-client-id">Client-ID</label>
@@ -239,6 +302,9 @@
           <dt>Zertifikat gültig bis</dt><dd>{new Date(tseResult.info.certificateExpirationDate * 1000).toLocaleDateString('de-DE')}</dd>
           <dt>Nächster Self-Test</dt><dd>in {formatDaysFromSeconds(tseResult.info.timeUntilNextSelfTest)}</dd>
           <dt>Nächste Zeitsynchronisation</dt><dd>in {formatDaysFromSeconds(tseResult.info.timeUntilNextTimeSynchronization)}</dd>
+          <dt>Signaturalgorithmus</dt><dd><code>{tseResult.info.signatureAlgorithm}</code></dd>
+          <dt>Zeitformat</dt><dd><code>{tseResult.info.logTimeFormat}</code></dd>
+          <dt>Public Key</dt><dd><code class="pubkey">{tseResult.info.publicKey}</code></dd>
         </dl>
 
         <details>
@@ -285,6 +351,11 @@
   .kv dt { color: var(--color-text-muted); }
   .kv dd { margin: 0; }
   .kv code { font-size: 0.9rem; }
+  .kv .pubkey { word-break: break-all; font-size: 0.75rem; }
+
+  .tse-detect-row { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+  .tse-detect-row select { flex: 1; max-width: 360px; }
+  .detect-message { margin: 0.4rem 0 0 0; }
 
   .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
   .field:last-child { margin-bottom: 0; }

@@ -183,8 +183,13 @@ Table daily_closing {
 // status:
 //   open       — not yet invoiced; sitting on a table
 //   paid       — included on an invoice and paid normally
-//   free       — 100% discount; original price preserved; 0 € invoice with TSE
-//   cancelled  — silently removed; no invoice, no TSE transaction
+//   free       — 100% discount; original price preserved; no invoice, but
+//                signed as TSE SonstigerVorgang (order_cancellation row)
+//   cancelled  — silently removed; no invoice, but ALSO signed as TSE
+//                SonstigerVorgang (order_cancellation row) — both statuses
+//                share the same TSE-signing path, see register-session.ts
+//                cancel endpoint and docs/Anforderungen.md "Zu signierende
+//                Vorgänge in FairPOS"
 Table order_item {
   id                   uuid          [pk, default: `gen_random_uuid()`]
   invoice_id           uuid          [null, note: 'Null while open; set when invoiced']
@@ -210,6 +215,45 @@ Table order_item {
   cancelled_by            uuid        [null, note: 'User ID of the waiter who cancelled']
   created_at              timestamptz [not null, default: `now()`]
   cancelled_at            timestamptz [null]
+
+  service_order_id        uuid        [null, note: 'The Bedienung order round this item belongs to; null for receipt_register items']
+  order_cancellation_id   uuid        [null, note: 'The AVSonstige Stornovorgang, if this item was cancelled/given free before checkout']
+}
+
+// One Bedienungskasse order round ("Bestellung aufnehmen") — signed as TSE
+// processType Bestellung-V1 (DSFinV-K BON_TYP: AVBestellung), one signature
+// per round, not per position. See docs/Anforderungen.md -> "Zu signierende
+// Vorgänge in FairPOS".
+Table service_order {
+  id                     uuid         [pk, default: `gen_random_uuid()`]
+  register_id            uuid         [not null]
+  dining_table_id        uuid         [null]
+  user_id                uuid         [null, note: 'Waiter who took the order']
+  created_at             timestamptz  [not null, default: `now()`]
+  tse_transaction_number bigint       [null]
+  tse_signature_counter  bigint       [null]
+  tse_signature          text         [null]
+  tse_start_time         timestamptz  [null]
+  tse_end_time           timestamptz  [null]
+  tse_serial_number      varchar(128) [null]
+}
+
+// One Stornovorgang for open (not-yet-invoiced) positions — signed as TSE
+// processType SonstigerVorgang (DSFinV-K BON_TYP: AVSonstige), covering both
+// a real Storno and a free_of_charge booking. See
+// docs/Anforderungen.md -> "Zu signierende Vorgänge in FairPOS".
+Table order_cancellation {
+  id                     uuid         [pk, default: `gen_random_uuid()`]
+  register_id            uuid         [not null]
+  cancellation_reason_id uuid         [not null]
+  cancelled_by           uuid         [null]
+  created_at             timestamptz  [not null, default: `now()`]
+  tse_transaction_number bigint       [null]
+  tse_signature_counter  bigint       [null]
+  tse_signature          text         [null]
+  tse_start_time         timestamptz  [null]
+  tse_end_time           timestamptz  [null]
+  tse_serial_number      varchar(128) [null]
 }
 
 // A fiscal receipt created at payment time. Carries the TSE signature.
@@ -260,8 +304,9 @@ Table print_job {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // A configurable reason for cancelling or giving away items for free.
-// booking_type determines whether a 0 € invoice is created (free) or the
-// item is silently removed (cancellation).
+// booking_type determines the resulting order_item.status (free | cancelled)
+// — both are recorded via order_cancellation + a TSE SonstigerVorgang
+// signature, not via a 0 € invoice (see order_item.status above).
 Table cancellation_reason {
   id           uuid         [pk, default: `gen_random_uuid()`]
   name         varchar(100) [not null]
@@ -277,11 +322,27 @@ Table system_setting {
   updated_at timestamptz  [not null, default: `now()`]
 }
 
-// TSE configuration: no database table needed.
-// - middleware_url          → environment variable TSE_MIDDLEWARE_URL (Docker)
-// - serial_number           → read live from middleware API
-// - bsi_certification_id    → read from TSE certificate via middleware; fallback: system_setting
-// - activation_date         → read live from middleware API
+// Automated TSE outage documentation (AEAO zu § 146a AO Nr. 1.14.1): every
+// failed or skipped-for-lack-of-configuration TSE signing opens a row (if
+// none is already open); the next successful signing closes it. At most one
+// open (ended_at IS NULL) row at a time, enforced by a partial unique index —
+// see packages/backend/src/tse/outage.ts and docs/TSE-Integration.md 8.1.
+Table tse_outage {
+  id         uuid        [pk, default: `gen_random_uuid()`]
+  started_at timestamptz [not null, default: `now()`]
+  ended_at   timestamptz [null]
+  reason     text        [not null]
+}
+
+// TSE configuration: no database table needed (superseded design — no
+// middleware/fiskaltrust, no Docker; direct Swissbit SDK CLI subprocess,
+// see docs/TSE-Integration.md).
+// - mount_point / client_id → system_setting (tse_mount_point/tse_client_id),
+//                             editable via Systemeinstellungen -> System
+// - serial_number, bsi_certification_id, signature_algorithm, log_time_format,
+//                             public_key → read live via the tseCli `info` command
+// - activation_date         → NOT tracked anywhere; operator notes it manually
+//                             (see docs/Organisatorische-Anleitung.md Abschnitt 1)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FOREIGN KEYS
@@ -315,9 +376,19 @@ Ref: order_item.user_id > user.id
 Ref: order_item.article_id > article.id
 Ref: order_item.cancellation_reason_id > cancellation_reason.id
 Ref: order_item.cancelled_by > user.id
+Ref: order_item.service_order_id > service_order.id
+Ref: order_item.order_cancellation_id > order_cancellation.id
 Ref: invoice.register_id > register.id
 Ref: invoice.daily_closing_id > daily_closing.id
 Ref: invoice.cancels_invoice_id > invoice.id
+
+// Bedienungskasse: order rounds & open-position cancellations (TSE-relevant)
+Ref: service_order.register_id > register.id
+Ref: service_order.dining_table_id > dining_table.id
+Ref: service_order.user_id > user.id
+Ref: order_cancellation.register_id > register.id
+Ref: order_cancellation.cancellation_reason_id > cancellation_reason.id
+Ref: order_cancellation.cancelled_by > user.id
 
 // Print queue
 Ref: print_job.printer_id > printer.id

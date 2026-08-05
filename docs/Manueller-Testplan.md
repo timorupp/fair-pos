@@ -17,7 +17,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 ## 0. Vorbereitung
 
-- [ ] Testumgebung aufgesetzt (lokal `npm run dev` oder Docker-Compose-Stack)
+- [ ] Testumgebung aufgesetzt (lokal `npm run dev`, oder eine native Installation gemäß `docs/Installationsanleitung.md` auf einem Testserver)
 - [ ] Frische/zurückgesetzte Test-Datenbank (keine Altdaten aus vorherigen Läufen)
 - [ ] Mindestens 2 Testbenutzer angelegt: 1 Admin, 1 Kassenpersonal (nicht-Admin)
 - [ ] Mindestens 2 Kassen angelegt: 1 Bonkasse (`receipt_register`), 1 Bedienungskasse (`service_register`)
@@ -193,8 +193,7 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 
 **Bekannte, dokumentierte Einschränkungen — nicht als Bug melden, aber im Hinterkopf behalten:**
 - `service_order`/`order_cancellation` werden über Kasse + Kalendertag angenähert, nicht exakt dem Kassenabschluss zugeordnet (Abschnitt 6.7)
-- TSE-Zertifikatsfelder in `tse.csv` sind leer (Task #46)
-- `processData`-Format entspricht noch nicht der DSFinV-K-Vorgabe (Task #46) — betrifft die Live-Signierung, nicht diesen Export direkt
+- Nur die volle TSE-Zertifikatskette (`TSE_ZERTIFIKAT_I/II` in `tse.csv`) ist noch leer — Signaturalgorithmus/Zeitformat/Public-Key sind seit Task #46 gefüllt
 - CSV-Trennzeichen/`index.xml`-Schema folgen der verbreiteten Konvention, sind aber nicht gegen die separate GoBD-Anlage verifiziert (Abschnitt 6, Einleitung)
 
 ---

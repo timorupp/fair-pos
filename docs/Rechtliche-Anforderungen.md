@@ -231,7 +231,7 @@ Vollständiger Wertebereich (verbindlich, keine eigenen Werte erlaubt):
 |---|---|---|
 | `Beleg` | „Vorgang, der über die Kasse abgeschlossen wird" — verändert die Vermögenszusammensetzung; alle Zahlarten möglich | Kassenbeleg-V1 (Bonkasse-Checkout, Bedienungskasse-Split-Kassieren, **auch** Bonstorno — s.u.) |
 | `AVBestellung` | „Bestellungen, die im Kassensystem direkt erfasst und als eigenständiger Vorgang behandelt werden" — noch keine Lieferung/Leistung | Bedienungskasse: Bestellung aufnehmen |
-| `AVBelegabbruch` | „Vorgänge, die nach Transaktionsbeginn abgebrochen werden" — keine Zahlung zulässig | Wird von `signTseTransaction` bereits als TSE-`processType` genutzt (Task #45) — als DSFinV-K-`BON_TYP` für den späteren Export ebenfalls zu verwenden |
+| `AVBelegabbruch` | „Vorgänge, die nach Transaktionsbeginn abgebrochen werden" — keine Zahlung zulässig | **Kein eigener DSFinV-K-`BON_TYP` in unserem Export** — `signTseTransaction` (Task #45) nutzt `AVBelegabbruch` nur als `<Vorgangstyp>` *innerhalb* der `Kassenbeleg-V1`-processData, um einen begonnenen, nie abgeschlossenen TSE-Vorgang zu schließen (nicht als TSE-`processType` selbst, seit der Korrektur in Task #46). Der zugehörige Geschäftsvorgang (Beleg/Bestellung/Storno) entsteht trotzdem ganz normal, nur ohne TSE-Signatur (`TSE_TA_FEHLER` gefüllt) — es gibt daher nie eine `BON_TYP=AVBelegabbruch`-Zeile im Export. |
 | `AVSonstige` | „Alle Vorgänge, die hier nicht näher definiert wurden" — `BON_NAME` zwingend mit individueller Beschreibung zu füllen | Storno einer offenen Bestellposition (vor dem Kassieren) |
 | `AVTraining` | Übungs-/Trainingsvorgänge, keine echte Zahlung, kein Einfluss auf den Kassenabschluss | Für `invoice.receipt_type='training'` vorgesehen (falls genutzt) |
 | `AVBelegstorno` | **Achtung, S. 45f.:** „Sobald eine TSE an einer Kasse eingesetzt wird, ist es technisch nicht mehr möglich, den Vorgangstyp 'AVBelegstorno' korrekt zu verwenden, da jeder Beleg schon vor dem Setzen des Storno-Kennzeichens bereits durch die TSE signiert wurde... Hierfür muss weiterhin der Vorgangstyp 'Beleg' mit umgekehrten Vorzeichen und ohne Storno-Kennzeichen genutzt werden." | **Bestätigt unser bestehendes Bonstorno-Design:** `cancels_invoice_id`-Referenz + `receipt_type='cancellation'` als eigener `Beleg`-Vorgang mit `Kassenbeleg-V1`-Signatur — exakt das von der Spezifikation für TSE-Systeme vorgeschriebene Verfahren, nicht `AVBelegstorno`. |
@@ -317,7 +317,7 @@ offenen Bestellposition): Inhalt frei wählbar (`<FREI>`), Anhang I empfiehlt
 ein lesbares Textformat — FairPOS nutzt einen Klartext-Satz mit Stornogrund,
 Positionen und Summe.
 
-**✅ Umgesetzt (September 2026):** `tse/processData.ts` implementiert alle
+**✅ Umgesetzt (August 2026):** `tse/processData.ts` implementiert alle
 drei Formate exakt wie oben; `tse/signing.ts` sendet bei `start` immer leere
 Werte. Unit-Tests (`tse/processData.test.ts`) reproduzieren Anhang I's eigene
 Beispiele wortwörtlich. War zuvor als eigener Task **#46** zurückgestellt

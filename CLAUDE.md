@@ -18,9 +18,15 @@ Veranstaltungen und Festen.
 - `docs/Datenmodell.dbml` — Datenbankschema (dbdiagram.io)
 - `docs/Dictionary.md` — Deutsch ↔ Englisch Übersetzungsreferenz (verbindlich)
 - `docs/SETUP.md` — Technisches Setup, Architektur, Deployment
+- `docs/Installationsanleitung.md` — Schritt-für-Schritt-Produktionsinstallation (native Ubuntu, kein Docker); Automatisierungsskripte in `scripts/install/`
 - `docs/TSE-Integration.md` — TSE-Architekturkonzept (CLI-Subprozess, Vendoring, Lifecycle, aktueller Umsetzungsstand)
 - `docs/Rechtliche-Anforderungen.md` / `docs/Organisatorische-Anleitung.md` — KassenSichV-/GoBD-Vorgaben und Betriebsabläufe
 - `docs/Manueller-Testplan.md` — Checkliste für den manuellen Regressionstest (UI, TSE-Ausfallverhalten, DSFinV-K-Export)
+
+**Projekt-Metadateien** (Repo-Root, nicht unter `docs/`):
+- `TASKS.md` — maßgebliche, versionierte Aufgabenliste (ersetzt die
+  Session-interne Task-Verwaltung; `Task #<N>`-Verweise im Code lösen hier auf)
+- `DANGER.md` — gefundene Risiken, fragwürdige Designs, Refactoring-Bedarf
 
 ---
 
@@ -85,15 +91,22 @@ Refactorings ab.
 
 ### Tests (Pflicht parallel zur Implementierung)
 
-Zwei Test-Kategorien laufen nebeneinander:
+Drei Test-Kategorien laufen nebeneinander:
 
 - **Unit-Tests** (`*.test.ts`) für reine Funktionen — `npm test`.
 - **Integration-Tests** (`*.integration.test.ts`) für DB-getriebene Pfade —
   `npm run test:integration`. Startet einen Postgres-Container über
   `testcontainers` (siehe `src/test/global-setup.ts`); pro Test wird mit
   `truncateAllTables()` aufgeräumt.
+- **End-to-End-Tests** (`*.e2e.test.ts`, `packages/backend/src/e2e/`) — per
+  echtem HTTP gegen eine bereits laufende, echte Instanz (nicht gemockt,
+  keine testcontainers) — `npm run test:e2e` im Backend-Paket. Siehe
+  `packages/backend/src/e2e/README.md`. Kein Pflichtbestandteil jeder
+  Änderung wie die beiden anderen Kategorien — sinnvoll nach größeren
+  Deployment-relevanten Änderungen, nicht bei jedem Commit.
 
-**Beim Schreiben eines neuen Features gehören die Tests zur selben Änderung:**
+**Beim Schreiben eines neuen Features gehören Unit- und Integrationstests zur
+selben Änderung:**
 
 - Reine Helfer/Aggregations-/Format-Funktionen → Unit-Test.
 - Route-Handler, DB-Helpers, Bootstrap-Hooks → Integration-Test.
@@ -127,6 +140,7 @@ Struktur entfernen. So bleiben bestehende Daten erhalten.
 | Drucken    | ESC/POS über TCP, Print Worker im Backend      |
 | TSE        | Swissbit USB-TSE, eigener CLI-Subprozess (`native/tse-cli`) — siehe `docs/TSE-Integration.md` |
 | Packaging  | npm Workspaces (shared / backend / frontend)   |
+| Deployment | Native Ubuntu-Installation, **kein Docker in Produktion** — siehe `docs/Installationsanleitung.md`. Docker nur für lokale Entwicklung (PostgreSQL, `docker-compose.yml`). |
 
 ---
 

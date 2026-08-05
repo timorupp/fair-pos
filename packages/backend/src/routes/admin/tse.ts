@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 import { getTseInfo } from '../../tse/client.js';
+import { detectTse, listTseMountCandidates, type TseMountCandidate } from '../../tse/detect.js';
 import type { TseInfo } from '../../tse/types.js';
 
 /** Shape returned by `GET /api/admin/tse/status`. */
@@ -14,6 +15,19 @@ interface TseStatusResponse {
   info?: TseInfo;
   /** Present when `configured` is true but the live `info` call failed (wrong path, PUK/PIN, unreachable hardware, ...). */
   error?: string;
+}
+
+/** Shape returned by `GET /api/admin/tse/candidates`. */
+interface TseCandidatesResponse {
+  candidates: TseMountCandidate[];
+}
+
+/** Shape returned by `POST /api/admin/tse/detect`. */
+interface TseDetectResponse {
+  /** The mount point to fill into the Settings form, or `null` if no candidate turned out to be a real TSE. */
+  mountPoint: string | null;
+  /** How many removable mount points were probed in total (found + rejected) — shown in the UI even on failure, so "nothing plugged in" reads differently from "something's plugged in but it isn't a TSE". */
+  candidatesTried: number;
 }
 
 /** Registers /api/admin/tse routes. */
@@ -42,5 +56,36 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
       };
       return reply.send(response);
     }
+  });
+
+  /**
+   * GET /api/admin/tse/candidates — currently-mounted removable filesystems,
+   * for the Mount-Pfad dropdown. Purely informational (doesn't check whether
+   * any of them is actually a TSE) — see `POST /detect` for that.
+   */
+  app.get('/candidates', async (_req, reply) => {
+    try {
+      const candidates = await listTseMountCandidates();
+      const response: TseCandidatesResponse = { candidates };
+      return reply.send(response);
+    } catch (e) {
+      return reply.status(500).send({ error: e instanceof Error ? e.message : 'Unbekannter Fehler' });
+    }
+  });
+
+  /**
+   * POST /api/admin/tse/detect — the "Auto-erkennen" button. Probes every
+   * currently-mounted removable filesystem via `worm_init`/`info` and
+   * returns the first one that's a real TSE. Never blocks on a wrong
+   * candidate — `native/tse-cli`'s `info` command itself validates whether a
+   * TSE is actually present, so this doesn't need to guess.
+   */
+  app.post('/detect', async (_req, reply) => {
+    const result = await detectTse();
+    const response: TseDetectResponse = {
+      mountPoint: result.found?.mountPoint ?? null,
+      candidatesTried: (result.found ? 1 : 0) + result.triedAndRejected.length,
+    };
+    return reply.send(response);
   });
 }

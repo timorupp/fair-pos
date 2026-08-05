@@ -96,4 +96,36 @@ describe('TSE connection settings + status', () => {
     expect(body.configured).toBe(true);
     expect(body.error).toBeTruthy();
   });
+
+  it('GET /candidates lists removable mount points via the real lsblk binary without throwing', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/candidates',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    // This test environment has no removable USB device attached, so an
+    // empty list is the expected (and only reliably assertable) outcome —
+    // the actual candidate-selection logic is unit-tested against synthetic
+    // lsblk output in tse/detect.test.ts.
+    expect(response.json()).toEqual({ candidates: [] });
+  });
+
+  it('POST /detect reports no match when nothing is mounted (real environment, no TSE attached)', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/detect',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ mountPoint: null, candidatesTried: 0 });
+  });
+
+  it('rejects /candidates and /detect without an admin session', async () => {
+    const app = await getTestApp();
+    const candidates = await app.inject({ method: 'GET', url: '/api/admin/tse/candidates' });
+    expect(candidates.statusCode).toBe(401);
+    const detect = await app.inject({ method: 'POST', url: '/api/admin/tse/detect' });
+    expect(detect.statusCode).toBe(401);
+  });
 });

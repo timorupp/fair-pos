@@ -43,7 +43,7 @@ Folgende Angaben müssen aus dem FairPOS-System entnommen werden (Einstellungen 
 | Kassensystem-Seriennummer | Einstellungen → System |
 | TSE-Seriennummer (64 Zeichen Hex) | Einstellungen → TSE-Konfiguration |
 | BSI-Zertifizierungs-ID der TSE | Dokumentation der Swissbit TSE |
-| TSE-Aktivierungsdatum | Einstellungen → TSE-Konfiguration |
+| TSE-Aktivierungsdatum | **Nicht in FairPOS gespeichert** — manuell beim Setup notieren (z.B. hier in der Verfahrensdokumentation, Abschnitt 2C) |
 
 Zusätzlich werden folgende Angaben des Vereins benötigt:
 
@@ -125,7 +125,13 @@ Alle Kassendaten (Transaktionen, Rechnungen, Kassenabschlüsse) müssen 10 Jahre
 ### Empfohlenes Vorgehen
 
 **Regelmäßige Datensicherung:**
-- PostgreSQL-Datenbank täglich sichern (z.B. per `pg_dump`)
+- PostgreSQL-Datenbank täglich sichern. FairPOS automatisiert das bewusst
+  **nicht** selbst (der Server läuft nicht durchgehend, ein zeitbasierter
+  automatischer Trigger würde regelmäßig verpasst — siehe
+  `docs/Anforderungen.md` "Backup-Konzept") — stattdessen: Admin klickt in
+  Systemeinstellungen → System auf "Backup herunterladen" (lädt ein
+  vollständiges `pg_dump`-Backup als ZIP), idealerweise direkt nach jedem
+  Tagesabschluss.
 - Sicherung auf einem externen Medium (USB-Festplatte, NAS) oder Cloud-Speicher (verschlüsselt)
 - Sicherung sollte nicht auf demselben Gerät wie der Server liegen
 

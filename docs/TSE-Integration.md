@@ -206,13 +206,21 @@ werden** — das sind Zugangsdaten des Betreibers, nicht des Software-Hersteller
 **Umgesetzt (August 2026):** Mount-Pfad, Client-ID und TimeAdmin-PIN sind über
 Systemeinstellungen → System konfigurierbar, gespeichert als `tse_mount_point` /
 `tse_client_id` / `tse_time_admin_pin` in `system_setting` (gleiche Tabelle wie
-`server_address`/`backup_directory`). `tse/settings.ts` spiegelt Mount-Pfad und
+`server_address`). `tse/settings.ts` spiegelt Mount-Pfad und
 Client-ID beim Start und nach jedem Speichern synchron in `config` (siehe
 config.ts), damit der heiße Kassierpfad weiterhin ohne DB-Zugriff auskommt.
 Admin-PIN/PUK/Credential-Seed werden bewusst NICHT über die UI abgefragt — die
 einmalige Hardware-Inbetriebnahme (`setup`) ist nicht Teil dieser UI-Iteration.
 Ein "TSE testen"-Button ruft `GET /api/admin/tse/status` auf, der live `info`
 aufruft und Self-Test-Status, Restsignaturen, Zertifikatsablauf usw. anzeigt.
+
+**Umgesetzt (Task #51):** Den Mount-Pfad muss der Admin nicht mehr von Hand
+eintippen — ein "Auto-erkennen"-Button (`POST /api/admin/tse/detect`,
+`tse/detect.ts`) probiert jeden aktuell gemounteten Wechseldatenträger über
+`info` durch (`worm_init` validiert selbst, ob dort tatsächlich eine TSE
+liegt) und trägt den ersten Treffer ein; ein Dropdown listet alle Kandidaten
+zur manuellen Auswahl. Bewusst kein Pinning auf ein festes Gerät — der Server
+kann von mehreren Vereinen mit je eigener TSE genutzt werden.
 
 ---
 
@@ -330,13 +338,17 @@ Swissbits Beispiel).
 - DSFinV-K-CSV-Export (**✅ Task #13 umgesetzt**, August 2026) — eigenes Modul
   `exports/dsfinvk/`, dokumentiert in `docs/Rechtliche-Anforderungen.md`
   Abschnitt 6. Nutzt die hier signierten `tse_*`-Felder direkt aus der DB
-  (nicht `exportTar`) — der Rohdaten-TAR-Export bleibt eine separate, noch
-  nicht gebaute Funktion für Backup/Archivierung (Task #25), unabhängig vom
-  CSV-Export.
+  (nicht `exportTar`) — der Rohdaten-TAR-Export (`worm_export_tar`, TR-03153-
+  konformes TSE-Archiv) bleibt eine separate, **weiterhin nicht gebaute**
+  Funktion. Task #25 wurde bewusst auf ein reines Datenbank-Backup
+  (`pg_dump`) verengt (siehe `docs/Anforderungen.md` "Backup-Konzept") — deckt
+  den `exportTar`-Anwendungsfall **nicht** ab. Falls eine TSE-Rohdatenarchivierung
+  separat vom Datenbank-Backup gebraucht wird, ist das ein eigener, aktuell
+  nicht in `TASKS.md` erfasster Bedarf.
 - Korrektur des `processData`-Formats für `Kassenbeleg-V1`/`Bestellung-V1`/
   `SonstigerVorgang` auf die von DSFinV-K Anhang I vorgeschriebene Struktur,
   inkl. TSE-Signaturalgorithmus/Zeitformat/Public-Key für den QR-Code —
-  **✅ Task #46 umgesetzt** (September 2026), siehe `tse/processData.ts`,
+  **✅ Task #46 umgesetzt** (August 2026), siehe `tse/processData.ts`,
   `tse/certificateInfo.ts`, `receipt/qr.ts` und
   `docs/Rechtliche-Anforderungen.md` Abschnitt 6.5. Rest davon, bewusst
   zurückgestellt (kleiner, nicht blockierend): die volle
@@ -344,5 +356,6 @@ Swissbits Beispiel).
   `TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung).
 - Fachliche Zuordnung, welcher Vorgang welchen `processType` bekommt — siehe
   `Anforderungen.md`.
-- Backup/Archivierungsstrategie der Export-Daten (`exportTar`-Rohdaten) —
-  siehe Task #25.
+- Backup/Archivierungsstrategie der TSE-Rohdaten (`exportTar`) — weiterhin
+  ungeklärt, siehe Hinweis oben; nicht Teil des mit Task #25 umgesetzten
+  Datenbank-Backups.

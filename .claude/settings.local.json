@@ -52,7 +52,11 @@
       "Bash(npx vitest *)",
       "Bash(npm install *)",
       "Bash(npm audit *)",
-      "Bash(grep -n \"closings: {\\\\|cancellations: {\\\\|reprint: \\\\|pdfUrl: \\\\|},$\" packages/frontend/src/lib/api.ts)"
+      "Bash(grep -n \"closings: {\\\\|cancellations: {\\\\|reprint: \\\\|pdfUrl: \\\\|},$\" packages/frontend/src/lib/api.ts)",
+      "Bash(git rm *)",
+      "Bash(git status *)",
+      "Bash(curl -sf http://localhost:3000/api/health)",
+      "Bash(E2E_ADMIN_NAME=e2e-admin E2E_ADMIN_PASSWORD=e2e-test-not-a-real-password-123 npm run test:e2e)"
     ]
   }
 }

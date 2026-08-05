@@ -177,6 +177,23 @@ export function getTseInfo(): Promise<TseInfo> {
 }
 
 /**
+ * Reads the `info` snapshot at an arbitrary mount point, bypassing
+ * `config.tseMountPoint` — used by `tse/detect.ts` to probe candidate
+ * mount points before any of them is actually configured. `info` doesn't
+ * take a client id, so unlike {@link getTseInfo} this never requires one.
+ * Still goes through the same queue as every other TSE call, so a probe
+ * can't race a real signing operation.
+ *
+ * @param mountPoint - Candidate filesystem path to probe.
+ * @returns The TSE status snapshot if a real TSE is mounted there.
+ * @throws {TseError} When nothing valid is mounted at `mountPoint` (worm_init
+ *   itself validates this — see `native/tse-cli`'s `info` command).
+ */
+export function getTseInfoAt(mountPoint: string): Promise<TseInfo> {
+  return enqueueTseCall(async () => runCli<TseInfo>(mountPoint, 'info', []));
+}
+
+/**
  * Runs routine TSE upkeep (self test + time synchronization). Intended to be
  * called periodically by a scheduler, not per-transaction — see
  * docs/TSE-Integration.md section 6.

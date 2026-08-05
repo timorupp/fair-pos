@@ -11,7 +11,7 @@ import { applyTseSettings, TSE_SETTING_KEYS } from '../../tse/settings.js';
 const ALLOWED_KEYS = new Set([
   'company_name', 'company_street', 'company_postal_code', 'company_city',
   'company_tax_number', 'company_vat_id', 'receipt_prefix', 'receipt_counter_start',
-  'vat_rate_deposit', 'server_address', 'backup_directory',
+  'vat_rate_deposit', 'server_address',
   'default_layout_receipt_register', 'default_layout_service_register',
   // Per-document-type checkboxes for the company logo.
   'logo_on_receipt', 'logo_on_cancellation', 'logo_on_z_bon',
