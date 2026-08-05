@@ -28,6 +28,8 @@
   let saving = false;
   let error = '';
   let success: { receipt_number: string; total: number } | null = null;
+  /** Set when a configured TSE failed to sign the Bonstorno — it was still created, see docs/TSE-Integration.md. */
+  let tseWarning: string | null = null;
 
   onMount(async () => {
     try {
@@ -78,7 +80,7 @@
    * positive integer quantity before calling the backend.
    */
   async function submit(): Promise<void> {
-    error = ''; success = null;
+    error = ''; success = null; tseWarning = null;
     if (!registerId) { error = 'Bitte eine Kasse wählen.'; return; }
     if (!cancellationReasonId) { error = 'Bitte einen Stornogrund wählen.'; return; }
     const items = lines
@@ -96,6 +98,7 @@
         ...(trimmedNote ? { note: trimmedNote } : {}),
       });
       success = { receipt_number: result.receipt_number_formatted, total };
+      tseWarning = result.tse_warning;
       // Reset for the next cancellation.
       lines = [{ article_id: '', quantity: 1 }];
       note = '';
@@ -202,6 +205,7 @@
           vom Tages-Bar-Bestand abgezogen.
         </p>
       {/if}
+      {#if tseWarning}<p class="warning-text">⚠ {tseWarning}</p>{/if}
     </div>
   {/if}
 </div>
@@ -219,4 +223,5 @@
   .actions { margin-top: 1.25rem; }
   .error-text { color: var(--color-danger); margin-top: 0.75rem; }
   .success-text { color: #4caf7d; margin-top: 0.75rem; }
+  .warning-text { color: #f59e0b; margin-top: 0.75rem; font-weight: 600; }
 </style>

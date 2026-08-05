@@ -23,3 +23,6 @@ Thumbs.db
 # vendor directory except our own placeholder file explaining what to place there.
 packages/backend/native/tse-cli/vendor/*
 !packages/backend/native/tse-cli/vendor/PLACE_SDK_FILES_HERE.txt
+
+# Personal local shortcut to launch a Claude Code session — not part of the app.
+local-run-claude-session.bat

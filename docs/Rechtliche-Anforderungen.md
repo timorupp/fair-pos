@@ -168,49 +168,84 @@ Das DSFinV-K-Kassenabschlussmodul ist das elektronische Äquivalent des Z-Bons (
 
 ## 6. DSFinV-K-Export
 
+**Quelle für diesen gesamten Abschnitt** (verbatim geprüft August 2026, für
+Prüfungszwecke zitierfähig): *DSFinV-K, Version 2.4*, offizielles PDF unter
+[kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf](https://kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf)
+(130 Seiten). Seitenangaben unten beziehen sich auf dieses Dokument. Für
+Details zum genauen CSV-Dateiformat (Feldtrennzeichen, Kopfzeile) verweist die
+DSFinV-K selbst (S. 10) auf ein separates Dokument „Ergänzende Informationen
+zur Datenträgerüberlassung" (Anlage zu den GoBD) — dieses wurde für diese
+Dokumentation **nicht** eingesehen; vor der finalen Implementierung des
+CSV-Schreibens (Trennzeichen etc.) sollte das nachgeholt werden. Branchenüblich
+(nicht als DSFinV-K-Vorgabe zitierfähig, sondern nur als Konvention) ist
+Semikolon-getrennte UTF-8-CSV mit Kopfzeile.
+
 ### 6.1 Struktur
 
-Der Export besteht aus drei Modulen als CSV-Dateien in einem ZIP-Archiv:
+Der Export besteht aus drei Modulen (S. 15) plus einer beschreibenden
+`index.xml` (GDPdU/GoBD-Anlage-Schema) als Manifest. **Vollständige Dateiliste
+laut Inhaltsverzeichnis (S. 6)** — FairPOS-Relevanz markiert:
 
-**Modul 1 — Einzelaufzeichnung (Transaktionsdaten)**
+**Einzelaufzeichnungsmodul** (S. 84–105)
 
-| Datei | Inhalt |
-|---|---|
-| `transactions.csv` | Bonkopf: BON_ID, Zeitstempel, BON_TYP, Kassennummer, Bedienername, Z_NR |
-| `transactions_vat.csv` | MwSt.-Summen pro Transaktion |
-| `lines.csv` | Artikelzeilen: Menge, Einzelpreis brutto/netto, Steuersatz |
-| `lines_vat.csv` | MwSt.-Aufschlüsselung je Position |
-| `datapayment.csv` | Zahlartendaten je Transaktion |
-| `references.csv` | Referenzen auf andere Vorgänge (z.B. Storno) |
-| `transactions_tse.csv` | TSE-Signatur, Signaturzähler, Zeitstempel |
-
-**Modul 2 — Stammdaten**
-
-| Datei | Inhalt |
-|---|---|
-| `location.csv` | Betriebsstätte: Name, Anschrift, USt-IdNr. |
-| `cashregister.csv` | Kassennummer, Softwareversion, Seriennummer |
-| `vat.csv` | Aktive Steuersätze mit Schlüssel und Prozentsatz |
-| `tse.csv` | TSE-Seriennummer, Zertifikat, Algorithmus, öffentlicher Schlüssel |
-
-**Modul 3 — Kassenabschluss**
-
-| Datei | Inhalt |
-|---|---|
-| `businesscases.csv` | Summen je Geschäftsvorfalltyp mit MwSt.-Aufschlüsselung |
-| `payment.csv` | Zahlartenzusammenfassung je Abschluss |
-| `cash_per_currency.csv` | Währungsaufschlüsselung des Bargeldbestands |
-
-### 6.2 Geschäftsvorfalltypen (BON_TYP)
-
-| BON_TYP | Beschreibung | FairPOS-Verwendung |
+| Datei | Inhalt | FairPOS |
 |---|---|---|
-| `Kassenbeleg` | Regulärer Kassenumsatz | Jede abgeschlossene Rechnung |
-| `Bestellung` | Bestellvorgang ohne direkte Kassenwirksamkeit | Bestellbons der Bedienung |
-| `AVBelegstorno` | Storno eines abgeschlossenen Belegs | Rechnungsstorno (Ebene 2) |
-| `Schulungsbeleg` | Trainingsmodus (kein echter Umsatz) | Ggf. für Testzwecke |
+| `transactions.csv` (Bonkopf) | BON_ID, BON_NR, BON_TYP, BON_NAME, TERMINAL_ID, BON_STORNO, BON_START, BON_ENDE, BEDIENER_ID/NAME, UMS_BRUTTO, KUNDE_* | ✅ genutzt |
+| `allocation_groups.csv` (Bonkopf_AbrKreis) | Zuordnung Beleg → Abrechnungskreis (z.B. Tisch) | ✅ passt zu unseren Tischen |
+| `transactions_vat.csv` (Bonkopf_USt) | Brutto/Netto/USt je Beleg und Steuersatz | ✅ entspricht unserer `taxBreakdown` |
+| `datapayment.csv` (Bonkopf_Zahlarten) | Zahlartenaufschlüsselung je Beleg | ✅ (aktuell nur „Bar", `payment_method` deckt „Unbar" vor) |
+| `lines.csv` (Bonpos) | Artikeltext, GV_TYP, GV_NAME, Menge, Faktor, Einheit, Grundpreis | ✅ genutzt |
+| `lines_vat.csv` (Bonpos_USt) | Brutto/Netto/USt je Position und Steuersatz | ✅ genutzt |
+| `itemamounts.csv` (Bonpos_Preisfindung) | Rabatt/Zuschlag je Position | teilweise (Pfand als Zuschlag denkbar) |
+| `subitems.csv` (Bonpos_Zusatzinfo) | Unterpositionen (Menü-Bestandteile) | nicht genutzt — FairPOS hat keine Menüs |
+| `references.csv` (Bon_Referenzen) | Verweise auf andere Belege/externe Systeme | nicht benötigt (Bonstorno nutzt `Beleg` mit umgekehrtem Vorzeichen, s.u. — keine Referenzierung über diese Datei nötig) |
+| `transactions_tse.csv` (TSE_Transaktionen) | TSE-Signatur, Signaturzähler, Zeitstempel je Vorgang | ✅ genutzt (bisher fälschlich in `transactions_vat.csv` vermutet — korrigiert) |
 
-### 6.3 Geschäftsvorfallarten (Zeilentypen in `lines.csv`)
+**Stammdatenmodul** (S. 66–79)
+
+| Datei | Inhalt | FairPOS |
+|---|---|---|
+| `cashpointclosing.csv` (Stamm_Abschluss) | Kassenabschluss-Metadaten (Z_NR, Start-/End-Vorgangs-ID) | ✅ pro Z-Bon |
+| `location.csv` (Stamm_Orte) | Betriebsstätte: Name, Anschrift, USt-IdNr. | ✅ aus `system_setting` |
+| `cashregister.csv` (Stamm_Kassen) | Kassennummer, Softwareversion, Seriennummer | ✅ aus `register` |
+| `slaves.csv` (Stamm_Terminals) | Terminals einer Master-Kasse | nicht benötigt — FairPOS hat keine Master-Slave-Kassen |
+| `pa.csv` (Stamm_Agenturen) | Agenturgeschäfte (Fremdverkauf) | nicht benötigt |
+| `vat.csv` (Stamm_USt) | Steuersätze mit Schlüssel (UST_SCHLUESSEL) | ✅ siehe Schlüsselschema unten |
+| `tse.csv` (Stamm_TSE) | TSE-Seriennummer, Zertifikat, Signaturalgorithmus, Zeitformat, Public Key | teilweise — Zertifikatsfelder fehlen noch, siehe Task #46 |
+
+**Kassenabschlussmodul** (S. 80–83)
+
+| Datei | Inhalt | FairPOS |
+|---|---|---|
+| `businesscases.csv` (Z_GV_TYP) | Summen je Geschäftsvorfalltyp + USt-Aufschlüsselung | ✅ Äquivalent zum Z-Bon |
+| `payment.csv` (Z_Zahlart) | Zahlartensummen je Abschluss | ✅ |
+| `cash_per_currency.csv` (Z_WAEHRUNGEN) | Bargeldbestand nach Währung | ✅ (nur EUR) |
+
+### 6.2 Geschäftsvorfalltypen (BON_TYP) — Anhang B, S. 43–47
+
+Vollständiger Wertebereich (verbindlich, keine eigenen Werte erlaubt):
+`Beleg`, `AVRechnung`, `AVTransfer`, `AVBestellung`, `AVTraining`,
+`AVBelegstorno`, `AVBelegabbruch`, `AVSachbezug`, `AVSonstige`.
+
+| BON_TYP | Bedeutung laut Spezifikation | FairPOS-Verwendung |
+|---|---|---|
+| `Beleg` | „Vorgang, der über die Kasse abgeschlossen wird" — verändert die Vermögenszusammensetzung; alle Zahlarten möglich | Kassenbeleg-V1 (Bonkasse-Checkout, Bedienungskasse-Split-Kassieren, **auch** Bonstorno — s.u.) |
+| `AVBestellung` | „Bestellungen, die im Kassensystem direkt erfasst und als eigenständiger Vorgang behandelt werden" — noch keine Lieferung/Leistung | Bedienungskasse: Bestellung aufnehmen |
+| `AVBelegabbruch` | „Vorgänge, die nach Transaktionsbeginn abgebrochen werden" — keine Zahlung zulässig | Wird von `signTseTransaction` bereits als TSE-`processType` genutzt (Task #45) — als DSFinV-K-`BON_TYP` für den späteren Export ebenfalls zu verwenden |
+| `AVSonstige` | „Alle Vorgänge, die hier nicht näher definiert wurden" — `BON_NAME` zwingend mit individueller Beschreibung zu füllen | Storno einer offenen Bestellposition (vor dem Kassieren) |
+| `AVTraining` | Übungs-/Trainingsvorgänge, keine echte Zahlung, kein Einfluss auf den Kassenabschluss | Für `invoice.receipt_type='training'` vorgesehen (falls genutzt) |
+| `AVBelegstorno` | **Achtung, S. 45f.:** „Sobald eine TSE an einer Kasse eingesetzt wird, ist es technisch nicht mehr möglich, den Vorgangstyp 'AVBelegstorno' korrekt zu verwenden, da jeder Beleg schon vor dem Setzen des Storno-Kennzeichens bereits durch die TSE signiert wurde... Hierfür muss weiterhin der Vorgangstyp 'Beleg' mit umgekehrten Vorzeichen und ohne Storno-Kennzeichen genutzt werden." | **Bestätigt unser bestehendes Bonstorno-Design:** `cancels_invoice_id`-Referenz + `receipt_type='cancellation'` als eigener `Beleg`-Vorgang mit `Kassenbeleg-V1`-Signatur — exakt das von der Spezifikation für TSE-Systeme vorgeschriebene Verfahren, nicht `AVBelegstorno`. |
+| `AVRechnung`, `AVTransfer`, `AVSachbezug` | Lieferschein-/Rechnungs-Entkopplung, Sachbezüge von Mitarbeitern | nicht genutzt — kein Anwendungsfall bei FairPOS |
+
+### 6.3 Geschäftsvorfalltypen der Position (GV_TYP) — Anhang C, S. 48–61
+
+Vollständiger Wertebereich: `Umsatz`, `Pfand`, `PfandRueckzahlung`, `Rabatt`,
+`Aufschlag`, `ZuschussEcht`, `ZuschussUnecht`, `TrinkgeldAG`, `TrinkgeldAN`,
+`EinzweckgutscheinKauf`, `EinzweckgutscheinEinloesung`,
+`MehrzweckgutscheinKauf`, `MehrzweckgutscheinEinloesung`,
+`Forderungsentstehung`, `Forderungsaufloesung`, `Anzahlungseinstellung`,
+`Anzahlungsaufloesung`, `Anfangsbestand`, `Privatentnahme`, `Privateinlage`,
+`Geldtransit`, `Lohnzahlung`, `Einzahlung`, `Auszahlung`, `DifferenzSollIst`.
 
 Für FairPOS relevante Typen:
 
@@ -224,25 +259,86 @@ Für FairPOS relevante Typen:
 | `Auszahlung` | Entnahme aus der Kasse |
 | `DifferenzSollIst` | Kassendifferenz beim Abschluss |
 
-**Kundendaten:** DSFinV-K sieht optionale `KUNDE_*`-Felder im Bonkopf vor
-(Name, Anschrift, USt-IdNr. des Leistungsempfängers — v.a. für B2B-Rechnungen).
-FairPOS erfasst bewusst keine Kundendaten (anonymer Barverkauf); diese Felder
-bleiben im Export leer. Das entspricht der Organisationsvorgabe, niemals
+### 6.4 UST_SCHLUESSEL-Schema (Stamm_USt, S. 26–27)
+
+Feste ID-Vergabe, nicht frei wählbar für die Standard-IDs:
+- **1–4**: aktuell gültige Steuersätze nach §§ 12, 24 UStG (1 = allgemeiner
+  Satz, 2 = ermäßigter Satz, 3/4 = Durchschnittssätze §24 UStG — für FairPOS
+  irrelevant, keine Landwirtschaft)
+- **5**: 0 % (steuerfrei/nicht steuerbar)
+- **ab 11**: historische Steuersätze (zweistellig, zweite Ziffer referenziert
+  die ursprüngliche ID)
+- **ab 1000**: individuelle Anpassungen durch den Unternehmer, in der
+  Verfahrensdokumentation zu erläutern
+
+FairPOS-Abbildung: `article_category.tax_rate` (19/7/0 %) → UST_SCHLUESSEL 1/2/5.
+
+### 6.5 processData-Format für `Kassenbeleg-V1` (Anhang I, S. 112–117)
+
+**Wichtig — betrifft die bereits laufende TSE-Signierung, nicht nur den
+späteren Export:** Das Format ist exakt vorgeschrieben, nicht frei wählbar:
+
+```
+<Vorgangstyp>^<Brutto-Steuerumsätze>^<Zahlungen>
+```
+- Trennzeichen zwischen den drei Teilen: `^` (U+005E)
+- `<Vorgangstyp>`: einer der BON_TYP-Werte aus Abschnitt 6.2
+- `<Brutto-Steuerumsätze>`: Bruttoumsatz je Steuersatz, getrennt durch `_`
+  (U+005F), in der festen Reihenfolge „allgemeiner Satz, ermäßigter Satz,
+  Durchschnittssatz §24(1)Nr.3, Durchschnittssatz §24(1)Nr.1, 0 %" — auch
+  ungenutzte Steuersätze mit `0.00` angeben, exakt zwei Dezimalstellen, Punkt
+  als Dezimaltrennzeichen, keine Tausendertrennzeichen
+- `<Zahlungen>`: `<Betrag>:<Zahlungsart>:<Währung>`, mehrere Zahlungen durch
+  `_` verkettet; Zahlungsart nur „Bar" oder „Unbar"; Währung nur angeben wenn
+  ≠ EUR; Zahlungen von `0.00` entfallen
+
+**Aktueller Stand (August 2026):** `tse/processData.ts` schreibt stattdessen
+ein selbstbeschreibendes JSON-Snapshot (dokumentiert als Interimsformat seit
+Task #40). Die Umstellung auf das vorgeschriebene Format ist als eigener Task
+**#46** erfasst (bewusst zurückgestellt, um Scope zu begrenzen) — betrifft
+auch den maschinenlesbaren QR-Code-Inhalt (Anhang I Abschnitt 2, S. 122ff.),
+der zusätzlich TSE-Zertifikatsdetails (Signaturalgorithmus, Public Key,
+Log-Time-Format) referenziert, die `native/tse-cli` aktuell nicht ausliest.
+
+### 6.6 Kundendaten
+
+DSFinV-K sieht optionale `KUNDE_*`-Felder im Bonkopf vor (Name, Anschrift,
+USt-IdNr. des Leistungsempfängers — v.a. für B2B-Rechnungen). FairPOS erfasst
+bewusst keine Kundendaten (anonymer Barverkauf); diese Felder bleiben im
+Export leer. Das entspricht der Organisationsvorgabe, niemals
 personenbezogene Daten von Kunden zu verwenden.
 
-**Datenmodell-Abgleich (August 2026):** Gegen die offizielle Spezifikation
-v2.4 geprüft (`Bonkopf`/`Bonkopf_USt`/`Bonpos`/`Bonpos_USt`). Zwei konkrete,
-noch offene Lücken im aktuellen Schema für die Export-Implementierung
-(Task #13) — betreffen NICHT den gedruckten Bon, der bereits vollständig ist:
-1. `BON_START`/`BON_ENDE` müssen laut Spezifikation vom Aufzeichnungssystem
-   selbst kommen, ausdrücklich nicht von der TSE — aktuell speichert
-   `invoice` nur `tse_start_time`/`tse_end_time`. Für die Bedienungskasse
-   (Tisch ggf. lange vor dem Kassieren geöffnet) braucht es dafür einen
-   eigenen App-Zeitstempel.
-2. `GV_TYP` (Geschäftsvorfalltyp je Position) ist auf `order_item` noch nicht
-   als eigene Spalte abgebildet — der Pfandanteil einer Position müsste dafür
-   ggf. als eigene Zeile mit eigenem `GV_TYP` (`Pfand`/`PfandRueckzahlung`,
-   s.o.) exportiert werden statt wie aktuell als Zuschlag auf der Artikelzeile.
+### 6.7 Datenmodell-Abgleich (August 2026, aktualisiert nach Implementierung)
+
+Gegen die offizielle Spezifikation v2.4 geprüft (`Bonkopf`/`Bonkopf_USt`/
+`Bonpos`/`Bonpos_USt`). Die zwei ursprünglich vermuteten Schema-Lücken haben
+sich bei der Implementierung (`packages/backend/src/exports/dsfinvk/`) als
+bereits am Export-Zeitpunkt lösbar herausgestellt — **keine Migration nötig**:
+1. `BON_START`/`BON_ENDE` müssen vom Aufzeichnungssystem selbst kommen, nicht
+   von der TSE — bei FairPOS ist jeder einzelne DSFinV-K-Vorgang (Bestellung
+   aufnehmen, Kassieren, Stornieren) bereits atomar (ein HTTP-Request), daher
+   ist `invoice.created_at`/`service_order.created_at`/`order_cancellation.created_at`
+   selbst der korrekte Start- **und** Endzeitpunkt — kein separates Feld nötig.
+2. `GV_TYP` je Position wird beim Bauen der `lines.csv`-Zeilen aus den
+   bestehenden `order_item.price`/`deposit_price`-Feldern synthetisiert: eine
+   `Umsatz`-Zeile für den Artikelpreis, plus bei Bedarf eine zweite
+   `Pfand`/`PfandRueckzahlung`-Zeile für das Pfand — beides aus denselben
+   zwei Spalten ableitbar, keine neue `order_item`-Spalte nötig.
+
+**Bewusste Vereinfachung (dokumentiert, nicht "gelöst"):** `service_order`/
+`order_cancellation` haben keine `daily_closing_id`-Referenz (anders als
+`invoice`) und werden daher über Kasse + Kalendertag (`business_date`)
+angenähert, nicht über eine exakte Zuordnung zum Kassenabschluss. Bei mehreren
+Abschlüssen desselben Tages und derselben Kasse kann das zu einer falschen
+Zuordnung führen. Siehe `exports/dsfinvk/load.ts` für die genaue Logik.
+
+**Ebenfalls noch offen:** TSE-Zertifikatsfelder (`TSE_SIG_ALGO`,
+`TSE_PUBLIC_KEY`, `TSE_ZERTIFIKAT_I/II`) bleiben leer — `native/tse-cli` liest
+sie aktuell nicht aus (Task #46, zusammen mit der processData-Formatkorrektur).
+Das genaue CSV-/index.xml-Dateiformat (Feldtrennzeichen, Kopfzeile) folgt der
+verbreiteten Konvention (Semikolon, UTF-8, CRLF, GDPdU-artige index.xml), ist
+aber nicht gegen die separate GoBD-Anlage "Ergänzende Informationen zur
+Datenträgerüberlassung" verifiziert (siehe Einleitung Abschnitt 6).
 
 ---
 
@@ -335,6 +431,7 @@ Ein gemeinnütziger Verein ist in vier steuerliche Bereiche aufgeteilt:
 - KassenSichV: gesetze-im-internet.de/kassensichv
 - § 146a AO: gesetze-im-internet.de/ao_1977/__146a.html
 - § 147 AO (Aufbewahrung): gesetze-im-internet.de/ao_1977/__147.html
-- DSFinV-K v2.4: bzst.de (Digitale Schnittstelle der Finanzverwaltung)
+- DSFinV-K v2.4 (verbatim geprüft, konkretes PDF für Abschnitt 6 zitiert): kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf — offizielle Fassung auch über bzst.de (Digitale Schnittstelle der Finanzverwaltung) auffindbar
+- AEAO zu § 146a AO, Neufassung 30.06.2023 (verbatim geprüft, Abschnitt 3.3): bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Weitere_Steuerthemen/Abgabenordnung/AO-Anwendungserlass/2023-06-30-AEAO-Par-146-AO.pdf
 - GoBD BMF-Schreiben 28.11.2019: bundesfinanzministerium.de
 - ELSTER Kassenmeldung: elster.de/eportal/formulare-leistungen/alleformulare/aufzeichnung146a

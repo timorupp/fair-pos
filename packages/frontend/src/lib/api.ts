@@ -261,6 +261,12 @@ export const api = {
       /** Session-authenticated PDF URL for an existing Z-Bon. */
       pdfUrl: (closingId: string): string => `/api/admin/closings/${closingId}/pdf`,
 
+      /**
+       * DSFinV-K export (CSV files + index.xml, zipped) for this Kassenabschluss.
+       * See docs/Rechtliche-Anforderungen.md Abschnitt 6 for the specification.
+       */
+      dsfinvkUrl: (closingId: string): string => `/api/admin/exports/dsfinvk/${closingId}`,
+
       /** Re-queues an ESC/POS print job for the given Z-Bon. */
       reprint: (closingId: string): Promise<{ print_job_id: string }> =>
         request('POST', `/admin/closings/${closingId}/reprint`),
@@ -302,6 +308,7 @@ export const api = {
         receipt_number: number;
         receipt_number_formatted: string;
         receipt_token: string;
+        tse_warning: string | null;
       }> => request('POST', '/admin/cancellations', body),
     },
 
@@ -521,20 +528,29 @@ export const api = {
       }[];
     }> => request('GET', `/register-session/registers/${registerId}/tables/${tableId}/open-items`),
 
-    /** Places a new order at the given table. Prints bestellbons via the print worker. */
+    /**
+     * Places a new order at the given table. Prints bestellbons via the print worker.
+     * `tse_warning` is set (order still placed) when the AVBestellung couldn't be signed.
+     */
     placeOrder: (registerId: string, tableId: string, positions: { article_id: string; quantity: number; options?: string | null }[]): Promise<{
-      ok: true; slips_enqueued: number; items_without_printer: number;
+      ok: true; slips_enqueued: number; items_without_printer: number; tse_warning: string | null;
     }> => request('POST', `/register-session/registers/${registerId}/tables/${tableId}/orders`, { positions }),
 
-    /** Charges a (possibly partial) set of open items at the table. Returns the new invoice. */
+    /**
+     * Charges a (possibly partial) set of open items at the table. Returns the new invoice.
+     * `tse_warning` is set (invoice still created) when the Kassenbeleg-V1 couldn't be signed.
+     */
     chargeTable: (registerId: string, tableId: string, quantities: { group_key: string; count: number }[]): Promise<{
       invoice_id: string; receipt_number: number; receipt_number_formatted: string;
-      receipt_token: string; items_charged: number;
+      receipt_token: string; items_charged: number; tse_warning: string | null;
     }> => request('POST', `/register-session/registers/${registerId}/tables/${tableId}/checkout`, { quantities }),
 
-    /** Cancels or marks-as-free a (possibly partial) set of open items at the table. */
+    /**
+     * Cancels or marks-as-free a (possibly partial) set of open items at the table.
+     * `tse_warning` is set (cancellation still applied) when the AVSonstige couldn't be signed.
+     */
     cancelAtTable: (registerId: string, tableId: string, quantities: { group_key: string; count: number }[], cancellationReasonId: string): Promise<{
-      items_cancelled: number; booking_type: 'cancellation' | 'free_of_charge';
+      items_cancelled: number; booking_type: 'cancellation' | 'free_of_charge'; tse_warning: string | null;
     }> => request('POST', `/register-session/registers/${registerId}/tables/${tableId}/cancel`, {
       quantities, cancellation_reason_id: cancellationReasonId,
     }),

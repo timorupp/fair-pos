@@ -160,6 +160,11 @@
           `(kein Drucker am Artikel und kein Standarddrucker konfiguriert).`,
         );
       }
+      // TSE-Signierung blockiert die Bestellung nie (siehe docs/TSE-Integration.md
+      // → "TSE-Ausfall") — die Bestellung ist trotzdem angelegt, nur ohne Signatur.
+      if (result.tse_warning) {
+        alert(`⚠ ${result.tse_warning}`);
+      }
       // After ordering: return to the table action chooser (Schritt 2b).
       goto(`/register/${registerId}/tables/${tableId}`);
     } catch (e) {

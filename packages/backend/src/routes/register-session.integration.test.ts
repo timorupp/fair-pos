@@ -408,6 +408,171 @@ describe('Bedienungskasse: order + checkout flow', () => {
   });
 });
 
+describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSonstige)', () => {
+  let tableId: string;
+
+  beforeEach(async () => {
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order) VALUES ('A', 0)`);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order) VALUES ('1', 0)`);
+    const t = await pool.query<{ id: string }>(
+      `INSERT INTO dining_table (name, col_label, row_label, status)
+       VALUES ('A1', 'A', '1', 'active') RETURNING id`,
+    );
+    tableId = t.rows[0]!.id;
+  });
+
+  it('signs one AVBestellung per Bestellvorgang and stores it on service_order, not per position', async () => {
+    config.tseMountPoint = '/tmp/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: { transactionNumber: 1, signatureCounter: 1, logTime: 1735689600, signature: 'aa', serialNumber: 'bb' },
+    });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 3 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().tse_warning).toBeNull();
+
+    const orders = await pool.query(`SELECT tse_transaction_number, tse_signature FROM service_order`);
+    expect(orders.rowCount).toBe(1);
+    expect(orders.rows[0]).toMatchObject({ tse_transaction_number: '1', tse_signature: 'aa' });
+  });
+
+  it('places the order without blocking when the TSE is not configured, and warns', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().tse_warning).toMatch(/nicht konfiguriert/);
+    const items = await pool.query(`SELECT id FROM order_item WHERE dining_table_id = $1`, [tableId]);
+    expect(items.rowCount).toBe(1);
+  });
+
+  it('signs the split-checkout as Kassenbeleg-V1 and stores it on the invoice', async () => {
+    const appSetup = await getTestApp();
+    await appSetup.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 2 }] },
+    });
+    const openItems = await appSetup.inject({
+      method: 'GET',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/open-items`,
+      headers: { cookie: userCookie },
+    });
+    const groupKey = openItems.json().groups[0].group_key;
+
+    config.tseMountPoint = '/tmp/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: { transactionNumber: 2, signatureCounter: 2, logTime: 1735689600, signature: 'cc', serialNumber: 'dd' },
+    });
+
+    const checkout = await appSetup.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { quantities: [{ group_key: groupKey, count: 2 }] },
+    });
+    expect(checkout.statusCode).toBe(200);
+    expect(checkout.json().tse_warning).toBeNull();
+
+    const inv = await pool.query(
+      `SELECT tse_transaction_number, tse_signature FROM invoice WHERE id = $1`,
+      [checkout.json().invoice_id],
+    );
+    expect(inv.rows[0]).toMatchObject({ tse_transaction_number: '2', tse_signature: 'cc' });
+  });
+
+  it('does not block the split-checkout when a configured TSE fails, and warns', async () => {
+    const appSetup = await getTestApp();
+    await appSetup.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    const openItems = await appSetup.inject({
+      method: 'GET',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/open-items`,
+      headers: { cookie: userCookie },
+    });
+    const groupKey = openItems.json().groups[0].group_key;
+
+    config.tseMountPoint = '/tmp/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({ ok: false, error: { code: 1, message: 'boom' } });
+    process.env['TSE_STUB_EXIT_CODE'] = '1';
+
+    const checkout = await appSetup.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { quantities: [{ group_key: groupKey, count: 1 }] },
+    });
+    expect(checkout.statusCode).toBe(200);
+    expect(checkout.json().tse_warning).toMatch(/nicht erreichbar/);
+    const paid = await pool.query(`SELECT COUNT(*)::int AS n FROM order_item WHERE status = 'paid'`);
+    expect(paid.rows[0]!.n).toBe(1);
+  });
+
+  it('signs a cancellation as AVSonstige and stores it on order_cancellation', async () => {
+    const appSetup = await getTestApp();
+    const reason = await pool.query<{ id: string }>(
+      `INSERT INTO cancellation_reason (name, booking_type)
+       VALUES ('Test-Storno', 'cancellation') RETURNING id`,
+    );
+    await appSetup.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    const open = await appSetup.inject({
+      method: 'GET',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/open-items`,
+      headers: { cookie: userCookie },
+    });
+    const groupKey = open.json().groups[0].group_key;
+
+    config.tseMountPoint = '/tmp/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: { transactionNumber: 3, signatureCounter: 3, logTime: 1735689600, signature: 'ee', serialNumber: 'ff' },
+    });
+
+    const cancel = await appSetup.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/cancel`,
+      headers: { cookie: userCookie },
+      payload: { quantities: [{ group_key: groupKey, count: 1 }], cancellation_reason_id: reason.rows[0]!.id },
+    });
+    expect(cancel.statusCode).toBe(200);
+    expect(cancel.json().tse_warning).toBeNull();
+
+    const cancellations = await pool.query(`SELECT tse_transaction_number, tse_signature FROM order_cancellation`);
+    expect(cancellations.rowCount).toBe(1);
+    expect(cancellations.rows[0]).toMatchObject({ tse_transaction_number: '3', tse_signature: 'ee' });
+  });
+});
+
 describe('Register-Sperre durch ausstehende Tagesabschlüsse', () => {
   it('blocks Bonkasse checkout with 409 when a past calendar day needs a Z-Bon', async () => {
     const app = await getTestApp();

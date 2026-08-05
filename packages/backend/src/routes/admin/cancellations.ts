@@ -17,6 +17,8 @@ import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { nextReceiptNumber } from '../../receipt/sequence.js';
 import { generateReceiptToken } from '../../receipt/numbering.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../../receipt/format-receipt-number.js';
+import { signTseTransaction } from '../../tse/signing.js';
+import { buildKassenbelegProcessData } from '../../tse/processData.js';
 
 /** Body schema for `POST /api/admin/cancellations`. */
 interface CreateCancellationBody {
@@ -74,6 +76,49 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
     const regResult = await query(`SELECT id FROM register WHERE id = $1`, [register_id]);
     if (regResult.rows.length === 0) return reply.status(400).send({ error: 'Kasse nicht gefunden' });
 
+    // Articles fetched once, up front — reused for the TSE snapshot and the order_item inserts.
+    const articleIds = [...new Set(items.map((i) => i.article_id))];
+    const articlesResult = await query<{
+      id: string; name: string; receipt_text: string | null; price: string;
+      deposit_price: string | null;
+      category_name: string; tax_rate: string;
+    }>(
+      `SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price,
+              c.name AS category_name, c.tax_rate
+         FROM article a
+         JOIN article_category c ON c.id = a.category_id
+        WHERE a.id = ANY($1)`,
+      [articleIds],
+    );
+    const articleById = new Map(articlesResult.rows.map((a) => [a.id, a]));
+    for (const it of items) {
+      if (!articleById.has(it.article_id)) {
+        return reply.status(400).send({ error: `Artikel ${it.article_id} nicht gefunden` });
+      }
+    }
+
+    // Bonstorno is signed as Kassenbeleg-V1 (receipt_type='cancellation'), like
+    // any other completed receipt — see docs/Anforderungen.md → "Zu signierende
+    // Vorgänge in FairPOS". Never blocks the cancellation — docs/TSE-Integration.md
+    // → "TSE-Ausfall".
+    const kassenbelegSnapshot = buildKassenbelegProcessData({
+      registerId: register_id,
+      paymentMethod: 'cash',
+      receiptType: 'cancellation',
+      positions: items.map((it) => {
+        const article = articleById.get(it.article_id)!;
+        return {
+          articleId: article.id,
+          name: article.receipt_text ?? article.name,
+          quantity: it.quantity,
+          unitPriceEuros: Number(article.price),
+          depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
+          taxRatePercent: Number(article.tax_rate),
+        };
+      }),
+    });
+    const { signature: tse, warning: tseWarning } = await signTseTransaction('Kassenbeleg-V1', kassenbelegSnapshot);
+
     const result = await withTransaction(async (client) => {
       const receiptNumber = await nextReceiptNumber(client);
       const receiptToken = generateReceiptToken();
@@ -81,37 +126,24 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       const invoiceResult = await client.query<{ id: string }>(
         `INSERT INTO invoice (
            register_id, receipt_number, receipt_type, payment_method,
-           cancellation_note, receipt_token
-         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4)
+           cancellation_note, receipt_token,
+           tse_transaction_number, tse_start_time, tse_end_time,
+           tse_signature, tse_signature_counter, tse_serial_number
+         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
-        [register_id, receiptNumber, note ?? null, receiptToken],
+        [
+          register_id, receiptNumber, note ?? null, receiptToken,
+          tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
+          tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+        ],
       );
       const invoiceId = invoiceResult.rows[0]!.id;
-
-      // Fetch the articles for snapshot copy onto the order_item rows.
-      const articleIds = [...new Set(items.map((i) => i.article_id))];
-      const articles = await client.query<{
-        id: string; name: string; receipt_text: string | null; price: string;
-        deposit_price: string | null;
-        category_name: string; tax_rate: string;
-      }>(
-        `SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price,
-                c.name AS category_name, c.tax_rate
-           FROM article a
-           JOIN article_category c ON c.id = a.category_id
-          WHERE a.id = ANY($1)`,
-        [articleIds],
-      );
-      const byId = new Map(articles.rows.map((a) => [a.id, a]));
-      for (const it of items) {
-        if (!byId.has(it.article_id)) throw new Error(`Artikel ${it.article_id} nicht gefunden`);
-      }
 
       // One row per cancelled unit, mirroring the sales-receipt convention.
       // status='paid' is intentional — the invoice's `receipt_type='cancellation'`
       // is what gives the rows their negative effect in `computeClosingTotals`.
       for (const it of items) {
-        const article = byId.get(it.article_id)!;
+        const article = articleById.get(it.article_id)!;
         const displayName = article.receipt_text ?? article.name;
         for (let i = 0; i < it.quantity; i++) {
           await client.query(
@@ -137,6 +169,7 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
     return reply.status(201).send({
       ...result,
       receipt_number_formatted: formatReceiptNumber(result.receipt_number, prefix),
+      tse_warning: tseWarning,
     });
   });
 }

@@ -22,9 +22,10 @@ import {
 } from '../print/order-slip.js';
 import { resolvePrinterForRegister } from '../print/resolve-printer.js';
 import { loadLogoFor } from '../logo/visibility.js';
-import { config } from '../config.js';
-import { startTransaction, finishTransaction } from '../tse/client.js';
-import { buildKassenbelegProcessData } from '../tse/processData.js';
+import { signTseTransaction } from '../tse/signing.js';
+import {
+  buildKassenbelegProcessData, buildAvBestellungProcessData, buildAvSonstigeProcessData,
+} from '../tse/processData.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../receipt/format-receipt-number.js';
 import { makeGroupKey, pickItemsToCharge } from '../order/grouping.js';
 import { isRegisterUnlocked, findPendingDaysForRegister } from '../closing/pending-db.js';
@@ -245,61 +246,26 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         }
       }
 
-      // TSE-Signierung (Kassenbeleg-V1) läuft VOR der DB-Transaktion, blockiert den
-      // Kassiervorgang bei einem TSE-Fehler aber NICHT: laut AEAO zu § 146a Nr. 1.14.3
-      // ist der Weiterbetrieb ohne funktionsfähige TSE ausdrücklich "nicht beanstandet",
-      // solange nur die TSE (nicht das gesamte System) betroffen ist — es besteht keine
-      // Pflicht, den Verkauf zu stoppen oder den Vorgang später in die TSE nachzutragen.
-      // Bei einem Fehler bleiben die tse_*-Spalten der Rechnung null (wie bei fehlender
-      // Konfiguration) — die fehlende Transaktionsnummer auf dem Bon ist laut Nr. 1.14.2
-      // bereits eine zulässige Kennzeichnung des Ausfalls, es wird also keine zusätzliche
-      // Markierung benötigt. `tseWarning` in der Response macht JEDEN Fall ohne
-      // TSE-Signatur für das Bedienpersonal sichtbar — sowohl einen echten Ausfall als
-      // auch eine fehlende Konfiguration, da beide aus Compliance-Sicht gleich zu
-      // behandeln sind —, damit die Ursache "unverzüglich" (Nr. 1.14.4) behoben werden
-      // kann. Siehe docs/TSE-Integration.md Abschnitt „TSE-Ausfall".
-      let tse: {
-        transactionNumber: number; signatureCounter: number; signature: string;
-        serialNumber: string; startTime: Date; endTime: Date;
-      } | null = null;
-      let tseWarning: string | null = null;
-      if (config.tseMountPoint && config.tseClientId) {
-        const snapshot = buildKassenbelegProcessData({
-          registerId,
-          paymentMethod: 'cash',
-          positions: positions.map((p) => {
-            const article = articleById.get(p.article_id)!;
-            return {
-              articleId: article.id,
-              name: article.receipt_text ?? article.name,
-              quantity: p.quantity,
-              unitPriceEuros: Number(article.price),
-              depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
-              taxRatePercent: Number(article.tax_rate),
-            };
-          }),
-        });
-        try {
-          const start = await startTransaction('Kassenbeleg-V1', snapshot);
-          const finish = await finishTransaction(start.transactionNumber, 'Kassenbeleg-V1', snapshot);
-          tse = {
-            transactionNumber: finish.transactionNumber,
-            signatureCounter: finish.signatureCounter,
-            signature: finish.signature,
-            serialNumber: finish.serialNumber,
-            startTime: new Date(start.logTime * 1000),
-            endTime: new Date(finish.logTime * 1000),
+      // TSE-Signierung (Kassenbeleg-V1) läuft VOR der DB-Transaktion. `signTseTransaction`
+      // blockiert den Kassiervorgang nicht — siehe docs/TSE-Integration.md Abschnitt 8.1
+      // ("TSE-Ausfall", AEAO zu § 146a Nr. 1.14.3) für die vollständige Begründung.
+      const kassenbelegSnapshot = buildKassenbelegProcessData({
+        registerId,
+        paymentMethod: 'cash',
+        receiptType: 'sales_receipt',
+        positions: positions.map((p) => {
+          const article = articleById.get(p.article_id)!;
+          return {
+            articleId: article.id,
+            name: article.receipt_text ?? article.name,
+            quantity: p.quantity,
+            unitPriceEuros: Number(article.price),
+            depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
+            taxRatePercent: Number(article.tax_rate),
           };
-        } catch (e) {
-          req.log.error({ err: e }, 'TSE-Signierung fehlgeschlagen — Kassenbon wird ohne TSE-Signatur gebucht');
-          tseWarning = 'TSE nicht erreichbar — Kassenbon wurde ohne TSE-Signatur gebucht. Bitte Störung schnellstmöglich beheben.';
-        }
-      } else {
-        // Missing configuration is functionally the same as an outage from a
-        // compliance standpoint — the receipt is issued without a TSE
-        // signature either way, so it gets the same visible warning.
-        tseWarning = 'TSE ist nicht konfiguriert — Kassenbon wurde ohne TSE-Signatur gebucht.';
-      }
+        }),
+      });
+      const { signature: tse, warning: tseWarning } = await signTseTransaction('Kassenbeleg-V1', kassenbelegSnapshot);
 
       const result = await withTransaction(async (client) => {
         // Atomic increment of the global receipt counter — row-level lock held
@@ -594,10 +560,18 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    *
    * Body: `{ positions: [{ article_id, quantity, options? }] }`
    *
-   * Inside one transaction:
-   *  1. Insert one `order_item` per ordered unit with `status='open'` and the article snapshot.
-   *  2. Build kitchen-/bar-order-slip ESC/POS payloads grouped by printer (with default-printer fallback).
-   *  3. Enqueue one print job per target printer.
+   * Sequence:
+   *  1. Fetches and validates the referenced articles.
+   *  2. Signs one `AVBestellung` TSE transaction for the whole order (not per
+   *     position) BEFORE opening the DB transaction. Never blocks the order —
+   *     a TSE failure just means `service_order`'s `tse_*` columns stay `null`
+   *     and `tse_warning` is set in the response; see docs/TSE-Integration.md
+   *     → "TSE-Ausfall".
+   *  3. Inside a single DB transaction: inserts the `service_order` row
+   *     (including the TSE fields, if any) and one `order_item` per ordered
+   *     unit with `status='open'`.
+   *  4. Builds kitchen-/bar-order-slip ESC/POS payloads grouped by printer
+   *     (with default-printer fallback) and enqueues one print job per target printer.
    */
   app.post<{
     Params: { id: string; tableId: string };
@@ -638,37 +612,69 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     );
     const defaultPrinterId = defaultPrinter.rows[0]?.id ?? null;
 
+    // Articles fetched once, up front — reused for the TSE snapshot and the order_item inserts.
+    const articleIds = [...new Set(positions.map((p) => p.article_id))];
+    const articlesResult = await query<{
+      id: string; name: string; receipt_text: string | null; price: string;
+      deposit_price: string | null; printer_id: string | null;
+      category_name: string; tax_rate: string;
+    }>(
+      `SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price, a.printer_id,
+              c.name AS category_name, c.tax_rate
+         FROM article a
+         JOIN article_category c ON c.id = a.category_id
+        WHERE a.id = ANY($1)`,
+      [articleIds],
+    );
+    const articleById = new Map(articlesResult.rows.map((a) => [a.id, a]));
+    for (const pos of positions) {
+      if (!articleById.has(pos.article_id)) {
+        return reply.status(400).send({ error: `Artikel ${pos.article_id} nicht gefunden` });
+      }
+    }
+
+    // One AVBestellung signature per Bestellvorgang, not per position — see
+    // docs/Anforderungen.md → "Zu signierende Vorgänge in FairPOS".
+    const avBestellungSnapshot = buildAvBestellungProcessData({
+      registerId,
+      diningTableId: tableId,
+      positions: positions.map((p) => {
+        const article = articleById.get(p.article_id)!;
+        return {
+          articleId: article.id,
+          name: article.receipt_text ?? article.name,
+          quantity: p.quantity,
+          unitPriceEuros: Number(article.price),
+          depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
+          taxRatePercent: Number(article.tax_rate),
+        };
+      }),
+    });
+    const { signature: tse, warning: tseWarning } = await signTseTransaction('AVBestellung', avBestellungSnapshot);
+
     const slipItems: OrderSlipItem[] = [];
 
     await withTransaction(async (client) => {
-      // One `service_order` per Bestellvorgang — TSE-Vorbereitung: hier wird
-      // später eine AVBestellung-Transaktion signiert. Alle in diesem Aufruf
-      // erfassten Positionen verweisen auf dieselbe service_order.
+      // One `service_order` per Bestellvorgang. All order_items from this
+      // call reference the same service_order.
       const soResult = await client.query<{ id: string }>(
-        `INSERT INTO service_order (register_id, dining_table_id, user_id)
-         VALUES ($1, $2, $3) RETURNING id`,
-        [registerId, tableId, req.registerUser.id],
+        `INSERT INTO service_order (
+           register_id, dining_table_id, user_id,
+           tse_transaction_number, tse_start_time, tse_end_time,
+           tse_signature, tse_signature_counter, tse_serial_number
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id`,
+        [
+          registerId, tableId, req.registerUser.id,
+          tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
+          tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+        ],
       );
       const serviceOrderId = soResult.rows[0]!.id;
 
-      const articleIds = [...new Set(positions.map((p) => p.article_id))];
-      const articles = await client.query<{
-        id: string; name: string; receipt_text: string | null; price: string;
-        deposit_price: string | null; printer_id: string | null;
-        category_name: string; tax_rate: string;
-      }>(
-        `SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price, a.printer_id,
-                c.name AS category_name, c.tax_rate
-           FROM article a
-           JOIN article_category c ON c.id = a.category_id
-          WHERE a.id = ANY($1)`,
-        [articleIds],
-      );
-      const byId = new Map(articles.rows.map((a) => [a.id, a]));
-
       for (const pos of positions) {
-        const article = byId.get(pos.article_id);
-        if (!article) throw new Error(`Artikel ${pos.article_id} nicht gefunden`);
+        const article = articleById.get(pos.article_id)!;
         const options = pos.options?.trim() ? pos.options.trim() : null;
         for (let i = 0; i < pos.quantity; i++) {
           await client.query(
@@ -709,7 +715,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       enqueued += 1;
     }
 
-    return reply.send({ ok: true, slips_enqueued: enqueued, items_without_printer: skipped });
+    return reply.send({
+      ok: true, slips_enqueued: enqueued, items_without_printer: skipped, tse_warning: tseWarning,
+    });
   });
 
   /**
@@ -717,11 +725,19 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    *
    * Body: `{ quantities: [{ group_key, count }] }`
    *
-   * Inside one transaction:
-   *  1. Load the table's open items.
-   *  2. Pick `count` items per group (FIFO by created_at).
-   *  3. Insert an invoice with a fresh receipt number (advisory-locked).
-   *  4. Update the picked `order_item` rows to `status='paid'` and link them to the invoice.
+   * Sequence:
+   *  1. Loads the table's open items and picks `count` items per group (FIFO
+   *     by `created_at`) — exactly once; the picked IDs are used as-is below
+   *     instead of being re-derived, so the TSE-signed snapshot always
+   *     matches what actually gets invoiced.
+   *  2. Signs one `Kassenbeleg-V1` TSE transaction for the picked items
+   *     BEFORE opening the DB transaction. Never blocks the payment — see
+   *     docs/TSE-Integration.md → "TSE-Ausfall".
+   *  3. Inside a single DB transaction: re-checks the picked items are still
+   *     `open` (defends against a concurrent change to the same table),
+   *     inserts an invoice with a fresh receipt number (including the TSE
+   *     fields, if any), and updates the picked `order_item` rows to
+   *     `status='paid'`, linked to the invoice.
    */
   app.post<{
     Params: { id: string; tableId: string };
@@ -752,19 +768,52 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       return reply.status(400).send({ error: 'Keine Positionen ausgewählt' });
     }
 
+    const open = await query<{
+      id: string; article_id: string | null; article_name: string; options: string | null;
+      tax_rate: string; price: string; deposit_price: string | null; created_at: Date;
+    }>(
+      `SELECT id, article_id, article_name, options, tax_rate, price, deposit_price, created_at
+         FROM order_item
+        WHERE dining_table_id = $1 AND status = 'open'`,
+      [tableId],
+    );
+    const ids = pickItemsToCharge(open.rows, quantitiesMap);
+    if (ids.length === 0) {
+      return reply.status(409).send({ error: 'Keine passenden offenen Positionen am Tisch' });
+    }
+    const pickedById = new Map(open.rows.filter((r) => ids.includes(r.id)).map((r) => [r.id, r]));
+
+    const kassenbelegSnapshot = buildKassenbelegProcessData({
+      registerId,
+      paymentMethod: 'cash',
+      receiptType: 'sales_receipt',
+      positions: ids.map((id) => {
+        const item = pickedById.get(id)!;
+        return {
+          articleId: item.article_id ?? '',
+          name: item.article_name,
+          quantity: 1,
+          unitPriceEuros: Number(item.price),
+          depositPriceEuros: item.deposit_price === null ? null : Number(item.deposit_price),
+          taxRatePercent: Number(item.tax_rate),
+        };
+      }),
+    });
+    const { signature: tse, warning: tseWarning } = await signTseTransaction('Kassenbeleg-V1', kassenbelegSnapshot);
+
     const result = await withTransaction(async (client) => {
-      const open = await client.query<{
-        id: string; article_id: string | null; options: string | null;
-        price: string; deposit_price: string | null; created_at: Date;
-      }>(
-        `SELECT id, article_id, options, price, deposit_price, created_at
-           FROM order_item
-          WHERE dining_table_id = $1 AND status = 'open'`,
-        [tableId],
+      // Defends against a concurrent change (another checkout/cancel on the
+      // same table) between the pick above and this transaction — the TSE
+      // signature must describe exactly what gets invoiced, so we verify
+      // rather than re-pick.
+      const stillOpen = await client.query(
+        `SELECT id FROM order_item WHERE id = ANY($1) AND status = 'open'`, [ids],
       );
-      const ids = pickItemsToCharge(open.rows, quantitiesMap);
-      if (ids.length === 0) {
-        throw Object.assign(new Error('Keine passenden offenen Positionen am Tisch'), { httpStatus: 409 });
+      if (stillOpen.rowCount !== ids.length) {
+        throw Object.assign(
+          new Error('Einige Positionen wurden zwischenzeitlich verändert — bitte erneut versuchen.'),
+          { httpStatus: 409 },
+        );
       }
 
       // Atomic increment of the global receipt counter (row-level lock only).
@@ -772,10 +821,18 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       const receiptToken = generateReceiptToken();
 
       const inv = await client.query<{ id: string }>(
-        `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, receipt_token)
-         VALUES ($1, $2, 'sales_receipt', 'cash', $3)
+        `INSERT INTO invoice (
+           register_id, receipt_number, receipt_type, payment_method, receipt_token,
+           tse_transaction_number, tse_start_time, tse_end_time,
+           tse_signature, tse_signature_counter, tse_serial_number
+         )
+         VALUES ($1, $2, 'sales_receipt', 'cash', $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
-        [registerId, receiptNumber, receiptToken],
+        [
+          registerId, receiptNumber, receiptToken,
+          tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
+          tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+        ],
       );
       const invoiceId = inv.rows[0]!.id;
 
@@ -795,6 +852,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     return reply.send({
       ...result,
       receipt_number_formatted: formatReceiptNumber(result.receipt_number, prefix),
+      tse_warning: tseWarning,
     });
   });
 
@@ -803,10 +861,18 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    *
    * Body: `{ quantities, cancellation_reason_id }`
    *
-   * Behaviour depends on the reason's `booking_type`:
-   *  - `cancellation` → order items set to `status='cancelled'`; no invoice, no TSE entry.
-   *  - `free_of_charge` → order items set to `status='free'`; in a full implementation a
-   *    zero-euro invoice with TSE entry would be created here (deferred to task #4).
+   * Behaviour depends on the reason's `booking_type` (`cancellation` → order
+   * items set to `status='cancelled'`; `free_of_charge` → `status='free'`),
+   * but both are signed as one `AVSonstige` TSE transaction per Stornovorgang
+   * — see docs/Anforderungen.md → "Zu signierende Vorgänge in FairPOS", which
+   * lists both "Storno einer offenen Bestellposition" and "kostenfreie Abgabe
+   * vor Kassierung" as AVSonstige examples. Never blocks the cancellation —
+   * see docs/TSE-Integration.md → "TSE-Ausfall".
+   *
+   * Sequence: picks the affected items once (FIFO by `created_at`), signs
+   * AVSonstige for that exact set, then re-verifies inside the DB transaction
+   * that they're still open before applying the status change — same
+   * pick-once-then-verify pattern as the checkout endpoint above.
    */
   app.post<{
     Params: { id: string; tableId: string };
@@ -845,30 +911,65 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     }
     if (quantitiesMap.size === 0) return reply.status(400).send({ error: 'Keine Positionen ausgewählt' });
 
+    const open = await query<{
+      id: string; article_id: string | null; article_name: string; options: string | null;
+      price: string; deposit_price: string | null; created_at: Date;
+    }>(
+      `SELECT id, article_id, article_name, options, price, deposit_price, created_at
+         FROM order_item
+        WHERE dining_table_id = $1 AND status = 'open'`,
+      [tableId],
+    );
+    const ids = pickItemsToCharge(open.rows, quantitiesMap);
+    if (ids.length === 0) {
+      return reply.status(409).send({ error: 'Keine passenden offenen Positionen am Tisch' });
+    }
+    const pickedById = new Map(open.rows.filter((r) => ids.includes(r.id)).map((r) => [r.id, r]));
+
+    const avSonstigeSnapshot = buildAvSonstigeProcessData({
+      registerId,
+      bookingType: reason.booking_type,
+      cancellationReasonId: cancellation_reason_id,
+      positions: ids.map((id) => {
+        const item = pickedById.get(id)!;
+        return {
+          articleId: item.article_id ?? '',
+          name: item.article_name,
+          quantity: 1,
+          unitPriceEuros: Number(item.price),
+        };
+      }),
+    });
+    const { signature: tse, warning: tseWarning } = await signTseTransaction('AVSonstige', avSonstigeSnapshot);
+
     const result = await withTransaction(async (client) => {
-      const open = await client.query<{
-        id: string; article_id: string | null; options: string | null;
-        price: string; deposit_price: string | null; created_at: Date;
-      }>(
-        `SELECT id, article_id, options, price, deposit_price, created_at
-           FROM order_item
-          WHERE dining_table_id = $1 AND status = 'open'`,
-        [tableId],
+      const stillOpen = await client.query(
+        `SELECT id FROM order_item WHERE id = ANY($1) AND status = 'open'`, [ids],
       );
-      const ids = pickItemsToCharge(open.rows, quantitiesMap);
-      if (ids.length === 0) {
-        throw Object.assign(new Error('Keine passenden offenen Positionen am Tisch'), { httpStatus: 409 });
+      if (stillOpen.rowCount !== ids.length) {
+        throw Object.assign(
+          new Error('Einige Positionen wurden zwischenzeitlich verändert — bitte erneut versuchen.'),
+          { httpStatus: 409 },
+        );
       }
 
       const nextStatus = reason.booking_type === 'cancellation' ? 'cancelled' : 'free';
 
-      // One `order_cancellation` per Stornovorgang — TSE-Vorbereitung: hier
-      // wird später eine AVSonstige-Transaktion signiert. Alle vom aktuellen
-      // Aufruf betroffenen order_items zeigen auf diesen einen Vorgang.
+      // One `order_cancellation` per Stornovorgang. All order_items affected
+      // by this call reference the same cancellation.
       const cancellationResult = await client.query<{ id: string }>(
-        `INSERT INTO order_cancellation (register_id, cancellation_reason_id, cancelled_by)
-         VALUES ($1, $2, $3) RETURNING id`,
-        [registerId, cancellation_reason_id, req.registerUser.id],
+        `INSERT INTO order_cancellation (
+           register_id, cancellation_reason_id, cancelled_by,
+           tse_transaction_number, tse_start_time, tse_end_time,
+           tse_signature, tse_signature_counter, tse_serial_number
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id`,
+        [
+          registerId, cancellation_reason_id, req.registerUser.id,
+          tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
+          tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+        ],
       );
       const cancellationId = cancellationResult.rows[0]!.id;
 
@@ -890,6 +991,6 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     });
 
     if ('error' in result) return reply.status(result.status).send({ error: result.error });
-    return reply.send(result);
+    return reply.send({ ...result, tse_warning: tseWarning });
   });
 }

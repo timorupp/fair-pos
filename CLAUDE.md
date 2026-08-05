@@ -20,6 +20,7 @@ Veranstaltungen und Festen.
 - `docs/SETUP.md` — Technisches Setup, Architektur, Deployment
 - `docs/TSE-Integration.md` — TSE-Architekturkonzept (CLI-Subprozess, Vendoring, Lifecycle, aktueller Umsetzungsstand)
 - `docs/Rechtliche-Anforderungen.md` / `docs/Organisatorische-Anleitung.md` — KassenSichV-/GoBD-Vorgaben und Betriebsabläufe
+- `docs/Manueller-Testplan.md` — Checkliste für den manuellen Regressionstest (UI, TSE-Ausfallverhalten, DSFinV-K-Export)
 
 ---
 

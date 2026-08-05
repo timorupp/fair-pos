@@ -237,6 +237,12 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
   - **Stammdatenmodul** — Unternehmens-, Kassen- und Umsatzsteuerinformationen je Kassenabschluss
   - **Kassendatenabschlussmodul** — Zahlarten, Geschäftsvorfalltypen, Tagesabschluss; der Tagesabschluss wird vom Administrator manuell angestoßen
 
+  **✅ Umgesetzt (August 2026):** `packages/backend/src/exports/dsfinvk/` —
+  Export pro Kassenabschluss (Z-Bon) als ZIP (15 CSV-Dateien + `index.xml`)
+  über „DSFinV-K"-Link in der Kassendetailansicht. Vollständige Feldreferenz,
+  Zitate und dokumentierte Vereinfachungen: `docs/Rechtliche-Anforderungen.md`
+  Abschnitt 6. Offen: TSE-Zertifikatsfelder + processData-Format (Task #46).
+
 - **Excel-Exporte:** Veranstaltungsauswahl wie bei den Auswertungen (Standard: laufende bzw. zuletzt stattgefundene Veranstaltung)
   - Export für einen einzelnen Tag (Datum wählbar)
   - Export für eine gesamte Veranstaltung
@@ -309,6 +315,14 @@ Signiert wird nicht der „Kassenzustand", sondern **jeder fiskalisch relevante 
 - `AVSonstige` — sonstige Vorgänge (z.B. Storno einer offenen Bestellposition, kostenfreie Abgabe vor Kassierung)
 - `AVBelegabbruch` — abgebrochener Beleg
 
+**Nicht zu verwechseln mit DSFinV-K `BON_TYP`:** Die obigen Werte sind der
+`processType`-Parameter, der der **TSE-Hardware** übergeben wird (z.B.
+`startTransaction('Kassenbeleg-V1', ...)`). DSFinV-K selbst kennt für das
+spätere Export-Feld `BON_TYP` (in `transactions.csv`) einen eigenen,
+teilweise abweichenden Wertebereich (`Beleg`, `AVBestellung`, `AVSonstige`,
+`AVBelegabbruch`, u.a. — `Kassenbeleg-V1` heißt dort schlicht `Beleg`).
+Vollständige Zuordnung + Zitat: `docs/Rechtliche-Anforderungen.md` Abschnitt 6.2.
+
 **Szenario 1 — Bonkasse (einfacher Einkauf):**
 
 | Vorgang | TSE-Transaktion? | processType | Beleg-Ausgabe |
@@ -323,25 +337,34 @@ Signiert wird nicht der „Kassenzustand", sondern **jeder fiskalisch relevante 
 | Bestellung aufnehmen (offen, unbezahlt) | **1× pro Bestellvorgang** (nicht pro Position) | `AVBestellung` | interner Bestellbon (Küche/Theke), ohne TSE-QR nötig |
 | Storno einer offenen Position | **1× pro Stornovorgang** | `AVSonstige` (mit Storno-Referenz) | interner Vermerk |
 | Kassieren, ggf. mit Rechnungssplit | **1× pro Teilrechnung** | `Kassenbeleg-V1` | Kassenbeleg je Teilrechnung mit TSE-QR |
-| Bonstorno (nachträglicher Storno eines abgeschlossenen Belegs) | **1× pro Stornobeleg** | `Kassenbeleg-V1` mit `receipt_type='cancellation'` und `cancels_invoice_id`-Referenz | Stornobeleg mit TSE-QR |
+| Bonstorno (nachträglicher Storno eines abgeschlossenen Belegs) | **1× pro Stornobeleg** | `Kassenbeleg-V1` mit `receipt_type='cancellation'` | Stornobeleg mit TSE-QR |
 
-**Datenmodell-Konsequenzen** (bereits weitgehend im Schema angelegt):
+**✅ Umgesetzt (August 2026):** Alle vier Vorgänge aus beiden Szenarien signieren
+tatsächlich — `service_order` (AVBestellung), `order_cancellation` (AVSonstige),
+`invoice` (Kassenbeleg-V1, Bonkasse + Bedienungskasse-Split + admin Bonstorno).
+Referenzimplementierung + gemeinsamer Baustein für alle vier Aufrufer:
+`packages/backend/src/tse/signing.ts` (`signTseTransaction`) — signiert nie
+blockierend (siehe „Gesetzliche Anforderungen: TSE" → Abschnitt „TSE-Ausfall"
+unten und `docs/TSE-Integration.md` Abschnitt 8.1). `tse/processData.ts` liefert
+je Vorgangstyp einen eigenen Snapshot-Builder.
+
+**Datenmodell-Konsequenzen** (umgesetzt):
 - `invoice.tse_transaction_number`, `tse_signature_counter`, `tse_signature`, `tse_start_time`, `tse_end_time`, `tse_serial_number` — für Kassenbeleg-V1-Vorgänge (Kassiervorgang, Storno, nachträglicher Storno)
 - `invoice.receipt_type` mit `'sales_receipt' | 'cancellation' | 'training'` und `cancels_invoice_id` für die Verkettung
-- **Noch zu ergänzen:** eigene Entität `order` mit TSE-Feldern für `AVBestellung`-Vorgänge (aktuell werden Bestellpositionen ohne übergeordnete Order-Entität und ohne eigene TSE-Referenz erfasst)
-- **Noch zu ergänzen:** eigene Entität `order_cancellation` mit TSE-Feldern für `AVSonstige`-Vorgänge (Storno offener Positionen), damit der Vorgang unabhängig vom späteren Kassierbeleg dokumentiert bleibt
+- `service_order` (aus Task #35) trägt dieselben sechs `tse_*`-Spalten für `AVBestellung`-Vorgänge — wird jetzt tatsächlich befüllt
+- `order_cancellation` (aus Task #35) trägt dieselben sechs `tse_*`-Spalten für `AVSonstige`-Vorgänge — wird jetzt tatsächlich befüllt
 
 **Signaturregeln (generisch, unabhängig von TSE-Hardware):**
 - **Transaktionsnummer** und **Signaturzähler** sind global über alle Vorgangstypen fortlaufend und werden von der TSE vergeben.
 - **Start-** und **Endzeitpunkt** kommen von der TSE (nicht vom Kassensystem), damit Manipulationen an der Systemzeit erkennbar bleiben.
-- Ein Vorgang der zwischen Start und Finish abbricht, muss als `AVBelegabbruch` finalisiert werden — er bleibt in der TSE-Kette dokumentiert.
-- Bei Beleg-Storno: der neue Stornobeleg referenziert den Original-Beleg über `cancels_invoice_id`; die Original-Signatur wird NICHT verändert (KassenSichV verlangt Unveränderbarkeit der Kette).
+- Ein Vorgang der zwischen Start und Finish abbricht, muss als `AVBelegabbruch` finalisiert werden — er bleibt in der TSE-Kette dokumentiert. **✅ Umgesetzt (August 2026):** Schlägt `finish` nach erfolgreichem `start` fehl, sendet `signTseTransaction` automatisch einen zweiten `finish`-Aufruf mit `processType='AVBelegabbruch'`, um den auf der TSE offenen Vorgang zu schließen — Best-effort (schlägt auch dieser Aufruf fehl, z.B. weil die TSE komplett unerreichbar ist, wird das nur geloggt, ohne den Vorgang zu blockieren). Siehe `tse/signing.ts` und `docs/TSE-Integration.md` Abschnitt 8.1.
+- Bei Beleg-Storno: der neue Stornobeleg referenziert den Original-Beleg über `cancels_invoice_id`; die Original-Signatur wird NICHT verändert (KassenSichV verlangt Unveränderbarkeit der Kette). Der admin-Bonstorno-Pfad (`/api/admin/cancellations`) referenziert bewusst keinen einzelnen Original-Beleg (siehe Docstring dort) — `cancels_invoice_id` bleibt dort `null`.
 
 ### Pflichtangaben auf dem Kassenbon (ab 01.01.2024)
 
 Rechtsgrundlage: § 6 KassenSichV (Anforderungen an den Beleg) — nicht direkt
-die DSFinV-K, die den späteren Prüfungs-Export (Task #13) regelt, aber
-inhaltlich mit deren Bonkopf/Bonpos-Feldern überschneidend.
+die DSFinV-K, die den Prüfungs-Export (Task #13, ✅ umgesetzt, siehe unten)
+regelt, aber inhaltlich mit deren Bonkopf/Bonpos-Feldern überschneidend.
 
 - Name und Anschrift des Unternehmens
 - **Belegnummer** (fortlaufend, eindeutig; Präfix + Zähler)
@@ -365,25 +388,28 @@ Steuerbetrag je Steuersatz (`taxBreakdown`), Kassen- und TSE-Seriennummer,
 Prüfwert (`tseSignature`) + Signaturzähler. Kein Feld fehlt; keine Code-Änderung
 nötig. Quelle: [§ 6 KassenSichV](https://www.gesetze-im-internet.de/kassensichv/__6.html).
 
-**Abgrenzung zur DSFinV-K (für Task #13, nicht den aktuellen Bon betreffend):**
-Anhand der offiziellen DSFinV-K-Spezifikation v2.4 (Bonkopf/Bonkopf_USt/Bonpos/
-Bonpos_USt) wurde das bestehende Datenmodell (`invoice`, `order_item`)
-gegengeprüft. Die meisten Pflichtfelder sind bereits vorhanden (Belegnummer,
-Kasse/Terminal-ID über `register_id`, Bediener über `order_item.user_id`,
-Steuersatz-Aufschlüsselung deckt sich 1:1 mit `Bonkopf_USt`, „eine Zeile pro
-Artikel-Einheit" macht `MENGE` trivial `1`, Storno über `cancels_invoice_id` +
-gegenläufigen Zweitbeleg entspricht genau dem in der Spezifikation für
-TSE-geschützte Systeme vorgesehenen Verfahren). Zwei konkrete Lücken für die
-spätere Export-Implementierung, **nicht** für den Bon selbst:
+**Abgrenzung zur DSFinV-K (Task #13, ✅ umgesetzt — nicht den aktuellen Bon
+betreffend):** Anhand der offiziellen DSFinV-K-Spezifikation v2.4
+(Bonkopf/Bonkopf_USt/Bonpos/Bonpos_USt) wurde das bestehende Datenmodell
+(`invoice`, `order_item`) gegengeprüft. Die meisten Pflichtfelder sind bereits
+vorhanden (Belegnummer, Kasse/Terminal-ID über `register_id`, Bediener über
+`order_item.user_id`, Steuersatz-Aufschlüsselung deckt sich 1:1 mit
+`Bonkopf_USt`, „eine Zeile pro Artikel-Einheit" macht `MENGE` trivial `1`,
+Storno über `cancels_invoice_id` + gegenläufigen Zweitbeleg entspricht genau
+dem in der Spezifikation für TSE-geschützte Systeme vorgesehenen Verfahren).
+Zwei ursprünglich vermutete Schema-Lücken haben sich beim Bau des Exports
+(`packages/backend/src/exports/dsfinvk/`) als am Export-Zeitpunkt lösbar
+herausgestellt — **keine Migration nötig**, Details siehe
+`docs/Rechtliche-Anforderungen.md` Abschnitt 6.7:
 1. **`BON_START`/`BON_ENDE`** müssen laut Spezifikation vom Aufzeichnungssystem
-   selbst stammen und ausdrücklich **nicht** den TSE-Zeitstempeln entsprechen
-   (relevant v.a. bei der Bedienungskasse, wo ein Tisch lange vor dem
-   Kassieren geöffnet sein kann) — aktuell wird dafür kein eigener
-   App-Zeitstempel gespeichert, nur `tse_start_time`/`tse_end_time`.
+   selbst stammen und ausdrücklich **nicht** den TSE-Zeitstempeln entsprechen —
+   da jeder FairPOS-Vorgang ein atomarer HTTP-Request ist, genügt
+   `invoice.created_at`/`service_order.created_at`/`order_cancellation.created_at`
+   als Start- **und** Endzeitpunkt.
 2. **`GV_TYP`** (Geschäftsvorfalltyp je Position, Anhang C der Spezifikation)
-   wird aktuell nicht auf `order_item` abgebildet — z.B. müsste ein Pfandanteil
-   ggf. als eigene Position mit eigenem GV_TYP exportiert werden, statt (wie
-   aktuell für den Bon-Druck ausreichend) als Zuschlag auf der Artikelzeile.
+   wird beim Export aus den bestehenden `order_item.price`/`deposit_price`-Feldern
+   synthetisiert (`Umsatz`-Zeile + ggf. separate `Pfand`/`PfandRueckzahlung`-Zeile),
+   ohne neue `order_item`-Spalte.
 
 **Kundendaten (KUNDE_NAME/KUNDE_ID/KUNDE_STRASSE/…):** DSFinV-K sieht optionale
 Felder für den Leistungsempfänger vor (v.a. für B2B-Rechnungen). FairPOS erfasst

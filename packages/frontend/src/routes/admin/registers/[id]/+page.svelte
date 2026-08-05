@@ -272,6 +272,7 @@
               <td class="num">{fmt(c.total_cancellations)} €</td>
               <td class="actions">
                 <a class="btn-ghost" href={api.admin.closings.pdfUrl(c.id)} target="_blank" rel="noopener">PDF</a>
+                <a class="btn-ghost" href={api.admin.closings.dsfinvkUrl(c.id)} rel="noopener" title="DSFinV-K-Export (ZIP)">DSFinV-K</a>
                 <button class="btn-ghost" on:click={() => reprintClosing(c.id)} disabled={reprintingClosingId === c.id}>
                   {reprintingClosingId === c.id ? '…' : 'Drucken'}
                 </button>

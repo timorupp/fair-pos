@@ -170,6 +170,13 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
    `Anforderungen.md` → „Zu signierende Vorgänge in FairPOS" für die Zuordnung
    Kassenbeleg-V1 / AVBestellung / AVSonstige).
 
+**✅ Umgesetzt (August 2026):** Alle vier Aufrufer (Bonkasse-Checkout,
+Bedienungskasse-Bestellung, Bedienungskasse-Split-Kassieren, admin-Bonstorno)
+laufen über `tse/signing.ts` → `signTseTransaction(processType, processData)`
+— ein einziger, nie blockierender Einstiegspunkt, der `start`+`finish` kapselt
+und automatisch die Ausfall-Dokumentation (Abschnitt 8.1) mitführt. Keiner der
+vier Aufrufer implementiert Fehlerbehandlung/Ausfall-Logik selbst.
+
 ---
 
 ## 7. Zugangsdaten (PUK/PINs) — Sicherheitsanforderung
@@ -245,24 +252,30 @@ Bedienungskasse-Flows aus Task #41):
    wurde. Das macht JEDEN unsignierten Verkauf im UI sichtbar, damit die
    Ursache "unverzüglich" (Nr. 1.14.4) behoben werden kann — unabhängig
    davon, ob es ein echter Ausfall oder schlicht keine konfigurierte TSE ist.
-5. **Fehler loggen, nicht schlucken.** `req.log.error({ err }, '...')` (oder
-   äquivalent) beim Catch, damit ein Ausfallmuster im Server-Log
-   nachvollziehbar bleibt — das ist zugleich ein einfacher Anfang für die in
-   Nr. 1.14.1 geforderte Ausfall-Dokumentation (Zeit + Grund), auch wenn ein
-   dediziertes Ausfall-Log (Start-/Ende-Zeitpunkt, automatisiert) noch nicht
-   gebaut ist (siehe „Nicht in diesem Dokument" unten).
+5. **Fehler loggen UND automatisiert dokumentieren.** Jeder Fehlschlag (und
+   jede fehlende Konfiguration) wird über `tse/outage.ts` in der Tabelle
+   `tse_outage` festgehalten — `recordTseFailure(reason)` öffnet eine Zeile
+   (falls noch keine offene existiert), `recordTseRecovered()` schließt sie
+   bei der nächsten erfolgreichen Signierung. Das ist die in Nr. 1.14.1
+   geforderte automatisierte Ausfall-Dokumentation (Start, Ende, Grund),
+   maschinenlesbar und strukturiert abfragbar — nicht nur ein Server-Log-Eintrag.
+6. **Begonnene, nie abgeschlossene Vorgänge sauber schließen.** Schlägt
+   `finish` fehl, nachdem `start` bereits erfolgreich war, bleibt der Vorgang
+   auf der TSE offen (zählt gegen `maxStartedTransactions`). `signTseTransaction`
+   schickt in diesem Fall automatisch einen zweiten `finish`-Aufruf mit
+   `processType='AVBelegabbruch'` (leere `processData`), um ihn zu schließen.
+   Best-effort: schlägt auch dieser Aufruf fehl (TSE komplett unerreichbar),
+   wird das nur geloggt — der Aufrufer bekommt ohnehin dieselbe Warnung.
 
-Referenzimplementierung: `routes/register-session.ts` (Bonkasse-Checkout,
-Task #40) — TSE-Signierung läuft vor der DB-Transaktion, ein Fehlschlag
-setzt nur `tseWarning`, die Rechnung wird trotzdem angelegt. Tests:
-`register-session.integration.test.ts` → Describe-Block „TSE-Signierung".
-
-**Noch offen (nicht Teil dieses Musters, für eine spätere Iteration):** ein
-automatisiertes Ausfall-Log (Start-/Ende-Zeitstempel + Grund als eigene
-Tabelle, befüllt an einer zentralen Stelle statt pro Aufrufer) für eine
-vollständige, maschinenlesbare Umsetzung von Nr. 1.14.1. Aktuell erfüllt das
-Server-Log (Punkt 5) die Dokumentationspflicht manuell/lesbar, aber nicht
-strukturiert abfragbar.
+**✅ Umgesetzt (August 2026):** Punkte 1–6 leben zentral in
+`tse/signing.ts` (`signTseTransaction`) — jeder der vier Aufrufer
+(Bonkasse-Checkout, Bedienungskasse-Bestellung/-Kassieren, admin-Bonstorno)
+ruft nur diese eine Funktion auf und muss weder Try/Catch noch
+Ausfall-Buchführung selbst implementieren. Tests:
+`register-session.integration.test.ts` (Describe-Blöcke „TSE-Signierung"),
+`cancellations.integration.test.ts`, `tse/signing.integration.test.ts` (prüft
+`tse_outage` direkt: öffnet genau eine Zeile pro Ausfall, schließt sie bei
+Erfolg, keine doppelten Zeilen bei wiederholten Fehlschlägen).
 
 ---
 
@@ -304,8 +317,16 @@ Swissbits Beispiel).
 
 ## 11. Nicht in diesem Dokument
 
-- DSFinV-K-Formatierung (Task #13) — eigenes Thema, nutzt aber den `exportTar`-
-  Rohdaten-Export dieses Moduls als Datenquelle.
+- DSFinV-K-CSV-Export (**✅ Task #13 umgesetzt**, August 2026) — eigenes Modul
+  `exports/dsfinvk/`, dokumentiert in `docs/Rechtliche-Anforderungen.md`
+  Abschnitt 6. Nutzt die hier signierten `tse_*`-Felder direkt aus der DB
+  (nicht `exportTar`) — der Rohdaten-TAR-Export bleibt eine separate, noch
+  nicht gebaute Funktion für Backup/Archivierung (Task #25), unabhängig vom
+  CSV-Export.
+- Korrektur des `processData`-Formats für `Kassenbeleg-V1` auf die von
+  DSFinV-K Anhang I vorgeschriebene Struktur, inkl. TSE-Zertifikatsdaten für
+  den QR-Code — Task #46, bewusst zurückgestellt.
 - Fachliche Zuordnung, welcher Vorgang welchen `processType` bekommt — siehe
   `Anforderungen.md`.
-- Backup/Archivierungsstrategie der Export-Daten — siehe Task #25.
+- Backup/Archivierungsstrategie der Export-Daten (`exportTar`-Rohdaten) —
+  siehe Task #25.

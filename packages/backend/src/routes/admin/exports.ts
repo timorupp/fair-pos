@@ -1,4 +1,4 @@
-/** Excel export endpoints (Tagesexport + Veranstaltungsexport). */
+/** Export endpoints: Excel (Tagesexport + Veranstaltungsexport) and DSFinV-K. */
 
 import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
@@ -6,6 +6,9 @@ import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { pickDefaultEventId } from '../../reports/event-select.js';
 import { buildExportRows, type ExportSourceRow } from '../../exports/rows.js';
 import { buildExcelWorkbook } from '../../exports/workbook.js';
+import { loadDsfinvkSource } from '../../exports/dsfinvk/load.js';
+import { buildDsfinvkExport } from '../../exports/dsfinvk/rows.js';
+import { buildDsfinvkZip } from '../../exports/dsfinvk/zip.js';
 
 /**
  * Reads the configured receipt-number prefix from system_setting. Empty string
@@ -194,5 +197,26 @@ export async function exportsAdminRoute(app: FastifyInstance): Promise<void> {
       .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       .header('Content-Disposition', `attachment; filename="${filename}"`)
       .send(buf);
+  });
+
+  /**
+   * GET /api/admin/exports/dsfinvk/:closingId — DSFinV-K export for one
+   * Kassenabschluss (Z-Bon), as a ZIP archive (CSV files + index.xml).
+   * See docs/Rechtliche-Anforderungen.md Abschnitt 6 for the specification
+   * this implements, including known scoping simplifications and the two
+   * fields (TSE certificate/signature algorithm) not yet available.
+   */
+  app.get<{ Params: { closingId: string } }>('/dsfinvk/:closingId', async (req, reply) => {
+    const source = await loadDsfinvkSource(req.params.closingId);
+    if (!source) return reply.status(404).send({ error: 'Kassenabschluss nicht gefunden' });
+
+    const data = buildDsfinvkExport(source);
+    const zip = await buildDsfinvkZip(data);
+
+    const filename = safeFilename(`dsfinvk_${source.registerName}_z${source.closing.zNumber}.zip`);
+    reply
+      .header('Content-Type', 'application/zip')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(zip);
   });
 }

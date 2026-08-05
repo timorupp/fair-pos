@@ -31,6 +31,8 @@
   let lastReceiptNumber: string | null = null;
   let printDone = false;
   let printing = false;
+  /** Set when a configured TSE failed to sign the sale — the sale still went through, see docs/TSE-Integration.md. */
+  let tseWarning: string | null = null;
 
   // Cancel dialog
   let cancelOpen = false;
@@ -103,6 +105,7 @@
       const result = await api.registerSession.chargeTable(registerId, tableId, selectedQuantities());
       lastInvoiceId = result.invoice_id;
       lastReceiptNumber = result.receipt_number_formatted;
+      tseWarning = result.tse_warning;
       confirmationOpen = true;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
@@ -130,6 +133,7 @@
     lastInvoiceId = null;
     lastReceiptNumber = null;
     printDone = false;
+    tseWarning = null;
     // Refresh open items and return to the table action chooser if everything was paid.
     goto(`/register/${registerId}/tables/${tableId}`);
   }
@@ -144,8 +148,12 @@
     if (!cancelReasonId) { cancelError = 'Stornogrund wählen'; return; }
     canceling = true; cancelError = '';
     try {
-      await api.registerSession.cancelAtTable(registerId, tableId, selectedQuantities(), cancelReasonId);
+      const result = await api.registerSession.cancelAtTable(registerId, tableId, selectedQuantities(), cancelReasonId);
       cancelOpen = false;
+      // TSE-Signierung blockiert die Stornierung nie (siehe docs/TSE-Integration.md
+      // → "TSE-Ausfall"). The dialog closes right away, so an inline warning
+      // wouldn't be seen — alert() matches the pattern used on the order page.
+      if (result.tse_warning) alert(`⚠ ${result.tse_warning}`);
       // Reload to reflect the (now removed/transitioned) items, then back to action chooser.
       goto(`/register/${registerId}/tables/${tableId}`);
     } catch (e) {
@@ -243,6 +251,7 @@
         <div class="muted small">{selectedCount} Artikel</div>
       </div>
     </div>
+    {#if tseWarning}<p class="warning-text">⚠ {tseWarning}</p>{/if}
     {#if printDone}<p class="success-text">✓ Bon wird gedruckt</p>{/if}
 
     <div class="modal-actions">
@@ -322,4 +331,5 @@
   .modal-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
   .modal-actions .spacer { flex: 1; }
   .success-text { color: #4caf7d; font-size: 0.9rem; margin-top: 0.5rem; }
+  .warning-text { color: #f59e0b; font-size: 0.9rem; margin-top: 0.5rem; font-weight: 600; }
 </style>

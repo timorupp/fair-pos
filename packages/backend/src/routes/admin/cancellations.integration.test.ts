@@ -6,6 +6,8 @@
  * (missing reason, wrong booking_type, empty items).
  */
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
@@ -15,6 +17,16 @@ import {
   seedReceiptCounter,
 } from '../../test/fixtures.js';
 import { computeClosingTotals, type ClosingItem, type ClosingInvoice } from '../../closing/totals.js';
+import { config } from '../../config.js';
+
+const TSE_CLI_STUB_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'test',
+  'fixtures',
+  'tseCliStub.sh',
+);
 
 beforeAll(async () => { await getTestApp(); });
 afterAll(closeTestApp);
@@ -27,6 +39,10 @@ let freeOfChargeReasonId: string;
 
 beforeEach(async () => {
   await truncateAllTables();
+  config.tseMountPoint = null;
+  config.tseClientId = null;
+  delete process.env['TSE_STUB_STDOUT'];
+  delete process.env['TSE_STUB_EXIT_CODE'];
   const admin = await createTestUser({ isAdmin: true, password: 'pw' });
   adminCookie = await loginAsAdmin(await getTestApp(), admin.name, 'pw');
 
@@ -178,5 +194,49 @@ describe('POST /api/admin/cancellations', () => {
       },
     });
     expect(r2.statusCode).toBe(400);
+  });
+
+  it('signs the Bonstorno as Kassenbeleg-V1 and stores the TSE fields when configured', async () => {
+    config.tseMountPoint = '/tmp/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: { transactionNumber: 5, signatureCounter: 2, logTime: 1735689600, signature: 'cc', serialNumber: 'dd' },
+    });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/cancellations',
+      headers: { cookie: adminCookie },
+      payload: {
+        register_id: registerId,
+        cancellation_reason_id: cancellationReasonId,
+        items: [{ article_id: articleId, quantity: 1 }],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().tse_warning).toBeNull();
+
+    const inv = await pool.query(
+      `SELECT tse_transaction_number, tse_signature FROM invoice WHERE id = $1`,
+      [response.json().invoice_id],
+    );
+    expect(inv.rows[0]).toMatchObject({ tse_transaction_number: '5', tse_signature: 'cc' });
+  });
+
+  it('does not block a Bonstorno when the TSE is not configured — invoice still created, warning returned', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/cancellations',
+      headers: { cookie: adminCookie },
+      payload: {
+        register_id: registerId,
+        cancellation_reason_id: cancellationReasonId,
+        items: [{ article_id: articleId, quantity: 1 }],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().tse_warning).toMatch(/nicht konfiguriert/);
   });
 });
