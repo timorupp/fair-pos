@@ -56,6 +56,38 @@ int printUsageError(const char *message) {
   return 1;
 }
 
+/** Minimal Base64 encoder, for byte values the CLI reports back to Node
+ * (the TSE's public key) that aren't plain hex — mirrors `toHex` above. */
+std::string base64Encode(const unsigned char *data, size_t len) {
+  static const char *alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve(((len + 2) / 3) * 4);
+  size_t i = 0;
+  for (; i + 2 < len; i += 3) {
+    unsigned v = ((unsigned)data[i] << 16) | ((unsigned)data[i + 1] << 8) | data[i + 2];
+    out.push_back(alphabet[(v >> 18) & 0x3f]);
+    out.push_back(alphabet[(v >> 12) & 0x3f]);
+    out.push_back(alphabet[(v >> 6) & 0x3f]);
+    out.push_back(alphabet[v & 0x3f]);
+  }
+  size_t remaining = len - i;
+  if (remaining == 1) {
+    unsigned v = (unsigned)data[i] << 16;
+    out.push_back(alphabet[(v >> 18) & 0x3f]);
+    out.push_back(alphabet[(v >> 12) & 0x3f]);
+    out.push_back('=');
+    out.push_back('=');
+  } else if (remaining == 2) {
+    unsigned v = ((unsigned)data[i] << 16) | ((unsigned)data[i + 1] << 8);
+    out.push_back(alphabet[(v >> 18) & 0x3f]);
+    out.push_back(alphabet[(v >> 12) & 0x3f]);
+    out.push_back(alphabet[(v >> 6) & 0x3f]);
+    out.push_back('=');
+  }
+  return out;
+}
+
 /** Minimal Base64 decoder. processData may contain arbitrary bytes, so the
  * Node side always base64-encodes it before passing it as a CLI argument —
  * this avoids any shell-escaping concerns for binary payloads. */
@@ -210,7 +242,15 @@ int cmdFinish(WormContext *ctx, int argc, char **argv) {
   return err == WORM_ERROR_NOERROR ? 0 : printError(err, "worm_transaction_finish failed");
 }
 
-/** `info` — TSE status snapshot for the admin UI / health checks. */
+/** `info` — TSE status snapshot for the admin UI / health checks, plus the
+ * signature-verification fields DSFinV-K Anhang I requires on `tse.csv` and
+ * in the QR-code content (signature algorithm, log-time format, public key —
+ * see docs/Rechtliche-Anforderungen.md Abschnitt 6.5/2). These three are
+ * fixed per TSE/firmware, not per transaction, so callers can safely cache
+ * them instead of re-reading on every receipt. The full certificate chain
+ * (`worm_getLogMessageCertificate`, needed only for `tse.csv`'s
+ * TSE_ZERTIFIKAT_I/II, not for QR-code verification) is a separate, still
+ * open gap — see docs/TSE-Integration.md Abschnitt 11. */
 int cmdInfo(WormContext *ctx) {
   WormInfo *info = worm_info_new(ctx);
   if (info == nullptr) return printError(WORM_ERROR_OUTOFMEM, "worm_info_new failed");
@@ -223,6 +263,9 @@ int cmdInfo(WormContext *ctx) {
   const unsigned char *serial;
   worm_uint serialLength;
   worm_info_tseSerialNumber(info, &serial, &serialLength);
+  const unsigned char *publicKey;
+  worm_uint publicKeyLength;
+  worm_info_tsePublicKey(info, &publicKey, &publicKeyLength);
 
   std::printf(
       "{\"ok\":true,\"result\":{"
@@ -237,7 +280,10 @@ int cmdInfo(WormContext *ctx) {
       "\"timeUntilNextTimeSynchronization\":%u,"
       "\"tseCertificationId\":\"%s\","
       "\"formFactor\":\"%s\","
-      "\"tseSerialNumber\":\"%s\""
+      "\"tseSerialNumber\":\"%s\","
+      "\"signatureAlgorithm\":\"%s\","
+      "\"logTimeFormat\":\"%s\","
+      "\"publicKey\":\"%s\""
       "}}\n",
       worm_info_hasPassedSelfTest(info) ? "true" : "false",
       worm_info_hasValidTime(info) ? "true" : "false",
@@ -247,7 +293,9 @@ int cmdInfo(WormContext *ctx) {
       worm_info_timeUntilNextSelfTest(info),
       worm_info_timeUntilNextTimeSynchronization(info),
       worm_info_tseCertificationId(info), worm_info_formFactor(info),
-      toHex(serial, serialLength).c_str());
+      toHex(serial, serialLength).c_str(),
+      worm_signatureAlgorithm(), worm_logTimeFormat(),
+      base64Encode(publicKey, publicKeyLength).c_str());
 
   worm_info_free(info);
   return 0;

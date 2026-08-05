@@ -15,7 +15,7 @@ import { buildQrPayload, renderQrPng } from './qr.js';
 
 /** Renders the receipt PDF and resolves with the complete byte buffer. */
 export async function renderReceiptPdf(data: ReceiptData): Promise<Buffer> {
-  const qrPng = await renderQrPng(buildQrPayload(data), 220);
+  const qrPng = await renderQrPng(await buildQrPayload(data), 220);
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A6', margin: 18, info: { Title: data.receiptNumber } });

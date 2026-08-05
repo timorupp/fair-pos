@@ -1,6 +1,7 @@
 /** Loads everything `buildDsfinvkExport` needs for one Kassenabschluss (Z-Bon) from the database. */
 import { query } from '../../db/client.js';
 import { config } from '../../config.js';
+import { getTseCertificateInfo } from '../../tse/certificateInfo.js';
 import type { DsfinvkSource, SourceLineItem, SourceVorgang, TseSignatureSource } from './rows.js';
 
 const TAX_RATE_DESCRIPTIONS: Record<number, string> = {
@@ -241,6 +242,10 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   )].sort((a, b) => a - b);
 
   const tseSerial = [...invoicesResult.rows].map((r) => r.tse_serial_number).find((s) => s !== null) ?? null;
+  // Best-effort — getTseCertificateInfo() never throws, returns null when the
+  // TSE is unconfigured/unreachable (see rows.ts, which leaves the tse.csv
+  // fields empty in that case rather than failing the whole export).
+  const tseCertificate = await getTseCertificateInfo();
 
   return {
     closing: {
@@ -255,6 +260,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     systemSerial: settings.get('system_serial') ?? '',
     tseClientId: config.tseClientId,
     tseSerial,
+    tseCertificate,
     company: {
       name: settings.get('company_name') ?? '',
       street: settings.get('company_street') ?? '',

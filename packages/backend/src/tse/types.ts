@@ -32,6 +32,12 @@ export interface TseInfo {
   formFactor: string;
   /** Hex-encoded TSE serial number. */
   tseSerialNumber: string;
+  /** Signature algorithm used by the TSE (e.g. `ecdsa-plain-SHA384`) — fixed per TSE/firmware, needed for the QR-code content model and `tse.csv` (Anhang I/E). */
+  signatureAlgorithm: string;
+  /** Log-time format used by the TSE (e.g. `unixTime`, `utcTime`) — fixed per TSE/firmware, see Anhang E field `TSE_ZEITFORMAT`. */
+  logTimeFormat: string;
+  /** Base64-encoded public key, extracted from the TSE's certificate — fixed per TSE/firmware, needed to verify QR-code signatures and for `tse.csv` field `TSE_PUBLIC_KEY`. */
+  publicKey: string;
 }
 
 /**

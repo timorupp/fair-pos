@@ -18,7 +18,7 @@ import { nextReceiptNumber } from '../../receipt/sequence.js';
 import { generateReceiptToken } from '../../receipt/numbering.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../../receipt/format-receipt-number.js';
 import { signTseTransaction } from '../../tse/signing.js';
-import { buildKassenbelegProcessData } from '../../tse/processData.js';
+import { buildKassenbelegProcessData, KASSENBELEG_PROCESS_TYPE } from '../../tse/processData.js';
 
 /** Body schema for `POST /api/admin/cancellations`. */
 interface CreateCancellationBody {
@@ -102,14 +102,11 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
     // Vorgänge in FairPOS". Never blocks the cancellation — docs/TSE-Integration.md
     // → "TSE-Ausfall".
     const kassenbelegSnapshot = buildKassenbelegProcessData({
-      registerId: register_id,
       paymentMethod: 'cash',
       receiptType: 'cancellation',
       positions: items.map((it) => {
         const article = articleById.get(it.article_id)!;
         return {
-          articleId: article.id,
-          name: article.receipt_text ?? article.name,
           quantity: it.quantity,
           unitPriceEuros: Number(article.price),
           depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
@@ -117,7 +114,7 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
         };
       }),
     });
-    const { signature: tse, warning: tseWarning } = await signTseTransaction('Kassenbeleg-V1', kassenbelegSnapshot);
+    const { signature: tse, warning: tseWarning } = await signTseTransaction(KASSENBELEG_PROCESS_TYPE, kassenbelegSnapshot);
 
     const result = await withTransaction(async (client) => {
       const receiptNumber = await nextReceiptNumber(client);

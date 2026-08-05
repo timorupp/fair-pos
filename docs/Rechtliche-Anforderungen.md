@@ -211,7 +211,7 @@ laut Inhaltsverzeichnis (S. 6)** — FairPOS-Relevanz markiert:
 | `slaves.csv` (Stamm_Terminals) | Terminals einer Master-Kasse | nicht benötigt — FairPOS hat keine Master-Slave-Kassen |
 | `pa.csv` (Stamm_Agenturen) | Agenturgeschäfte (Fremdverkauf) | nicht benötigt |
 | `vat.csv` (Stamm_USt) | Steuersätze mit Schlüssel (UST_SCHLUESSEL) | ✅ siehe Schlüsselschema unten |
-| `tse.csv` (Stamm_TSE) | TSE-Seriennummer, Zertifikat, Signaturalgorithmus, Zeitformat, Public Key | teilweise — Zertifikatsfelder fehlen noch, siehe Task #46 |
+| `tse.csv` (Stamm_TSE) | TSE-Seriennummer, Zertifikat, Signaturalgorithmus, Zeitformat, Public Key | ✅ Seriennummer/Signaturalgorithmus/Zeitformat/Public-Key; **teilweise** — die Zertifikatskette selbst (`TSE_ZERTIFIKAT_I/II`) fehlt noch, siehe Abschnitt 6.7 |
 
 **Kassenabschlussmodul** (S. 80–83)
 
@@ -273,32 +273,70 @@ Feste ID-Vergabe, nicht frei wählbar für die Standard-IDs:
 
 FairPOS-Abbildung: `article_category.tax_rate` (19/7/0 %) → UST_SCHLUESSEL 1/2/5.
 
-### 6.5 processData-Format für `Kassenbeleg-V1` (Anhang I, S. 112–117)
+### 6.5 processData-Format je `processType` (Anhang I, S. 112–124)
 
-**Wichtig — betrifft die bereits laufende TSE-Signierung, nicht nur den
-späteren Export:** Das Format ist exakt vorgeschrieben, nicht frei wählbar:
+**Wichtig — betrifft die laufende TSE-Signierung, nicht nur den späteren
+Export:** Anhang I schreibt für jeden der drei von FairPOS verwendeten
+`processType`-Werte ein eigenes, exaktes Format vor. Verbindlich außerdem für
+**alle** Vorgangstypen: `processType`/`processData` sind bei
+`StartTransaction` **immer leer** — nur `FinishTransaction` trägt sie.
 
+**`Kassenbeleg-V1`** (S. 113–115):
 ```
 <Vorgangstyp>^<Brutto-Steuerumsätze>^<Zahlungen>
 ```
 - Trennzeichen zwischen den drei Teilen: `^` (U+005E)
-- `<Vorgangstyp>`: einer der BON_TYP-Werte aus Abschnitt 6.2
+- `<Vorgangstyp>`: einer der BON_TYP-Werte aus Abschnitt 6.2 — für FairPOS
+  immer `Beleg` (nie `AVBelegstorno`, siehe Abschnitt 6.2), außer beim
+  `AVBelegabbruch`-Sonderfall unten
 - `<Brutto-Steuerumsätze>`: Bruttoumsatz je Steuersatz, getrennt durch `_`
   (U+005F), in der festen Reihenfolge „allgemeiner Satz, ermäßigter Satz,
   Durchschnittssatz §24(1)Nr.3, Durchschnittssatz §24(1)Nr.1, 0 %" — auch
   ungenutzte Steuersätze mit `0.00` angeben, exakt zwei Dezimalstellen, Punkt
-  als Dezimaltrennzeichen, keine Tausendertrennzeichen
+  als Dezimaltrennzeichen, keine Tausendertrennzeichen; bei Storno-Belegen
+  mit umgekehrtem Vorzeichen (Anhang I's eigenes „Warenrücknahme"-Beispiel)
 - `<Zahlungen>`: `<Betrag>:<Zahlungsart>:<Währung>`, mehrere Zahlungen durch
   `_` verkettet; Zahlungsart nur „Bar" oder „Unbar"; Währung nur angeben wenn
   ≠ EUR; Zahlungen von `0.00` entfallen
+- Abbruch eines begonnenen, nie abgeschlossenen Vorgangs: Anhang I's eigenes
+  Beispiel nutzt `AVBelegabbruch^0.00_0.00_0.00_0.00_0.00^` — `processType`
+  bleibt dabei `Kassenbeleg-V1`, `AVBelegabbruch` ist nur der `<Vorgangstyp>`
+  innerhalb der processData.
 
-**Aktueller Stand (August 2026):** `tse/processData.ts` schreibt stattdessen
-ein selbstbeschreibendes JSON-Snapshot (dokumentiert als Interimsformat seit
-Task #40). Die Umstellung auf das vorgeschriebene Format ist als eigener Task
-**#46** erfasst (bewusst zurückgestellt, um Scope zu begrenzen) — betrifft
-auch den maschinenlesbaren QR-Code-Inhalt (Anhang I Abschnitt 2, S. 122ff.),
-der zusätzlich TSE-Zertifikatsdetails (Signaturalgorithmus, Public Key,
-Log-Time-Format) referenziert, die `native/tse-cli` aktuell nicht ausliest.
+**`Bestellung-V1`** (S. 116–117, für FairPOS: Bedienungskasse-Bestellung):
+```
+<Menge>;"<Bezeichnung>";<Preis>
+```
+CSV-artig, eine Zeile pro Bestellposition, Zeilentrennzeichen `\r`
+(U+000D), Spaltentrennzeichen `;`. `<Bezeichnung>` immer in
+Anführungszeichen, enthaltene Anführungszeichen verdoppelt. `<Preis>` ist der
+Brutto-Einzelpreis der Zeile, zwei Dezimalstellen.
+
+**`SonstigerVorgang`** (S. 117, für FairPOS: Storno/kostenfreie Abgabe einer
+offenen Bestellposition): Inhalt frei wählbar (`<FREI>`), Anhang I empfiehlt
+ein lesbares Textformat — FairPOS nutzt einen Klartext-Satz mit Stornogrund,
+Positionen und Summe.
+
+**✅ Umgesetzt (September 2026):** `tse/processData.ts` implementiert alle
+drei Formate exakt wie oben; `tse/signing.ts` sendet bei `start` immer leere
+Werte. Unit-Tests (`tse/processData.test.ts`) reproduzieren Anhang I's eigene
+Beispiele wortwörtlich. War zuvor als eigener Task **#46** zurückgestellt
+(Interims-JSON-Format seit Task #40) — siehe `docs/TSE-Integration.md`
+Abschnitt 11 für den erledigten Stand.
+
+Ebenfalls Teil dieser Korrektur: der maschinenlesbare QR-Code-Inhalt (Anhang I
+Abschnitt 2, S. 122–124) — Feldreihenfolge `<qr-code-version>;
+<kassen-seriennummer>;<processType>;<processData>;<transaktions-nummer>;
+<signatur-zaehler>;<start-zeit>;<log-time>;<sig-alg>;<log-time-format>;
+<signatur>;<public-key>`, verbatim mit Beispiel auf S. 124 abgeglichen
+(`tse/certificateInfo.ts`, `receipt/qr.ts`, `receipt/qr.test.ts`). Die dafür
+nötigen TSE-Zertifikatsfelder (Signaturalgorithmus, Log-Time-Format,
+Public Key) liest `native/tse-cli`s `info`-Kommando jetzt aus
+(`worm_signatureAlgorithm`/`worm_logTimeFormat`/`worm_info_tsePublicKey`) und
+cacht sie prozessweit (fix pro TSE/Firmware, nicht pro Vorgang). Die volle
+Zertifikatskette (`worm_getLogMessageCertificate`, nur für `tse.csv`s
+`TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung) bleibt ein
+kleinerer, nicht blockierender Rest — siehe Abschnitt 6.7.
 
 ### 6.6 Kundendaten
 
@@ -332,9 +370,13 @@ angenähert, nicht über eine exakte Zuordnung zum Kassenabschluss. Bei mehreren
 Abschlüssen desselben Tages und derselben Kasse kann das zu einer falschen
 Zuordnung führen. Siehe `exports/dsfinvk/load.ts` für die genaue Logik.
 
-**Ebenfalls noch offen:** TSE-Zertifikatsfelder (`TSE_SIG_ALGO`,
-`TSE_PUBLIC_KEY`, `TSE_ZERTIFIKAT_I/II`) bleiben leer — `native/tse-cli` liest
-sie aktuell nicht aus (Task #46, zusammen mit der processData-Formatkorrektur).
+**Ebenfalls noch offen:** die volle TSE-Zertifikatskette (`TSE_ZERTIFIKAT_I/II`)
+bleibt leer — `native/tse-cli` liest sie noch nicht aus
+(`worm_getLogMessageCertificate`, benötigt die CTSS-Schnittstelle; s.
+`docs/TSE-Integration.md` Abschnitt 11). `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/
+`TSE_PUBLIC_KEY` sind seit der processData-Formatkorrektur (Abschnitt 6.5)
+befüllt — diese drei sind auch die für die QR-Code-Prüfung relevanten, die
+Zertifikatskette betrifft nur `tse.csv`s Vollständigkeit, nicht die Prüfbarkeit.
 Das genaue CSV-/index.xml-Dateiformat (Feldtrennzeichen, Kopfzeile) folgt der
 verbreiteten Konvention (Semikolon, UTF-8, CRLF, GDPdU-artige index.xml), ist
 aber nicht gegen die separate GoBD-Anlage "Ergänzende Informationen zur

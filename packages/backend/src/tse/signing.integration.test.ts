@@ -59,6 +59,12 @@ function readCliInvocations(): string[] {
   return fs.readFileSync(logFile, 'utf-8').split('\n').filter(Boolean);
 }
 
+/** Decodes a logged invocation's last argument (the base64 processData) back to UTF-8 text. */
+function decodedProcessData(callLine: string): string {
+  const token = callLine.trim().split(/\s+/).pop() ?? '';
+  return Buffer.from(token, 'base64').toString('utf-8');
+}
+
 describe('signTseTransaction', () => {
   it('reports a warning and opens an outage row when the TSE is not configured', async () => {
     const result = await signTseTransaction('Kassenbeleg-V1', Buffer.from('x'));
@@ -153,9 +159,9 @@ describe('signTseTransaction', () => {
       expect(calls).toHaveLength(3);
       expect(calls[0]).toContain(' start ');
       expect(calls[1]).toContain(' finish ');
-      expect(calls[1]).not.toContain('AVBelegabbruch');
+      expect(decodedProcessData(calls[1]!)).not.toMatch(/^AVBelegabbruch/);
       expect(calls[2]).toContain(' finish ');
-      expect(calls[2]).toContain('AVBelegabbruch');
+      expect(decodedProcessData(calls[2]!)).toBe('AVBelegabbruch^0.00_0.00_0.00_0.00_0.00^');
       expect(await openOutageCount()).toBe(1);
     });
 
@@ -176,7 +182,7 @@ describe('signTseTransaction', () => {
 
       const calls = readCliInvocations();
       expect(calls).toHaveLength(3);
-      expect(calls[2]).toContain('AVBelegabbruch');
+      expect(decodedProcessData(calls[2]!)).toBe('AVBelegabbruch^0.00_0.00_0.00_0.00_0.00^');
     });
   });
 });

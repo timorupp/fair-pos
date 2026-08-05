@@ -16,6 +16,7 @@ function baseSource(vorgaenge: SourceVorgang[]): DsfinvkSource {
     systemSerial: 'FairPOS-2026-AAAAAAAAAA',
     tseClientId: 'FairPOS-1',
     tseSerial: 'aabbcc',
+    tseCertificate: { signatureAlgorithm: 'ecdsa-plain-SHA384', logTimeFormat: 'unixTime', publicKeyBase64: 'AAA=' },
     company: {
       name: 'Testverein e.V.', street: 'Hauptstr. 1', postalCode: '12345', city: 'Musterstadt',
       taxNumber: '12/345/67890', vatId: null,
@@ -121,6 +122,33 @@ describe('buildDsfinvkExport', () => {
       startTime: new Date(), endTime: new Date(),
     } })]));
     expect(out['transactions_tse.csv'][0]!.TSE_TA_SIG).toBe(Buffer.from('aabb', 'hex').toString('base64'));
+  });
+
+  it('sets TSE_TA_VORGANGSART to the literal TSE processType, not the BON_TYP (Anhang E)', () => {
+    const belegOut = buildDsfinvkExport(baseSource([beleg()]));
+    expect(belegOut['transactions_tse.csv'][0]!.TSE_TA_VORGANGSART).toBe('Kassenbeleg-V1');
+
+    const order: SourceVorgang = { ...beleg(), id: 'so-1', bonTyp: 'AVBestellung', receiptNumber: null, paymentMethod: null };
+    const orderOut = buildDsfinvkExport(baseSource([order]));
+    expect(orderOut['transactions_tse.csv'][0]!.TSE_TA_VORGANGSART).toBe('Bestellung-V1');
+
+    const cancellation: SourceVorgang = { ...beleg(), id: 'oc-1', bonTyp: 'AVSonstige', bonName: 'Fehlbon', receiptNumber: null, paymentMethod: null };
+    const cancellationOut = buildDsfinvkExport(baseSource([cancellation]));
+    expect(cancellationOut['transactions_tse.csv'][0]!.TSE_TA_VORGANGSART).toBe('SonstigerVorgang');
+  });
+
+  it('fills tse.csv\'s signature-algorithm/log-time-format/public-key fields from the cached TSE certificate info', () => {
+    const out = buildDsfinvkExport(baseSource([beleg()]));
+    expect(out['tse.csv'][0]).toMatchObject({
+      TSE_SIG_ALGO: 'ecdsa-plain-SHA384', TSE_ZEITFORMAT: 'unixTime', TSE_PUBLIC_KEY: 'AAA=',
+    });
+  });
+
+  it('leaves tse.csv\'s certificate fields empty when the certificate info is unavailable', () => {
+    const source = baseSource([beleg()]);
+    source.tseCertificate = null;
+    const out = buildDsfinvkExport(source);
+    expect(out['tse.csv'][0]).toMatchObject({ TSE_SIG_ALGO: '', TSE_ZEITFORMAT: '', TSE_PUBLIC_KEY: '' });
   });
 
   it('marks TSE_TA_FEHLER when no TSE signature is present, without throwing', () => {

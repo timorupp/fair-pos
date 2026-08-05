@@ -1,6 +1,9 @@
 /**
  * Shared, non-blocking entry point for every business flow that needs a TSE
- * signature (Kassenbeleg-V1, AVBestellung, AVSonstige, ...).
+ * signature (Kassenbeleg-V1, Bestellung-V1, SonstigerVorgang — the literal
+ * TSE `processType` strings, see tse/processData.ts; these are distinct from
+ * the DSFinV-K `BON_TYP` values `Beleg`/`AVBestellung`/`AVSonstige` used
+ * elsewhere for the export).
  *
  * AEAO zu § 146a AO, Nr. 1.14.3 explicitly tolerates continuing operation
  * without a working TSE as long as only the TSE (not the whole system) is
@@ -15,6 +18,7 @@
 import { config } from '../config.js';
 import { startTransaction, finishTransaction } from './client.js';
 import { recordTseFailure, recordTseRecovered } from './outage.js';
+import { KASSENBELEG_PROCESS_TYPE, buildAvBelegabbruchProcessData } from './processData.js';
 
 /** The six `tse_*` columns shared by `invoice`, `service_order`, and `order_cancellation`. */
 export interface TseSignatureFields {
@@ -36,20 +40,23 @@ export interface TseSigningResult {
 
 /**
  * Attempts to sign one fiscal transaction (`start` + `finish`) for the given
- * process type. Never throws — a failure (or missing configuration) is
+ * process type. `start` always gets an empty processType/processData — see
+ * the inline comment below — `processType`/`processData` are only ever sent
+ * with `finish`. Never throws — a failure (or missing configuration) is
  * reported via the returned `warning`, never as a rejected promise.
  *
  * If `start` succeeds but `finish` then fails, the transaction is left open
  * on the TSE (it counts against `maxStartedTransactions` until closed) — this
- * function immediately attempts a follow-up `finish` with processType
- * `AVBelegabbruch` to close it out cleanly, per `docs/Anforderungen.md` →
- * "Zu signierende Vorgänge in FairPOS" → Signaturregeln. That cleanup attempt
- * is itself best-effort: if it also fails (e.g. the TSE is genuinely
- * unreachable), the error is swallowed — there's nothing more this function
- * can do, and the caller already gets a clear warning either way.
+ * function immediately attempts a follow-up `finish` using the Kassenbeleg-V1
+ * `AVBelegabbruch` processData Anhang I's own worked example gives for this
+ * case, per `docs/Anforderungen.md` → "Zu signierende Vorgänge in FairPOS" →
+ * Signaturregeln. That cleanup attempt is itself best-effort: if it also
+ * fails (e.g. the TSE is genuinely unreachable), the error is swallowed —
+ * there's nothing more this function can do, and the caller already gets a
+ * clear warning either way.
  *
- * @param processType - Fiscal process type, e.g. `Kassenbeleg-V1`, `AVBestellung`, `AVSonstige`.
- * @param processData - Raw payload bytes to store on the TSE (see tse/processData.ts builders).
+ * @param processType - The literal TSE processType for `finish`, e.g. `Kassenbeleg-V1`, `Bestellung-V1`, `SonstigerVorgang` (see tse/processData.ts exports).
+ * @param processData - Payload bytes for `finish` (see tse/processData.ts builders).
  * @returns The signature fields (or `null`) plus a UI warning (or `null`).
  */
 export async function signTseTransaction(
@@ -66,7 +73,9 @@ export async function signTseTransaction(
 
   let start;
   try {
-    start = await startTransaction(processType, processData);
+    // Anhang I: "Für alle Vorgangstypen gilt, dass processType und
+    // processData für die StartTransaction-Operation immer leer sind."
+    start = await startTransaction('', Buffer.alloc(0));
   } catch (e) {
     // Never started — there is nothing to abort on the TSE.
     await recordTseFailure(e instanceof Error ? e.message : String(e)).catch(() => { /* logging must not break the sale */ });
@@ -91,10 +100,12 @@ export async function signTseTransaction(
       warning: null,
     };
   } catch (e) {
-    // Started but never properly finished — close it out as AVBelegabbruch so
-    // it doesn't stay open on the TSE forever. Best-effort: if the TSE is
+    // Started but never properly finished — close it out with the AVBelegabbruch
+    // Vorgangstyp Anhang I's own worked example uses, so it doesn't stay open
+    // on the TSE forever. Note this is a Kassenbeleg-V1 processData value
+    // (Anhang I), not a distinct TSE processType. Best-effort: if the TSE is
     // genuinely unreachable this fails too, and we can't do anything further.
-    await finishTransaction(start.transactionNumber, 'AVBelegabbruch', Buffer.alloc(0))
+    await finishTransaction(start.transactionNumber, KASSENBELEG_PROCESS_TYPE, buildAvBelegabbruchProcessData())
       .catch(() => { /* best-effort cleanup — the caller's warning below covers this either way */ });
     await recordTseFailure(e instanceof Error ? e.message : String(e)).catch(() => { /* logging must not break the sale */ });
     return {

@@ -9,10 +9,15 @@
 #                               how many times the CLI was called and with what args.
 #   TSE_STUB_FAIL_EXCEPT_ABORT - optional; when set, ignores TSE_STUB_STDOUT/EXIT_CODE
 #                               and instead: succeeds for `start` and for any
-#                               `finish` whose processType is `AVBelegabbruch`,
-#                               fails for every other `finish`. Lets tests
-#                               exercise "start succeeds, finish fails, the
-#                               AVBelegabbruch cleanup call succeeds".
+#                               `finish` whose processData (base64-decoded)
+#                               starts with `AVBelegabbruch` (the cleanup
+#                               call's payload — see tse/processData.ts
+#                               buildAvBelegabbruchProcessData; the processType
+#                               for that call is Kassenbeleg-V1, same as a
+#                               normal finish, so it can't be used to tell
+#                               them apart), fails for every other `finish`.
+#                               Lets tests exercise "start succeeds, finish
+#                               fails, the AVBelegabbruch cleanup call succeeds".
 #   TSE_STUB_FAIL_ALL_FINISH  - optional; when set, ignores TSE_STUB_STDOUT/EXIT_CODE
 #                               and instead: succeeds for `start`, fails for
 #                               EVERY `finish` call regardless of processType.
@@ -24,8 +29,13 @@ fi
 
 if [ -n "${TSE_STUB_FAIL_EXCEPT_ABORT:-}" ]; then
   command="$2"
-  process_type="$5"
-  if [ "$command" = "finish" ] && [ "$process_type" != "AVBelegabbruch" ]; then
+  process_data_b64="$6"
+  process_data=$(printf '%s' "$process_data_b64" | base64 -d 2>/dev/null)
+  case "$process_data" in
+    AVBelegabbruch*) is_abort=1 ;;
+    *) is_abort=0 ;;
+  esac
+  if [ "$command" = "finish" ] && [ "$is_abort" -ne 1 ]; then
     printf '%s' '{"ok":false,"error":{"code":1,"message":"boom"}}'
     exit 1
   fi

@@ -1,7 +1,16 @@
-/** Unit tests for the QR-code payload builder. */
-import { describe, it, expect } from 'vitest';
+/** Unit tests for the QR-code payload builder — see docs/Rechtliche-Anforderungen.md Abschnitt 6.5/8 for the field-order citation. */
+import { afterEach, describe, it, expect } from 'vitest';
 import { buildQrPayload } from './qr.js';
-import type { ReceiptData } from './types.js';
+import type { ReceiptData, ReceiptPosition } from './types.js';
+import { config } from '../config.js';
+import { resetTseCertificateInfoCache } from '../tse/certificateInfo.js';
+
+function position(overrides: Partial<ReceiptPosition> = {}): ReceiptPosition {
+  return {
+    name: 'Bier', quantity: 1, unitPrice: 5, unitDeposit: null, taxRate: 19, lineGross: 5,
+    ...overrides,
+  };
+}
 
 function baseData(overrides: Partial<ReceiptData> = {}): ReceiptData {
   return {
@@ -20,8 +29,8 @@ function baseData(overrides: Partial<ReceiptData> = {}): ReceiptData {
     logoHeight: 0,
     logoWidthFactor: 0,
     logoEscPos: null,
-    positions: [],
-    totalGross: 0,
+    positions: [position()],
+    totalGross: 5,
     taxBreakdown: [],
     tseSerial: null,
     tseTransactionNumber: null,
@@ -34,33 +43,45 @@ function baseData(overrides: Partial<ReceiptData> = {}): ReceiptData {
 }
 
 describe('buildQrPayload', () => {
-  it('joins fields with a semicolon in the documented order', () => {
-    const payload = buildQrPayload(baseData());
-    const parts = payload.split(';');
-    expect(parts[0]).toBe('FairPOS-2026-A3B7K2M9XQ');
-    expect(parts[1]).toBe('RE-00042');
-    expect(parts[2]).toBe('24.06.2026 12:00:00');
+  afterEach(() => {
+    config.tseClientId = null;
+    resetTseCertificateInfoCache();
   });
 
-  it('emits empty fields for missing TSE values (pre-TSE phase)', () => {
-    const parts = buildQrPayload(baseData()).split(';');
-    expect(parts.slice(3)).toEqual(['', '', '', '', '', '']);
+  it('emits the twelve Anhang I fields in the documented order', async () => {
+    config.tseClientId = 'FairPOS-1';
+    const parts = (await buildQrPayload(baseData())).split(';');
+    expect(parts).toHaveLength(12);
+    expect(parts[0]).toBe('V0');
+    expect(parts[1]).toBe('FairPOS-1');
+    expect(parts[2]).toBe('Kassenbeleg-V1');
+    expect(parts[3]).toBe('Beleg^5.00_0.00_0.00_0.00_0.00^5.00:Bar');
   });
 
-  it('includes TSE values when present', () => {
-    const parts = buildQrPayload(baseData({
+  it('emits empty fields for missing TSE values (unconfigured/outage)', async () => {
+    const parts = (await buildQrPayload(baseData())).split(';');
+    expect(parts.slice(4)).toEqual(['', '', '', '', '', '', '', '']);
+    expect(parts[1]).toBe(''); // no tseClientId configured
+  });
+
+  it('includes TSE transaction fields, in ISO-8601-with-millis format, when present', async () => {
+    const parts = (await buildQrPayload(baseData({
       tseSerial: 'SWISSBIT-XYZ',
       tseTransactionNumber: 12345,
       tseSignatureCounter: 99,
-      tseSignature: 'abc123signature',
-      tseStartTime: new Date(2026, 5, 24, 11, 59, 50),
-      tseEndTime: new Date(2026, 5, 24, 12, 0, 5),
-    })).split(';');
-    expect(parts[3]).toBe('SWISSBIT-XYZ');
+      tseSignature: 'aabb',
+      tseStartTime: new Date('2026-06-24T11:59:50.000Z'),
+      tseEndTime: new Date('2026-06-24T12:00:05.000Z'),
+    }))).split(';');
     expect(parts[4]).toBe('12345');
     expect(parts[5]).toBe('99');
-    expect(parts[6]).toBe('abc123signature');
-    expect(parts[7]).toBe('24.06.2026 11:59:50');
-    expect(parts[8]).toBe('24.06.2026 12:00:05');
+    expect(parts[6]).toBe('2026-06-24T11:59:50.000Z');
+    expect(parts[7]).toBe('2026-06-24T12:00:05.000Z');
+    expect(parts[10]).toBe(Buffer.from('aabb', 'hex').toString('base64'));
+  });
+
+  it('negates the processData amounts for a cancellation receipt', async () => {
+    const parts = (await buildQrPayload(baseData({ isCancellation: true }))).split(';');
+    expect(parts[3]).toBe('Beleg^-5.00_0.00_0.00_0.00_0.00^-5.00:Bar');
   });
 });

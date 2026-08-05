@@ -111,8 +111,18 @@ mehr ab, als wir benötigen; unser Tool bleibt bewusst kleiner.
 | `start <processData> <processType>` | `worm_transaction_start` | pro Kassiervorgang / Bestellung |
 | `update <transactionNumber> <processData> <processType>` | `worm_transaction_update` | optional, bei mehrstufigen Vorgängen |
 | `finish <transactionNumber> <processData> <processType>` | `worm_transaction_finish` | pro Kassiervorgang / Bestellung / Storno |
-| `info` | TSE-Status als JSON (Self-Test-Status, verbleibende Signaturen, Zertifikatsablauf, …) | Admin-Statusanzeige, Health-Checks |
+| `info` | TSE-Status als JSON (Self-Test-Status, verbleibende Signaturen, Zertifikatsablauf, Signaturalgorithmus, Zeitformat, Public Key, …) | Admin-Statusanzeige, Health-Checks, `tse/certificateInfo.ts` (QR-Code/`tse.csv`) |
 | `exportTar <file>` | Rohdaten-Export (TAR, TR-03153-konform) für Archivierung/DSFinV-K-Vorstufe | Backup-Dienst, vor Ort selten |
+
+**`start` bekommt immer leere `processData`/`processType`:** DSFinV-K v2.4
+Anhang I schreibt das für **jeden** Vorgangstyp so vor („Für alle
+Vorgangstypen gilt, dass processType und processData für die
+StartTransaction-Operation immer leer sind"). `tse/signing.ts` erzwingt das
+zentral (`startTransaction('', Buffer.alloc(0))`) — kein Aufrufer übergibt
+hier je echte Werte. Nur `finish` trägt den tatsächlichen `processType`
+(`Kassenbeleg-V1` / `Bestellung-V1` / `SonstigerVorgang`) und die passende
+processData — siehe `docs/Rechtliche-Anforderungen.md` Abschnitt 6.5 für die
+exakten Formate.
 
 **Warum `start`/`update`/`finish` ohne Login funktionieren:** Laut Swissbit-API
 ist für Transaktionsbefehle **kein** Admin-/TimeAdmin-Login nötig — nur der
@@ -323,9 +333,15 @@ Swissbits Beispiel).
   (nicht `exportTar`) — der Rohdaten-TAR-Export bleibt eine separate, noch
   nicht gebaute Funktion für Backup/Archivierung (Task #25), unabhängig vom
   CSV-Export.
-- Korrektur des `processData`-Formats für `Kassenbeleg-V1` auf die von
-  DSFinV-K Anhang I vorgeschriebene Struktur, inkl. TSE-Zertifikatsdaten für
-  den QR-Code — Task #46, bewusst zurückgestellt.
+- Korrektur des `processData`-Formats für `Kassenbeleg-V1`/`Bestellung-V1`/
+  `SonstigerVorgang` auf die von DSFinV-K Anhang I vorgeschriebene Struktur,
+  inkl. TSE-Signaturalgorithmus/Zeitformat/Public-Key für den QR-Code —
+  **✅ Task #46 umgesetzt** (September 2026), siehe `tse/processData.ts`,
+  `tse/certificateInfo.ts`, `receipt/qr.ts` und
+  `docs/Rechtliche-Anforderungen.md` Abschnitt 6.5. Rest davon, bewusst
+  zurückgestellt (kleiner, nicht blockierend): die volle
+  TSE-Zertifikatskette (`worm_getLogMessageCertificate`, nur für `tse.csv`s
+  `TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung).
 - Fachliche Zuordnung, welcher Vorgang welchen `processType` bekommt — siehe
   `Anforderungen.md`.
 - Backup/Archivierungsstrategie der Export-Daten (`exportTar`-Rohdaten) —

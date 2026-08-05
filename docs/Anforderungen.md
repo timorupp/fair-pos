@@ -309,19 +309,22 @@ Die TSE gibt zurück:
 
 Signiert wird nicht der „Kassenzustand", sondern **jeder fiskalisch relevante Vorgang** — auch solche ohne unmittelbaren Geldfluss (basiert auf § 146a AO, KassenSichV, DSFinV-K und AEAO zu § 146a). Für unsere zwei Kassenmodi gilt konkret:
 
-**Vorgangstypen laut DSFinV-K, relevant für FairPOS:**
-- `Kassenbeleg-V1` — Kassenbeleg mit Zahlung (auch bei Storno-Belegen)
+**Vorgangstypen laut DSFinV-K (`BON_TYP`), relevant für FairPOS:**
+- `Beleg` — Kassenbeleg mit Zahlung (auch bei Storno-Belegen)
 - `AVBestellung` — Bestellung aufnehmen, noch nicht kassiert (fiskalisch relevant, aber ohne Zahlung)
 - `AVSonstige` — sonstige Vorgänge (z.B. Storno einer offenen Bestellposition, kostenfreie Abgabe vor Kassierung)
-- `AVBelegabbruch` — abgebrochener Beleg
 
-**Nicht zu verwechseln mit DSFinV-K `BON_TYP`:** Die obigen Werte sind der
-`processType`-Parameter, der der **TSE-Hardware** übergeben wird (z.B.
-`startTransaction('Kassenbeleg-V1', ...)`). DSFinV-K selbst kennt für das
-spätere Export-Feld `BON_TYP` (in `transactions.csv`) einen eigenen,
-teilweise abweichenden Wertebereich (`Beleg`, `AVBestellung`, `AVSonstige`,
-`AVBelegabbruch`, u.a. — `Kassenbeleg-V1` heißt dort schlicht `Beleg`).
-Vollständige Zuordnung + Zitat: `docs/Rechtliche-Anforderungen.md` Abschnitt 6.2.
+**Nicht zu verwechseln mit dem TSE-`processType`:** Die obigen Werte sind
+`BON_TYP` — das spätere DSFinV-K-Export-Feld (`transactions.csv`). Der
+**literale `processType`-Parameter**, der der TSE-Hardware selbst übergeben
+wird (z.B. `finishTransaction(nr, processType, processData)`), ist ein
+eigener, in DSFinV-K Anhang I definierter Wertebereich: `Kassenbeleg-V1` (für
+`Beleg`), `Bestellung-V1` (für `AVBestellung`), `SonstigerVorgang` (für
+`AVSonstige`). `AVBelegabbruch` ist dabei kein eigener `processType`, sondern
+ein `<Vorgangstyp>`-Wert **innerhalb** des `Kassenbeleg-V1`-processData, mit
+dem `signTseTransaction` einen begonnenen, nie abgeschlossenen Vorgang
+schließt (siehe `tse/processData.ts` → `buildAvBelegabbruchProcessData`).
+Vollständige Zuordnung + Zitat: `docs/Rechtliche-Anforderungen.md` Abschnitt 6.2/6.5.
 
 **Szenario 1 — Bonkasse (einfacher Einkauf):**
 
@@ -334,8 +337,8 @@ Vollständige Zuordnung + Zitat: `docs/Rechtliche-Anforderungen.md` Abschnitt 6.
 
 | Vorgang | TSE-Transaktion? | processType | Beleg-Ausgabe |
 |---|---|---|---|
-| Bestellung aufnehmen (offen, unbezahlt) | **1× pro Bestellvorgang** (nicht pro Position) | `AVBestellung` | interner Bestellbon (Küche/Theke), ohne TSE-QR nötig |
-| Storno einer offenen Position | **1× pro Stornovorgang** | `AVSonstige` (mit Storno-Referenz) | interner Vermerk |
+| Bestellung aufnehmen (offen, unbezahlt) | **1× pro Bestellvorgang** (nicht pro Position) | `Bestellung-V1` | interner Bestellbon (Küche/Theke), ohne TSE-QR nötig |
+| Storno einer offenen Position | **1× pro Stornovorgang** | `SonstigerVorgang` (mit Storno-Referenz) | interner Vermerk |
 | Kassieren, ggf. mit Rechnungssplit | **1× pro Teilrechnung** | `Kassenbeleg-V1` | Kassenbeleg je Teilrechnung mit TSE-QR |
 | Bonstorno (nachträglicher Storno eines abgeschlossenen Belegs) | **1× pro Stornobeleg** | `Kassenbeleg-V1` mit `receipt_type='cancellation'` | Stornobeleg mit TSE-QR |
 
@@ -357,7 +360,7 @@ je Vorgangstyp einen eigenen Snapshot-Builder.
 **Signaturregeln (generisch, unabhängig von TSE-Hardware):**
 - **Transaktionsnummer** und **Signaturzähler** sind global über alle Vorgangstypen fortlaufend und werden von der TSE vergeben.
 - **Start-** und **Endzeitpunkt** kommen von der TSE (nicht vom Kassensystem), damit Manipulationen an der Systemzeit erkennbar bleiben.
-- Ein Vorgang der zwischen Start und Finish abbricht, muss als `AVBelegabbruch` finalisiert werden — er bleibt in der TSE-Kette dokumentiert. **✅ Umgesetzt (August 2026):** Schlägt `finish` nach erfolgreichem `start` fehl, sendet `signTseTransaction` automatisch einen zweiten `finish`-Aufruf mit `processType='AVBelegabbruch'`, um den auf der TSE offenen Vorgang zu schließen — Best-effort (schlägt auch dieser Aufruf fehl, z.B. weil die TSE komplett unerreichbar ist, wird das nur geloggt, ohne den Vorgang zu blockieren). Siehe `tse/signing.ts` und `docs/TSE-Integration.md` Abschnitt 8.1.
+- Ein Vorgang der zwischen Start und Finish abbricht, muss als `AVBelegabbruch` finalisiert werden — er bleibt in der TSE-Kette dokumentiert. **✅ Umgesetzt (August 2026, processData-Format korrigiert September 2026):** Schlägt `finish` nach erfolgreichem `start` fehl, sendet `signTseTransaction` automatisch einen zweiten `finish`-Aufruf mit `processType='Kassenbeleg-V1'` und `processData='AVBelegabbruch^0.00_0.00_0.00_0.00_0.00^'` (Anhang I's eigenes Beispiel für diesen Fall — `AVBelegabbruch` ist hier der `<Vorgangstyp>` innerhalb der processData, kein eigener processType), um den auf der TSE offenen Vorgang zu schließen — Best-effort (schlägt auch dieser Aufruf fehl, z.B. weil die TSE komplett unerreichbar ist, wird das nur geloggt, ohne den Vorgang zu blockieren). Siehe `tse/signing.ts`, `tse/processData.ts` und `docs/TSE-Integration.md` Abschnitt 8.1.
 - Bei Beleg-Storno: der neue Stornobeleg referenziert den Original-Beleg über `cancels_invoice_id`; die Original-Signatur wird NICHT verändert (KassenSichV verlangt Unveränderbarkeit der Kette). Der admin-Bonstorno-Pfad (`/api/admin/cancellations`) referenziert bewusst keinen einzelnen Original-Beleg (siehe Docstring dort) — `cancels_invoice_id` bleibt dort `null`.
 
 ### Pflichtangaben auf dem Kassenbon (ab 01.01.2024)

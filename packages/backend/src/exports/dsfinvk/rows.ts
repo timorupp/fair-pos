@@ -10,6 +10,16 @@ import type {
   CashregisterRow, DataPaymentRow, DsfinvkExport, LineRow, LineVatRow,
   LocationRow, PaymentRow, TransactionRow, TransactionVatRow, TseRow, TseTransactionRow, VatRow,
 } from './types.js';
+import {
+  KASSENBELEG_PROCESS_TYPE, BESTELLUNG_PROCESS_TYPE, SONSTIGER_VORGANG_PROCESS_TYPE,
+} from '../../tse/processData.js';
+
+/** Maps a DSFinV-K `BON_TYP` to the literal TSE `processType` FairPOS actually signed it with — these are two distinct vocabularies (see tse/processData.ts), and Anhang E defines `TSE_TA_VORGANGSART` as the latter. */
+function tseProcessTypeFor(bonTyp: SourceVorgang['bonTyp']): string {
+  if (bonTyp === 'Beleg') return KASSENBELEG_PROCESS_TYPE;
+  if (bonTyp === 'AVBestellung') return BESTELLUNG_PROCESS_TYPE;
+  return SONSTIGER_VORGANG_PROCESS_TYPE;
+}
 
 /** One TSE signature as attached to a Vorgang (invoice, service_order, or order_cancellation). */
 export interface TseSignatureSource {
@@ -71,6 +81,8 @@ export interface DsfinvkSource {
   /** The TSE client ID actually passed to the hardware (config.tseClientId) — see rows.ts TERMINAL_ID rationale. */
   tseClientId: string | null;
   tseSerial: string | null;
+  /** Signature algorithm / log-time format / public key, cached from the TSE (see tse/certificateInfo.ts) — `null` when unavailable (unconfigured/unreachable TSE), in which case `tse.csv`'s corresponding fields stay empty. */
+  tseCertificate: { signatureAlgorithm: string; logTimeFormat: string; publicKeyBase64: string } | null;
   company: {
     name: string;
     street: string;
@@ -170,12 +182,14 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     ...schluessel,
     TSE_ID: 1,
     TSE_SERIAL: source.tseSerial,
-    // Signature algorithm / time format / public key / certificate are not
-    // yet exposed by native/tse-cli — see Task #46. Left empty rather than guessed.
-    TSE_SIG_ALGO: '',
-    TSE_ZEITFORMAT: '',
+    TSE_SIG_ALGO: source.tseCertificate?.signatureAlgorithm ?? '',
+    TSE_ZEITFORMAT: source.tseCertificate?.logTimeFormat ?? '',
     TSE_PD_ENCODING: 'UTF-8',
-    TSE_PUBLIC_KEY: '',
+    TSE_PUBLIC_KEY: source.tseCertificate?.publicKeyBase64 ?? '',
+    // The certificate chain itself is not yet exposed by native/tse-cli
+    // (worm_getLogMessageCertificate, needs the CTSS interface) — see
+    // docs/TSE-Integration.md Abschnitt 11. Left empty rather than guessed;
+    // not required for QR-code verification, only for this file's completeness.
     TSE_ZERTIFIKAT_I: '',
     TSE_ZERTIFIKAT_II: '',
   }] : [];
@@ -295,7 +309,7 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
       transactionsTse.push({
         ...schluessel, BON_ID: v.id, TSE_ID: 1, TSE_TANR: v.tse.transactionNumber,
         TSE_TA_START: isoWithMillis(v.tse.startTime), TSE_TA_ENDE: isoWithMillis(v.tse.endTime),
-        TSE_TA_VORGANGSART: v.bonTyp === 'Beleg' ? 'Kassenbeleg-V1' : v.bonTyp,
+        TSE_TA_VORGANGSART: tseProcessTypeFor(v.bonTyp),
         TSE_TA_SIGZ: v.tse.signatureCounter, TSE_TA_SIG: hexToBase64(v.tse.signatureHex),
         TSE_TA_FEHLER: '', TSE_VORGANGSDATEN: '',
       });

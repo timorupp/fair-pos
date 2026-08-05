@@ -12,5 +12,16 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     exclude: ['**/*.integration.test.ts', '**/node_modules/**'],
     environment: 'node',
+    // config.ts requires these at import time (fail-fast in production). Unit
+    // tests never touch a real DB/session, but any module that transitively
+    // imports config.ts (e.g. receipt/qr.ts needs config.tseClientId) would
+    // otherwise crash on import unless a test sets them itself first, which
+    // is fragile and depends on file/worker ordering (see tse/client.test.ts
+    // for that per-test-file workaround, still needed there since it exercises
+    // config.tseMountPoint/tseClientId directly).
+    env: {
+      SESSION_SECRET: 'unit-test-secret-not-used',
+      DATABASE_URL: 'postgres://unit-test/unused',
+    },
   },
 });

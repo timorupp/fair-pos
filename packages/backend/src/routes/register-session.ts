@@ -25,6 +25,7 @@ import { loadLogoFor } from '../logo/visibility.js';
 import { signTseTransaction } from '../tse/signing.js';
 import {
   buildKassenbelegProcessData, buildAvBestellungProcessData, buildAvSonstigeProcessData,
+  KASSENBELEG_PROCESS_TYPE, BESTELLUNG_PROCESS_TYPE, SONSTIGER_VORGANG_PROCESS_TYPE,
 } from '../tse/processData.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../receipt/format-receipt-number.js';
 import { makeGroupKey, pickItemsToCharge } from '../order/grouping.js';
@@ -250,14 +251,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // blockiert den Kassiervorgang nicht — siehe docs/TSE-Integration.md Abschnitt 8.1
       // ("TSE-Ausfall", AEAO zu § 146a Nr. 1.14.3) für die vollständige Begründung.
       const kassenbelegSnapshot = buildKassenbelegProcessData({
-        registerId,
         paymentMethod: 'cash',
         receiptType: 'sales_receipt',
         positions: positions.map((p) => {
           const article = articleById.get(p.article_id)!;
           return {
-            articleId: article.id,
-            name: article.receipt_text ?? article.name,
             quantity: p.quantity,
             unitPriceEuros: Number(article.price),
             depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
@@ -265,7 +263,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           };
         }),
       });
-      const { signature: tse, warning: tseWarning } = await signTseTransaction('Kassenbeleg-V1', kassenbelegSnapshot);
+      const { signature: tse, warning: tseWarning } = await signTseTransaction(KASSENBELEG_PROCESS_TYPE, kassenbelegSnapshot);
 
       const result = await withTransaction(async (client) => {
         // Atomic increment of the global receipt counter — row-level lock held
@@ -633,24 +631,20 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       }
     }
 
-    // One AVBestellung signature per Bestellvorgang, not per position — see
+    // One Bestellung-V1 signature per Bestellvorgang, not per position — see
     // docs/Anforderungen.md → "Zu signierende Vorgänge in FairPOS".
     const avBestellungSnapshot = buildAvBestellungProcessData({
-      registerId,
-      diningTableId: tableId,
       positions: positions.map((p) => {
         const article = articleById.get(p.article_id)!;
         return {
-          articleId: article.id,
           name: article.receipt_text ?? article.name,
           quantity: p.quantity,
           unitPriceEuros: Number(article.price),
           depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
-          taxRatePercent: Number(article.tax_rate),
         };
       }),
     });
-    const { signature: tse, warning: tseWarning } = await signTseTransaction('AVBestellung', avBestellungSnapshot);
+    const { signature: tse, warning: tseWarning } = await signTseTransaction(BESTELLUNG_PROCESS_TYPE, avBestellungSnapshot);
 
     const slipItems: OrderSlipItem[] = [];
 
@@ -784,14 +778,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const pickedById = new Map(open.rows.filter((r) => ids.includes(r.id)).map((r) => [r.id, r]));
 
     const kassenbelegSnapshot = buildKassenbelegProcessData({
-      registerId,
       paymentMethod: 'cash',
       receiptType: 'sales_receipt',
       positions: ids.map((id) => {
         const item = pickedById.get(id)!;
         return {
-          articleId: item.article_id ?? '',
-          name: item.article_name,
           quantity: 1,
           unitPriceEuros: Number(item.price),
           depositPriceEuros: item.deposit_price === null ? null : Number(item.deposit_price),
@@ -799,7 +790,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         };
       }),
     });
-    const { signature: tse, warning: tseWarning } = await signTseTransaction('Kassenbeleg-V1', kassenbelegSnapshot);
+    const { signature: tse, warning: tseWarning } = await signTseTransaction(KASSENBELEG_PROCESS_TYPE, kassenbelegSnapshot);
 
     const result = await withTransaction(async (client) => {
       // Defends against a concurrent change (another checkout/cancel on the
@@ -896,8 +887,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       if (locked) return reply.status(locked.status).send(locked.body);
     }
 
-    const reasonResult = await query<{ booking_type: 'cancellation' | 'free_of_charge'; is_active: boolean }>(
-      `SELECT booking_type, is_active FROM cancellation_reason WHERE id = $1`,
+    const reasonResult = await query<{ name: string; booking_type: 'cancellation' | 'free_of_charge'; is_active: boolean }>(
+      `SELECT name, booking_type, is_active FROM cancellation_reason WHERE id = $1`,
       [cancellation_reason_id],
     );
     const reason = reasonResult.rows[0];
@@ -927,20 +918,18 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const pickedById = new Map(open.rows.filter((r) => ids.includes(r.id)).map((r) => [r.id, r]));
 
     const avSonstigeSnapshot = buildAvSonstigeProcessData({
-      registerId,
       bookingType: reason.booking_type,
-      cancellationReasonId: cancellation_reason_id,
+      cancellationReasonName: reason.name,
       positions: ids.map((id) => {
         const item = pickedById.get(id)!;
         return {
-          articleId: item.article_id ?? '',
           name: item.article_name,
           quantity: 1,
           unitPriceEuros: Number(item.price),
         };
       }),
     });
-    const { signature: tse, warning: tseWarning } = await signTseTransaction('AVSonstige', avSonstigeSnapshot);
+    const { signature: tse, warning: tseWarning } = await signTseTransaction(SONSTIGER_VORGANG_PROCESS_TYPE, avSonstigeSnapshot);
 
     const result = await withTransaction(async (client) => {
       const stillOpen = await client.query(
