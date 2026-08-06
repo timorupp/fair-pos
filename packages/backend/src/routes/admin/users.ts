@@ -56,6 +56,10 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    * a deactivated user can no longer log in (password or QR-token, see
    * `auth.ts`) and disappears from register assignment pickers, but stays
    * fully in the database — no anonymization, only access is blocked.
+   *
+   * Also refuses self-deactivation and self-demotion (`is_admin: false`) —
+   * both would lock the caller out with no API-level way back in if they were
+   * the last remaining admin.
    */
   app.put('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -63,6 +67,9 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
 
     if (id === req.adminUser.id && body.is_active === false) {
       return reply.status(400).send({ error: 'Du kannst dich nicht selbst deaktivieren' });
+    }
+    if (id === req.adminUser.id && body.is_admin === false) {
+      return reply.status(400).send({ error: 'Du kannst dir nicht selbst die Administratorrechte entziehen' });
     }
 
     const setClauses: string[] = [];

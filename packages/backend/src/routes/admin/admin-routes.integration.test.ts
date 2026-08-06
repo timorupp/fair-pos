@@ -142,6 +142,23 @@ describe('Admin users', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('refuses to demote the currently logged-in admin (security audit follow-up)', async () => {
+    const app = await getTestApp();
+    const me = await app.inject({
+      method: 'GET', url: '/api/auth/admin/me', headers: { cookie: adminCookie },
+    });
+    const myId = me.json().id;
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${myId}`,
+      headers: { cookie: adminCookie },
+      payload: { is_admin: false },
+    });
+    expect(response.statusCode).toBe(400);
+
+    const stillAdmin = await pool.query('SELECT is_admin FROM "user" WHERE id = $1', [myId]);
+    expect(stillAdmin.rows[0]?.is_admin).toBe(true);
+  });
+
   it('deactivates a user via PUT is_active=false without deleting them (Task #56)', async () => {
     const app = await getTestApp();
     const cashier = await createTestUser({ isAdmin: false });

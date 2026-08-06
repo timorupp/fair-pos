@@ -155,7 +155,8 @@
       <input id="u-name" bind:value={formName} required disabled={saving || deleting} />
     </div>
     <div class="field-check">
-      <input type="checkbox" id="u-admin" bind:checked={formIsAdmin} disabled={saving || deleting} />
+      <input type="checkbox" id="u-admin" bind:checked={formIsAdmin}
+             disabled={saving || deleting || (editing !== null && isSelf(editing))} />
       <label for="u-admin">Administrator (Zugang zur Administrationsoberfläche)</label>
     </div>
     {#if formIsAdmin}
