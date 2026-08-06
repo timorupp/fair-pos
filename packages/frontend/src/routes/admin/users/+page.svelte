@@ -15,6 +15,7 @@
   let formName = '';
   let formPassword = '';
   let formIsAdmin = false;
+  let formActive = true;
   let formRegisterIds: string[] = [];
   let formError = '';
   let saving = false;
@@ -37,14 +38,23 @@
     finally { loading = false; }
   }
 
+  /**
+   * Registers offered for assignment — archived registers (Task #55) are
+   * hidden here just like from the operator login picker, unless the
+   * currently-edited user is already assigned one; in that case it stays
+   * visible (checked) so the admin can see and, if desired, remove it
+   * explicitly instead of it silently vanishing from the list.
+   */
+  $: assignableRegisters = registers.filter((r) => r.is_active || formRegisterIds.includes(r.id));
+
   function openCreate() {
-    editing = null; formName = ''; formPassword = ''; formIsAdmin = false;
+    editing = null; formName = ''; formPassword = ''; formIsAdmin = false; formActive = true;
     formRegisterIds = []; formError = '';
     modalOpen = true;
   }
 
   async function openEdit(u: User) {
-    editing = u; formName = u.name; formPassword = ''; formIsAdmin = u.is_admin; formError = '';
+    editing = u; formName = u.name; formPassword = ''; formIsAdmin = u.is_admin; formActive = u.is_active; formError = '';
     formRegisterIds = await api.admin.users.listRegisters(u.id).catch(() => []);
     modalOpen = true;
   }
@@ -53,7 +63,8 @@
     formError = ''; saving = true;
     try {
       if (editing) {
-        const data: { name?: string; password?: string; is_admin?: boolean } = { name: formName, is_admin: formIsAdmin };
+        const data: { name?: string; password?: string; is_admin?: boolean; is_active?: boolean } =
+          { name: formName, is_admin: formIsAdmin, is_active: formActive };
         if (formPassword) data.password = formPassword;
         await api.admin.users.update(editing.id, data);
         await api.admin.users.setRegisters(editing.id, formRegisterIds);
@@ -117,16 +128,17 @@
   {:else}
     <table>
       <thead>
-        <tr><th>Name</th><th>Rolle</th><th>Erstellt</th><th></th></tr>
+        <tr><th>Name</th><th>Rolle</th><th>Status</th><th>Erstellt</th><th></th></tr>
       </thead>
       <tbody>
         {#each users as u}
-          <tr>
+          <tr class:inactive={!u.is_active}>
             <td>{u.name}{#if isSelf(u)} <span class="self-badge">ich</span>{/if}</td>
             <td>{u.is_admin ? 'Administrator' : 'Bediener'}</td>
+            <td>{#if !u.is_active}<span class="archived-badge">Deaktiviert</span>{:else}<span class="muted small">aktiv</span>{/if}</td>
             <td class="num">{new Date(u.created_at).toLocaleDateString('de-DE')}</td>
             <td class="actions">
-              <button class="btn-primary login-btn" on:click={() => generateToken(u)}>Login</button>
+              <button class="btn-primary login-btn" on:click={() => generateToken(u)} disabled={!u.is_active}>Login</button>
               <button class="btn-ghost" on:click={() => openEdit(u)}>Bearbeiten</button>
             </td>
           </tr>
@@ -153,11 +165,20 @@
                required={!editing && formIsAdmin} disabled={saving || deleting} />
       </div>
     {/if}
-    {#if registers.length > 0}
+    {#if editing}
+      <div class="field-check">
+        <input type="checkbox" id="u-active" bind:checked={formActive} disabled={saving || deleting || (editing !== null && isSelf(editing))} />
+        <label for="u-active">Aktiv</label>
+      </div>
+      {#if !formActive}
+        <p class="hint">Deaktivierte Benutzer können sich nicht mehr anmelden (auch nicht per QR-Login) und werden aus der Kassenzuweisung ausgeblendet, bleiben aber vollständig in der Datenbank erhalten.</p>
+      {/if}
+    {/if}
+    {#if assignableRegisters.length > 0}
       <div class="field">
         <span class="field-label">Zugewiesene Kassen</span>
         <div class="register-list">
-          {#each registers as r}
+          {#each assignableRegisters as r}
             {@const selected = formRegisterIds.includes(r.id)}
             <label class="register-item" class:selected>
               <input type="checkbox"
@@ -220,6 +241,15 @@
     word-break: break-all; color: var(--color-text);
   }
   .spacer { flex: 1; }
+  .small { font-size: 0.85rem; }
+  tr.inactive td { opacity: 0.45; }
+  .archived-badge {
+    font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px;
+    color: var(--color-text-muted);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+  }
+  .hint { font-size: 0.85rem; color: var(--color-text-muted); margin: 0 0 0.75rem 0; }
   .field-label { font-size: 0.8rem; color: var(--color-text-muted); display: block; margin-bottom: 0.4rem; }
   /* Register assignment list — each row is a full-width clickable card laid out
      as a 3-column grid (checkbox · name · type-badge) so the columns line up

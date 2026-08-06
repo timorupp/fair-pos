@@ -52,7 +52,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] Kassensystem-Seriennummer wird angezeigt (nicht editierbar), Kopieren-Button funktioniert
 - [ ] Zeitzone + laufende Serverzeit werden angezeigt und aktualisieren sich
 - [ ] Server-Adresse speichern — QR-Code auf Kundenbon zeigt danach korrekt auf diese Adresse
-- [ ] Backup-Verzeichnis speichern
+- [ ] **Datenbank-Backup:** „Backup herunterladen" liefert ein ZIP mit SQL-Dump + Wiederherstellungs-README
 - [ ] **TSE-Verbindung:** Mount-Pfad, Client-ID, TimeAdmin-PIN eintragen und speichern — Änderung wirkt **ohne Neustart**
 - [ ] **TSE testen**-Button:
   - [ ] Ohne Konfiguration: zeigt „TSE ist nicht konfiguriert"
@@ -66,12 +66,14 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 - [ ] **Artikelgruppen:** anlegen, Steuersatz ändern, löschen (nur wenn keine Artikel mehr zugeordnet)
 - [ ] **Artikel:** anlegen mit Preis/Pfand/Belegtext, Produktoptionen hinzufügen, Drucker zuordnen, deaktivieren/aktivieren
-- [ ] **Drucker:** anlegen (IP/Port), Standarddrucker setzen (genau einer aktiv), Testdruck auslösen
+- [ ] **Drucker:** anlegen (IP/Port), Standarddrucker setzen (genau einer aktiv), Testdruck auslösen, Löschen eines noch zugeordneten Druckers zeigt klare Fehlermeldung statt Absturz (Task #57)
 - [ ] **Kassen (Register):** Bonkasse + Bedienungskasse anlegen, Typ nicht nachträglich änderbar (falls so vorgesehen), Drucker zuordnen
+  - [ ] Kasse mit vorhandener Rechnung archivieren (Aktiv-Häkchen entfernen) — verschwindet aus dem Kassen-Login-Picker, bleibt in Auswertungen/DSFinV-K-Export sichtbar (Task #55)
 - [ ] **Kassenlayouts:** Raster anlegen, Artikel per Drag&Drop platzieren, Standardlayout je Kassentyp setzen
 - [ ] **Saalplan:** Spalten/Zeilen hinzufügen/löschen, Tische anlegen, Tisch-Status ändern (aktiv/inaktiv/versteckt), Tisch umbenennen
 - [ ] **Stornogründe:** anlegen mit `booking_type` Storno bzw. Kostenfrei, deaktivieren
 - [ ] **Benutzer:** anlegen (Admin/Kassenpersonal), Passwort setzen, QR-Token für Kassenpersonal erzeugen, Selbstlöschung wird verhindert
+  - [ ] Benutzer mit vorhandener Buchung deaktivieren — Passwort- und QR-Login werden abgelehnt, eine bereits offene Kassen-Session dieses Benutzers wird sofort beendet, Selbstdeaktivierung wird verhindert (Task #56)
 - [ ] **Veranstaltungen:** anlegen mit Zeitraum, wird als Standard in Auswertungen/Excel-Export vorausgewählt
 
 ---

@@ -85,7 +85,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
   /**
    * GET /me — current user plus the list of registers they may operate.
    * Each register is annotated with its pending-Z-Bon state so the UI can
-   * show a "locked" indicator on the chooser screen.
+   * show a "locked" indicator on the chooser screen. Archived registers
+   * (`is_active = false`, Task #55) are excluded entirely — they stay
+   * assigned in `user_register` but no longer appear as choosable.
    */
   app.get('/me', async (req, reply) => {
     const result = await query<{
@@ -95,7 +97,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       SELECT r.id, r.name, r.type, r.printer_id, r.layout_id
         FROM register r
         JOIN user_register ur ON ur.register_id = r.id
-       WHERE ur.user_id = $1
+       WHERE ur.user_id = $1 AND r.is_active = true
        ORDER BY r.name
     `, [req.registerUser.id]);
 
@@ -111,7 +113,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     });
   });
 
-  /** GET /registers/:id — full operating context for the active register (layout, articles). */
+  /**
+   * GET /registers/:id — full operating context for the active register (layout, articles).
+   * An archived register (Task #55) is treated as not found — it has already
+   * disappeared from `GET /me`, so reaching this by a stale/typed-in id should
+   * behave the same as a deleted register, not silently allow operating it.
+   */
   app.get('/registers/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!(await userHasRegister(req.registerUser.id, id))) {
@@ -122,7 +129,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       id: string; name: string; type: RegisterType;
       printer_id: string | null; layout_id: string | null;
     }>(
-      `SELECT id, name, type, printer_id, layout_id FROM register WHERE id = $1`,
+      `SELECT id, name, type, printer_id, layout_id FROM register WHERE id = $1 AND is_active = true`,
       [id],
     );
     const register = regResult.rows[0];

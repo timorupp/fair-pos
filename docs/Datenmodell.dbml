@@ -19,6 +19,7 @@ Table user {
   name           varchar(100) [not null, unique]
   password_hash  varchar(255) [not null]
   is_admin       boolean      [not null, default: false]
+  is_active      boolean      [not null, default: true, note: 'false = deactivated: login blocked, hidden from register assignment, never anonymized/deleted (Task #56)']
   created_at     timestamptz  [not null, default: `now()`]
 }
 
@@ -30,6 +31,7 @@ Table register {
   name        varchar(100) [not null]
   type        varchar(20)  [not null, note: 'receipt_register | service_register']
   printer_id  uuid         [null, note: 'receipt_register only: assigned receipt printer']
+  is_active   boolean      [not null, default: true, note: 'false = archived: hidden from the operator login/register picker, still visible in history/exports (Task #55)']
   created_at  timestamptz  [not null, default: `now()`]
 }
 

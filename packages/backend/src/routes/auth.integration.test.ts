@@ -71,6 +71,17 @@ describe('POST /api/auth/admin/login', () => {
     });
     expect(response.statusCode).toBe(400);
   });
+
+  it('rejects a deactivated admin with the same generic 401 (Task #56)', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: true, password: 'secret123', isActive: false });
+    const response = await app.inject({
+      method: 'POST', url: '/api/auth/admin/login',
+      payload: { name: user.name, password: 'secret123' },
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe('Ungültige Anmeldedaten');
+  });
 });
 
 describe('POST /api/auth/register/token', () => {
@@ -97,6 +108,21 @@ describe('POST /api/auth/register/token', () => {
     // Token must be deleted (one-shot)
     const remaining = await pool.query(`SELECT 1 FROM register_access_token WHERE token = 'valid-token'`);
     expect(remaining.rowCount).toBe(0);
+  });
+
+  it('rejects a valid token belonging to a deactivated user with 401 (Task #56)', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false, isActive: false });
+    await pool.query(
+      `INSERT INTO register_access_token (user_id, token, valid_until)
+       VALUES ($1, 'deactivated-user-token', now() + interval '10 minutes')`,
+      [user.id],
+    );
+    const response = await app.inject({
+      method: 'POST', url: '/api/auth/register/token',
+      payload: { token: 'deactivated-user-token' },
+    });
+    expect(response.statusCode).toBe(401);
   });
 
   it('rejects an unknown token with 401', async () => {

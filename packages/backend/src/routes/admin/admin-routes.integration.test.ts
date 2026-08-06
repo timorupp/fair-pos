@@ -97,6 +97,65 @@ describe('Admin users', () => {
     });
     expect(dup.statusCode).toBe(409);
   });
+
+  it('deletes a user with no history references (hard delete, Task #56)', async () => {
+    const app = await getTestApp();
+    const unused = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'DELETE', url: `/api/admin/users/${unused.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(204);
+  });
+
+  it('returns 409 with a clear message instead of a raw 500 when the user has a cash transaction, and keeps the user (Task #56)', async () => {
+    const app = await getTestApp();
+    const cashier = await createTestUser({ isAdmin: false });
+    const register = await createTestRegister();
+    await pool.query(
+      `INSERT INTO cash_transaction (register_id, user_id, type, amount) VALUES ($1, $2, 'deposit', 10)`,
+      [register.id, cashier.id],
+    );
+
+    const response = await app.inject({
+      method: 'DELETE', url: `/api/admin/users/${cashier.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatch(/deaktivieren/);
+
+    const stillThere = await pool.query('SELECT id FROM "user" WHERE id = $1', [cashier.id]);
+    expect(stillThere.rowCount).toBe(1);
+  });
+
+  it('refuses to deactivate the currently logged-in admin (Task #56)', async () => {
+    const app = await getTestApp();
+    const me = await app.inject({
+      method: 'GET', url: '/api/auth/admin/me', headers: { cookie: adminCookie },
+    });
+    const myId = me.json().id;
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${myId}`,
+      headers: { cookie: adminCookie },
+      payload: { is_active: false },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('deactivates a user via PUT is_active=false without deleting them (Task #56)', async () => {
+    const app = await getTestApp();
+    const cashier = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${cashier.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_active: false },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().is_active).toBe(false);
+
+    const stillThere = await pool.query('SELECT is_active FROM "user" WHERE id = $1', [cashier.id]);
+    expect(stillThere.rows[0]?.is_active).toBe(false);
+  });
 });
 
 describe('Admin layouts', () => {

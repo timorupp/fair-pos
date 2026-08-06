@@ -186,12 +186,14 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
     - **Wechselgeldeinlage** — manuelle Transaktion zur Einlage von Startgeld/Wechselgeld
     - **Entnahme** — manuelle Transaktion zur Zwischenentnahme
     - **Transaktionshistorie** — Übersicht aller Einlagen und Entnahmen der Kasse
+  - **Aktiv/Archiviert (Schalter):** Eine Kasse, die bereits in einer Transaktion verwendet wurde, kann aus fiskalischen Gründen nicht mehr gelöscht werden (der Löschen-Button liefert dann eine entsprechende Fehlermeldung). Stattdessen kann sie über diesen Schalter archiviert werden — sie verschwindet aus dem Kassen-Login der Bedienoberfläche, bleibt aber unverändert in Auswertungen und im DSFinV-K-Export sichtbar (Task #55)
 
 - **Benutzerverwaltung:** Administrator kann Benutzer anlegen und verwalten
   - Attribute pro Benutzer:
     - Vollständiger Name
     - **Ist Administrator** (Schalter) — Zugang zur Administrationsoberfläche; Login-Name und Passwort werden nur bei aktivem Schalter konfiguriert
     - **Zugewiesene Kassen** — Liste der Kassen, auf die der Benutzer berechtigt ist; bestimmt über den Kassentyp die angezeigte Kassen-Oberfläche; kann auch bei Administratoren gesetzt sein
+    - **Aktiv/Deaktiviert (Schalter):** Ein Benutzer, der bereits eine Buchung ausgeführt hat (Rechnung, Bestellung, Kassenbewegung, Storno, Tagesabschluss), kann aus fiskalischen Gründen nicht mehr gelöscht werden (der Löschen-Button liefert dann eine entsprechende Fehlermeldung); Benutzer ohne solche Historie bleiben weiterhin löschbar. Als Alternative kann jeder Benutzer über diesen Schalter deaktiviert werden — er kann sich danach nicht mehr anmelden (auch eine bereits offene Kassen-Session wird sofort beendet) und verschwindet aus der Kassenzuweisung, bleibt aber vollständig in der Datenbank erhalten. Ein Administrator kann sich nicht selbst deaktivieren (Task #56)
   - **Zugangscode erzeugen** — Aktion pro Benutzer direkt in der Übersichtsliste der Benutzerverwaltung; öffnet einen Dialog (oder eine neue Seite) mit dem Einmal-Zugangscode für die Kassen-Session; Gültigkeit: 10 Minuten, einmalig verwendbar. Der Dialog zeigt den Code in drei Formen:
     - **QR-Code** — immer angezeigt; zum Scannen mit dem Mobilgerät
     - **Zugangslink** — immer angezeigt als Klartext-URL mit „Link kopieren"-Button daneben; kann kopiert oder in einem neuen Tab geöffnet werden
@@ -269,7 +271,7 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
   - **TSE-Verbindung + Status** — Mount-Pfad, Client-ID und TimeAdmin-PIN der Swissbit USB-TSE sind manuell konfigurierbar (wirkt sofort, kein Neustart nötig); ein „TSE testen"-Button ruft den aktuellen Status live ab (Self-Test bestanden, Seriennummer, BSI-Zertifizierungs-ID, Restsignaturen, Zertifikatsablauf) — implementiert, siehe docs/TSE-Integration.md
   - **Kassensystem-Seriennummer** — automatisch generiert beim ersten Serverstart; nur angezeigt, nicht bearbeitbar; Format: `FairPOS-{Jahr}-{10-stellig, Großbuchstaben + Ziffern}`
   - **Server-Adresse (QR-Code)** — lokale Netzwerkadresse des Servers (z.B. `192.168.1.10` oder `fairpos.local`); wird für die Bon-URL im QR-Code verwendet; manuell konfigurierbar
-  - **Backup-Verzeichnis** — Zieldverzeichnis für automatische tägliche Backups; konfigurierbar
+  - **Datenbank-Backup** — manueller Download eines vollständigen Datenbank-Backups als ZIP (kein automatischer/geplanter Backup-Job, siehe „Backup-Konzept" weiter unten, Task #25)
 
 - **Veranstaltungsverwaltung:** Veranstaltungen dienen ausschließlich als Auswertungszeiträume — sie haben keinen Einfluss auf den laufenden Betrieb
   - Attribute pro Veranstaltung:

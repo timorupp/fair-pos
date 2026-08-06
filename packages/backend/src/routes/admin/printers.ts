@@ -95,28 +95,43 @@ export async function printersAdminRoute(app: FastifyInstance): Promise<void> {
    * If the deleted row was the current default and other printers remain, the
    * oldest one (by `created_at`) is auto-promoted to default so the invariant
    * holds. If no other printers exist, the "no default" state is acceptable.
+   *
+   * Blocked by Postgres (23503, foreign key violation) while any register,
+   * article or print_job still references this printer — caught here to
+   * surface a clear message instead of a raw 500 (analog Task #54). No
+   * archive/deactivate alternative needed: unlike registers/users, a printer
+   * doesn't need to stay historically provable, so the operator simply has
+   * to remove the reference (reassign register/article, or wait for the
+   * print job to finish) before the printer can be deleted (Task #57).
    */
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const result = await withTransaction(async (client) => {
-      const target = await client.query<{ is_default: boolean }>(
-        `SELECT is_default FROM printer WHERE id = $1`, [id],
-      );
-      if (target.rows.length === 0) return { found: false };
-      const wasDefault = target.rows[0]!.is_default;
-      await client.query(`DELETE FROM printer WHERE id = $1`, [id]);
-      if (wasDefault) {
-        // Promote the oldest remaining printer to default.
-        await client.query(
-          `UPDATE printer SET is_default = true
-             WHERE id = (SELECT id FROM printer ORDER BY created_at LIMIT 1)`,
+    try {
+      const result = await withTransaction(async (client) => {
+        const target = await client.query<{ is_default: boolean }>(
+          `SELECT is_default FROM printer WHERE id = $1`, [id],
         );
-      }
-      return { found: true };
-    });
+        if (target.rows.length === 0) return { found: false };
+        const wasDefault = target.rows[0]!.is_default;
+        await client.query(`DELETE FROM printer WHERE id = $1`, [id]);
+        if (wasDefault) {
+          // Promote the oldest remaining printer to default.
+          await client.query(
+            `UPDATE printer SET is_default = true
+               WHERE id = (SELECT id FROM printer ORDER BY created_at LIMIT 1)`,
+          );
+        }
+        return { found: true };
+      });
 
-    if (!result.found) return reply.status(404).send({ error: 'Drucker nicht gefunden' });
-    return reply.status(204).send();
+      if (!result.found) return reply.status(404).send({ error: 'Drucker nicht gefunden' });
+      return reply.status(204).send();
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code === '23503') {
+        return reply.status(409).send({ error: 'Drucker wird noch verwendet und kann nicht gelöscht werden' });
+      }
+      throw e;
+    }
   });
 
   /** GET /api/admin/printers/:id/status — TCP probe to determine if the printer is reachable. */

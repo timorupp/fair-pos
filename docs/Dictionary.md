@@ -8,6 +8,7 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 
 | Deutsch | Englisch (Code/DB) | Anmerkung |
 |---|---|---|
+| Aktiv (Flag) | is_active | Boolean-Spalte; „nicht aktiv" heißt je nach Entität „archiviert" (register) oder „deaktiviert" (user) — Alternative zu einer Löschung, die per FK-RESTRICT ohnehin blockiert würde, sobald die Zeile referenziert ist |
 | Artikel | article | Verkaufbares Produkt |
 | Artikelgruppe / Artikelkategorie | article_category | Träger des Steuersatzes |
 | Aufpreis | price_surcharge | Preiszuschlag bei Produktoption |

@@ -27,6 +27,7 @@ interface LoginUserRow {
   id: string;
   name: string;
   is_admin: boolean;
+  is_active: boolean;
   password_hash: string;
 }
 
@@ -35,6 +36,7 @@ interface BasicUserRow {
   id: string;
   name: string;
   is_admin: boolean;
+  is_active: boolean;
 }
 
 /** Row returned by the token DELETE…RETURNING query. */
@@ -62,7 +64,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   /**
    * POST /api/auth/admin/login — authenticate with username and password.
    * Refuses non-admin users with a uniform 401 to avoid leaking whether the
-   * account exists.
+   * account exists. Also refuses deactivated users (Task #56, `is_active`) —
+   * same uniform 401, so a deactivated admin can't distinguish that state
+   * from a wrong password.
    */
   app.post('/admin/login', async (request, reply) => {
     const body = request.body as { name?: string; password?: string };
@@ -71,13 +75,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const result = await query<LoginUserRow>(
-      'SELECT id, name, is_admin, password_hash FROM "user" WHERE name = $1',
+      'SELECT id, name, is_admin, is_active, password_hash FROM "user" WHERE name = $1',
       [body.name],
     );
 
     const user = result.rows[0];
-    if (!user || !user.is_admin || !(await verifyPassword(body.password, user.password_hash))) {
-      // Uniform message: missing user, wrong password, or non-admin all → 401.
+    if (!user || !user.is_admin || !user.is_active || !(await verifyPassword(body.password, user.password_hash))) {
+      // Uniform message: missing user, wrong password, non-admin, or deactivated all → 401.
       return reply.status(401).send({ error: 'Ungültige Anmeldedaten' });
     }
 
@@ -127,12 +131,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const userResult = await query<BasicUserRow>(
-      'SELECT id, name, is_admin FROM "user" WHERE id = $1',
+      'SELECT id, name, is_admin, is_active FROM "user" WHERE id = $1',
       [tokenRow.user_id],
     );
 
     const user = userResult.rows[0];
-    if (!user) {
+    if (!user || !user.is_active) {
       return reply.status(401).send({ error: 'Benutzer nicht gefunden' });
     }
 

@@ -106,9 +106,9 @@ export const api = {
   admin: {
     users: {
       list: (): Promise<User[]> => request('GET', '/admin/users'),
-      create: (data: { name: string; password: string; is_admin: boolean }): Promise<User> =>
+      create: (data: { name: string; password: string; is_admin: boolean; is_active?: boolean }): Promise<User> =>
         request('POST', '/admin/users', data),
-      update: (id: string, data: { name?: string; password?: string; is_admin?: boolean }): Promise<User> =>
+      update: (id: string, data: { name?: string; password?: string; is_admin?: boolean; is_active?: boolean }): Promise<User> =>
         request('PUT', `/admin/users/${id}`, data),
       delete: (id: string): Promise<void> => request('DELETE', `/admin/users/${id}`),
       listRegisters: (id: string): Promise<string[]> =>
@@ -180,7 +180,7 @@ export const api = {
         total_deposits: number; total_withdrawals: number;
       }> =>
         request('GET', `/admin/registers/${id}`),
-      create: (data: { name: string; type: string; printer_id?: string | null }): Promise<Register> =>
+      create: (data: { name: string; type: string; printer_id?: string | null; is_active?: boolean }): Promise<Register> =>
         request('POST', '/admin/registers', data),
       update: (id: string, data: Partial<Register>): Promise<Register> =>
         request('PUT', `/admin/registers/${id}`, data),

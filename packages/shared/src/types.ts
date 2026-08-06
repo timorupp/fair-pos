@@ -33,6 +33,8 @@ export interface User {
   id: string;
   name: string;
   is_admin: boolean;
+  /** Deactivated users cannot log in and disappear from register assignment; never anonymized/deleted. */
+  is_active: boolean;
   created_at: string;
 }
 
@@ -42,6 +44,8 @@ export interface Register {
   name: string;
   type: RegisterType;
   printer_id: string | null;
+  /** Archived registers disappear from the operator login/register picker but stay in history/exports. */
+  is_active: boolean;
   created_at: string;
 }
 

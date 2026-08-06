@@ -22,6 +22,7 @@
   let formType = 'receipt_register';
   let formPrinterId = '';
   let formLayoutId = '';
+  let formActive = true;
   let formError = '';
   let saving = false;
   let deleting = false;
@@ -51,13 +52,15 @@
   }
 
   function openCreate() {
-    editing = null; formName = ''; formType = 'receipt_register'; formPrinterId = ''; formLayoutId = ''; formError = '';
+    editing = null; formName = ''; formType = 'receipt_register'; formPrinterId = ''; formLayoutId = '';
+    formActive = true; formError = '';
     modalOpen = true;
   }
 
   function openEdit(r: RegisterRow) {
     editing = r; formName = r.name; formType = r.type;
-    formPrinterId = r.printer_id ?? ''; formLayoutId = r.layout_id ?? ''; formError = '';
+    formPrinterId = r.printer_id ?? ''; formLayoutId = r.layout_id ?? '';
+    formActive = r.is_active; formError = '';
     modalOpen = true;
   }
 
@@ -68,6 +71,7 @@
         name: formName, type: formType as RegisterType,
         printer_id: formPrinterId || null,
         layout_id: formLayoutId || null,
+        is_active: formActive,
       };
       if (editing) { await api.admin.registers.update(editing.id, data); }
       else { await api.admin.registers.create(data); }
@@ -135,13 +139,15 @@
       <tbody>
         {#each registers as r}
           {@const pending = pendingByRegister[r.id] ?? []}
-          <tr class:locked-row={pending.length > 0}>
+          <tr class:locked-row={pending.length > 0} class:inactive={!r.is_active}>
             <td>{r.name}</td>
             <td>{typeLabel(r.type)}</td>
             <td>{r.printer_name ?? '—'}</td>
             <td>{r.layout_name ?? '—'}</td>
             <td>
-              {#if pending.length > 0}
+              {#if !r.is_active}
+                <span class="archived-badge">Archiviert</span>
+              {:else if pending.length > 0}
                 <span class="lock-badge" title={pending.join(', ')}>
                   🔒 {pending.length} Tag{pending.length === 1 ? '' : 'e'} ausstehend
                 </span>
@@ -193,6 +199,13 @@
         {/each}
       </select>
     </div>
+    <div class="field-check">
+      <input type="checkbox" id="reg-active" bind:checked={formActive} disabled={saving || deleting} />
+      <label for="reg-active">Aktiv</label>
+    </div>
+    {#if editing && !formActive}
+      <p class="hint">Archivierte Kassen verschwinden aus dem Kassen-Login, bleiben aber in Auswertungen und Exporten sichtbar.</p>
+    {/if}
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">
       {#if editing}
@@ -214,4 +227,12 @@
   .lock-badge { color: #c87a00; font-weight: 600; font-size: 0.85rem; }
   .small { font-size: 0.85rem; }
   tr.locked-row { background: #f59e0b11; }
+  tr.inactive td { opacity: 0.45; }
+  .archived-badge {
+    font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px;
+    color: var(--color-text-muted);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+  }
+  .hint { font-size: 0.85rem; color: var(--color-text-muted); margin: 0 0 0.75rem 0; }
 </style>

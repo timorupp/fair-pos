@@ -12,20 +12,21 @@ import { hashPassword } from '../auth/password.js';
 /**
  * Inserts a `"user"` row.
  *
- * @param overrides - Optional overrides for `name`, `isAdmin`, `password` (plaintext, hashed before insert).
+ * @param overrides - Optional overrides for `name`, `isAdmin`, `password` (plaintext, hashed before insert), `isActive`.
  * @returns The new user id and the supplied/default name.
  */
 export async function createTestUser(overrides: {
   name?: string;
   isAdmin?: boolean;
   password?: string;
+  isActive?: boolean;
 } = {}): Promise<{ id: string; name: string; password: string }> {
   const name = overrides.name ?? `user-${Math.random().toString(36).slice(2, 8)}`;
   const password = overrides.password ?? 'test-password';
   const hash = await hashPassword(password);
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO "user" (name, password_hash, is_admin) VALUES ($1, $2, $3) RETURNING id`,
-    [name, hash, overrides.isAdmin ?? false],
+    `INSERT INTO "user" (name, password_hash, is_admin, is_active) VALUES ($1, $2, $3, $4) RETURNING id`,
+    [name, hash, overrides.isAdmin ?? false, overrides.isActive ?? true],
   );
   return { id: result.rows[0]!.id, name, password };
 }
@@ -53,7 +54,7 @@ export async function createTestPrinter(overrides: {
 /**
  * Inserts a `register` row.
  *
- * @param overrides - Optional overrides for `name`, `type`, `printerId`, `layoutId`.
+ * @param overrides - Optional overrides for `name`, `type`, `printerId`, `layoutId`, `isActive`.
  * @returns The new register id.
  */
 export async function createTestRegister(overrides: {
@@ -61,16 +62,18 @@ export async function createTestRegister(overrides: {
   type?: 'receipt_register' | 'service_register';
   printerId?: string | null;
   layoutId?: string | null;
+  isActive?: boolean;
 } = {}): Promise<{ id: string; name: string }> {
   const name = overrides.name ?? `register-${Math.random().toString(36).slice(2, 8)}`;
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO register (name, type, printer_id, layout_id)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
+    `INSERT INTO register (name, type, printer_id, layout_id, is_active)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
     [
       name,
       overrides.type ?? 'receipt_register',
       overrides.printerId ?? null,
       overrides.layoutId ?? null,
+      overrides.isActive ?? true,
     ],
   );
   return { id: result.rows[0]!.id, name };

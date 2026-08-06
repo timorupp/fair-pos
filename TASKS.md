@@ -168,3 +168,57 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Storno offener Tisch-Positionen (AVSonstige), mehrere Steuersätze, Pfand/Leergut,
   aktiv provozierter TSE-Ausfall (`tse_outage`) — bleibt bei Bedarf als
   Erweiterung offen, ansonsten weiterhin Teil des manuellen Regressionstests (#47).
+- [x] **#54** `DELETE /api/admin/registers/:id` — verständliche Fehlermeldung bei
+  vorhandenen Transaktionen
+  **Erledigt (2026-08-05):** `23503` (Fremdschlüssel-Verletzung) abgefangen, 409 mit
+  Klartext-Fehlermeldung ("Kasse hat bereits Transaktionen und kann nicht gelöscht
+  werden") statt rohem 500 — analog zum bestehenden `23505`-Handling in
+  `categories.ts`/`articles.ts`. 3 neue Integrationstests
+  (`registers.integration.test.ts`, vorher gab es keine): unbenutzte Kasse löschen
+  (204), nicht existierende Kasse (404), Kasse mit Rechnung (409 + Meldung, Kasse
+  und Rechnung bleiben unverändert bestehen).
+- [x] **#55** Kassen (`register`): Archivieren/Deaktivieren statt dauerhaft
+  blockierter Löschung
+  **Erledigt (2026-08-06):** Migration `0007_register_is_active.sql` —
+  `register.is_active BOOLEAN NOT NULL DEFAULT true`. `registers.ts` GET/POST/PUT
+  geben/setzen `is_active` mit; DELETE unverändert (bleibt harter Löschversuch
+  analog #54). `register-session.ts`: `GET /me` filtert `AND r.is_active = true`
+  (archivierte Kasse verschwindet aus dem Kassen-Login-Picker); `GET /registers/:id`
+  behandelt eine archivierte Kasse wie eine gelöschte (404), auch wenn der Benutzer
+  noch per `user_register` zugewiesen ist. Admin-UI (`registers/+page.svelte`):
+  „Aktiv"-Checkbox im Bearbeiten-Formular (Löschen-Button bleibt dort, siehe
+  [[feedback_delete_button_placement]]), „Archiviert"-Badge + abgedunkelte Zeile in
+  der Übersicht. 2 neue Integrationstests (`registers.integration.test.ts`) + 2 neue
+  (`register-session.integration.test.ts`: `GET /me`-Filterung, 404 bei archivierter
+  Kasse).
+- [x] **#56** Benutzer (`user`): Archivieren/Deaktivieren statt dauerhaft
+  blockierter Löschung
+  **Erledigt (2026-08-06):** Migration `0008_user_is_active.sql` —
+  `"user".is_active BOOLEAN NOT NULL DEFAULT true`. `users.ts`: DELETE bleibt ein
+  echter Hard-Delete-Versuch — gelingt für Benutzer ohne Referenzen, fängt sonst
+  `23503` ab und liefert 409 mit Hinweis auf die Deaktivierung statt rohem 500
+  (analog #54); PUT setzt `is_active`, verweigert aber die Selbstdeaktivierung
+  (400, analog zum bestehenden Selbstlöschschutz). `auth.ts`: Admin-Login und
+  QR-Token-Tausch prüfen zusätzlich `is_active` (derselbe generische 401 wie bei
+  falschem Passwort/unbekanntem Token — kein Enumerieren deaktivierter Accounts).
+  `middleware/authenticate.ts`: beide PreHandler fragen `is_active` bei **jedem**
+  Request erneut ab — eine Deaktivierung beendet eine bereits offene Kassen-Session
+  sofort, nicht erst beim nächsten Login. Admin-UI (`users/+page.svelte`):
+  „Aktiv"-Checkbox (deaktiviert für den eigenen Account), Status-Spalte
+  „Deaktiviert"/„aktiv" in der Übersicht, Kassenzuweisungsliste blendet archivierte
+  Kassen aus (außer bereits zugewiesene). Getestet: 4 neue Tests in
+  `admin-routes.integration.test.ts` (Hard-Delete, 409+Bestand, Selbstschutz,
+  Toggle), 2 neue in `auth.integration.test.ts` (deaktivierter Admin-Login,
+  deaktivierter Token-Tausch), 1 neues in `register-session.integration.test.ts`
+  (sofortiger Logout einer offenen Session).
+- [x] **#57** `DELETE /api/admin/printers/:id` — verständliche Fehlermeldung bei
+  vorhandenem Gerät in Verwendung
+  **Erledigt (2026-08-06):** `23503` abgefangen, 409 mit Klartext-Fehlermeldung
+  („Drucker wird noch verwendet und kann nicht gelöscht werden") statt rohem 500 —
+  analog #54, kein Archivieren nötig (Drucker müssen im Gegensatz zu
+  Kassen/Benutzern nicht dauerhaft historisch nachweisbar bleiben). 3 neue
+  Integrationstests (`printers.integration.test.ts`, vorher gab es keine):
+  unbenutzten Drucker löschen (204), nicht existierenden Drucker (404), Drucker mit
+  zugeordneter Kasse (409 + Meldung, Drucker bleibt bestehen). FK-Referenzen auf
+  `printer(id)`: `register.printer_id`, `article.printer_id`, `print_job.printer_id`
+  (NOT NULL).

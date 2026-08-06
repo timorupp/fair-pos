@@ -595,6 +595,43 @@ describe('Register-Sperre durch ausstehende Tagesabschlüsse', () => {
   });
 });
 
+describe('Archivierte Kassen (Task #55)', () => {
+  it('excludes an archived register from GET /me', async () => {
+    await pool.query('UPDATE register SET is_active = false WHERE id = $1', [registerId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/register-session/me',
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const ids = response.json().registers.map((r: { id: string }) => r.id);
+    expect(ids).not.toContain(registerId);
+    expect(ids).toContain(serviceRegisterId);
+  });
+
+  it('returns 404 for GET /registers/:id on an archived register even though the user is still assigned', async () => {
+    await pool.query('UPDATE register SET is_active = false WHERE id = $1', [registerId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/registers/${registerId}`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('Deaktivierte Benutzer (Task #56)', () => {
+  it('logs a deactivated operator out of an already-open register session immediately', async () => {
+    await pool.query('UPDATE "user" SET is_active = false WHERE id = $1', [userId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/register-session/me',
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
 describe('Authentication required', () => {
   it('all register-session endpoints reject requests without a register_session', async () => {
     const app = await getTestApp();

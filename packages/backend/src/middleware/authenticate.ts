@@ -22,6 +22,7 @@ interface UserRow {
   id: string;
   name: string;
   is_admin: boolean;
+  is_active: boolean;
   created_at: string;
 }
 
@@ -29,6 +30,10 @@ interface UserRow {
  * Fastify preHandler: validates the **admin** session cookie and attaches the user
  * to `request.adminUser`. Sends 401 if no admin session, 403 if the user is not
  * actually flagged as admin (defence in depth — should never happen).
+ *
+ * Re-queries the user on every request rather than trusting the cookie, so
+ * deactivating a user (Task #56, `is_active`) takes effect immediately on
+ * their next request — not just for future login attempts.
  *
  * @param request - Incoming Fastify request.
  * @param reply - Outgoing Fastify reply (used to short-circuit with 401/403).
@@ -40,12 +45,12 @@ export async function authenticateAdmin(request: FastifyRequest, reply: FastifyR
   }
 
   const result = await query<UserRow>(
-    'SELECT id, name, is_admin, created_at FROM "user" WHERE id = $1',
+    'SELECT id, name, is_admin, is_active, created_at FROM "user" WHERE id = $1',
     [userId],
   );
 
   const user = result.rows[0];
-  if (!user) {
+  if (!user || !user.is_active) {
     return reply.status(401).send({ error: 'Nicht angemeldet' });
   }
   if (!user.is_admin) {
@@ -60,7 +65,8 @@ export async function authenticateAdmin(request: FastifyRequest, reply: FastifyR
  * to `request.registerUser`. Sends 401 if no register session is active.
  *
  * The user need NOT be flagged as admin — operators with no admin rights are the
- * common case.
+ * common case. Re-queries the user on every request, so a deactivated user
+ * (Task #56) is logged out of an already-open register session immediately.
  *
  * @param request - Incoming Fastify request.
  * @param reply - Outgoing Fastify reply (used to short-circuit with 401).
@@ -72,13 +78,14 @@ export async function authenticateRegister(request: FastifyRequest, reply: Fasti
   }
 
   const result = await query<UserRow>(
-    'SELECT id, name, is_admin, created_at FROM "user" WHERE id = $1',
+    'SELECT id, name, is_admin, is_active, created_at FROM "user" WHERE id = $1',
     [userId],
   );
 
-  if (result.rows.length === 0) {
+  const user = result.rows[0];
+  if (!user || !user.is_active) {
     return reply.status(401).send({ error: 'Nicht angemeldet' });
   }
 
-  request.registerUser = result.rows[0] as User;
+  request.registerUser = user as User;
 }
