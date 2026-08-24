@@ -136,7 +136,7 @@ Struktur entfernen. So bleiben bestehende Daten erhalten.
 |------------|------------------------------------------------|
 | Frontend   | SvelteKit + TypeScript, `adapter-static` (SPA) |
 | Backend    | Node.js + Fastify v5                           |
-| Datenbank  | PostgreSQL 16, rohes SQL (kein ORM)            |
+| Datenbank  | PostgreSQL (Ubuntu-Standardpaket, keine Major-Version gepinnt; Dev/Test aktuell 18.x), rohes SQL (kein ORM) |
 | Drucken    | ESC/POS über TCP, Print Worker im Backend      |
 | TSE        | Swissbit USB-TSE, eigener CLI-Subprozess (`native/tse-cli`) — siehe `docs/TSE-Integration.md` |
 | Packaging  | npm Workspaces (shared / backend / frontend)   |

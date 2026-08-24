@@ -182,7 +182,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    *
    * Sequence:
    *  1. Fetches and validates the referenced articles.
-   *  2. If a TSE is configured (`TSE_MOUNT_POINT`/`TSE_CLIENT_ID`), signs a
+   *  2. If a TSE is configured (mount point/client id, set via the admin UI), signs a
    *     `Kassenbeleg-V1` transaction BEFORE opening the DB transaction. A TSE
    *     failure does NOT block the sale (AEAO zu § 146a Nr. 1.14.3 explicitly
    *     tolerates continued operation without a working TSE) — the invoice's

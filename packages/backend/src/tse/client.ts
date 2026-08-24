@@ -43,7 +43,7 @@ interface CliEnvelope<T> {
 function requireTseConfig(): { mountPoint: string; clientId: string } {
   if (!config.tseMountPoint || !config.tseClientId) {
     throw new Error(
-      'TSE ist nicht konfiguriert (TSE_MOUNT_POINT / TSE_CLIENT_ID fehlen in der Umgebung).',
+      'TSE ist nicht konfiguriert (Mount-Pfad / Client-ID fehlen — Systemeinstellungen -> System in der Admin-UI).',
     );
   }
   return { mountPoint: config.tseMountPoint, clientId: config.tseClientId };

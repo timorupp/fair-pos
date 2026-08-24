@@ -4,7 +4,7 @@ Schritt-für-Schritt-Anleitung für die Produktions-Installation auf einem
 dedizierten Ubuntu-Server, **ohne Docker** (Entscheidung siehe
 `docs/SETUP.md` → "Production-Deployment" und `docs/Anforderungen.md`
 Technologie-Tabelle). Automatisierte Varianten der wiederholbaren Schritte
-liegen als Skripte in `scripts/install/` (siehe Abschnitt 8).
+liegen als Skripte in `scripts/install/` (siehe Abschnitt 9).
 
 Getestet gegen: Ubuntu 24.04 LTS. Andere LTS-Versionen sollten funktionieren,
 wurden aber nicht verifiziert.
@@ -25,25 +25,29 @@ sudo apt install -y curl ca-certificates gnupg build-essential g++
 
 ---
 
-## 2. PostgreSQL 16 installieren (PGDG-APT-Repo)
+## 2. PostgreSQL installieren
 
-Die Ubuntu-Standard-Repos pinnen Postgres nicht auf eine bestimmte
-Major-Version — für ein reproduzierbares Deployment über das offizielle
-PostgreSQL-APT-Repo (PGDG) installieren:
+Ubuntu-Standardpaket, keine zusätzliche Paketquelle nötig — die Migrationen
+verwenden ausschließlich Standard-SQL (keine versionsspezifischen Features),
+daher genügt, was die jeweilige Ubuntu-LTS-Version mitbringt:
 
 ```bash
-sudo install -d /usr/share/postgresql-common/pgdg
-curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-  https://www.postgresql.org/media/keys/ACCC4CF8.asc
-sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
-  https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-  > /etc/apt/sources.list.d/pgdg.list'
-sudo apt update
-sudo apt install -y postgresql-16
+sudo apt install -y postgresql
+psql --version
 ```
 
+(Frühere Fassungen dieser Anleitung pinnten über das PGDG-APT-Repo explizit
+auf Version 16, um exakt der Version zu entsprechen, gegen die
+Dev-Docker-Compose und die Integrationstests laufen. Bei einem so simplen
+SQL-Schema überwiegt der Vorteil eines Abhängigkeits-Layers weniger: kein
+zusätzlicher Signing-Key/Repo, keine Gefahr eines 404, falls PGDG einen ganz
+neuen Ubuntu-Codenamen noch nicht unterstützt — das ist uns beim Test dieser
+Anleitung gegen Ubuntu 26.04 „resolute" fast passiert. Dev/Test wurden im
+Gegenzug auf dieselbe Major-Version angehoben, siehe `docker-compose.yml`
+und `packages/backend/src/test/global-setup.ts`.)
+
 **Datenbank und Rolle anlegen** (Werte an die eigene `.env` anpassen, siehe
-Abschnitt 4):
+Abschnitt 5):
 
 ```bash
 sudo -u postgres psql -c "CREATE ROLE fairpos WITH LOGIN PASSWORD 'changeme';"
@@ -54,8 +58,9 @@ Postgres lauscht standardmäßig nur auf `localhost` (`127.0.0.1:5432`) — das
 reicht, da Backend und Datenbank auf demselben Server laufen. Kein
 zusätzliches Netzwerk-Setup nötig.
 
-`postgresql-16` zieht `postgresql-client-16` (u.a. `pg_dump`, `psql`) als
-Abhängigkeit automatisch mit — kein separater Schritt nötig für den manuellen
+Das `postgresql`-Metapaket zieht das passende `postgresql-client-*` (u.a.
+`pg_dump`, `psql`) als Abhängigkeit automatisch mit — kein separater Schritt
+nötig für den manuellen
 Datenbank-Backup-Download in der Admin-UI (Systemeinstellungen → System,
 siehe `docs/Anforderungen.md` "Backup-Konzept").
 
@@ -71,15 +76,65 @@ node --version   # muss >= 20.x sein
 
 ---
 
-## 4. Repository holen und konfigurieren
+## 4. Service-User anlegen
+
+Der App-Service soll unabhängig vom SSH-Login-User laufen, mit dem die
+Installation durchgeführt wird — der kann sich später ändern oder ganz
+entfallen (Benutzerwechsel, Server-Übergabe). Dafür ein dediziertes,
+unprivilegiertes Systemkonto:
 
 ```bash
-cd /opt
-sudo git clone <repository-url> fairpos
-sudo chown -R $USER:$USER /opt/fairpos
-cd /opt/fairpos
+sudo useradd --system --create-home --home-dir /opt/fairpos --shell /usr/sbin/nologin fairpos
+id fairpos
+```
 
+- `--create-home --home-dir /opt/fairpos` legt `/opt/fairpos` direkt als
+  `fairpos`-eigenes Verzeichnis an — dasselbe Verzeichnis, in das in
+  Abschnitt 5 der Checkout kommt und das die systemd-Unit (Abschnitt 10) als
+  `WorkingDirectory` verwendet.
+- Das Verzeichnis ist danach nur für `fairpos` selbst (und `root`) lesbar —
+  ab hier für alles unter `/opt/fairpos` `sudo` bzw. `sudo -u fairpos`
+  verwenden, auch als root/Admin-User reicht ein einfaches `ls` nicht mehr.
+- `--shell /usr/sbin/nologin` verhindert einen interaktiven Login als
+  `fairpos`. `sudo -u fairpos <befehl>` funktioniert trotzdem — `sudo` führt
+  den Befehl direkt aus, nicht über die Login-Shell des Zielusers.
+
+---
+
+## 5. Repository holen und konfigurieren
+
+`/opt/fairpos` gehört bereits `fairpos` (Abschnitt 4) und ist für alle
+anderen gesperrt (`0750`) — `git clone` verlangt aber ein leeres oder nicht
+existierendes Zielverzeichnis, und `--create-home` hat dort bereits
+Shell-Skeleton-Dateien (`.bashrc` etc.) abgelegt. Deshalb: als `tru` (mit dem
+eigenen Git-Zugang) in ein Temp-Verzeichnis klonen, dann nach `/opt/fairpos`
+kopieren und umbesitzen:
+
+```bash
+git clone <repository-url> /tmp/fairpos-checkout
+sudo cp -a /tmp/fairpos-checkout/. /opt/fairpos/
+sudo chown -R fairpos:fairpos /opt/fairpos
+rm -rf /tmp/fairpos-checkout
+```
+
+**⚠️ `cp -a` kann die Rechte von `/opt/fairpos` selbst aufweiten** (in einem
+Testlauf wurde daraus `0775` statt `0750`) — direkt danach zurücksetzen und
+kontrollieren:
+
+```bash
+sudo chmod 750 /opt/fairpos
+sudo stat /opt/fairpos   # erwartet: Uid/Gid fairpos, Mode 0750
+```
+
+Ab hier alles innerhalb von `/opt/fairpos` als `fairpos` ausführen — `sudo -u
+fairpos bash` startet trotz `nologin`-Shell eine interaktive Shell als
+`fairpos` (siehe Abschnitt 4), darin bleiben bis inklusive Abschnitt 7:
+
+```bash
+sudo -u fairpos bash
+cd /opt/fairpos
 cp .env.example .env
+chmod 600 .env    # enthält gleich Secrets — nicht world-readable lassen
 ```
 
 `.env` anpassen:
@@ -93,13 +148,12 @@ DATABASE_URL=postgresql://fairpos:changeme@localhost:5432/fairpos
 NODE_ENV=production
 PORT=3000
 SESSION_SECRET=<mit dem Befehl unten generieren>
-
-# TSE_MOUNT_POINT/TSE_CLIENT_ID optional hier vorbelegen — normalerweise über
-# die Admin-UI (Systemeinstellungen -> System, inkl. "Auto-erkennen"-Button)
-# gesetzt, siehe Abschnitt 7.
 ```
 
-`SESSION_SECRET` generieren:
+Die Swissbit-TSE (Mount-Pfad, Client-ID) gehört **nicht** in die `.env` —
+ausschließlich über die Admin-UI konfigurierbar, siehe Abschnitt 8.
+
+`SESSION_SECRET` generieren (in der `fairpos`-Shell, Node ist schon installiert):
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -107,7 +161,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ---
 
-## 5. Bauen
+## 6. Bauen
 
 ```bash
 npm ci
@@ -125,7 +179,7 @@ statische Dateien unter `/` ausgeliefert, `/api/*` bleibt die REST-API).
 
 ---
 
-## 6. Datenbank migrieren + ersten Admin anlegen
+## 7. Datenbank migrieren + ersten Admin anlegen
 
 ```bash
 npm run db:migrate
@@ -143,12 +197,12 @@ schon existiert).
 
 ---
 
-## 7. Swissbit USB-TSE einrichten
+## 8. Swissbit USB-TSE einrichten
 
 Details zur Architektur: `docs/TSE-Integration.md`. Hier nur die für die
 Installation relevanten Schritte.
 
-### 7.1 `tseCli` bauen
+### 8.1 `tseCli` bauen
 
 Das Swissbit-SDK ist aus Lizenzgründen nicht Teil dieses Repos (gitignored) —
 siehe `packages/backend/native/tse-cli/vendor/PLACE_SDK_FILES_HERE.txt` für
@@ -163,80 +217,125 @@ cd /opt/fairpos
 Baut `native/tse-cli/vendor/bin/tseCli`, die Binary, die das Backend per
 Subprozess aufruft.
 
-### 7.2 TSE-Mountpunkt — automatisches Einbinden beim Einstecken
+### 8.2 TSE-Mountpunkt — automatisches Einbinden beim Einstecken
 
 Da der Server ggf. von mehreren Vereinen mit je eigener TSE genutzt wird
 (kein fester Mountpunkt für ein bestimmtes Gerät, siehe `docs/SETUP.md`),
 reicht ein generisches Automount für **beliebige** eingesteckte
 USB-Massenspeicher — welcher Mountpunkt tatsächlich die TSE ist, ermittelt
-FairPOS selbst über den "Auto-erkennen"-Button in der Admin-UI (Abschnitt 7.3).
+FairPOS selbst über den "Auto-erkennen"-Button in der Admin-UI (Abschnitt 8.3).
 
-Auf einem Headless-Server (kein eingeloggter Desktop-Nutzer, für den
-`udisks2` automatisch mounten würde) empfiehlt sich `usbmount`:
+**✅ Verifiziert gegen echte Swissbit-USB-TSE-Hardware** (2026-08-24, Ubuntu
+26.04 LTS "resolute"). `usbmount` — das ursprünglich hier vorgesehene Paket
+für generisches Automount auf einem Headless-Server (kein eingeloggter
+Desktop-Nutzer, für den `udisks2` automatisch mounten würde) — **existiert
+in Ubuntu 26.04 nicht mehr im Archiv** (weder in `main` noch in `universe`/
+`multiverse` — komplett aus der Distribution entfernt, nicht nur ein
+fehlendes Repo). Ersatz: eine eigene udev-Regel, die bei jedem neu
+erkannten USB-Massenspeicher `systemd-mount` aufruft — Teil von systemd
+selbst, kein Zusatzpaket nötig.
 
 ```bash
-sudo apt install -y usbmount
+sudo tee /etc/udev/rules.d/99-usb-automount.rules > /dev/null <<'EOF'
+ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_BUS}=="usb", RUN{program}+="/bin/sh -c 'systemd-mount --no-block --automount=no --collect --options=uid=$(id -u fairpos),gid=$(id -g fairpos),umask=0077 $devnode'"
+EOF
+sudo udevadm control --reload-rules
 ```
 
-Steckt danach jeden USB-Massenspeicher automatisch unter `/media/usbX`
-(`X` = 0–7) ein, ohne dass sich jemand einloggen muss. Konfiguration (Mount-
-Optionen, Berechtigungen) in `/etc/usbmount/usbmount.conf`.
+Steckt danach jeden neu eingesteckten USB-Massenspeicher automatisch unter
+`/run/media/system/<Label>` ein (z.B. `/run/media/system/SWISSBIT`, wenn die
+TSE so formatiert ist) — kein Login, kein Zusatzpaket nötig. Zwei nicht
+offensichtliche Stolperfallen, gegen die diese Regel bereits absichert:
 
-**⚠️ Nicht gegen echte TSE-Hardware verifiziert** (Stand dieser Anleitung —
-siehe `docs/TSE-Integration.md` Abschnitt 9, echte Hardware-Tests stehen noch
-aus). Zu prüfen, sobald Hardware verfügbar ist:
-- Mit welchem Dateisystem sich die Swissbit-TSE formatiert präsentiert, und
-  ob `usbmount`s Default-Optionen sie automatisch korrekt einbindet.
-- Mit welchem Owner/welcher Gruppe der Mount erscheint, und ob der
-  Backend-Service-User (Abschnitt 7.4) darauf lesen/schreiben kann — ggf.
-  `FS_MOUNTOPTIONS` in `usbmount.conf` um `uid=`/`gid=` für den
-  Service-User ergänzen, oder den Service-User der Gruppe hinzufügen, der
-  der Mount gehört.
+1. **`systemd-mount` mountet Block-Devices standardmäßig `--automount=yes`
+   — auch ohne die Option explizit anzugeben.** Das erzeugt einen *lazy*
+   Automount, der erst beim ersten tatsächlichen Dateizugriff auf den
+   Mountpunkt wirklich mountet. `lsblk` (worauf `tse/detect.ts`s
+   "Auto-erkennen" aufbaut) zeigt einen solchen Mountpunkt aber **nicht**,
+   solange er nicht wirklich gemountet ist — die TSE würde also nie als
+   Kandidat auftauchen. Deshalb explizit `--automount=no` (sofortiger,
+   "eager" Mount).
+2. **Die Swissbit-TSE präsentiert sich als `vfat`/FAT32** — ein
+   Dateisystem ohne echte Unix-Rechte. Ohne explizite `uid=`/`gid=`/
+   `umask=`-Mount-Optionen erscheint der Mount `root:root` mit `0755`
+   (nur lesbar für den Service-User `fairpos`, siehe Abschnitt 4 — kein
+   Schreibzugriff, den das TSE-Kommandoprotokoll aber braucht). Die Regel
+   löst `fairpos`s UID/GID zur Laufzeit dynamisch über `id -u fairpos`/
+   `id -g fairpos` auf (nicht hart verdrahtet — falls ein anderer Server
+   `fairpos` mit einer anderen UID/GID anlegt) und vergibt mit
+   `umask=0077` volle Rechte (`0700`) exklusiv an `fairpos` (root hat
+   ohnehin immer Zugriff, niemand sonst braucht welchen).
 
-### 7.3 TSE in der Admin-UI konfigurieren
+**Verifizieren** (ohne die TSE physisch abziehen/einstecken zu müssen — per
+udev-Retrigger):
 
-Nach dem ersten Start des Backends (Abschnitt 9): Systemeinstellungen →
+```bash
+sudo udevadm trigger --action=add /sys/block/sdX/sdXN   # sdX/sdXN durch das echte Device ersetzen, siehe lsblk
+sleep 1
+lsblk
+stat /run/media/system/<Label>
+```
+
+Erwartet: `lsblk` zeigt den Mountpunkt, `stat` zeigt `Uid: fairpos`,
+`Gid: fairpos`, Mode `0700`, und `Device:` mit der echten Block-Device-Major/
+Minor-Nummer (nicht `0,NN` — das wäre noch das leere `tmpfs`-Platzhalter-
+verzeichnis vor Abschluss des asynchronen Mounts; `systemd-mount --no-block`
+gibt sofort zurück, ohne auf den tatsächlichen Mount-Abschluss zu warten —
+bei Bedarf `lsblk`/`stat` einfach nach einer Sekunde erneut ausführen).
+
+### 8.3 TSE in der Admin-UI konfigurieren
+
+Nach dem ersten Start des Backends (Abschnitt 10): Systemeinstellungen →
 System → "Auto-erkennen" klickt sich durch alle aktuell gemounteten
 Wechseldatenträger und trägt den ersten Treffer automatisch ein. Danach
-`TSE_CLIENT_ID` frei vergeben (z.B. `FairPOS-1`) und einmalig `setup`
-ausführen (PUK/PINs — siehe `docs/TSE-Integration.md` Abschnitt 7 für die
-Sicherheitsanforderungen, diese Zugangsdaten werden **nicht** dauerhaft
-gespeichert).
+Client-ID frei vergeben (z.B. `FairPOS-1`), TimeAdmin-PIN eintragen und
+speichern.
 
-### 7.4 Berechtigungen für den Backend-Service-User
+### 8.4 Einmalige Hardware-Inbetriebnahme (`setup`)
 
-Der User, unter dem der systemd-Service (Abschnitt 9) läuft, braucht
-Lese-/Schreibzugriff auf den TSE-Mountpunkt. Je nachdem, wie der Mount
-zustande kommt (Abschnitt 7.2), z.B.:
+**Kein Admin-UI-Schritt** — bewusst nicht Teil der UI (siehe
+`docs/TSE-Integration.md` Abschnitt 7): die einmalige Aktivierung der TSE
+läuft direkt über die `tseCli`-Binary, mit Zugangsdaten (Credential-Seed,
+Admin-PUK, Admin-PIN), die aus den Swissbit-Vertragsunterlagen des Vereins
+kommen — nicht aus diesem Repo, und laut KassenSichV-Vorgabe nirgends
+dauerhaft speicherbar (auch nicht in der Bash-History):
 
 ```bash
-sudo usermod -aG plugdev fairpos   # falls der Mount der Gruppe "plugdev" gehört
+sudo -u fairpos /opt/fairpos/packages/backend/native/tse-cli/vendor/bin/tseCli \
+  <mount-pfad> setup <client-id> <credential-seed> <admin-puk> <admin-pin> <time-admin-pin>
 ```
 
-Genauer Gruppenname/Owner hängt vom gewählten Automount-Mechanismus ab —
-mit `stat /media/usb0` (oder dem tatsächlichen Mountpunkt) prüfen.
+`<mount-pfad>`/`<client-id>`/`<time-admin-pin>` entsprechen genau den Werten
+aus Abschnitt 8.3. Danach in der Admin-UI über "TSE testen" verifizieren
+(`hasPassedSelfTest: true` erwartet).
 
 ---
 
-## 8. Automatisierungsskripte
+## 9. Automatisierungsskripte
 
-Die Schritte 1–6 (alles außer der TSE-Einrichtung, die echte Hardware
+Die Schritte 1–7 (alles außer der TSE-Einrichtung, die echte Hardware
 voraussetzt) sind als idempotente Skripte in `scripts/install/` hinterlegt:
 
 | Skript | Zweck |
 |---|---|
-| `scripts/install/01-system.sh` | Node.js + PostgreSQL (PGDG) + Build-Tools installieren |
+| `scripts/install/01-system.sh` | Node.js + PostgreSQL (Ubuntu-Standardpaket) + Build-Tools installieren |
 | `scripts/install/02-database.sh` | Rolle + Datenbank anlegen (liest Werte aus `.env`) |
 | `scripts/install/03-build.sh` | `npm ci`, Build, Frontend-Kopie nach `packages/backend/public/` |
 | `scripts/install/04-systemd.sh` | systemd-Unit installieren + aktivieren |
 | `scripts/install/smoke-test.sh` | DB-Verbindung, TSE-Erreichbarkeit (falls konfiguriert), Backend-Healthcheck |
 
-Reihenfolge: `01` → `.env` ausfüllen → `02` → `03` → `npm run db:migrate` →
-`04` → `smoke-test.sh`.
+Reihenfolge: `01` → Service-User anlegen (Abschnitt 4) → `.env` ausfüllen →
+`02` → `03` → `npm run db:migrate` → `04` → `smoke-test.sh`.
+
+> ⚠️ Die Skripte legen den Service-User (Abschnitt 4) noch nicht selbst an
+> und laufen nicht als `fairpos` — `02`/`03` müssten entsprechend Abschnitt 5
+> angepasst werden (Checkout/Build als `fairpos`, `/opt/fairpos` am Ende
+> `0750` statt versehentlich aufgeweitet). Bis dahin: die manuellen Schritte
+> aus Abschnitt 4/5 verwenden statt der Skripte.
 
 ---
 
-## 9. systemd-Service
+## 10. systemd-Service
 
 `/etc/systemd/system/fairpos.service`:
 
@@ -268,9 +367,12 @@ journalctl -u fairpos -f   # Logs
 `EnvironmentFile` lädt `.env` genauso, wie es Docker in der Entwicklung über
 `env_file` tut — kein zusätzliches dotenv-Handling im Code nötig.
 
+`User=fairpos` — der in Abschnitt 4 angelegte dedizierte Service-User, nicht
+der SSH-Login-User der Installation.
+
 ---
 
-## 10. Smoke-Test
+## 11. Smoke-Test
 
 Nach dem Start:
 
@@ -278,13 +380,13 @@ Nach dem Start:
 curl -f http://localhost:3000/api/health
 ```
 
-Plus (siehe `scripts/install/smoke-test.sh`, Abschnitt 8): Datenbankverbindung,
+Plus (siehe `scripts/install/smoke-test.sh`, Abschnitt 9): Datenbankverbindung,
 TSE-Status (`GET /api/admin/tse/status`, falls konfiguriert), Login als Admin
 über die UI.
 
 ---
 
-## 11. Updates
+## 12. Updates
 
 ```bash
 cd /opt/fairpos

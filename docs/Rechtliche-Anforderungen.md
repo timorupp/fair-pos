@@ -456,7 +456,7 @@ Ein gemeinnütziger Verein ist in vier steuerliche Bereiche aufgeteilt:
 ## 10. Checkliste: Inbetriebnahme FairPOS
 
 - [ ] Swissbit USB-TSE beschaffen und aktivieren
-- [ ] TSE-CLI-Binary bauen (`native/tse-cli/build.sh`) und `TSE_MOUNT_POINT`/`TSE_CLIENT_ID` konfigurieren (Systemeinstellungen → System oder `.env`, siehe docs/TSE-Integration.md)
+- [ ] TSE-CLI-Binary bauen (`native/tse-cli/build.sh`) und Mount-Pfad/Client-ID konfigurieren (Systemeinstellungen → System, siehe docs/TSE-Integration.md)
 - [ ] FairPOS-Seriennummer und Softwareversion dokumentieren
 - [ ] Unternehmensdaten und Steuernummer im System hinterlegen
 - [ ] Alle Steuersätze korrekt konfigurieren

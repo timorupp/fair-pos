@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import { adminUser } from '$lib/stores/user';
+  import { copyToClipboard } from '$lib/clipboard';
   import type { User, Register } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
@@ -99,7 +100,7 @@
     } catch (e) { alert(e instanceof Error ? e.message : 'Fehler'); }
   }
 
-  function copyToken() { navigator.clipboard.writeText(tokenUrl); }
+  function copyToken() { copyToClipboard(tokenUrl); }
   function openTokenInTab() { window.open(tokenUrl, '_blank'); }
 
   function toggleRegister(id: string) {

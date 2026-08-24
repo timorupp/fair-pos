@@ -33,13 +33,14 @@ echo "==> Datenbank"
 check "PostgreSQL nimmt Verbindungen an (pg_isready)" pg_isready -q -h localhost
 
 echo "==> TSE (informativ — kein Fehler, wenn nicht konfiguriert)"
-TSE_MOUNT_POINT="$(grep -E '^TSE_MOUNT_POINT=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+DATABASE_URL="$(grep -E '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+TSE_MOUNT_POINT="$(psql "$DATABASE_URL" -tAc "SELECT value FROM system_setting WHERE key = 'tse_mount_point'" 2>/dev/null | tr -d '[:space:]')"
 if [ -z "$TSE_MOUNT_POINT" ]; then
-  echo "  [INFO] TSE_MOUNT_POINT nicht gesetzt — normal, falls noch nicht per Admin-UI konfiguriert (siehe docs/Installationsanleitung.md Abschnitt 7.3)."
+  echo "  [INFO] Kein TSE-Mountpunkt in den Systemeinstellungen — normal, falls noch nicht per Admin-UI konfiguriert (siehe docs/Installationsanleitung.md Abschnitt 8.3)."
 elif [ ! -d "$TSE_MOUNT_POINT" ]; then
-  echo "  [WARNUNG] TSE_MOUNT_POINT=$TSE_MOUNT_POINT existiert nicht — TSE-Signierung wird bis zur Korrektur übersprungen."
+  echo "  [WARNUNG] Konfigurierter TSE-Mountpunkt ($TSE_MOUNT_POINT) existiert nicht — TSE-Signierung wird bis zur Korrektur übersprungen."
 else
-  echo "  [OK]   TSE_MOUNT_POINT=$TSE_MOUNT_POINT existiert (sagt nichts darüber aus, ob dort tatsächlich eine TSE liegt — siehe Admin-UI-Statusanzeige)."
+  echo "  [OK]   Konfigurierter TSE-Mountpunkt ($TSE_MOUNT_POINT) existiert (sagt nichts darüber aus, ob dort tatsächlich eine TSE liegt — siehe Admin-UI-Statusanzeige)."
 fi
 
 echo

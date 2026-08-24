@@ -24,7 +24,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] Mindestens 3 Artikel in mind. 2 Artikelgruppen mit unterschiedlichen Steuersätzen (19 %, 7 %, ggf. 0 %)
 - [ ] Mindestens 1 Artikel mit Pfand (`deposit_price` > 0)
 - [ ] Getestet in mind. einem Desktop-Browser und einem mobilen/Touch-Browser (Bonkasse/Bedienungskasse sind Touch-UIs)
-- [ ] `TSE_MOUNT_POINT`/`TSE_CLIENT_ID` für diesen Lauf bewusst gewählt: **entweder** komplett unkonfiguriert (Warnungs-Pfad testen) **oder** auf echte/simulierte Hardware zeigend (Erfolgs-Pfad testen) — beide Zustände separat durchlaufen, siehe Abschnitt 9
+- [ ] TSE-Konfiguration (Systemeinstellungen → System) für diesen Lauf bewusst gewählt: **entweder** komplett unkonfiguriert (Warnungs-Pfad testen) **oder** auf echte/simulierte Hardware zeigend (Erfolgs-Pfad testen) — beide Zustände separat durchlaufen, siehe Abschnitt 9
 
 ---
 

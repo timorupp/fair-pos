@@ -8,6 +8,13 @@
  * each test resets the module cache (`vi.resetModules`) and re-imports
  * dynamically after changing `process.env` — otherwise env changes made in
  * one test would be invisible to modules already cached from an earlier one.
+ *
+ * `tseMountPoint`/`tseClientId` are no longer environment variables (removed
+ * together with the `.env` seed values — the admin UI / `system_setting` is
+ * the only configuration path, see `tse/settings.ts`) — tests that need a
+ * "TSE is configured" state call `configureTse()` to mutate the freshly
+ * reset `config` singleton directly, the same way `applyTseSettings` does in
+ * production.
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,17 +28,22 @@ const STUB_PATH = path.join(
   'tseCliStub.sh',
 );
 
-/** Baseline env for a "TSE is configured" test — individual tests can delete/override keys. */
+/** Baseline env for a test — individual tests can override keys (e.g. `TSE_CLI_PATH`, `TSE_STUB_*`). */
 function setBaselineEnv(): void {
   // config.ts validates these eagerly at import time even though this test
   // never touches the DB or sessions — dummy values are enough.
   process.env['SESSION_SECRET'] = 'test-secret';
   process.env['DATABASE_URL'] = 'postgres://test/unused';
-  process.env['TSE_MOUNT_POINT'] = '/tmp/fake-tse-mount';
-  process.env['TSE_CLIENT_ID'] = 'TESTCLIENT';
   process.env['TSE_CLI_PATH'] = STUB_PATH;
   delete process.env['TSE_STUB_STDOUT'];
   delete process.env['TSE_STUB_EXIT_CODE'];
+}
+
+/** Simulates a configured TSE by mutating the freshly-reset `config` singleton — call after `vi.resetModules()`, before importing `client.js`. */
+async function configureTse(): Promise<void> {
+  const { config } = await import('../config.js');
+  config.tseMountPoint = '/tmp/fake-tse-mount';
+  config.tseClientId = 'TESTCLIENT';
 }
 
 beforeEach(() => {
@@ -51,6 +63,7 @@ describe('tse/client', () => {
         serialNumber: 'bb',
       },
     });
+    await configureTse();
     const { startTransaction } = await import('./client.js');
     const result = await startTransaction('Kassenbeleg-V1', Buffer.from('hello'));
     expect(result).toEqual({
@@ -68,6 +81,7 @@ describe('tse/client', () => {
       error: { code: 1008, message: 'worm_transaction_finish failed' },
     });
     process.env['TSE_STUB_EXIT_CODE'] = '1';
+    await configureTse();
     const { finishTransaction } = await import('./client.js');
     await expect(finishTransaction(1, 'Kassenbeleg-V1', Buffer.from('x'))).rejects.toMatchObject({
       name: 'TseError',
@@ -77,8 +91,7 @@ describe('tse/client', () => {
   });
 
   it('throws a clear error when the TSE is not configured', async () => {
-    delete process.env['TSE_MOUNT_POINT'];
-    delete process.env['TSE_CLIENT_ID'];
+    // No configureTse() call — config.tseMountPoint/tseClientId stay at their default `null`.
     const { startTransaction } = await import('./client.js');
     await expect(startTransaction('Kassenbeleg-V1', Buffer.from('x'))).rejects.toThrow(
       /nicht konfiguriert/,
@@ -103,6 +116,7 @@ describe('tse/client', () => {
         tseSerialNumber: 'aabbcc',
       },
     });
+    await configureTse();
     const { getTseInfo } = await import('./client.js');
     const info = await getTseInfo();
     expect(info.hasPassedSelfTest).toBe(true);
@@ -112,12 +126,14 @@ describe('tse/client', () => {
   it('throws when the CLI produces no output at all', async () => {
     // Point at a path that will fail to execute, simulating a missing/broken binary.
     process.env['TSE_CLI_PATH'] = '/nonexistent/tseCli';
+    await configureTse();
     const { getTseInfo } = await import('./client.js');
     await expect(getTseInfo()).rejects.toThrow();
   });
 
   it('serialises multiple calls through the same underlying queue', async () => {
     process.env['TSE_STUB_STDOUT'] = JSON.stringify({ ok: true, result: {} });
+    await configureTse();
     const { maintainTse } = await import('./client.js');
     // Just verifying these don't collide/throw when issued back-to-back —
     // the actual ordering guarantee is covered by queue.test.ts.

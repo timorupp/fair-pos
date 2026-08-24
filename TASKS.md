@@ -222,3 +222,70 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   zugeordneter Kasse (409 + Meldung, Drucker bleibt bestehen). FK-Referenzen auf
   `printer(id)`: `register.printer_id`, `article.printer_id`, `print_job.printer_id`
   (NOT NULL).
+- [ ] **#58** TSE-Zeitsynchronisation + Self-Test (`maintainTse`) tatsächlich aufrufen
+  Gefunden bei der Live-Installation (2026-08-24), als die Frage aufkam, wofür
+  die TimeAdmin-PIN in den Systemeinstellungen eigentlich gebraucht wird:
+  `tse/client.ts` hat eine fertige `maintainTse(timeAdminPin)`-Funktion, die
+  aber **nirgends aufgerufen wird** — kein Cronjob, kein Scheduler, kein
+  Button in der Admin-UI. Die UI zeigt nur an, wie viele Tage bis zur
+  nächsten fälligen Zeitsync bzw. zum nächsten Self-Test bleiben
+  (`GET /api/admin/tse/status` → `timeUntilNextTimeSynchronization` /
+  `timeUntilNextSelfTest`), tut aber nichts, wenn eines davon fällig wird.
+  **Deckt beides in einem Schritt ab:** Das zugrundeliegende CLI-Kommando
+  `maintain <clientId> <timeAdminPin>` (`native/tse-cli/src/tseCli.cpp`,
+  `cmdMaintain`) führt Self-Test und Zeitsync bereits bewusst in einer
+  Operation aus (Self-Test muss laut Kommentar dort sogar vor dem Zeitsync
+  laufen, weil er die TSE-Zeit invalidiert) — kein separater Task für den
+  Self-Test nötig, `maintainTse()` unten deckt automatisch beides ab, sobald
+  sie aufgerufen wird. Ohne regelmäßige Ausführung verliert die TSE laut
+  KassenSichV irgendwann die gültige Zeitreferenz bzw. den gültigen
+  Self-Test-Status. Bei der Umsetzung überlegen, was ein guter Auslösepunkt
+  ist (z.B. beim Backend-Start, wenn einer der beiden Schwellwerte
+  unterschritten wird; beim Tagesabschluss; oder ein expliziter „Jetzt
+  synchronisieren"-Button in der Admin-UI) — noch nicht entschieden,
+  zurückgestellt.
+- [ ] **#59** TSE-Status-Karte: Public-Key-Zeile läuft über den Kartenrahmen hinaus
+  Gefunden bei der Live-Installation (Screenshot, 2026-08-24):
+  `admin/settings/system/+page.svelte`, die `.kv`-Grid-Zeile für „Public Key"
+  (`.pubkey`, `word-break: break-all`) bricht trotzdem nicht um und läuft über
+  den Kartenrahmen hinaus. Vermutliche Ursache: `.kv` ist
+  `grid-template-columns: max-content 1fr` — Grid-Items haben per Default
+  `min-width: auto`, wodurch die `1fr`-Spalte trotz `word-break` nicht unter
+  die intrinsische (ungebrochene) Breite des Inhalts schrumpft. Ansatz:
+  `min-width: 0` auf `.kv dd` (oder gezielt auf `.pubkey`) ergänzen, ggf.
+  zusätzlich `overflow-wrap: anywhere` statt/neben `word-break: break-all`.
+  Noch nicht umgesetzt.
+- [ ] **#60** Systemzeit des Servers anzeigen + manuell setzen können
+  Aufgekommen bei der Live-Installation (2026-08-24) im Zusammenhang mit
+  Task #58: die TSE-Zeitsynchronisation gleicht die TSE-Uhr gegen die
+  **Systemzeit des `fairpos`-Servers** ab — wenn die falsch steht, synchronisiert
+  die TSE gegen eine falsche Zeit. Aktuell zeigt die Admin-UI
+  (`admin/settings/system/+page.svelte`) nur eine live tickende
+  "Serverzeit" (rein lesend, aus `GET /api/admin/system/status`) — keine
+  Möglichkeit, sie zu **setzen**. Gewünscht: manuelle Eingabe reicht (keine
+  NTP-Anbindung nötig — die Kasse kann auch ganz ohne Internet laufen, siehe
+  `docs/Anforderungen.md` "Datum und Uhrzeit" — dort bisher nur als
+  Anforderung notiert, nie umgesetzt). Nebenbei nützlich für die Entwicklung,
+  um mit einer zurückgedrehten Uhr eine eigentlich schon abgelaufene
+  Dev-TSE weiter benutzen zu können.
+  **Technischer Haken:** Der Backend-Prozess läuft absichtlich als
+  unprivilegierter `fairpos`-User (siehe Abschnitt 4 der
+  Installationsanleitung) — kann die Systemuhr nicht selbst stellen
+  (`CAP_SYS_TIME`/root nötig). Lösung vermutlich eine eng zugeschnittene
+  `sudoers`-Regel, die `fairpos` **ausschließlich** den Aufruf von
+  `sudo timedatectl set-time '<wert>'` ohne Passwort erlaubt (kein
+  Full-Sudo!) — vom Backend per `execFile` aufgerufen. Sicherheitsaspekt
+  beachten: eine Manipulationsmöglichkeit der Systemzeit aus der Web-UI
+  heraus ist grundsätzlich sensibel (Admin-only, wie schon alle anderen
+  Settings-Endpoints — aber ggf. zusätzliches Logging erwägen). Dieselbe
+  Sudoers-Mechanik lässt sich vermutlich für Task #61 (Shutdown-Button)
+  wiederverwenden.
+- [ ] **#61** Shutdown-Button in der Admin-UI
+  Gewünscht, damit ein normaler Vereins-Nutzer den Server kontrolliert
+  herunterfahren kann, ohne auf die Shell zu müssen. Gleiches technisches
+  Muster wie Task #60: `fairpos` braucht dafür eine eng zugeschnittene
+  `sudoers`-Regel (z.B. ausschließlich `sudo systemctl poweroff` ohne
+  Passwort erlaubt, kein Full-Sudo), vom Backend per `execFile` aufgerufen.
+  UI-seitig unbedingt mit deutlicher Sicherheitsabfrage (analog zu anderen
+  destruktiven Aktionen in der App, z.B. Backup-Restore/Reset-Diskussionen)
+  — ein versehentlicher Klick legt sofort den laufenden Kassenbetrieb lahm.

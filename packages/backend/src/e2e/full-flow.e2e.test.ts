@@ -207,7 +207,7 @@ describe('Weitere Low-Hanging-Fruit-Checks', () => {
       expect(directory.files.map((f) => f.path)).toContain('backup.sql');
     } else {
       // Acceptable ONLY if pg_dump genuinely isn't installed on this host —
-      // ships automatically with the postgresql-16 package on a real
+      // ships automatically with the distro's postgresql package on a real
       // installation (see docs/Installationsanleitung.md Abschnitt 2). A
       // real install should always hit the 200 branch above; this is a
       // deliberately tolerant fallback for e.g. a bare dev sandbox.

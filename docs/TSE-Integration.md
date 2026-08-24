@@ -309,12 +309,18 @@ nötig). Stattdessen:
   Entwickler bereitgestellt werden) und wird auch nicht erwartet.
 - Manuelles Testen gegen die echte TSE bleibt manuell/vor Ort.
 
-**Stand August 2026:** Echte Hardware-Tests sind bisher nicht möglich — die
-Entwicklungsumgebung läuft unter WSL2, das USB-Geräte nicht ohne `usbipd-win`
-(Windows-Host-Aktion) durchreicht. Das Team plant den Wechsel auf ein natives
-Ubuntu-System für Hardware-Tests; die Swissbit Developer-USB-TSE dafür ist
-bereits bestellt. Bis dahin bleibt die Abdeckung auf die Stub-basierten
-Unit-Tests beschränkt.
+**Stand 2026-08-24:** Automatisierte Tests (CI, lokale Entwicklung unter
+WSL2) bleiben weiterhin auf die Stub-basierten Unit-Tests beschränkt — WSL2
+reicht USB-Geräte nicht ohne `usbipd-win` (Windows-Host-Aktion) durch.
+Erste echte Hardware-Verifikation hat aber stattgefunden, im Zuge der
+Produktionsinstallation auf einem nativen Ubuntu 26.04 LTS Server (siehe
+`docs/Installationsanleitung.md` Abschnitt 8): `tseCli` erfolgreich gegen
+die echte Swissbit-SDK gebaut und gelinkt (Abschnitt 8.1), USB-TSE
+automatisch gemountet mit korrekten Schreibrechten für den
+Backend-Service-User (Abschnitt 8.2). Noch offen zum Zeitpunkt dieser
+Formulierung: die erste echte `setup`-Aktivierung (Abschnitt 8.4, läuft
+direkt über `tseCli`, nicht über die Admin-UI) bzw. ein echter Checkout mit
+Signierung.
 
 ---
 

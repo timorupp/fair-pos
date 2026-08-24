@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { api, type TseStatus, type TseMountCandidate } from '$lib/api';
+  import { copyToClipboard } from '$lib/clipboard';
 
   // ── Read-only system status ────────────────────────────────────────────────
   let systemSerial = '';
@@ -130,7 +131,7 @@
 
   function copyTseResult() {
     if (!tseResult) return;
-    navigator.clipboard?.writeText(JSON.stringify(tseResult, null, 2)).catch(() => { /* ignore — clipboard API may be unavailable */ });
+    copyToClipboard(JSON.stringify(tseResult, null, 2));
   }
 
   /** Returns the current wall-clock time, advanced from the server baseline by the elapsed `tick` seconds. */
@@ -139,7 +140,7 @@
 
   function copySerial() {
     if (!systemSerial) return;
-    navigator.clipboard?.writeText(systemSerial).catch(() => { /* ignore — clipboard API may be unavailable */ });
+    copyToClipboard(systemSerial);
   }
 </script>
 

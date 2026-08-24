@@ -45,7 +45,7 @@ let container: StartedPostgreSqlContainer | null = null;
  * @returns Async teardown function that stops the container.
  */
 export default async function setup(ctx: SetupContext): Promise<() => Promise<void>> {
-  container = await new PostgreSqlContainer('postgres:16-alpine')
+  container = await new PostgreSqlContainer('postgres:18-alpine')
     .withDatabase('fairpos_test')
     .withUsername('test')
     .withPassword('test')

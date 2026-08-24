@@ -42,7 +42,7 @@ USB-TSE — keine Container in Produktion, keine dritte Middleware-Komponente:
 └───────────┬──────────────────────────┬───────────────────────┘
             │ pg (node-postgres)       │ Dateisystem (Mount-Punkt)
 ┌───────────▼──────────┐  ┌───────────▼───────────────────────┐
-│  postgres (PG 16)    │  │  Swissbit USB-TSE                  │
+│  postgres (PG 18)    │  │  Swissbit USB-TSE                  │
 │  Primärdaten         │  │  als Dateisystem gemountet,         │
 │  Print-Queue         │  │  kein Container                     │
 └──────────────────────┘  └───────────────────────────────────┘
@@ -56,7 +56,7 @@ USB-TSE — keine Container in Produktion, keine dritte Middleware-Komponente:
 |------------|----------------|------------------------------------|
 | Node.js    | 20.x           | Backend + Frontend, Entwicklung UND Produktion |
 | npm        | 10.x           | Paketmanager (Workspaces)          |
-| PostgreSQL | 16.x           | Produktion: nativ via PGDG-APT-Repo (siehe `docs/Installationsanleitung.md`) |
+| PostgreSQL | 16.x+          | Produktion: natives Ubuntu-Standardpaket, keine Major-Version gepinnt (siehe `docs/Installationsanleitung.md`); Dev/Test aktuell auf 18.x |
 | Docker + Docker Compose (V2, Plugin) | 24.x | **Nur Entwicklung** — startet ausschließlich PostgreSQL, siehe `docker-compose.yml` |
 | g++ (C++11) | —             | Nur für den TSE-CLI-Build, siehe docs/TSE-Integration.md Abschnitt 10 |
 
@@ -139,9 +139,11 @@ Für die lokale Entwicklung muss `DATABASE_URL` den Postgres-Container auf
 DATABASE_URL=postgresql://fairpos:changeme@localhost:5432/fairpos
 ```
 
-`TSE_MOUNT_POINT`/`TSE_CLIENT_ID` sind optional — ohne physische TSE (lokale
-Entwicklung, CI) einfach weglassen; das Backend überspringt die Signierung dann
-und lässt die `tse_*`-Spalten der Rechnung `null`. Siehe docs/TSE-Integration.md.
+Die TSE-Konfiguration (Mount-Pfad, Client-ID) gibt es nur über die Admin-UI
+(Systemeinstellungen → System) — kein `.env`-Pendant. Ohne physische TSE
+(lokale Entwicklung, CI) einfach unkonfiguriert lassen; das Backend
+überspringt die Signierung dann und lässt die `tse_*`-Spalten der Rechnung
+`null`. Siehe docs/TSE-Integration.md.
 
 ### 2. Infrastruktur starten
 
@@ -231,7 +233,8 @@ bevor der HTTP-Server lauscht.
 
 **Keine Containerisierung.** Backend und Frontend laufen als nativer
 Node.js-Prozess direkt auf einem dedizierten Ubuntu-Server, PostgreSQL nativ
-über das PGDG-APT-Repo installiert (kein Docker). Grund: der einzige Punkt,
+über das Ubuntu-Standardpaket installiert (kein Docker, keine Major-Version
+gepinnt — siehe `docs/Installationsanleitung.md` Abschnitt 2). Grund: der einzige Punkt,
 an dem Docker hier echten Mehraufwand verursacht hätte, ist die
 Swissbit-USB-TSE — ein Container hätte Bind-Mount-Propagation für
 hot-plug-fähige USB-Hardware benötigt (`rslave`), nur um ein Problem zu lösen,
@@ -271,12 +274,12 @@ docs/TSE-Integration.md; hier nur das Deployment-relevante:
 - Die TSE muss auf dem Host als Dateisystem gemountet sein, bevor die
   Signierung genutzt werden kann — der Node-Prozess liest/schreibt direkt auf
   diesem Pfad, kein Container-Mapping dazwischen.
-- Mount-Pfad und Client-ID werden über Systemeinstellungen → System in der
-  Admin-UI konfiguriert (inkl. "Auto-erkennen"-Button, der die TSE unter den
-  aktuell gemounteten Wechseldatenträgern findet — kein manuelles Pfad-Tippen
-  nötig). `TSE_MOUNT_POINT`/`TSE_CLIENT_ID` in `.env` sind nur ein optionaler
-  initialer Seed-Wert. Beide Werte wirken sofort, ohne Neustart.
-- `TSE_CLIENT_ID` ist ein frei wählbarer Bezeichner für diese Kasse (z.B.
+- Mount-Pfad und Client-ID werden ausschließlich über Systemeinstellungen →
+  System in der Admin-UI konfiguriert (inkl. "Auto-erkennen"-Button, der die
+  TSE unter den aktuell gemounteten Wechseldatenträgern findet — kein
+  manuelles Pfad-Tippen nötig) — es gibt bewusst kein `.env`-Pendant mehr
+  dafür. Beide Werte wirken sofort, ohne Neustart.
+- Die Client-ID ist ein frei wählbarer Bezeichner für diese Kasse (z.B.
   `FairPOS-1`) — muss bei der einmaligen TSE-Inbetriebnahme (`setup`)
   registriert werden.
 - Der (laut KassenSichV dauerhaft speicherbare) TimeAdmin-PIN wird ebenfalls
@@ -294,9 +297,12 @@ docs/TSE-Integration.md; hier nur das Deployment-relevante:
 
 Für echte Hardware-Tests (nicht nur den gemockten CLI-Subprozess in den
 Unit-Tests) wird ein natives Linux-Hostsystem benötigt — WSL2 kann USB-Geräte
-nicht ohne `usbipd-win` durchreichen. Das Team plant einen Wechsel auf ein
-natives Ubuntu-System für diese Tests; die Swissbit Developer-TSE-Hardware
-dafür ist bereits bestellt (Stand August 2026).
+nicht ohne `usbipd-win` durchreichen. Erste echte Verifikation hat am
+2026-08-24 im Zuge der Produktionsinstallation auf einem nativen Ubuntu
+26.04 Server stattgefunden (`tseCli`-Build + USB-Mount/Berechtigungen, siehe
+`docs/TSE-Integration.md` Abschnitt 9 und `docs/Installationsanleitung.md`
+Abschnitt 8) — die eigentliche Entwicklungsumgebung bleibt aber weiterhin
+WSL2, automatisierte Tests laufen weiterhin nur gegen den CLI-Stub.
 
 ---
 
@@ -315,10 +321,12 @@ Backend-Start fehlen, führen zu einem sofortigen Fehler.
 | `SESSION_SECRET`     | ja      | —                         | Signierungsschlüssel für Cookies     |
 | `PORT`               | nein    | `3000`                    | HTTP-Port des Backends               |
 | `NODE_ENV`           | nein    | `development`             | `development` oder `production`      |
-| `TSE_MOUNT_POINT`    | nein    | —                         | Mount-Pfad der Swissbit USB-TSE auf dem Host. Nur ein optionaler initialer Seed-Wert — normalerweise über die Admin-UI gesetzt (inkl. "Auto-erkennen"-Button). Ohne Wert wird die TSE-Signierung übersprungen. |
-| `TSE_CLIENT_ID`      | nein    | —                         | Frei wählbarer Client-Bezeichner für diese Kasse, z.B. `FairPOS-1`. Auch über die Admin-UI konfigurierbar. |
 
 `SESSION_SECRET` sollte mindestens 32 zufällige Zeichen enthalten.
+
+TSE-Mount-Pfad und Client-ID sind **keine** Umgebungsvariablen — sie werden
+ausschließlich über Systemeinstellungen → System in der Admin-UI konfiguriert
+(siehe oben, "Swissbit USB-TSE-Anbindung").
 Generieren z.B. mit: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
 
 ---
