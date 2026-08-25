@@ -436,3 +436,29 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `docs/Rechtliche-Anforderungen.md` (dort schon vorhanden, kein zusätzlicher
   Verweis in der Datei selbst nötig, da sie bereits das maßgebliche Dokument
   ist, auf das README verweist).
+- [ ] **#68** npm-Vulnerabilities + veraltete Pakete aufräumen
+  Aufgekommen beim Server-Update (2026-08-25): `npm ci` meldet 24
+  Vulnerabilities (1 niedrig, 13 mittel, 10 hoch) sowie mehrere
+  deprecated-Warnungen (`inflight`, `rimraf@2`, `lodash.isequal`,
+  `glob@7/10/11`, `whatwg-encoding`, `fstream`, `uuid@8/10`). Nicht blind
+  `npm audit fix --force` verwenden — kann unkontrolliert Major-Versionen
+  ziehen. Stattdessen bei der Umsetzung: `npm audit` im Detail durchgehen,
+  je Fund unterscheiden zwischen (a) Produktions-Abhängigkeiten (laufen im
+  Backend/Frontend mit) und (b) reinem Build-/Test-Tooling (`vite`,
+  `svelte-kit`, `testcontainers`, `vitest` — nie in Produktion aktiv, geringere
+  Priorität), gezielt einzeln aktualisieren statt pauschal, danach volle
+  Testsuite + Build gegenprüfen. Bei kassenrelevanter Software lieber
+  gründlich als schnell.
+- [x] **#69** Wording „Kategorie" → „Artikelgruppe" vereinheitlichen
+  **Erledigt (2026-08-25):** Gefunden beim Live-Testen — UI/Fehlermeldungen
+  benutzten uneinheitlich „Kategorie"/„Artikelkategorie"/„Artikelgruppe" für
+  dasselbe (`article_category`). Alle Vorkommen auf „Artikelgruppe"
+  vereinheitlicht: `articles/+page.svelte`, `settings/categories/+page.svelte`
+  (inkl. Seitentitel, Modal-Titel, Lösch-Bestätigung), `routes/admin/articles.ts`,
+  `routes/admin/categories.ts` (alle Fehlermeldungen), `docs/Anforderungen.md`.
+  `docs/Dictionary.md` als maßgebliche Referenz korrigiert (führte bisher
+  „Artikelgruppe / Artikelkategorie" als gleichwertige Alternativen —
+  jetzt eindeutig „Artikelgruppe" mit Hinweis auf die frühere
+  Uneinheitlichkeit). `docs/Rechtliche-Anforderungen.md:67` bewusst
+  unverändert gelassen — dortiges „Kategorie" bezeichnet etwas anderes
+  (Gruppierung der ELSTER-Meldepflichtangaben, nicht `article_category`).

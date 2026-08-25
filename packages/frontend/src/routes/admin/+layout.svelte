@@ -45,17 +45,25 @@
   // Re-check whenever the URL changes (e.g. operator went through "Alle Ausstehenden abschließen").
   $: $page.url.pathname, loadPending();
 
-  /** Whether a path is the active route (exact or prefix match). */
-  function isActive(href: string, exact = false): boolean {
-    return exact
+  /**
+   * Whether a path is the active route (exact or prefix match). Declared as
+   * a reactive assignment (`$:`), not a plain `function` — Svelte's
+   * reactivity tracking only looks at identifiers written directly in a
+   * template expression (e.g. `isActive('/admin/users')`); `$page` read
+   * inside a plain function's body is invisible to that analysis, so the
+   * highlight would only ever be computed once at mount and never update on
+   * subsequent navigation. Reassigning `isActive` itself inside a `$:` block
+   * makes the *function reference* change whenever `$page` changes, which
+   * correctly invalidates every call site.
+   */
+  $: isActive = (href: string, exact = false): boolean => (
+    exact
       ? $page.url.pathname === href
-      : $page.url.pathname.startsWith(href);
-  }
+      : $page.url.pathname.startsWith(href)
+  );
 
-  /** Whether any sub-item of a group is currently active. */
-  function groupActive(hrefs: string[]): boolean {
-    return hrefs.some((h) => $page.url.pathname.startsWith(h));
-  }
+  /** Whether any sub-item of a group is currently active. Same reactive-closure reasoning as `isActive` above. */
+  $: groupActive = (hrefs: string[]): boolean => hrefs.some((h) => $page.url.pathname.startsWith(h));
 
   /** Sidebar groups — auto-expanded when one of their items is the active route. */
   let reportsOpen = false;
@@ -83,6 +91,7 @@
     '/admin/settings/company',
     '/admin/settings/print-queue',
     '/admin/settings/printers',
+    '/admin/settings/tse',
     '/admin/settings/system',
   ]);
 

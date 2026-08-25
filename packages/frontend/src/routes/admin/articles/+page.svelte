@@ -159,7 +159,7 @@
   </div>
 
   {#if categories.length === 0 && !loading}
-    <p class="muted">Bitte zuerst eine Kategorie anlegen.</p>
+    <p class="muted">Bitte zuerst eine Artikelgruppe anlegen.</p>
   {:else if loading}
     <p class="muted">Lade…</p>
   {:else if error}
@@ -167,7 +167,7 @@
   {:else}
     <table>
       <thead>
-        <tr><th>Name</th><th>Kategorie</th><th class="num">Preis</th><th class="num">Pfand</th><th>Aktiv</th><th></th></tr>
+        <tr><th>Name</th><th>Artikelgruppe</th><th class="num">Preis</th><th class="num">Pfand</th><th>Aktiv</th><th></th></tr>
       </thead>
       <tbody>
         {#each articles as a}

@@ -5,6 +5,7 @@ import { buildDemoReceipt } from '../../receipt/data.js';
 import { renderReceiptPdf } from '../../receipt/pdf.js';
 import { raiseCounterFloor } from '../../receipt/sequence.js';
 import { rerenderStoredLogo } from '../../logo/logo.js';
+import { loadLogoFor } from '../../logo/visibility.js';
 import { applyTseSettings, TSE_SETTING_KEYS } from '../../tse/settings.js';
 
 /** Keys used in the system_setting table. */
@@ -75,9 +76,23 @@ export async function settingsAdminRoute(app: FastifyInstance): Promise<void> {
     return reply.status(204).send();
   });
 
-  /** GET /api/admin/settings/receipt-preview — renders a demo receipt PDF for the company-data UI. */
+  /**
+   * GET /api/admin/settings/receipt-preview — renders a demo receipt PDF for
+   * the company-data UI. `buildDemoReceipt()` stays DB-free (used as-is in
+   * unit tests) — the logo (gated by the "logo_on_receipt" checkbox, same as
+   * a real sales receipt) is loaded here and merged in separately, otherwise
+   * the preview would never show the logo even when configured to appear on
+   * receipts.
+   */
   app.get('/receipt-preview', async (_req, reply) => {
-    const pdf = await renderReceiptPdf(buildDemoReceipt());
+    const logo = await loadLogoFor('receipt');
+    const pdf = await renderReceiptPdf({
+      ...buildDemoReceipt(),
+      logoPng: logo?.pdfPng ?? null,
+      logoWidth: logo?.pdfWidth ?? 0,
+      logoHeight: logo?.pdfHeight ?? 0,
+      logoWidthFactor: logo?.pdfWidthFactor ?? 0,
+    });
     reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', 'inline; filename="bon-vorschau.pdf"')

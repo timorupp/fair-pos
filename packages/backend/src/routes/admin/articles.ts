@@ -33,7 +33,7 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
     };
 
     if (!body.name || !body.category_id || body.price === undefined) {
-      return reply.status(400).send({ error: 'Name, Kategorie und Preis erforderlich' });
+      return reply.status(400).send({ error: 'Name, Artikelgruppe und Preis erforderlich' });
     }
 
     const result = await query(

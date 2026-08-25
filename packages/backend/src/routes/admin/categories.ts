@@ -31,7 +31,7 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
       return reply.status(201).send(result.rows[0]);
     } catch (e: unknown) {
       if ((e as { code?: string }).code === '23505') {
-        return reply.status(409).send({ error: `Kategoriename „${body.name}" ist bereits vergeben` });
+        return reply.status(409).send({ error: `Artikelgruppenname „${body.name}" ist bereits vergeben` });
       }
       throw e;
     }
@@ -50,11 +50,11 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
          RETURNING id, name, tax_rate, created_at`,
         [body.name ?? null, body.tax_rate ?? null, id],
       );
-      if (result.rows.length === 0) return reply.status(404).send({ error: 'Kategorie nicht gefunden' });
+      if (result.rows.length === 0) return reply.status(404).send({ error: 'Artikelgruppe nicht gefunden' });
       return reply.send(result.rows[0]);
     } catch (e: unknown) {
       if ((e as { code?: string }).code === '23505') {
-        return reply.status(409).send({ error: `Kategoriename „${body.name}" ist bereits vergeben` });
+        return reply.status(409).send({ error: `Artikelgruppenname „${body.name}" ist bereits vergeben` });
       }
       throw e;
     }
@@ -69,14 +69,14 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
       [id],
     );
     if ((inUse.rowCount ?? 0) > 0) {
-      return reply.status(409).send({ error: 'Kategorie wird von Artikeln verwendet' });
+      return reply.status(409).send({ error: 'Artikelgruppe wird von Artikeln verwendet' });
     }
 
     const result = await query(
       'DELETE FROM article_category WHERE id = $1 RETURNING id',
       [id],
     );
-    if (result.rowCount === 0) return reply.status(404).send({ error: 'Kategorie nicht gefunden' });
+    if (result.rowCount === 0) return reply.status(404).send({ error: 'Artikelgruppe nicht gefunden' });
     return reply.status(204).send();
   });
 }

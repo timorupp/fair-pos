@@ -58,7 +58,7 @@
 
   async function remove() {
     if (!editing) return;
-    if (!confirm(`Kategorie "${editing.name}" wirklich löschen?`)) return;
+    if (!confirm(`Artikelgruppe "${editing.name}" wirklich löschen?`)) return;
     deleting = true;
     try { await api.admin.categories.delete(editing.id); modalOpen = false; await load(); }
     catch (e) { formError = e instanceof Error ? e.message : 'Fehler'; }
@@ -68,7 +68,7 @@
 
 <div class="page">
   <div class="page-header">
-    <h1>Kategorien</h1>
+    <h1>Artikelgruppen</h1>
     <button class="btn-primary" on:click={openCreate}>+ Neu</button>
   </div>
 
@@ -96,7 +96,7 @@
   {/if}
 </div>
 
-<Modal bind:open={modalOpen} title={editing ? 'Kategorie bearbeiten' : 'Neue Kategorie'}>
+<Modal bind:open={modalOpen} title={editing ? 'Artikelgruppe bearbeiten' : 'Neue Artikelgruppe'}>
   <form on:submit|preventDefault={save}>
     <div class="field">
       <label for="cat-name">Name</label>

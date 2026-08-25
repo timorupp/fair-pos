@@ -655,14 +655,14 @@ Darstellung in der UI: Die Einzeldatensätze werden nach Artikel + Produktoption
 
 **Datenkopie bei Bestelleingang (Immutabilität)**
 
-Beim Anlegen einer `BestellungPosition` werden alle relevanten Artikeldaten und Kategorieinformationen in die Position kopiert:
+Beim Anlegen einer `BestellungPosition` werden alle relevanten Artikeldaten und Artikelgruppeninformationen in die Position kopiert:
 - Artikelname
-- Artikelkategorie (Name, Steuersatz)
+- Artikelgruppe (Name, Steuersatz)
 - Preis
 - Steuersatz
 - Gewählte Produktoptionen (Name + Preisaufschlag)
 
-Spätere Änderungen am Artikelstamm oder an Kategorien (Umbenennung, Preisänderung, Steuersatzänderung, Optionsänderung) haben keinen Einfluss auf bereits erfasste Bestellungen. Die Position ist ein unveränderlicher Schnappschuss zum Bestellzeitpunkt.
+Spätere Änderungen am Artikelstamm oder an Artikelgruppen (Umbenennung, Preisänderung, Steuersatzänderung, Optionsänderung) haben keinen Einfluss auf bereits erfasste Bestellungen. Die Position ist ein unveränderlicher Schnappschuss zum Bestellzeitpunkt.
 
 **Aggregation beim Bestellbondruck**
 

@@ -10,7 +10,7 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 |---|---|---|
 | Aktiv (Flag) | is_active | Boolean-Spalte; „nicht aktiv" heißt je nach Entität „archiviert" (register) oder „deaktiviert" (user) — Alternative zu einer Löschung, die per FK-RESTRICT ohnehin blockiert würde, sobald die Zeile referenziert ist |
 | Artikel | article | Verkaufbares Produkt |
-| Artikelgruppe / Artikelkategorie | article_category | Träger des Steuersatzes |
+| Artikelgruppe | article_category | Träger des Steuersatzes. **Verbindlich „Artikelgruppe"** — nicht „Kategorie"/„Artikelkategorie" (früher uneinheitlich verwendet, 2026-08-25 vereinheitlicht) |
 | Aufpreis | price_surcharge | Preiszuschlag bei Produktoption |
 | Auswertung | report | Auswertungsseiten im Adminbereich |
 | Bedienung | waiter | Person, die Tische bedient |
@@ -79,7 +79,7 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 | Deutsch | Englisch (DB-Tabellenname) |
 |---|---|
 | Artikel | article |
-| Artikelkategorie | article_category |
+| Artikelgruppe | article_category |
 | Benutzer | user |
 | Benutzer-Kassen-Zuordnung | user_register |
 | Drucker | printer |
