@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { run } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -13,37 +15,43 @@
   /** A line in the new-order list. Carries optional `options` so the same article can appear multiple times. */
   type OrderLine = { article_id: string; options: string | null; quantity: number };
 
-  let registerId = '';
-  let tableId = '';
-  let gridCols = 4;
-  let gridRows = 4;
-  let slots: Slot[] = [];
+  let registerId = $state('');
+  let tableId = $state('');
+  let gridCols = $state(4);
+  let gridRows = $state(4);
+  let slots: Slot[] = $state([]);
   /** Whether a layout (own or default) is configured for this register at all. */
-  let hasLayout = false;
-  let articles: (Article & { tax_rate: string })[] = [];
-  let articleById = new Map<string, Article & { tax_rate: string }>();
-  let loading = true;
-  let error = '';
-  let placing = false;
-  let placeError = '';
+  let hasLayout = $state(false);
+  let articles: (Article & { tax_rate: string })[] = $state([]);
+  let articleById = $state(new Map<string, Article & { tax_rate: string }>());
+  let loading = $state(true);
+  let error = $state('');
+  let placing = $state(false);
+  let placeError = $state('');
 
-  let order: OrderLine[] = [];
+  let order: OrderLine[] = $state([]);
 
   // Options dialog state
-  let optionsOpen = false;
-  let optionsArticle: Article | null = null;
-  let optionsLoading = false;
-  let availableOptions: { id: string; name: string }[] = [];
-  let selectedOptionNames: Set<string> = new Set();
+  let optionsOpen = $state(false);
+  let optionsArticle: Article | null = $state(null);
+  let optionsLoading = $state(false);
+  let availableOptions: { id: string; name: string }[] = $state([]);
+  let selectedOptionNames: Set<string> = $state(new Set());
 
-  $: registerId = ($page.params['id'] ?? '') as string;
-  $: tableId = ($page.params['tableId'] ?? '') as string;
+  run(() => {
+    registerId = ($page.params['id'] ?? '') as string;
+  });
+  run(() => {
+    tableId = ($page.params['tableId'] ?? '') as string;
+  });
 
-  $: articleById = new Map(articles.map((a) => [a.id, a]));
-  $: slotByCell = new Map(slots.map((s) => [`${s.grid_row}:${s.grid_col}`, s]));
-  $: gridMatrix = Array.from({ length: gridRows }, (_, r) =>
+  run(() => {
+    articleById = new Map(articles.map((a) => [a.id, a]));
+  });
+  let slotByCell = $derived(new Map(slots.map((s) => [`${s.grid_row}:${s.grid_col}`, s])));
+  let gridMatrix = $derived(Array.from({ length: gridRows }, (_, r) =>
     Array.from({ length: gridCols }, (_, c) => slotByCell.get(`${r}:${c}`) ?? null),
-  );
+  ));
 
   onMount(load);
 
@@ -140,9 +148,9 @@
     return slot?.color ?? null;
   }
 
-  $: total = Math.round(
+  let total = $derived(Math.round(
     order.reduce((s, l) => s + unitPriceOf(l.article_id) * l.quantity, 0) * 100,
-  ) / 100;
+  ) / 100);
 
   async function placeOrder() {
     if (order.length === 0) return;
@@ -179,7 +187,7 @@
 
 <div class="order-page">
   <header class="header">
-    <button class="btn-ghost" on:click={() => goto(`/register/${registerId}/tables/${tableId}`)}>← Tisch</button>
+    <button class="btn-ghost" onclick={() => goto(`/register/${registerId}/tables/${tableId}`)}>← Tisch</button>
     <h1>Bestellen</h1>
   </header>
 
@@ -205,9 +213,9 @@
             </span>
             <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
             <div class="qty">
-              <button class="qty-btn" on:click={() => changeQuantity(line, -1)}>−</button>
+              <button class="qty-btn" onclick={() => changeQuantity(line, -1)}>−</button>
               <span class="qty-val">{line.quantity}</span>
-              <button class="qty-btn" on:click={() => changeQuantity(line, +1)}>+</button>
+              <button class="qty-btn" onclick={() => changeQuantity(line, +1)}>+</button>
             </div>
             <span class="line-total">{fmt(unitPriceOf(line.article_id) * line.quantity)} €</span>
           </li>
@@ -218,7 +226,7 @@
     <div class="total-row">
       <span class="total-label">Gesamt</span>
       <span class="total-value">{fmt(total)} €</span>
-      <button class="btn-primary place-btn" disabled={order.length === 0 || placing} on:click={placeOrder}>
+      <button class="btn-primary place-btn" disabled={order.length === 0 || placing} onclick={placeOrder}>
         {placing ? 'Bestelle…' : 'Bestellen'}
       </button>
     </div>
@@ -238,7 +246,7 @@
             {#if slot}
               <button type="button" class="grid-btn" style="background:{slot.color}"
                       disabled={optionsLoading}
-                      on:click={() => tapSlot(slot)}>
+                      onclick={() => tapSlot(slot)}>
                 {nameOf(slot.article_id)}
               </button>
             {:else}
@@ -260,16 +268,16 @@
     {#each availableOptions as opt}
       <li>
         <label class="option-label">
-          <input type="checkbox" checked={selectedOptionNames.has(opt.name)} on:change={() => toggleOption(opt.name)} />
+          <input type="checkbox" checked={selectedOptionNames.has(opt.name)} onchange={() => toggleOption(opt.name)} />
           <span>{opt.name}</span>
         </label>
       </li>
     {/each}
   </ul>
   <div class="modal-actions">
-    <button class="btn-ghost" on:click={() => (optionsOpen = false)}>Abbrechen</button>
+    <button class="btn-ghost" onclick={() => (optionsOpen = false)}>Abbrechen</button>
     <div class="spacer"></div>
-    <button class="btn-primary" on:click={confirmOptions}>Hinzufügen</button>
+    <button class="btn-primary" onclick={confirmOptions}>Hinzufügen</button>
   </div>
 </Modal>
 

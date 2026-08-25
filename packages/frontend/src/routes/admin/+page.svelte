@@ -4,7 +4,7 @@
   import { api } from '$lib/api';
 
   /** Drift in whole seconds between this browser's clock and the server's, or `null` before the first check / on error. */
-  let driftSeconds: number | null = null;
+  let driftSeconds: number | null = $state(null);
 
   /**
    * Compares the browser's own clock against the server's (Task #60) — the

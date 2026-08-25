@@ -15,13 +15,13 @@
     created_by: string;
   };
 
-  let registers: Register[] = [];
-  let registerId = '';
-  let closings: ClosingRow[] = [];
+  let registers: Register[] = $state([]);
+  let registerId = $state('');
+  let closings: ClosingRow[] = $state([]);
 
-  let loading = true;
-  let loadingClosings = false;
-  let error = '';
+  let loading = $state(true);
+  let loadingClosings = $state(false);
+  let error = $state('');
 
   onMount(async () => {
     try {
@@ -66,7 +66,7 @@
   {:else}
     <div class="field">
       <label for="register">Kasse</label>
-      <select id="register" bind:value={registerId} on:change={loadClosings}>
+      <select id="register" bind:value={registerId} onchange={loadClosings}>
         {#each registers as r}
           <option value={r.id}>{r.name}</option>
         {/each}

@@ -15,10 +15,10 @@
     error_message: string | null;
   };
 
-  let jobs: JobRow[] = [];
-  let loading = true;
-  let error = '';
-  let statusFilter: '' | 'all' | 'pending' | 'printing' | 'failed' | 'done' = '';
+  let jobs: JobRow[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
+  let statusFilter: '' | 'all' | 'pending' | 'printing' | 'failed' | 'done' = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
@@ -108,13 +108,13 @@
 <div class="page">
   <div class="page-header">
     <h1>Druckwarteschlange</h1>
-    <button class="btn-ghost" on:click={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
+    <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
   </div>
 
   <div class="filter-row">
     <label>
       Status
-      <select bind:value={statusFilter} on:change={load}>
+      <select bind:value={statusFilter} onchange={load}>
         <option value="">Aktive Aufträge (Standard)</option>
         <option value="all">Alle (inkl. erledigt)</option>
         <option value="pending">Wartet</option>
@@ -162,10 +162,10 @@
                 <a class="btn-ghost" href={api.admin.printJobs.pdfUrl(j.id)} target="_blank" rel="noopener">PDF</a>
               {/if}
               {#if j.status === 'failed'}
-                <button class="btn-ghost" on:click={() => retryJob(j)}>Wiederholen</button>
+                <button class="btn-ghost" onclick={() => retryJob(j)}>Wiederholen</button>
               {/if}
               {#if j.status !== 'done'}
-                <button class="btn-ghost danger" on:click={() => cancelJob(j)} disabled={j.status === 'printing'}>
+                <button class="btn-ghost danger" onclick={() => cancelJob(j)} disabled={j.status === 'printing'}>
                   Abbrechen
                 </button>
               {/if}

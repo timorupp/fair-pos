@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { preventDefault } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import { adminUser } from '$lib/stores/user';
@@ -6,24 +8,24 @@
   import type { User, Register } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
-  let users: User[] = [];
-  let registers: Register[] = [];
-  let loading = true;
-  let error = '';
+  let users: User[] = $state([]);
+  let registers: Register[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
-  let modalOpen = false;
-  let editing: User | null = null;
-  let formName = '';
-  let formPassword = '';
-  let formIsAdmin = false;
-  let formActive = true;
-  let formRegisterIds: string[] = [];
-  let formError = '';
-  let saving = false;
-  let deleting = false;
+  let modalOpen = $state(false);
+  let editing: User | null = $state(null);
+  let formName = $state('');
+  let formPassword = $state('');
+  let formIsAdmin = $state(false);
+  let formActive = $state(true);
+  let formRegisterIds: string[] = $state([]);
+  let formError = $state('');
+  let saving = $state(false);
+  let deleting = $state(false);
 
-  let tokenModal = false;
-  let tokenUrl = '';
+  let tokenModal = $state(false);
+  let tokenUrl = $state('');
 
   onMount(load);
 
@@ -46,7 +48,7 @@
    * visible (checked) so the admin can see and, if desired, remove it
    * explicitly instead of it silently vanishing from the list.
    */
-  $: assignableRegisters = registers.filter((r) => r.is_active || formRegisterIds.includes(r.id));
+  let assignableRegisters = $derived(registers.filter((r) => r.is_active || formRegisterIds.includes(r.id)));
 
   function openCreate() {
     editing = null; formName = ''; formPassword = ''; formIsAdmin = false; formActive = true;
@@ -119,7 +121,7 @@
 <div class="page">
   <div class="page-header">
     <h1>Benutzer</h1>
-    <button class="btn-primary" on:click={openCreate}>+ Neu</button>
+    <button class="btn-primary" onclick={openCreate}>+ Neu</button>
   </div>
 
   {#if loading}
@@ -139,8 +141,8 @@
             <td>{#if !u.is_active}<span class="archived-badge">Deaktiviert</span>{:else}<span class="muted small">aktiv</span>{/if}</td>
             <td class="num">{new Date(u.created_at).toLocaleDateString('de-DE')}</td>
             <td class="actions">
-              <button class="btn-primary login-btn" on:click={() => generateToken(u)} disabled={!u.is_active}>Login</button>
-              <button class="btn-ghost" on:click={() => openEdit(u)}>Bearbeiten</button>
+              <button class="btn-primary login-btn" onclick={() => generateToken(u)} disabled={!u.is_active}>Login</button>
+              <button class="btn-ghost" onclick={() => openEdit(u)}>Bearbeiten</button>
             </td>
           </tr>
         {/each}
@@ -150,7 +152,7 @@
 </div>
 
 <Modal bind:open={modalOpen} title={editing ? 'Benutzer bearbeiten' : 'Neuer Benutzer'}>
-  <form on:submit|preventDefault={save}>
+  <form onsubmit={preventDefault(save)}>
     <div class="field">
       <label for="u-name">Name</label>
       <input id="u-name" bind:value={formName} required disabled={saving || deleting} />
@@ -185,7 +187,7 @@
             <label class="register-item" class:selected>
               <input type="checkbox"
                      checked={selected}
-                     on:change={() => toggleRegister(r.id)}
+                     onchange={() => toggleRegister(r.id)}
                      disabled={saving || deleting} />
               <span class="register-name">{r.name}</span>
               <span class="register-type-badge type-{r.type}">{typeLabel(r.type)}</span>
@@ -197,12 +199,12 @@
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">
       {#if editing && !isSelf(editing)}
-        <button type="button" class="btn-ghost danger" on:click={remove} disabled={saving || deleting}>
+        <button type="button" class="btn-ghost danger" onclick={remove} disabled={saving || deleting}>
           {deleting ? 'Löschen…' : 'Löschen'}
         </button>
       {/if}
       <div class="spacer"></div>
-      <button type="button" class="btn-ghost" on:click={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
+      <button type="button" class="btn-ghost" onclick={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
       <button type="submit" class="btn-primary" disabled={saving || deleting}>{saving ? 'Speichern…' : 'Speichern'}</button>
     </div>
   </form>
@@ -216,11 +218,11 @@
     {/if}
     <code class="token-url">{tokenUrl}</code>
     <div class="modal-actions">
-      <button class="btn-ghost" on:click={() => (tokenModal = false)}>Schließen</button>
+      <button class="btn-ghost" onclick={() => (tokenModal = false)}>Schließen</button>
       {#if $adminUser && tokenUrl.includes(`token=`)}
-        <button class="btn-ghost" on:click={openTokenInTab}>In neuem Tab öffnen</button>
+        <button class="btn-ghost" onclick={openTokenInTab}>In neuem Tab öffnen</button>
       {/if}
-      <button class="btn-primary" on:click={copyToken}>Link kopieren</button>
+      <button class="btn-primary" onclick={copyToken}>Link kopieren</button>
     </div>
   </div>
 </Modal>

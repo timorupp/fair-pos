@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { preventDefault } from 'svelte/legacy';
+
   /**
    * Combined login page. Two flows:
    *  - `?token=…` query → exchanges the QR token via `auth.register.token` and
@@ -11,19 +13,19 @@
    */
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { adminUser, registerUser } from '$lib/stores/user';
   import { api } from '$lib/api';
 
-  let name = '';
-  let password = '';
-  let error = '';
-  let loading = false;
+  let name = $state('');
+  let password = $state('');
+  let error = $state('');
+  let loading = $state(false);
   /** Hides the password form while we're exchanging a token from the URL. */
-  let exchangingToken = false;
+  let exchangingToken = $state(false);
 
   onMount(async () => {
-    const token = $page.url.searchParams.get('token');
+    const token = page.url.searchParams.get('token');
     if (!token) return;
 
     exchangingToken = true;
@@ -68,11 +70,11 @@
 
     {#if exchangingToken}
       <div class="exchanging">
-        <span class="btn-spinner" />
+        <span class="btn-spinner"></span>
         <span>Token wird geprüft…</span>
       </div>
     {:else}
-    <form on:submit|preventDefault={handleLogin}>
+    <form onsubmit={preventDefault(handleLogin)}>
       <div class="field">
         <label for="name">Benutzername</label>
         <input
@@ -106,7 +108,7 @@
 
       <button type="submit" class="btn-primary" disabled={loading}>
         {#if loading}
-          <span class="btn-spinner" />
+          <span class="btn-spinner"></span>
           Anmelden…
         {:else}
           Anmelden

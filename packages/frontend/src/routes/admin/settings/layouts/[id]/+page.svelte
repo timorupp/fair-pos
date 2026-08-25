@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { run, createBubbler, preventDefault, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { api } from '$lib/api';
@@ -8,26 +11,25 @@
 
   type Slot = { article_id: string; article_name: string; grid_row: number; grid_col: number; color: string };
 
-  let layoutId = '';
-  let layoutName = '';
-  let gridCols = 4;
-  let gridRows = 4;
-  let slots: Slot[] = [];
-  let articles: Article[] = [];
+  let layoutId = $state('');
+  let layoutName = $state('');
+  let gridCols = $state(4);
+  let gridRows = $state(4);
+  let slots: Slot[] = $state([]);
+  let articles: Article[] = $state([]);
 
-  let loading = true;
-  let saving = false;
-  let dirty = false;
-  let error = '';
+  let loading = $state(true);
+  let saving = $state(false);
+  let dirty = $state(false);
+  let error = $state('');
 
   // Color picker popover
-  let pickerCell: { row: number; col: number } | null = null;
+  let pickerCell: { row: number; col: number } | null = $state(null);
 
   // Drag state — module-level so dragover handlers can read it without dataTransfer
   let dragging: { type: 'ablage' | 'slot'; articleId: string; articleName: string; fromRow?: number; fromCol?: number } | null = null;
-  let dragOverCell: string | null = null; // "row:col"
+  let dragOverCell: string | null = $state(null); // "row:col"
 
-  $: layoutId = ($page.params['id'] ?? '') as string;
 
   onMount(async () => {
     try {
@@ -45,11 +47,6 @@
     } finally { loading = false; }
   });
 
-  // ── Derived ────────────────────────────────────────────────────────────────
-
-  $: placedIds = new Set(slots.map((s) => s.article_id));
-  $: ablage = articles.filter((a) => !placedIds.has(a.id)).sort((a, b) => a.name.localeCompare(b.name, 'de'));
-  $: grid = buildGrid(gridRows, gridCols, slots);
 
   function buildGrid(rows: number, cols: number, s: Slot[]) {
     const cells: (Slot | null)[][] = Array.from({ length: rows }, () => Array(cols).fill(null));
@@ -193,10 +190,18 @@
       alert(e instanceof Error ? e.message : 'Fehler beim Speichern');
     } finally { saving = false; }
   }
+  run(() => {
+    layoutId = ($page.params['id'] ?? '') as string;
+  });
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  let placedIds = $derived(new Set(slots.map((s) => s.article_id)));
+  let ablage = $derived(articles.filter((a) => !placedIds.has(a.id)).sort((a, b) => a.name.localeCompare(b.name, 'de')));
+  let grid = $derived(buildGrid(gridRows, gridCols, slots));
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-<div class="editor-shell" on:click={closePicker}>
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+<div class="editor-shell" onclick={closePicker}>
   {#if loading}
     <p class="muted loading">Lade…</p>
   {:else if error}
@@ -205,20 +210,20 @@
     <!-- Header -->
     <div class="editor-header">
       <a href="/admin/settings/layouts" class="back-link">← Kassenlayouts</a>
-      <input class="name-input" bind:value={layoutName} on:blur={onNameBlur} />
+      <input class="name-input" bind:value={layoutName} onblur={onNameBlur} />
       <div class="size-controls">
         <span class="size-label">Spalten</span>
-        <button class="size-btn" on:click={() => changeSize('cols', -1)} disabled={gridCols <= 1}>−</button>
+        <button class="size-btn" onclick={() => changeSize('cols', -1)} disabled={gridCols <= 1}>−</button>
         <span class="size-val">{gridCols}</span>
-        <button class="size-btn" on:click={() => changeSize('cols', 1)} disabled={gridCols >= 10}>+</button>
+        <button class="size-btn" onclick={() => changeSize('cols', 1)} disabled={gridCols >= 10}>+</button>
         <span class="size-label">Zeilen</span>
-        <button class="size-btn" on:click={() => changeSize('rows', -1)} disabled={gridRows <= 1}>−</button>
+        <button class="size-btn" onclick={() => changeSize('rows', -1)} disabled={gridRows <= 1}>−</button>
         <span class="size-val">{gridRows}</span>
-        <button class="size-btn" on:click={() => changeSize('rows', 1)} disabled={gridRows >= 10}>+</button>
+        <button class="size-btn" onclick={() => changeSize('rows', 1)} disabled={gridRows >= 10}>+</button>
       </div>
       <div class="header-actions">
-        <button class="btn-ghost danger" on:click={deleteLayout} disabled={saving}>Löschen</button>
-        <button class="btn-primary save-btn" on:click={save} disabled={saving || !dirty}>
+        <button class="btn-ghost danger" onclick={deleteLayout} disabled={saving}>Löschen</button>
+        <button class="btn-primary save-btn" onclick={save} disabled={saving || !dirty}>
           {saving ? 'Speichern…' : dirty ? 'Speichern' : 'Gespeichert'}
         </button>
       </div>
@@ -226,10 +231,10 @@
 
     <div class="editor-body">
       <!-- Ablage (drawer of unplaced articles) -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="ablage"
-           on:dragover|preventDefault
-           on:drop={onDropAblage}>
+           ondragover={preventDefault(bubble('dragover'))}
+           ondrop={onDropAblage}>
         <div class="ablage-title">Ablage <span class="ablage-count">({ablage.length})</span></div>
         {#if ablage.length === 0}
           <p class="ablage-empty">Alle Artikel platziert</p>
@@ -238,8 +243,8 @@
             {#each ablage as article (article.id)}
               <div class="ablage-item"
                    draggable="true"
-                   on:dragstart={(e) => dragStartAblage(e, article)}
-                   on:dragend={onDragEnd}>
+                   ondragstart={(e) => dragStartAblage(e, article)}
+                   ondragend={onDragEnd}>
                 {article.name}
               </div>
             {/each}
@@ -256,33 +261,33 @@
               {@const cellKey = `${row}:${col}`}
               {@const isOver = dragOverCell === cellKey}
               {@const isPicker = pickerCell?.row === row && pickerCell?.col === col}
-              <!-- svelte-ignore a11y-no-static-element-interactions -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div class="cell"
                    class:occupied={slot !== null}
                    class:drag-over={isOver}
-                   on:dragover={(e) => onDragOver(e, row, col)}
-                   on:dragleave={onDragLeave}
-                   on:drop={(e) => onDrop(e, row, col)}>
+                   ondragover={(e) => onDragOver(e, row, col)}
+                   ondragleave={onDragLeave}
+                   ondrop={(e) => onDrop(e, row, col)}>
                 {#if slot}
-                  <!-- svelte-ignore a11y-no-static-element-interactions -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div class="tile"
                        style="background:{slot.color}"
                        draggable="true"
-                       on:dragstart={(e) => dragStartSlot(e, slot)}
-                       on:dragend={onDragEnd}
-                       on:click|stopPropagation={(e) => openPicker(e, row, col)}>
+                       ondragstart={(e) => dragStartSlot(e, slot)}
+                       ondragend={onDragEnd}
+                       onclick={(e) => openPicker(e, row, col)}>
                     <span class="tile-name">{slot.article_name}</span>
                   </div>
                   {#if isPicker}
-                    <!-- svelte-ignore a11y-no-static-element-interactions -->
-                    <div class="picker" on:click|stopPropagation>
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div class="picker" onclick={stopPropagation(bubble('click'))}>
                       <div class="picker-colors">
                         {#each COLORS as c}
                           <button class="swatch" style="background:{c}" class:active={slot.color === c}
-                                  on:click={() => setColor(row, col, c)} aria-label={c}></button>
+                                  onclick={() => setColor(row, col, c)} aria-label={c}></button>
                         {/each}
                       </div>
-                      <button class="picker-remove" on:click={() => removeSlot(row, col)}>Entfernen</button>
+                      <button class="picker-remove" onclick={() => removeSlot(row, col)}>Entfernen</button>
                     </div>
                   {/if}
                 {:else}

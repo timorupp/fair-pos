@@ -3,23 +3,23 @@
   import { api, type TseStatus, type TseMountCandidate } from '$lib/api';
   import { copyToClipboard } from '$lib/clipboard';
 
-  let settings: Record<string, string> = {};
-  let editableLoading = true;
-  let saving = false;
-  let saveError = '';
-  let saveSuccess = false;
+  let settings: Record<string, string> = $state({});
+  let editableLoading = $state(true);
+  let saving = $state(false);
+  let saveError = $state('');
+  let saveSuccess = $state(false);
 
   // ── TSE connection test ────────────────────────────────────────────────────
-  let tseTesting = false;
-  let tseResult: TseStatus | null = null;
-  let tseTestError = '';
+  let tseTesting = $state(false);
+  let tseResult: TseStatus | null = $state(null);
+  let tseTestError = $state('');
 
   // ── TSE mount-point candidates (dropdown + Auto-erkennen) ──────────────────
-  let tseCandidates: TseMountCandidate[] = [];
-  let candidatesLoading = false;
-  let candidatesError = '';
-  let detecting = false;
-  let detectMessage = '';
+  let tseCandidates: TseMountCandidate[] = $state([]);
+  let candidatesLoading = $state(false);
+  let candidatesError = $state('');
+  let detecting = $state(false);
+  let detectMessage = $state('');
 
   onMount(async () => {
     await Promise.all([loadSettings(), loadCandidates()]);
@@ -127,7 +127,7 @@
         <input
           id="tse-mount-point"
           value={settings['tse_mount_point'] ?? ''}
-          on:input={(e) => { settings['tse_mount_point'] = e.currentTarget.value; saveSuccess = false; }}
+          oninput={(e) => { settings['tse_mount_point'] = e.currentTarget.value; saveSuccess = false; }}
           placeholder="z. B. /mnt/tse-usb"
           disabled={saving}
         />
@@ -135,7 +135,7 @@
           <select
             aria-label="Gefundene Wechseldatenträger"
             disabled={candidatesLoading || tseCandidates.length === 0}
-            on:change={(e) => {
+            onchange={(e) => {
               if (e.currentTarget.value) { settings['tse_mount_point'] = e.currentTarget.value; saveSuccess = false; }
             }}
           >
@@ -148,7 +148,7 @@
               <option value={candidate.mountPoint}>{candidate.mountPoint} ({candidate.device})</option>
             {/each}
           </select>
-          <button class="btn-ghost" type="button" on:click={detectTse} disabled={detecting}>
+          <button class="btn-ghost" type="button" onclick={detectTse} disabled={detecting}>
             {detecting ? 'Suche…' : 'Auto-erkennen'}
           </button>
         </div>
@@ -160,7 +160,7 @@
         <input
           id="tse-client-id"
           value={settings['tse_client_id'] ?? ''}
-          on:input={(e) => { settings['tse_client_id'] = e.currentTarget.value; saveSuccess = false; }}
+          oninput={(e) => { settings['tse_client_id'] = e.currentTarget.value; saveSuccess = false; }}
           placeholder="z. B. FairPOS-1"
           disabled={saving}
         />
@@ -172,7 +172,7 @@
           type="password"
           autocomplete="off"
           value={settings['tse_time_admin_pin'] ?? ''}
-          on:input={(e) => { settings['tse_time_admin_pin'] = e.currentTarget.value; saveSuccess = false; }}
+          oninput={(e) => { settings['tse_time_admin_pin'] = e.currentTarget.value; saveSuccess = false; }}
           disabled={saving}
         />
       </div>
@@ -182,7 +182,7 @@
     {#if saveSuccess}<p class="success-text">Gespeichert.</p>{/if}
 
     <div class="form-footer">
-      <button class="btn-primary" on:click={save} disabled={saving || editableLoading}>
+      <button class="btn-primary" onclick={save} disabled={saving || editableLoading}>
         {saving ? 'Speichern…' : 'Speichern'}
       </button>
     </div>
@@ -192,7 +192,7 @@
   <section class="card">
     <h2>TSE-Status</h2>
     <p class="hint">Prüft die Verbindung zur konfigurierten TSE und zeigt deren aktuelle Statusdaten an.</p>
-    <button class="btn-ghost" on:click={testTse} disabled={tseTesting}>
+    <button class="btn-ghost" onclick={testTse} disabled={tseTesting}>
       {tseTesting ? 'Teste…' : 'TSE testen'}
     </button>
 
@@ -224,7 +224,7 @@
           <summary>Rohdaten (JSON)</summary>
           <div class="raw-row">
             <pre class="raw-json">{JSON.stringify(tseResult.info, null, 2)}</pre>
-            <button class="btn-ghost" on:click={copyTseResult} title="In Zwischenablage kopieren">Kopieren</button>
+            <button class="btn-ghost" onclick={copyTseResult} title="In Zwischenablage kopieren">Kopieren</button>
           </div>
         </details>
       {/if}

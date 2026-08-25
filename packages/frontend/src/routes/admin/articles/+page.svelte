@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { preventDefault } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import type { Article, ArticleCategory, Printer, ProductOption } from '@fairpos/shared';
@@ -6,31 +8,31 @@
 
   type ArticleRow = Article & { category_name: string; tax_rate: number };
 
-  let articles: ArticleRow[] = [];
-  let categories: ArticleCategory[] = [];
-  let printers: Printer[] = [];
-  let loading = true;
-  let error = '';
+  let articles: ArticleRow[] = $state([]);
+  let categories: ArticleCategory[] = $state([]);
+  let printers: Printer[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
-  let modalOpen = false;
-  let editing: ArticleRow | null = null;
-  let formName = '';
-  let formReceiptText = '';
-  let formCategoryId = '';
-  let formPrice = '';
-  let formDepositPrice = '';
-  let formPrintDepositReceipt = false;
-  let formPrinterId = '';
-  let formActive = true;
-  let formError = '';
-  let saving = false;
-  let deleting = false;
+  let modalOpen = $state(false);
+  let editing: ArticleRow | null = $state(null);
+  let formName = $state('');
+  let formReceiptText = $state('');
+  let formCategoryId = $state('');
+  let formPrice = $state('');
+  let formDepositPrice = $state('');
+  let formPrintDepositReceipt = $state(false);
+  let formPrinterId = $state('');
+  let formActive = $state(true);
+  let formError = $state('');
+  let saving = $state(false);
+  let deleting = $state(false);
 
   /** Product options for the currently-edited article (empty for "new" articles). */
-  let options: ProductOption[] = [];
-  let optionsLoading = false;
-  let newOptionName = '';
-  let addingOption = false;
+  let options: ProductOption[] = $state([]);
+  let optionsLoading = $state(false);
+  let newOptionName = $state('');
+  let addingOption = $state(false);
 
   onMount(load);
 
@@ -155,7 +157,7 @@
 <div class="page">
   <div class="page-header">
     <h1>Artikel</h1>
-    <button class="btn-primary" on:click={openCreate} disabled={categories.length === 0}>+ Neu</button>
+    <button class="btn-primary" onclick={openCreate} disabled={categories.length === 0}>+ Neu</button>
   </div>
 
   {#if categories.length === 0 && !loading}
@@ -178,7 +180,7 @@
             <td class="num">{a.deposit_price !== null ? fmt(a.deposit_price) + ' €' : '—'}</td>
             <td>{a.is_active ? '✓' : ''}</td>
             <td class="actions">
-              <button class="btn-ghost" on:click={() => openEdit(a)}>Bearbeiten</button>
+              <button class="btn-ghost" onclick={() => openEdit(a)}>Bearbeiten</button>
             </td>
           </tr>
         {/each}
@@ -188,7 +190,7 @@
 </div>
 
 <Modal bind:open={modalOpen} title={editing ? 'Artikel bearbeiten' : 'Neuer Artikel'}>
-  <form on:submit|preventDefault={save}>
+  <form onsubmit={preventDefault(save)}>
     <div class="field">
       <label for="art-name">Kurzname (Kassentaste)</label>
       <input id="art-name" bind:value={formName} required disabled={saving || deleting} />
@@ -249,7 +251,7 @@
             {#each options as opt}
               <li>
                 <span class="opt-name">{opt.name}</span>
-                <button type="button" class="btn-ghost danger small" on:click={() => removeOption(opt)}>Löschen</button>
+                <button type="button" class="btn-ghost danger small" onclick={() => removeOption(opt)}>Löschen</button>
               </li>
             {/each}
           </ul>
@@ -259,10 +261,10 @@
             type="text"
             placeholder="Neue Option (z. B. mit Ketchup)"
             bind:value={newOptionName}
-            on:keydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOption(); } }}
+            onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOption(); } }}
             disabled={addingOption}
           />
-          <button type="button" class="btn-ghost" on:click={addOption}
+          <button type="button" class="btn-ghost" onclick={addOption}
                   disabled={addingOption || !newOptionName.trim()}>
             {addingOption ? '…' : 'Hinzufügen'}
           </button>
@@ -275,12 +277,12 @@
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">
       {#if editing}
-        <button type="button" class="btn-ghost danger" on:click={remove} disabled={saving || deleting}>
+        <button type="button" class="btn-ghost danger" onclick={remove} disabled={saving || deleting}>
           {deleting ? 'Löschen…' : 'Löschen'}
         </button>
       {/if}
       <div class="spacer"></div>
-      <button type="button" class="btn-ghost" on:click={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
+      <button type="button" class="btn-ghost" onclick={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
       <button type="submit" class="btn-primary" disabled={saving || deleting}>{saving ? 'Speichern…' : 'Speichern'}</button>
     </div>
   </form>

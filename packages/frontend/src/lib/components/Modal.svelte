@@ -1,10 +1,20 @@
 <script lang="ts">
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   import { createEventDispatcher } from 'svelte';
 
-  /** Whether the modal is visible. Use bind:open to control from parent. */
-  export let open = false;
-  /** Title shown in the modal header. */
-  export let title = '';
+  
+  
+  interface Props {
+    /** Whether the modal is visible. Use bind:open to control from parent. */
+    open?: boolean;
+    /** Title shown in the modal header. */
+    title?: string;
+    children?: import('svelte').Snippet;
+  }
+
+  let { open = $bindable(false), title = '', children }: Props = $props();
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -24,18 +34,18 @@
   }
 </script>
 
-<svelte:window on:keydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} />
 
 {#if open}
-  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -->
-  <div class="backdrop" role="presentation" on:click={close}>
-    <div class="modal" role="dialog" aria-modal="true" on:click|stopPropagation>
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+  <div class="backdrop" role="presentation" onclick={close}>
+    <div class="modal" role="dialog" aria-modal="true" onclick={stopPropagation(bubble('click'))}>
       <div class="modal-header">
         <h2>{title}</h2>
-        <button class="close-btn" on:click={close} aria-label="Schließen">✕</button>
+        <button class="close-btn" onclick={close} aria-label="Schließen">✕</button>
       </div>
       <div class="modal-body">
-        <slot />
+        {@render children?.()}
       </div>
     </div>
   </div>

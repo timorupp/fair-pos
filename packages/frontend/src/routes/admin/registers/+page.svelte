@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { preventDefault } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import type { Register, Printer, RegisterType, RegisterLayout } from '@fairpos/shared';
@@ -6,29 +8,29 @@
 
   type RegisterRow = Register & { printer_name: string | null; layout_name: string | null; layout_id: string | null };
 
-  let registers: RegisterRow[] = [];
-  let printers: Printer[] = [];
-  let layouts: RegisterLayout[] = [];
-  let loading = true;
-  let error = '';
+  let registers: RegisterRow[] = $state([]);
+  let printers: Printer[] = $state([]);
+  let layouts: RegisterLayout[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
-  let closingAll = false;
-  let closeAllError = '';
-  let closeAllResult: { closings: { z_number: number; is_zero_closing: boolean }[] } | null = null;
+  let closingAll = $state(false);
+  let closeAllError = $state('');
+  let closeAllResult: { closings: { z_number: number; is_zero_closing: boolean }[] } | null = $state(null);
 
-  let modalOpen = false;
-  let editing: RegisterRow | null = null;
-  let formName = '';
-  let formType = 'receipt_register';
-  let formPrinterId = '';
-  let formLayoutId = '';
-  let formActive = true;
-  let formError = '';
-  let saving = false;
-  let deleting = false;
+  let modalOpen = $state(false);
+  let editing: RegisterRow | null = $state(null);
+  let formName = $state('');
+  let formType = $state('receipt_register');
+  let formPrinterId = $state('');
+  let formLayoutId = $state('');
+  let formActive = $state(true);
+  let formError = $state('');
+  let saving = $state(false);
+  let deleting = $state(false);
 
   /** Map from register id → list of pending Z-Bon days (oldest first). Empty array = no rückstand. */
-  let pendingByRegister: Record<string, string[]> = {};
+  let pendingByRegister: Record<string, string[]> = $state({});
 
   onMount(load);
 
@@ -113,10 +115,10 @@
   <div class="page-header">
     <h1>Kassen</h1>
     <div class="header-actions">
-      <button class="btn-ghost" on:click={closeAll} disabled={closingAll}>
+      <button class="btn-ghost" onclick={closeAll} disabled={closingAll}>
         {closingAll ? 'Schließe ab…' : 'Alle Kassen abschließen'}
       </button>
-      <button class="btn-primary" on:click={openCreate}>+ Neu</button>
+      <button class="btn-primary" onclick={openCreate}>+ Neu</button>
     </div>
   </div>
   {#if closeAllResult}
@@ -157,7 +159,7 @@
             </td>
             <td class="actions">
               <a href="/admin/registers/{r.id}" class="btn-ghost">Detail</a>
-              <button class="btn-ghost" on:click={() => openEdit(r)}>Bearbeiten</button>
+              <button class="btn-ghost" onclick={() => openEdit(r)}>Bearbeiten</button>
             </td>
           </tr>
         {/each}
@@ -167,7 +169,7 @@
 </div>
 
 <Modal bind:open={modalOpen} title={editing ? 'Kasse bearbeiten' : 'Neue Kasse'}>
-  <form on:submit|preventDefault={save}>
+  <form onsubmit={preventDefault(save)}>
     <div class="field">
       <label for="reg-name">Name</label>
       <input id="reg-name" bind:value={formName} required disabled={saving || deleting} />
@@ -209,12 +211,12 @@
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">
       {#if editing}
-        <button type="button" class="btn-ghost danger" on:click={remove} disabled={saving || deleting}>
+        <button type="button" class="btn-ghost danger" onclick={remove} disabled={saving || deleting}>
           {deleting ? 'Löschen…' : 'Löschen'}
         </button>
       {/if}
       <div class="spacer"></div>
-      <button type="button" class="btn-ghost" on:click={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
+      <button type="button" class="btn-ghost" onclick={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
       <button type="submit" class="btn-primary" disabled={saving || deleting}>{saving ? 'Speichern…' : 'Speichern'}</button>
     </div>
   </form>

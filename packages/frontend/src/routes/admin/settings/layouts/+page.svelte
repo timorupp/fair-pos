@@ -5,11 +5,11 @@
 
   type LayoutRow = RegisterLayout & { slot_count: number };
 
-  let layouts: LayoutRow[] = [];
-  let settings: Record<string, string> = {};
-  let loading = true;
-  let error = '';
-  let duplicating: string | null = null;
+  let layouts: LayoutRow[] = $state([]);
+  let settings: Record<string, string> = $state({});
+  let loading = $state(true);
+  let error = $state('');
+  let duplicating: string | null = $state(null);
 
   onMount(load);
 
@@ -59,7 +59,7 @@
 <div class="page">
   <div class="page-header">
     <h1>Kassenlayouts</h1>
-    <button class="btn-primary" on:click={createLayout}>+ Neu</button>
+    <button class="btn-primary" onclick={createLayout}>+ Neu</button>
   </div>
 
   {#if loading}
@@ -74,7 +74,7 @@
           <label for="def-receipt">Standard für Bonkassen</label>
           <select id="def-receipt"
                   value={settings['default_layout_receipt_register'] ?? ''}
-                  on:change={(e) => { settings['default_layout_receipt_register'] = e.currentTarget.value; saveDefaults(); }}>
+                  onchange={(e) => { settings['default_layout_receipt_register'] = e.currentTarget.value; saveDefaults(); }}>
             <option value="">— kein Standard —</option>
             {#each layouts as l}
               <option value={l.id}>{l.name}</option>
@@ -85,7 +85,7 @@
           <label for="def-service">Standard für Bedienungskassen</label>
           <select id="def-service"
                   value={settings['default_layout_service_register'] ?? ''}
-                  on:change={(e) => { settings['default_layout_service_register'] = e.currentTarget.value; saveDefaults(); }}>
+                  onchange={(e) => { settings['default_layout_service_register'] = e.currentTarget.value; saveDefaults(); }}>
             <option value="">— kein Standard —</option>
             {#each layouts as l}
               <option value={l.id}>{l.name}</option>
@@ -109,7 +109,7 @@
               <td class="num">{l.grid_cols} × {l.grid_rows}</td>
               <td class="num">{l.slot_count}</td>
               <td class="actions">
-                <button class="btn-ghost" on:click={() => duplicate(l)} disabled={duplicating === l.id}>
+                <button class="btn-ghost" onclick={() => duplicate(l)} disabled={duplicating === l.id}>
                   {duplicating === l.id ? '…' : 'Duplizieren'}
                 </button>
                 <a href="/admin/settings/layouts/{l.id}" class="btn-ghost">Bearbeiten</a>

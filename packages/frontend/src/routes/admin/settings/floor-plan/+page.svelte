@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { stopPropagation, createBubbler } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import { reorderArray } from '$lib/array';
@@ -7,32 +10,32 @@
 
   // ── State ──────────────────────────────────────────────────────────────────
 
-  let tables: DiningTable[] = [];
-  let loading = true;
-  let error = '';
+  let tables: DiningTable[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
   // Generate form
-  let genColCount = 4;
-  let genColType: 'alpha' | 'numeric' = 'alpha';
-  let genColOrder: 'asc' | 'desc' = 'asc';
-  let genRowCount = 5;
-  let genRowType: 'alpha' | 'numeric' = 'numeric';
-  let genRowOrder: 'asc' | 'desc' = 'asc';
-  let genReplace = true;
-  let generating = false;
+  let genColCount = $state(4);
+  let genColType: 'alpha' | 'numeric' = $state('alpha');
+  let genColOrder: 'asc' | 'desc' = $state('asc');
+  let genRowCount = $state(5);
+  let genRowType: 'alpha' | 'numeric' = $state('numeric');
+  let genRowOrder: 'asc' | 'desc' = $state('asc');
+  let genReplace = $state(true);
+  let generating = $state(false);
 
   // Context menu
-  let menuTable: DiningTable | null = null;
-  let menuX = 0;
-  let menuY = 0;
-  let renaming: string | null = null; // table id being renamed
-  let renameValue = '';
+  let menuTable: DiningTable | null = $state(null);
+  let menuX = $state(0);
+  let menuY = $state(0);
+  let renaming: string | null = $state(null); // table id being renamed
+  let renameValue = $state('');
 
   // Drag state for column/row reordering
-  let draggingCol: string | null = null;
-  let draggingRow: string | null = null;
-  let dragOverCol: string | null = null;
-  let dragOverRow: string | null = null;
+  let draggingCol: string | null = $state(null);
+  let draggingRow: string | null = $state(null);
+  let dragOverCol: string | null = $state(null);
+  let dragOverRow: string | null = $state(null);
 
   onMount(load);
 
@@ -92,13 +95,13 @@
   // ── Derived grid ───────────────────────────────────────────────────────────
 
   /** Unique columns sorted by col_order. */
-  $: columns = columnsFromTables(tables);
+  let columns = $derived(columnsFromTables(tables));
 
   /** Unique rows sorted by row_order. */
-  $: rows = rowsFromTables(tables);
+  let rows = $derived(rowsFromTables(tables));
 
   /** Lookup: col_label + row_label → table. */
-  $: tableMap = new Map(tables.map(t => [`${t.col_label}:${t.row_label}`, t]));
+  let tableMap = $derived(new Map(tables.map(t => [`${t.col_label}:${t.row_label}`, t])));
 
   function tableAt(col: string, row: string): DiningTable | undefined {
     return tableMap.get(`${col}:${row}`);
@@ -218,8 +221,8 @@
     s === 'active' ? 'Aktiv' : s === 'inactive' ? 'Inaktiv' : 'Versteckt';
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-<div class="page" on:click={closeMenu}>
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+<div class="page" onclick={closeMenu}>
 
   <div class="page-header"><h1>Saalplan</h1></div>
 
@@ -273,7 +276,7 @@
         <input type="checkbox" bind:checked={genReplace} />
         Bestehende Tische ersetzen
       </label>
-      <button class="btn-primary" on:click={generate} disabled={generating}>
+      <button class="btn-primary" onclick={generate} disabled={generating}>
         {generating ? 'Generieren…' : 'Tische generieren'}
       </button>
     </div>
@@ -291,8 +294,8 @@
       <div class="editor-header">
         <h2>Anordnung bearbeiten</h2>
         <div class="editor-actions">
-          <button class="btn-ghost" on:click={addColumn}>+ Spalte</button>
-          <button class="btn-ghost" on:click={addRow}>+ Zeile</button>
+          <button class="btn-ghost" onclick={addColumn}>+ Spalte</button>
+          <button class="btn-ghost" onclick={addRow}>+ Zeile</button>
         </div>
       </div>
       <p class="hint">Handles ziehen zum Umsortieren. Rechtsklick auf einen Tisch öffnet das Kontextmenü. „×" auf einem Handle löscht die ganze Spalte bzw. Zeile.</p>
@@ -306,19 +309,19 @@
 
           <!-- Column handles -->
           {#each columns as col (col)}
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="col-handle"
               class:drag-over={dragOverCol === col}
               draggable="true"
-              on:dragstart={(e) => colDragStart(e, col)}
-              on:dragover={(e) => colDragOver(e, col)}
-              on:dragleave={() => { dragOverCol = null; }}
-              on:drop={() => colDrop(col)}
-              on:dragend={() => { draggingCol = null; dragOverCol = null; }}
+              ondragstart={(e) => colDragStart(e, col)}
+              ondragover={(e) => colDragOver(e, col)}
+              ondragleave={() => { dragOverCol = null; }}
+              ondrop={() => colDrop(col)}
+              ondragend={() => { draggingCol = null; dragOverCol = null; }}
             >
               <button class="axis-delete" title="Spalte löschen"
-                      on:click|stopPropagation={() => deleteColumn(col)}>×</button>
+                      onclick={stopPropagation(() => deleteColumn(col))}>×</button>
               <span class="handle-icon">⋮⋮</span>
               <span class="handle-label">{col}</span>
             </div>
@@ -326,19 +329,19 @@
 
           <!-- Row handles + table cells -->
           {#each rows as row (row)}
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="row-handle"
               class:drag-over={dragOverRow === row}
               draggable="true"
-              on:dragstart={(e) => rowDragStart(e, row)}
-              on:dragover={(e) => rowDragOver(e, row)}
-              on:dragleave={() => { dragOverRow = null; }}
-              on:drop={() => rowDrop(row)}
-              on:dragend={() => { draggingRow = null; dragOverRow = null; }}
+              ondragstart={(e) => rowDragStart(e, row)}
+              ondragover={(e) => rowDragOver(e, row)}
+              ondragleave={() => { dragOverRow = null; }}
+              ondrop={() => rowDrop(row)}
+              ondragend={() => { draggingRow = null; dragOverRow = null; }}
             >
               <button class="axis-delete" title="Zeile löschen"
-                      on:click|stopPropagation={() => deleteRow(row)}>×</button>
+                      onclick={stopPropagation(() => deleteRow(row))}>×</button>
               <span class="handle-icon">⋯</span>
               <span class="handle-label">{row}</span>
             </div>
@@ -346,21 +349,21 @@
             {#each columns as col (col)}
               {@const t = tableAt(col, row)}
               {#if t}
-                <!-- svelte-ignore a11y-no-static-element-interactions -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div
                   class="table-cell status-{t.status}"
-                  on:contextmenu={(e) => openMenu(e, t)}
-                  on:click={(e) => { e.stopPropagation(); if (menuTable?.id !== t.id) closeMenu(); }}
+                  oncontextmenu={(e) => openMenu(e, t)}
+                  onclick={(e) => { e.stopPropagation(); if (menuTable?.id !== t.id) closeMenu(); }}
                 >
                   {#if renaming === t.id}
-                    <!-- svelte-ignore a11y-autofocus -->
+                    <!-- svelte-ignore a11y_autofocus -->
                     <input
                       class="rename-input"
                       bind:value={renameValue}
                       autofocus
-                      on:blur={commitRename}
-                      on:keydown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') { renaming = null; closeMenu(); } }}
-                      on:click|stopPropagation
+                      onblur={commitRename}
+                      onkeydown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') { renaming = null; closeMenu(); } }}
+                      onclick={stopPropagation(bubble('click'))}
                     />
                   {:else}
                     <span class="table-name">{t.name}</span>
@@ -380,26 +383,26 @@
 
 <!-- Context menu -->
 {#if menuTable}
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="context-menu"
     style="left:{menuX}px; top:{menuY}px"
-    on:click|stopPropagation
+    onclick={stopPropagation(bubble('click'))}
   >
     <div class="menu-title">{menuTable.name}</div>
     <div class="menu-divider"></div>
-    <button class="menu-item" class:active={menuTable.status === 'active'} on:click={() => setStatus('active')}>
+    <button class="menu-item" class:active={menuTable.status === 'active'} onclick={() => setStatus('active')}>
       <span class="status-dot dot-active"></span> Aktiv
     </button>
-    <button class="menu-item" class:active={menuTable.status === 'inactive'} on:click={() => setStatus('inactive')}>
+    <button class="menu-item" class:active={menuTable.status === 'inactive'} onclick={() => setStatus('inactive')}>
       <span class="status-dot dot-inactive"></span> Inaktiv
     </button>
-    <button class="menu-item" class:active={menuTable.status === 'hidden'} on:click={() => setStatus('hidden')}>
+    <button class="menu-item" class:active={menuTable.status === 'hidden'} onclick={() => setStatus('hidden')}>
       <span class="status-dot dot-hidden"></span> Versteckt
     </button>
     <div class="menu-divider"></div>
-    <button class="menu-item" on:click={startRename}>Umbenennen</button>
-    <button class="menu-item danger" on:click={deleteTable}>Löschen</button>
+    <button class="menu-item" onclick={startRename}>Umbenennen</button>
+    <button class="menu-item danger" onclick={deleteTable}>Löschen</button>
   </div>
 {/if}
 

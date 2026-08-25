@@ -1,19 +1,25 @@
 <script lang="ts">
+  import { run } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api';
 
-  let registerId = '';
-  let tableId = '';
+  let registerId = $state('');
+  let tableId = $state('');
 
   // Show a quick summary on this screen so the operator knows whether anything is open.
-  let openGroups: { name: string; options: string | null; quantity: number; line_total: number }[] = [];
-  let loading = true;
-  let error = '';
+  let openGroups: { name: string; options: string | null; quantity: number; line_total: number }[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
-  $: registerId = ($page.params['id'] ?? '') as string;
-  $: tableId = ($page.params['tableId'] ?? '') as string;
+  run(() => {
+    registerId = ($page.params['id'] ?? '') as string;
+  });
+  run(() => {
+    tableId = ($page.params['tableId'] ?? '') as string;
+  });
 
   onMount(load);
 
@@ -29,13 +35,13 @@
     }
   }
 
-  $: openTotal = openGroups.reduce((s, g) => s + g.line_total * 1, 0);
+  let openTotal = $derived(openGroups.reduce((s, g) => s + g.line_total * 1, 0));
   const fmt = (n: number) => n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 </script>
 
 <div class="page">
   <header class="header">
-    <button class="btn-ghost" on:click={() => goto(`/register/${registerId}/floor-plan`)}>← Saalplan</button>
+    <button class="btn-ghost" onclick={() => goto(`/register/${registerId}/floor-plan`)}>← Saalplan</button>
     <h1>Tisch</h1>
   </header>
 
@@ -61,14 +67,14 @@
     </section>
 
     <div class="actions">
-      <button class="action-btn primary" on:click={() => goto(`/register/${registerId}/tables/${tableId}/order`)}>
+      <button class="action-btn primary" onclick={() => goto(`/register/${registerId}/tables/${tableId}/order`)}>
         Bestellen
       </button>
-      <button class="action-btn" on:click={() => goto(`/register/${registerId}/tables/${tableId}/checkout`)}
+      <button class="action-btn" onclick={() => goto(`/register/${registerId}/tables/${tableId}/checkout`)}
               disabled={openGroups.length === 0}>
         Kassieren
       </button>
-      <button class="action-btn ghost" on:click={() => goto(`/register/${registerId}/floor-plan`)}>
+      <button class="action-btn ghost" onclick={() => goto(`/register/${registerId}/floor-plan`)}>
         Zurück zum Saalplan
       </button>
     </div>

@@ -15,21 +15,21 @@
   /** One line in the form — points at an article + count to cancel. */
   type FormLine = { article_id: string; quantity: number };
 
-  let registers: Register[] = [];
-  let reasons: CancellationReason[] = [];
-  let articles: (Article & { category_name: string; tax_rate: number })[] = [];
+  let registers: Register[] = $state([]);
+  let reasons: CancellationReason[] = $state([]);
+  let articles: (Article & { category_name: string; tax_rate: number })[] = $state([]);
 
-  let registerId = '';
-  let cancellationReasonId = '';
-  let note = '';
-  let lines: FormLine[] = [{ article_id: '', quantity: 1 }];
+  let registerId = $state('');
+  let cancellationReasonId = $state('');
+  let note = $state('');
+  let lines: FormLine[] = $state([{ article_id: '', quantity: 1 }]);
 
-  let loading = true;
-  let saving = false;
-  let error = '';
-  let success: { receipt_number: string; total: number } | null = null;
+  let loading = $state(true);
+  let saving = $state(false);
+  let error = $state('');
+  let success: { receipt_number: string; total: number } | null = $state(null);
   /** Set when a configured TSE failed to sign the Bonstorno — it was still created, see docs/TSE-Integration.md. */
-  let tseWarning: string | null = null;
+  let tseWarning: string | null = $state(null);
 
   onMount(async () => {
     try {
@@ -59,7 +59,7 @@
   }
 
   /** Sum of all entered lines × their per-unit gross. */
-  $: total = lines.reduce((sum, l) => sum + unitGross(l.article_id) * (l.quantity || 0), 0);
+  let total = $derived(lines.reduce((sum, l) => sum + unitGross(l.article_id) * (l.quantity || 0), 0));
 
   /**
    * Adds an empty line row at the bottom of the form.
@@ -177,7 +177,7 @@
               <td class="num">{fmt(unitGross(line.article_id))} €</td>
               <td class="num">{fmt(unitGross(line.article_id) * (line.quantity || 0))} €</td>
               <td>
-                <button class="btn-ghost" type="button" on:click={() => removeLine(i)} disabled={lines.length === 1 || saving}>−</button>
+                <button class="btn-ghost" type="button" onclick={() => removeLine(i)} disabled={lines.length === 1 || saving}>−</button>
               </td>
             </tr>
           {/each}
@@ -190,10 +190,10 @@
           </tr>
         </tfoot>
       </table>
-      <button class="btn-ghost" type="button" on:click={addLine} disabled={saving}>+ Position</button>
+      <button class="btn-ghost" type="button" onclick={addLine} disabled={saving}>+ Position</button>
 
       <div class="actions">
-        <button class="btn-primary" type="button" on:click={submit} disabled={saving}>
+        <button class="btn-primary" type="button" onclick={submit} disabled={saving}>
           {saving ? 'Erfasse…' : 'Stornobeleg erstellen'}
         </button>
       </div>

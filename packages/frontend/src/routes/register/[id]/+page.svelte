@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { run } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -10,37 +12,39 @@
 
   type Slot = { article_id: string; grid_row: number; grid_col: number; color: string };
 
-  let registerId = '';
-  let registerName = '';
-  let registerType: 'receipt_register' | 'service_register' = 'receipt_register';
+  let registerId = $state('');
+  let registerName = $state('');
+  let registerType: 'receipt_register' | 'service_register' = $state('receipt_register');
   /** Whether the register is locked because past calendar days still need a Z-Bon. */
-  let locked = false;
-  let pendingDays: string[] = [];
-  let gridCols = 4;
-  let gridRows = 4;
-  let slots: Slot[] = [];
+  let locked = $state(false);
+  let pendingDays: string[] = $state([]);
+  let gridCols = $state(4);
+  let gridRows = $state(4);
+  let slots: Slot[] = $state([]);
   /** Whether a layout (own or default) is configured for this register at all. */
-  let hasLayout = false;
-  let articles: (Article & { tax_rate: string })[] = [];
-  let articleById = new Map<string, Article & { tax_rate: string }>();
-  let loading = true;
-  let error = '';
+  let hasLayout = $state(false);
+  let articles: (Article & { tax_rate: string })[] = $state([]);
+  let articleById = $state(new Map<string, Article & { tax_rate: string }>());
+  let loading = $state(true);
+  let error = $state('');
 
-  let order: OrderLine[] = [];
+  let order: OrderLine[] = $state([]);
 
   // Checkout dialog
-  let checkoutOpen = false;
-  let checkoutBusy = false;
-  let checkoutError = '';
-  let lastInvoiceId: string | null = null;
-  let lastReceiptNumber: string | null = null;
-  let printing = false;
-  let printDone = false;
+  let checkoutOpen = $state(false);
+  let checkoutBusy = $state(false);
+  let checkoutError = $state('');
+  let lastInvoiceId: string | null = $state(null);
+  let lastReceiptNumber: string | null = $state(null);
+  let printing = $state(false);
+  let printDone = $state(false);
   /** Set when a configured TSE failed to sign the sale — the sale still went through, see docs/TSE-Integration.md. */
-  let tseWarning: string | null = null;
+  let tseWarning: string | null = $state(null);
 
-  $: registerId = ($page.params['id'] ?? '') as string;
-  $: total = computeOrderTotal(order, articles);
+  run(() => {
+    registerId = ($page.params['id'] ?? '') as string;
+  });
+  let total = $derived(computeOrderTotal(order, articles));
   // Reset the order any time the receipt dialog closes — regardless of how
   // (X button, backdrop click, Escape). Listening for the Modal's explicit
   // `close` event is more reliable than the previous reactive cascade
@@ -50,13 +54,15 @@
   function onCheckoutClosed(): void { reset(); }
 
   // Lookup helpers
-  $: articleById = new Map(articles.map((a) => [a.id, a]));
-  $: slotByCell = new Map(slots.map((s) => [`${s.grid_row}:${s.grid_col}`, s]));
+  run(() => {
+    articleById = new Map(articles.map((a) => [a.id, a]));
+  });
+  let slotByCell = $derived(new Map(slots.map((s) => [`${s.grid_row}:${s.grid_col}`, s])));
 
   /** Builds a 2D matrix from gridRows × gridCols. */
-  $: gridMatrix = Array.from({ length: gridRows }, (_, r) =>
+  let gridMatrix = $derived(Array.from({ length: gridRows }, (_, r) =>
     Array.from({ length: gridCols }, (_, c) => slotByCell.get(`${r}:${c}`) ?? null),
-  );
+  ));
 
   onMount(load);
 
@@ -212,9 +218,9 @@
               <span class="line-name">{nameOf(line.article_id)}</span>
               <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
               <div class="qty">
-                <button class="qty-btn" on:click={() => minus(line.article_id)}>−</button>
+                <button class="qty-btn" onclick={() => minus(line.article_id)}>−</button>
                 <span class="qty-val">{line.quantity}</span>
-                <button class="qty-btn" on:click={() => plus(line.article_id)}>+</button>
+                <button class="qty-btn" onclick={() => plus(line.article_id)}>+</button>
               </div>
               <span class="line-total">{fmt(unitPriceOf(line.article_id) * line.quantity)} €</span>
             </li>
@@ -225,7 +231,7 @@
         <span class="total-label">Gesamt</span>
         <span class="total-value" class:negative={total < 0}>{fmt(total)} €</span>
         <button class="btn-primary checkout-btn"
-                on:click={startCheckout}
+                onclick={startCheckout}
                 disabled={order.length === 0 || checkoutBusy}>
           {checkoutBusy ? 'Kassiere…' : 'Kassieren'}
         </button>
@@ -248,7 +254,7 @@
                   type="button"
                   class="grid-btn"
                   style="background:{slot.color}"
-                  on:click={() => tapSlot(slot)}
+                  onclick={() => tapSlot(slot)}
                 >
                   {nameOf(slot.article_id)}
                 </button>
@@ -281,9 +287,9 @@
     {#if printDone}<p class="success-text">✓ Bon wird gedruckt</p>{/if}
 
     <div class="modal-actions">
-      <button class="btn-ghost" on:click={scannedConfirmed} disabled={printing}>Rechnung per QR Code gescannt</button>
+      <button class="btn-ghost" onclick={scannedConfirmed} disabled={printing}>Rechnung per QR Code gescannt</button>
       <div class="spacer"></div>
-      <button class="btn-primary" on:click={printReceipt} disabled={printing || printDone}>
+      <button class="btn-primary" onclick={printReceipt} disabled={printing || printDone}>
         {printing ? 'Drucke…' : 'Rechnung drucken'}
       </button>
     </div>

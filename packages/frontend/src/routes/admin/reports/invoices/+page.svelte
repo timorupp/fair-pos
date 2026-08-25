@@ -12,15 +12,15 @@
     receipt_token: string | null; total_gross: number;
   };
 
-  let selectedEventId: string | null = null;
-  let invoices: InvoiceRow[] = [];
-  let loading = false;
-  let error = '';
+  let selectedEventId: string | null = $state(null);
+  let invoices: InvoiceRow[] = $state([]);
+  let loading = $state(false);
+  let error = $state('');
 
   /** Id of the invoice currently being reprinted (one at a time so the row spinner is unambiguous). */
-  let reprintingId: string | null = null;
-  let reprintError = '';
-  let reprintMessage = '';
+  let reprintingId: string | null = $state(null);
+  let reprintError = $state('');
+  let reprintMessage = $state('');
 
   /**
    * Re-queues the print job for an already-issued invoice. The result message
@@ -57,7 +57,7 @@
     }
   }
 
-  $: total = invoices.reduce((s, i) => s + i.total_gross, 0);
+  let total = $derived(invoices.reduce((s, i) => s + i.total_gross, 0));
 
   /**
    * Formats a number as a German euro amount with two decimals.
@@ -147,7 +147,7 @@
             <td class="row-actions">
               <a class="btn-ghost" href={api.admin.invoices.pdfUrl(inv.id)} target="_blank" rel="noopener">PDF</a>
               <button class="btn-ghost"
-                      on:click={() => reprint(inv.id)}
+                      onclick={() => reprint(inv.id)}
                       disabled={reprintingId === inv.id}
                       title="Bon erneut drucken">
                 {reprintingId === inv.id ? '…' : '🖨'}

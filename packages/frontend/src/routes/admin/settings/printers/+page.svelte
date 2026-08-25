@@ -1,29 +1,31 @@
 <script lang="ts">
+  import { preventDefault } from 'svelte/legacy';
+
   import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';
   import type { Printer } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
-  let printers: Printer[] = [];
-  let printerStatus: Record<string, 'unknown' | 'online' | 'offline'> = {};
-  let loading = true;
-  let error = '';
+  let printers: Printer[] = $state([]);
+  let printerStatus: Record<string, 'unknown' | 'online' | 'offline'> = $state({});
+  let loading = $state(true);
+  let error = $state('');
 
   // Edit modal state
-  let modalOpen = false;
-  let editing: Printer | null = null;
-  let formName = '';
-  let formIp = '';
-  let formPort = 9100;
-  let formError = '';
+  let modalOpen = $state(false);
+  let editing: Printer | null = $state(null);
+  let formName = $state('');
+  let formIp = $state('');
+  let formPort = $state(9100);
+  let formError = $state('');
   /** Id of the printer currently being promoted; disables the button while the request is in flight. */
-  let settingDefaultId: string | null = null;
-  let saving = false;
-  let deleting = false;
+  let settingDefaultId: string | null = $state(null);
+  let saving = $state(false);
+  let deleting = $state(false);
 
   // Test-print state inside the edit modal
-  let testPrinting = false;
-  let testFeedback = '';
+  let testPrinting = $state(false);
+  let testFeedback = $state('');
 
   let statusTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -133,7 +135,7 @@
 <div class="page">
   <div class="page-header">
     <h1>Drucker</h1>
-    <button class="btn-primary" on:click={openCreate}>+ Neu</button>
+    <button class="btn-primary" onclick={openCreate}>+ Neu</button>
   </div>
 
   {#if loading}
@@ -160,14 +162,14 @@
                 <span class="default-badge">★ Standard</span>
               {:else}
                 <button class="btn-ghost small"
-                        on:click={() => setAsDefault(p)}
+                        onclick={() => setAsDefault(p)}
                         disabled={settingDefaultId === p.id}>
                   {settingDefaultId === p.id ? '…' : 'Als Standard'}
                 </button>
               {/if}
             </td>
             <td class="actions">
-              <button class="btn-ghost" on:click={() => openEdit(p)}>Bearbeiten</button>
+              <button class="btn-ghost" onclick={() => openEdit(p)}>Bearbeiten</button>
             </td>
           </tr>
         {/each}
@@ -177,7 +179,7 @@
 </div>
 
 <Modal bind:open={modalOpen} title={editing ? 'Drucker bearbeiten' : 'Neuer Drucker'}>
-  <form on:submit|preventDefault={save}>
+  <form onsubmit={preventDefault(save)}>
     <div class="field">
       <label for="pr-name">Name</label>
       <input id="pr-name" bind:value={formName} required disabled={saving || deleting} />
@@ -196,7 +198,7 @@
       <div class="section">
         <div class="section-header">
           <h3>Testdruck</h3>
-          <button type="button" class="btn-ghost" on:click={testPrint} disabled={testPrinting}>
+          <button type="button" class="btn-ghost" onclick={testPrint} disabled={testPrinting}>
             {testPrinting ? 'Sende…' : 'Testseite drucken'}
           </button>
         </div>
@@ -212,12 +214,12 @@
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">
       {#if editing}
-        <button type="button" class="btn-ghost danger" on:click={remove} disabled={saving || deleting}>
+        <button type="button" class="btn-ghost danger" onclick={remove} disabled={saving || deleting}>
           {deleting ? 'Löschen…' : 'Löschen'}
         </button>
       {/if}
       <div class="spacer"></div>
-      <button type="button" class="btn-ghost" on:click={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
+      <button type="button" class="btn-ghost" onclick={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
       <button type="submit" class="btn-primary" disabled={saving || deleting}>{saving ? 'Speichern…' : 'Speichern'}</button>
     </div>
   </form>

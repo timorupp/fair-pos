@@ -12,10 +12,10 @@
     deposits: number; withdrawals: number; cash_takings: number; balance: number;
   };
 
-  let selectedEventId: string | null = null;
-  let registers: Row[] = [];
-  let loading = false;
-  let error = '';
+  let selectedEventId: string | null = $state(null);
+  let registers: Row[] = $state([]);
+  let loading = $state(false);
+  let error = $state('');
 
   /** Reload triggered by the event-selector when the choice changes. */
   async function onEventChange() {
@@ -31,7 +31,7 @@
     }
   }
 
-  $: totalBalance = registers.reduce((s, r) => s + r.balance, 0);
+  let totalBalance = $derived(registers.reduce((s, r) => s + r.balance, 0));
 
   /**
    * Formats a number as a German euro amount with two decimals.

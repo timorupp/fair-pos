@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { preventDefault } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { api } from '$lib/api';
@@ -21,36 +23,36 @@
     created_by: string;
   };
 
-  let register: RegisterDetail | null = null;
-  let transactions: CashTransaction[] = [];
-  let closings: ClosingRow[] = [];
-  let loading = true;
-  let error = '';
+  let register: RegisterDetail | null = $state(null);
+  let transactions: CashTransaction[] = $state([]);
+  let closings: ClosingRow[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
-  let txModal = false;
-  let txType: 'deposit' | 'withdrawal' = 'deposit';
-  let txAmount = '';
-  let txNote = '';
-  let txError = '';
-  let txSaving = false;
+  let txModal = $state(false);
+  let txType: 'deposit' | 'withdrawal' = $state('deposit');
+  let txAmount = $state('');
+  let txNote = $state('');
+  let txError = $state('');
+  let txSaving = $state(false);
 
-  let closing = false;
-  let closingError = '';
-  let lastClosing: { z_number: number; is_zero_closing: boolean; print_job_id: string | null } | null = null;
+  let closing = $state(false);
+  let closingError = $state('');
+  let lastClosing: { z_number: number; is_zero_closing: boolean; print_job_id: string | null } | null = $state(null);
 
   /** Past calendar days that still need a Z-Bon (oldest first). */
-  let pendingDays: string[] = [];
-  let catchingUp = false;
-  let catchUpError = '';
+  let pendingDays: string[] = $state([]);
+  let catchingUp = $state(false);
+  let catchUpError = $state('');
 
-  $: id = ($page.params['id'] ?? '') as string;
+  let id = $derived(($page.params['id'] ?? '') as string);
 
   /**
    * Most recent closing whose `created_at` falls on the current local calendar day,
    * used by the UI to warn the operator about a duplicate Z-Bon issuance.
    * `null` when no closing exists for today.
    */
-  $: closedToday = (() => {
+  let closedToday = $derived((() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const start = today.getTime();
     const end = start + 24 * 60 * 60 * 1000;
@@ -58,7 +60,7 @@
       const t = new Date(c.created_at).getTime();
       return t >= start && t < end;
     }) ?? null;
-  })();
+  })());
 
   onMount(load);
 
@@ -149,8 +151,8 @@
   const txLabel = (t: string) => t === 'deposit' ? 'Einlage' : 'Entnahme';
 
   /** Tracks which closing row is being reprinted so we can disable its button. */
-  let reprintingClosingId: string | null = null;
-  let reprintClosingError = '';
+  let reprintingClosingId: string | null = $state(null);
+  let reprintClosingError = $state('');
 
   /**
    * Re-queues an ESC/POS print job for the given Z-Bon.
@@ -199,8 +201,8 @@
     </div>
 
     <div class="tx-actions">
-      <button class="btn-primary" on:click={openDeposit}>+ Einlage / Wechselgeld</button>
-      <button class="btn-ghost" on:click={openWithdrawal}>Entnahme</button>
+      <button class="btn-primary" onclick={openDeposit}>+ Einlage / Wechselgeld</button>
+      <button class="btn-ghost" onclick={openWithdrawal}>Entnahme</button>
     </div>
 
     {#if pendingDays.length > 0}
@@ -215,7 +217,7 @@
             <li>{day}</li>
           {/each}
         </ul>
-        <button class="btn-primary" on:click={catchUp} disabled={catchingUp}>
+        <button class="btn-primary" onclick={catchUp} disabled={catchingUp}>
           {catchingUp ? 'Hole nach…' : `Alle ${pendingDays.length} Z-Bons jetzt erstellen`}
         </button>
         {#if catchUpError}<p class="error-text">{catchUpError}</p>{/if}
@@ -224,7 +226,7 @@
 
     <h2 class="section-title">Tagesabschluss</h2>
     <div class="closing-actions">
-      <button class="btn-primary" on:click={closeDay} disabled={closing || pendingDays.length > 0}>
+      <button class="btn-primary" onclick={closeDay} disabled={closing || pendingDays.length > 0}>
         {closing ? 'Wird abgeschlossen…' : 'Tagesabschluss jetzt durchführen'}
       </button>
       {#if pendingDays.length > 0}
@@ -273,7 +275,7 @@
               <td class="actions">
                 <a class="btn-ghost" href={api.admin.closings.pdfUrl(c.id)} target="_blank" rel="noopener">PDF</a>
                 <a class="btn-ghost" href={api.admin.closings.dsfinvkUrl(c.id)} rel="noopener" title="DSFinV-K-Export (ZIP)">DSFinV-K</a>
-                <button class="btn-ghost" on:click={() => reprintClosing(c.id)} disabled={reprintingClosingId === c.id}>
+                <button class="btn-ghost" onclick={() => reprintClosing(c.id)} disabled={reprintingClosingId === c.id}>
                   {reprintingClosingId === c.id ? '…' : 'Drucken'}
                 </button>
                 {#if c.is_zero_closing}<span class="muted small">Null</span>{/if}
@@ -312,7 +314,7 @@
 </div>
 
 <Modal bind:open={txModal} title={txType === 'deposit' ? 'Einlage / Wechselgeld' : 'Entnahme'}>
-  <form on:submit|preventDefault={addTransaction}>
+  <form onsubmit={preventDefault(addTransaction)}>
     <div class="field">
       <label for="tx-amount">Betrag (€)</label>
       <input id="tx-amount" inputmode="decimal" bind:value={txAmount} placeholder="0,00" required disabled={txSaving} />
@@ -324,7 +326,7 @@
     {#if txError}<p class="error-text">{txError}</p>{/if}
     <div class="modal-actions">
       <div class="spacer"></div>
-      <button type="button" class="btn-ghost" on:click={() => (txModal = false)} disabled={txSaving}>Abbrechen</button>
+      <button type="button" class="btn-ghost" onclick={() => (txModal = false)} disabled={txSaving}>Abbrechen</button>
       <button type="submit" class="btn-primary" disabled={txSaving}>{txSaving ? 'Speichern…' : 'Buchen'}</button>
     </div>
   </form>

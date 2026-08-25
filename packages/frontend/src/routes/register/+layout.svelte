@@ -10,14 +10,19 @@
   import { api } from '$lib/api';
   import { registerUser } from '$lib/stores/user';
   import { currentRegisterName } from '$lib/stores/page-title';
+  interface Props {
+    children?: import('svelte').Snippet;
+  }
 
-  let checking = true;
+  let { children }: Props = $props();
+
+  let checking = $state(true);
   // Hide the "Kasse wechseln" button on the register-picker page itself —
   // there is nothing to switch back to from there.
-  $: onRegisterPicker = $page.url.pathname === '/register';
+  let onRegisterPicker = $derived($page.url.pathname === '/register');
   // Browser-tab title — falls back to a generic label until a sub-page tells
   // us which cash register the operator is on. See `lib/stores/page-title.ts`.
-  $: tabTitle = $currentRegisterName ? `${$currentRegisterName} — FairPOS` : 'Kasse — FairPOS';
+  let tabTitle = $derived($currentRegisterName ? `${$currentRegisterName} — FairPOS` : 'Kasse — FairPOS');
 
   onMount(async () => {
     try {
@@ -49,16 +54,16 @@
     {#if $registerUser}
       <span class="user-name">{$registerUser.name}</span>
       {#if !onRegisterPicker}
-        <button class="btn-ghost" on:click={() => goto('/register')}>Kasse wechseln</button>
+        <button class="btn-ghost" onclick={() => goto('/register')}>Kasse wechseln</button>
       {/if}
-      <button class="btn-ghost" on:click={logout}>Abmelden</button>
+      <button class="btn-ghost" onclick={logout}>Abmelden</button>
     {/if}
   </header>
 
   {#if checking}
     <p class="muted center">Prüfe Sitzung…</p>
   {:else}
-    <slot />
+    {@render children?.()}
   {/if}
 </div>
 

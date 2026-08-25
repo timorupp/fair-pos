@@ -4,38 +4,38 @@
   import { copyToClipboard } from '$lib/clipboard';
 
   // ── Read-only system status ────────────────────────────────────────────────
-  let systemSerial = '';
-  let timezone = '';
-  let serverTime: Date | null = null;
-  let statusLoading = true;
-  let statusError = '';
-  let tick = 0; // re-renders the clock every second by changing a reactive dependency
+  let systemSerial = $state('');
+  let timezone = $state('');
+  let serverTime: Date | null = $state(null);
+  let statusLoading = $state(true);
+  let statusError = $state('');
+  let tick = $state(0); // re-renders the clock every second by changing a reactive dependency
 
   // ── Editable settings (server_address) ──
-  let settings: Record<string, string> = {};
-  let editableLoading = true;
-  let saving = false;
-  let saveError = '';
-  let saveSuccess = false;
+  let settings: Record<string, string> = $state({});
+  let editableLoading = $state(true);
+  let saving = $state(false);
+  let saveError = $state('');
+  let saveSuccess = $state(false);
 
   // ── Manual system-time set (Task #60) — the TSE syncs its clock against
   // this server's system time, and the register can run fully offline, so
   // NTP isn't assumed reachable. Requires a sudoers rule on the server, see
   // docs/Installationsanleitung.md. ──
-  let setTimeValue = '';
-  let settingTime = false;
-  let setTimeError = '';
-  let setTimeSuccess = false;
+  let setTimeValue = $state('');
+  let settingTime = $state(false);
+  let setTimeError = $state('');
+  let setTimeSuccess = $state(false);
 
   // ── Manual timezone set (Task #60 follow-up) — full time control via the
   // UI needs both the clock and the timezone. ──
   const availableTimezones = typeof Intl.supportedValuesOf === 'function'
     ? Intl.supportedValuesOf('timeZone').sort((a, b) => a.localeCompare(b))
     : [];
-  let setTimezoneValue = '';
-  let settingTimezone = false;
-  let setTimezoneError = '';
-  let setTimezoneSuccess = false;
+  let setTimezoneValue = $state('');
+  let settingTimezone = $state(false);
+  let setTimezoneError = $state('');
+  let setTimezoneSuccess = $state(false);
 
   let clockTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -81,8 +81,7 @@
   }
 
   /** Returns the current wall-clock time, advanced from the server baseline by the elapsed `tick` seconds. */
-  $: liveTime = serverTime ? new Date(serverTime.getTime() + tick * 1000) : null;
-  // ESLint doesn't see `tick` as used in the expression above without referencing it; that's the point.
+  let liveTime = $derived.by(() => serverTime ? new Date(serverTime.getTime() + tick * 1000) : null);
 
   /** Formats a Date as `YYYY-MM-DDTHH:MM:SS` in local time, matching what `<input type="datetime-local" step="1">` needs/produces. */
   function toDatetimeLocal(date: Date): string {
@@ -122,8 +121,8 @@
   }
 
   // ── Shutdown (Task #61) ──
-  let shuttingDown = false;
-  let shutdownError = '';
+  let shuttingDown = $state(false);
+  let shutdownError = $state('');
 
   async function requestShutdown() {
     if (!confirm('Server jetzt wirklich herunterfahren? Das beendet den laufenden Kassenbetrieb sofort und der Server muss vor Ort wieder eingeschaltet werden.')) return;
@@ -157,7 +156,7 @@
     {:else}
       <div class="serial-row">
         <code class="serial">{systemSerial}</code>
-        <button class="btn-ghost" on:click={copySerial} title="In Zwischenablage kopieren">Kopieren</button>
+        <button class="btn-ghost" onclick={copySerial} title="In Zwischenablage kopieren">Kopieren</button>
       </div>
     {/if}
   </section>
@@ -188,10 +187,10 @@
             bind:value={setTimeValue}
             disabled={settingTime}
           />
-          <button class="btn-ghost" type="button" on:click={useBrowserTime} disabled={settingTime}>
+          <button class="btn-ghost" type="button" onclick={useBrowserTime} disabled={settingTime}>
             Aktuelle Browserzeit übernehmen
           </button>
-          <button class="btn-primary" type="button" on:click={submitSetTime} disabled={settingTime || !setTimeValue}>
+          <button class="btn-primary" type="button" onclick={submitSetTime} disabled={settingTime || !setTimeValue}>
             {settingTime ? 'Setze…' : 'Setzen'}
           </button>
         </div>
@@ -207,7 +206,7 @@
               <option value={tz}>{tz}</option>
             {/each}
           </select>
-          <button class="btn-primary" type="button" on:click={submitSetTimezone} disabled={settingTimezone || !setTimezoneValue || setTimezoneValue === timezone}>
+          <button class="btn-primary" type="button" onclick={submitSetTimezone} disabled={settingTimezone || !setTimezoneValue || setTimezoneValue === timezone}>
             {settingTimezone ? 'Setze…' : 'Setzen'}
           </button>
         </div>
@@ -227,7 +226,7 @@
       <div class="field">
         <input
           value={settings['server_address'] ?? ''}
-          on:input={(e) => { settings['server_address'] = e.currentTarget.value; saveSuccess = false; }}
+          oninput={(e) => { settings['server_address'] = e.currentTarget.value; saveSuccess = false; }}
           placeholder="z. B. 192.168.1.10 oder fairpos.local"
           disabled={saving}
         />
@@ -255,7 +254,7 @@
       Fährt den Server kontrolliert herunter, ohne dass jemand dafür auf die Shell muss.
       Danach muss der Server vor Ort wieder eingeschaltet werden.
     </p>
-    <button class="btn-ghost danger" on:click={requestShutdown} disabled={shuttingDown}>
+    <button class="btn-ghost danger" onclick={requestShutdown} disabled={shuttingDown}>
       {shuttingDown ? 'Fährt herunter…' : 'Server herunterfahren'}
     </button>
     {#if shutdownError}<p class="error-text">{shutdownError}</p>{/if}
@@ -265,7 +264,7 @@
   {#if saveSuccess}<p class="success-text">Gespeichert.</p>{/if}
 
   <div class="form-footer">
-    <button class="btn-primary" on:click={save} disabled={saving || editableLoading}>
+    <button class="btn-primary" onclick={save} disabled={saving || editableLoading}>
       {saving ? 'Speichern…' : 'Speichern'}
     </button>
   </div>

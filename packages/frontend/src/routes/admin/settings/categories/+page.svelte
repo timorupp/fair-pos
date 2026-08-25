@@ -1,20 +1,22 @@
 <script lang="ts">
+  import { preventDefault } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import type { ArticleCategory } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
-  let categories: ArticleCategory[] = [];
-  let loading = true;
-  let error = '';
+  let categories: ArticleCategory[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
-  let modalOpen = false;
-  let editing: ArticleCategory | null = null;
-  let formName = '';
-  let formTaxRate = '';
-  let formError = '';
-  let saving = false;
-  let deleting = false;
+  let modalOpen = $state(false);
+  let editing: ArticleCategory | null = $state(null);
+  let formName = $state('');
+  let formTaxRate = $state('');
+  let formError = $state('');
+  let saving = $state(false);
+  let deleting = $state(false);
 
   onMount(load);
 
@@ -69,7 +71,7 @@
 <div class="page">
   <div class="page-header">
     <h1>Artikelgruppen</h1>
-    <button class="btn-primary" on:click={openCreate}>+ Neu</button>
+    <button class="btn-primary" onclick={openCreate}>+ Neu</button>
   </div>
 
   {#if loading}
@@ -87,7 +89,7 @@
             <td>{c.name}</td>
             <td class="num">{c.tax_rate} %</td>
             <td class="actions">
-              <button class="btn-ghost" on:click={() => openEdit(c)}>Bearbeiten</button>
+              <button class="btn-ghost" onclick={() => openEdit(c)}>Bearbeiten</button>
             </td>
           </tr>
         {/each}
@@ -97,7 +99,7 @@
 </div>
 
 <Modal bind:open={modalOpen} title={editing ? 'Artikelgruppe bearbeiten' : 'Neue Artikelgruppe'}>
-  <form on:submit|preventDefault={save}>
+  <form onsubmit={preventDefault(save)}>
     <div class="field">
       <label for="cat-name">Name</label>
       <input id="cat-name" bind:value={formName} required disabled={saving || deleting} />
@@ -110,12 +112,12 @@
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">
       {#if editing}
-        <button type="button" class="btn-ghost danger" on:click={remove} disabled={saving || deleting}>
+        <button type="button" class="btn-ghost danger" onclick={remove} disabled={saving || deleting}>
           {deleting ? 'Löschen…' : 'Löschen'}
         </button>
       {/if}
       <div class="spacer"></div>
-      <button type="button" class="btn-ghost" on:click={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
+      <button type="button" class="btn-ghost" onclick={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
       <button type="submit" class="btn-primary" disabled={saving || deleting}>{saving ? 'Speichern…' : 'Speichern'}</button>
     </div>
   </form>

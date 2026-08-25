@@ -16,9 +16,9 @@
     }[];
   };
 
-  let blocks: Block[] = [];
-  let loading = true;
-  let error = '';
+  let blocks: Block[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
   onMount(load);
 
@@ -35,8 +35,8 @@
     }
   }
 
-  $: grandTotal = blocks.reduce((s, b) => s + b.total_gross, 0);
-  $: positionCount = blocks.reduce((s, b) => s + b.positions.reduce((q, p) => q + p.qty, 0), 0);
+  let grandTotal = $derived(blocks.reduce((s, b) => s + b.total_gross, 0));
+  let positionCount = $derived(blocks.reduce((s, b) => s + b.positions.reduce((q, p) => q + p.qty, 0), 0));
 
   /**
    * Formats a number as a German euro amount with two decimals.
@@ -61,7 +61,7 @@
 <div class="page">
   <div class="page-header">
     <h1>Offene Positionen je Tisch</h1>
-    <button class="btn-ghost" on:click={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
+    <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
   </div>
 
   {#if error}<p class="error-text">{error}</p>{/if}

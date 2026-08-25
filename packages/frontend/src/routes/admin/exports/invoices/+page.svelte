@@ -11,8 +11,8 @@
    */
   import EventSelector from '$lib/components/EventSelector.svelte';
 
-  let selectedEventId: string | null = null;
-  let dayDate: string = todayIso();
+  let selectedEventId: string | null = $state(null);
+  let dayDate: string = $state(todayIso());
 
   /**
    * Returns today's date as a `YYYY-MM-DD` string in the user's local timezone.
@@ -64,7 +64,7 @@
         <span class="field-label">Datum</span>
         <input type="date" bind:value={dayDate} />
       </label>
-      <button class="btn-primary" on:click={downloadDay} disabled={!dayDate}>
+      <button class="btn-primary" onclick={downloadDay} disabled={!dayDate}>
         ZIP herunterladen
       </button>
     </div>
@@ -75,7 +75,7 @@
     <p class="hint">Ein PDF je Rechnung einer Veranstaltung — vom Start bis zum Ende, inkl. Storno- und Trainingsbelegen.</p>
     <EventSelector bind:selectedId={selectedEventId} />
     <div class="row">
-      <button class="btn-primary" on:click={downloadEvent} disabled={!selectedEventId}>
+      <button class="btn-primary" onclick={downloadEvent} disabled={!selectedEventId}>
         ZIP herunterladen
       </button>
     </div>

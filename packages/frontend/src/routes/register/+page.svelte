@@ -10,9 +10,9 @@
     locked: boolean; pending_days: string[];
   };
 
-  let registers: RegisterRow[] = [];
-  let loading = true;
-  let error = '';
+  let registers: RegisterRow[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
   onMount(async () => {
     try {

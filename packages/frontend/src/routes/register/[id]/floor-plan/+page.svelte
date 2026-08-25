@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { run } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -14,16 +16,18 @@
     has_open_items: boolean;
   };
 
-  let registerId = '';
-  let tables: TableRow[] = [];
-  let loading = true;
-  let error = '';
+  let registerId = $state('');
+  let tables: TableRow[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
   /** Whether this register is locked because of pending Z-Bons. */
-  let locked = false;
-  let pendingDays: string[] = [];
+  let locked = $state(false);
+  let pendingDays: string[] = $state([]);
 
-  $: registerId = ($page.params['id'] ?? '') as string;
+  run(() => {
+    registerId = ($page.params['id'] ?? '') as string;
+  });
 
   onMount(load);
 
@@ -51,9 +55,9 @@
   }
 
   // Derived grid axes.
-  $: columns = columnsFromTables(tables);
-  $: rows = rowsFromTables(tables);
-  $: tableMap = new Map(tables.map((t) => [`${t.col_label}:${t.row_label}`, t]));
+  let columns = $derived(columnsFromTables(tables));
+  let rows = $derived(rowsFromTables(tables));
+  let tableMap = $derived(new Map(tables.map((t) => [`${t.col_label}:${t.row_label}`, t])));
 
   function tableAt(col: string, row: string): TableRow | undefined {
     return tableMap.get(`${col}:${row}`);
@@ -74,7 +78,7 @@
 <div class="floor-plan-page">
   <header class="header">
     <h1>Saalplan</h1>
-    <button class="btn-ghost" on:click={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
+    <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
   </header>
 
   {#if error}<p class="error-text">{error}</p>{/if}
@@ -113,7 +117,7 @@
                 class:status-open={t.has_open_items}
                 class:status-inactive={t.status === 'inactive'}
                 disabled={t.status === 'inactive'}
-                on:click={() => selectTable(t)}
+                onclick={() => selectTable(t)}
               >
                 <span class="tile-name">{t.name}</span>
                 {#if t.has_open_items}<span class="tile-badge">●</span>{/if}

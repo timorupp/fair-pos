@@ -1,15 +1,22 @@
 <script lang="ts">
+  import { run } from 'svelte/legacy';
+
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { adminUser } from '$lib/stores/user';
   import { api } from '$lib/api';
+  interface Props {
+    children?: import('svelte').Snippet;
+  }
+
+  let { children }: Props = $props();
 
   /** Whether the layout is still verifying the admin session on first load. */
-  let checking = true;
+  let checking = $state(true);
 
   /** Pending-Z-Bon summary, refreshed on mount and on route change. */
-  let pendingSummary: { total_pending_registers: number; total_pending_days: number } | null = null;
+  let pendingSummary: { total_pending_registers: number; total_pending_days: number } | null = $state(null);
   let pendingRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
@@ -43,7 +50,9 @@
   onDestroy(() => { if (pendingRefreshTimer) clearInterval(pendingRefreshTimer); });
 
   // Re-check whenever the URL changes (e.g. operator went through "Alle Ausstehenden abschließen").
-  $: $page.url.pathname, loadPending();
+  run(() => {
+    $page.url.pathname, loadPending();
+  });
 
   /**
    * Whether a path is the active route (exact or prefix match). Declared as
@@ -56,44 +65,54 @@
    * makes the *function reference* change whenever `$page` changes, which
    * correctly invalidates every call site.
    */
-  $: isActive = (href: string, exact = false): boolean => (
+  let isActive = $derived((href: string, exact = false): boolean => (
     exact
       ? $page.url.pathname === href
       : $page.url.pathname.startsWith(href)
-  );
+  ));
 
   /** Whether any sub-item of a group is currently active. Same reactive-closure reasoning as `isActive` above. */
-  $: groupActive = (hrefs: string[]): boolean => hrefs.some((h) => $page.url.pathname.startsWith(h));
+  let groupActive = $derived((hrefs: string[]): boolean => hrefs.some((h) => $page.url.pathname.startsWith(h)));
 
   /** Sidebar groups — auto-expanded when one of their items is the active route. */
-  let reportsOpen = false;
-  let exportsOpen = false;
-  let articlesOpen = false;
-  let registersOpen = false;
-  let settingsOpen = false;
+  let reportsOpen = $state(false);
+  let exportsOpen = $state(false);
+  let articlesOpen = $state(false);
+  let registersOpen = $state(false);
+  let settingsOpen = $state(false);
 
-  $: reportsOpen = groupActive(['/admin/reports']);
-  $: exportsOpen = groupActive(['/admin/exports']);
-  $: articlesOpen = groupActive([
-    '/admin/events',
-    '/admin/settings/floor-plan',
-    '/admin/settings/categories',
-    '/admin/articles',
-    '/admin/settings/cancellation-reasons',
-  ]);
-  $: registersOpen = groupActive([
-    '/admin/settings/layouts',
-    '/admin/registers',
-    '/admin/cancellations',
-    '/admin/users',
-  ]);
-  $: settingsOpen = groupActive([
-    '/admin/settings/company',
-    '/admin/settings/print-queue',
-    '/admin/settings/printers',
-    '/admin/settings/tse',
-    '/admin/settings/system',
-  ]);
+  run(() => {
+    reportsOpen = groupActive(['/admin/reports']);
+  });
+  run(() => {
+    exportsOpen = groupActive(['/admin/exports']);
+  });
+  run(() => {
+    articlesOpen = groupActive([
+      '/admin/events',
+      '/admin/settings/floor-plan',
+      '/admin/settings/categories',
+      '/admin/articles',
+      '/admin/settings/cancellation-reasons',
+    ]);
+  });
+  run(() => {
+    registersOpen = groupActive([
+      '/admin/settings/layouts',
+      '/admin/registers',
+      '/admin/cancellations',
+      '/admin/users',
+    ]);
+  });
+  run(() => {
+    settingsOpen = groupActive([
+      '/admin/settings/company',
+      '/admin/settings/print-queue',
+      '/admin/settings/printers',
+      '/admin/settings/tse',
+      '/admin/settings/system',
+    ]);
+  });
 
   /** Clears only the admin session cookie; a parallel register session remains intact. */
   async function logout() {
@@ -115,7 +134,7 @@
       <a href="/admin" class:active={isActive('/admin', true)}>Dashboard</a>
 
       <div class="nav-group">
-        <button class="nav-group-btn" class:active={reportsOpen} on:click={() => (reportsOpen = !reportsOpen)}>
+        <button class="nav-group-btn" class:active={reportsOpen} onclick={() => (reportsOpen = !reportsOpen)}>
           <span>Auswertungen</span>
           <span class="chevron" class:open={reportsOpen}>›</span>
         </button>
@@ -130,7 +149,7 @@
       </div>
 
       <div class="nav-group">
-        <button class="nav-group-btn" class:active={exportsOpen} on:click={() => (exportsOpen = !exportsOpen)}>
+        <button class="nav-group-btn" class:active={exportsOpen} onclick={() => (exportsOpen = !exportsOpen)}>
           <span>Exporte</span>
           <span class="chevron" class:open={exportsOpen}>›</span>
         </button>
@@ -144,7 +163,7 @@
       </div>
 
       <div class="nav-group">
-        <button class="nav-group-btn" class:active={articlesOpen} on:click={() => (articlesOpen = !articlesOpen)}>
+        <button class="nav-group-btn" class:active={articlesOpen} onclick={() => (articlesOpen = !articlesOpen)}>
           <span>Artikel &amp; Saalplan</span>
           <span class="chevron" class:open={articlesOpen}>›</span>
         </button>
@@ -160,7 +179,7 @@
       </div>
 
       <div class="nav-group">
-        <button class="nav-group-btn" class:active={registersOpen} on:click={() => (registersOpen = !registersOpen)}>
+        <button class="nav-group-btn" class:active={registersOpen} onclick={() => (registersOpen = !registersOpen)}>
           <span>Kassen &amp; Benutzer</span>
           <span class="chevron" class:open={registersOpen}>›</span>
         </button>
@@ -175,7 +194,7 @@
       </div>
 
       <div class="nav-group">
-        <button class="nav-group-btn" class:active={settingsOpen} on:click={() => (settingsOpen = !settingsOpen)}>
+        <button class="nav-group-btn" class:active={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>
           <span>Einstellungen</span>
           <span class="chevron" class:open={settingsOpen}>›</span>
         </button>
@@ -193,7 +212,7 @@
 
     <div class="sidebar-footer">
       <span class="user-name">{$adminUser?.name}</span>
-      <button class="btn-logout" on:click={logout}>Abmelden</button>
+      <button class="btn-logout" onclick={logout}>Abmelden</button>
     </div>
   </aside>
 
@@ -205,7 +224,7 @@
         — bitte nachholen, damit weiter kassiert werden kann.
       </a>
     {/if}
-    <slot />
+    {@render children?.()}
   </main>
 </div>
 {/if}

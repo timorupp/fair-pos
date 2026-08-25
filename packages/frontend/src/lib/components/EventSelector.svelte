@@ -14,14 +14,19 @@
   import { onMount, createEventDispatcher } from 'svelte';
   import { api } from '$lib/api';
 
-  /** Currently selected event id; two-way bound by the parent. */
-  export let selectedId: string | null = null;
+  
+  interface Props {
+    /** Currently selected event id; two-way bound by the parent. */
+    selectedId?: string | null;
+  }
+
+  let { selectedId = $bindable(null) }: Props = $props();
 
   type EventOption = { id: string; name: string; start_time: string; end_time: string };
 
-  let events: EventOption[] = [];
-  let loading = true;
-  let error = '';
+  let events: EventOption[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
   const dispatch = createEventDispatcher<{ change: string | null }>();
 
@@ -74,7 +79,7 @@
   {:else if events.length === 0}
     <span class="muted">Keine Veranstaltungen konfiguriert</span>
   {:else}
-    <select id="evt-sel" value={selectedId ?? ''} on:change={onChange}>
+    <select id="evt-sel" value={selectedId ?? ''} onchange={onChange}>
       {#each events as e}
         <option value={e.id}>{e.name} ({formatDate(e.start_time)} – {formatDate(e.end_time)})</option>
       {/each}

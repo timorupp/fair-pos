@@ -538,7 +538,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   **Noch offen:** die Produktions-Node-Version muss noch manuell auf dem
   echten Server umgestellt werden (SSH-Zugriff nötig, hat niemand aus dieser
   Session heraus — gleiches Muster wie die `sudoers`-Einrichtung bei #60/#61).
-- [ ] **#71** Frontend: Svelte-4→5-Migration (einziger Weg, um vite/esbuild/svelte-hmr/vitefu-CVEs zu schließen)
+- [x] **#71** Frontend: Svelte-4→5-Migration (einziger Weg, um vite/esbuild/svelte-hmr/vitefu-CVEs zu schließen)
   Bei der Analyse zu Task #68 gefunden: die Vulnerabilities in `vite`,
   `esbuild` (transitiv über vite), `svelte-hmr`, `vitefu` und
   `@sveltejs/vite-plugin-svelte` selbst hängen zusammen — per
@@ -553,3 +553,55 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   SSR, nicht im ausgelieferten statischen Build; die Vite/esbuild-CVEs
   betreffen primär den Dev-Server. Bewusst nicht in #68 mitgezogen — eigene
   Framework-Migration mit vollem Regressionstest, keine Bereinigung.
+  **Erledigt (2026-08-25):** Auf Nutzerentscheidung hin vollständig auf
+  Runes migriert statt im Svelte-5-Legacy-Kompatibilitätsmodus zu bleiben —
+  Begründung: nichts ist live, die volle QA-Runde ist wegen des
+  Dependency-Bumps ohnehin fällig, ein zweiter Migrationsaufwand später
+  (Legacy-Modus ist als Übergangshilfe angekündigt, keine Dauerlösung)
+  wäre teurer als jetzt einmal gründlich.
+  - Toolchain gehoben: `svelte@5.56.10`, `@sveltejs/vite-plugin-svelte@7.3.0`,
+    `vite@8.2.2`, `svelte-check@4.7.6` (`packages/frontend/package.json`).
+    Erster gezielter Install ließ eine doppelte alte/neue Paketkopie im Baum
+    stehen (npm hatte den bestehenden Lockfile-Graphen nur erweitert statt
+    neu aufgelöst) — behoben durch vollständiges Neuaufsetzen
+    (`rm -rf node_modules package-lock.json && npm install`), danach
+    durchgängig eine Version pro Paket.
+  - Migration mit dem offiziellen Codemod (`npx sv migrate svelte-5`, v1.10.3)
+    über alle 36 `.svelte`-Dateien laufen lassen. Das Tool ist rein interaktiv
+    (kein Non-Interactive-Flag) und reagiert nicht auf simples Stdin-Piping
+    (Checkbox-Prompts brauchen ein echtes TTY) — mit einem kleinen
+    `pexpect`-Skript (isolierte venv) über eine echte Pseudo-TTY gesteuert.
+  - Codemod-Ergebnis stichprobenartig geprüft (`Modal.svelte`,
+    `EventSelector.svelte`, Saalplan-Editor, Kassieren-Seite): durchgängig
+    korrekte, mechanische Übersetzung — `export let` → `$props()`
+    (inkl. korrekt erkannter `$bindable()` bei `bind:`-Nutzung im Aufrufer),
+    `let x = y` → `$state(y)`, reine `$:`-Ableitungen → `$derived(...)`,
+    `$:`-Statements mit Zuweisungen → `run()` aus `svelte/legacy`,
+    `on:click` → `onclick`, `<slot />` → `{@render children?.()}`.
+  - 3 durch die Migration aufgedeckte Typfehler behoben (`svelte-check`
+    0→3 Fehler, danach wieder 0): `settings/company/+page.svelte` —
+    `bind:this`-Ref brauchte das Svelte-5-Idiom `$state()!` statt
+    unmöglichem `$state()` mit nicht-optionalem Typ;
+    `settings/layouts/[id]/+page.svelte` — redundantes
+    `stopPropagation(...)`-Wrapper aus `svelte/legacy` entfernt (die
+    aufgerufene Funktion ruft `e.stopPropagation()` bereits selbst auf, der
+    Wrapper typisierte das Event nur unnötig auf das generische `Event`
+    herunter); `settings/system/+page.svelte` — `$derived(ternary)` durch
+    `$derived.by(() => ...)` ersetzt (bekannte TS-Einschränkung: Narrowing
+    in einer `$derived`-Ausdrucksposition funktioniert nicht zuverlässig,
+    in einem Callback-Body schon).
+  - Verifiziert: `svelte-check` 431 Dateien/0 Fehler (nur 2 vorbestehende
+    a11y-Warnungen), `npm run build` (Root, alle drei Packages) grün,
+    Backend-Unit 235/235 + Frontend-Unit 49/49 grün, `vite preview` gegen den
+    Static-Build gestartet und `/`, `/login`, `/admin` per `curl` auf 200 +
+    korrekt gerendertes SSR-HTML geprüft (Login-Formular mit deutschen
+    Labels, Hydration-Bootstrap referenziert die neuen Bundle-Dateien).
+  - npm-Vulnerabilities: 12 → 5 (nur noch die bereits in `DANGER.md`
+    dokumentierten Restrisiken D-033/D-034 offen — kein Fund mehr aus
+    Kategorie D der #68-Analyse).
+  **Noch offen — von dieser Session nicht leistbar:** echtes interaktives
+  Browser-Testing (Klickpfade: Bonkasse-Checkout, Bedienungskasse mit
+  Tischen/Split-Checkout, Saalplan-Editor Drag-and-Drop, alle Formulare) —
+  diese Session hat keinen Browser, nur HTTP-Ebene wurde geprüft. Laut
+  `CLAUDE.md`-Konvention für Frontend-Änderungen vor Produktivsetzung
+  zwingend nachzuholen, siehe auch `docs/Manueller-Testplan.md`.

@@ -1,4 +1,9 @@
 <script lang="ts">
+  interface Props {
+    children?: import('svelte').Snippet;
+  }
+
+  let { children }: Props = $props();
   /**
    * Root layout — intentionally has no session check.
    *
@@ -9,7 +14,7 @@
    */
 </script>
 
-<slot />
+{@render children?.()}
 
 <style>
   :global(*, *::before, *::after) {

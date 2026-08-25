@@ -1,21 +1,23 @@
 <script lang="ts">
+  import { preventDefault } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import type { CancellationReason, BookingType } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
-  let reasons: CancellationReason[] = [];
-  let loading = true;
-  let error = '';
+  let reasons: CancellationReason[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
 
-  let modalOpen = false;
-  let editing: CancellationReason | null = null;
-  let formName = '';
-  let formBookingType = 'cancellation';
-  let formActive = true;
-  let formError = '';
-  let saving = false;
-  let deleting = false;
+  let modalOpen = $state(false);
+  let editing: CancellationReason | null = $state(null);
+  let formName = $state('');
+  let formBookingType = $state('cancellation');
+  let formActive = $state(true);
+  let formError = $state('');
+  let saving = $state(false);
+  let deleting = $state(false);
 
   onMount(load);
 
@@ -63,7 +65,7 @@
 <div class="page">
   <div class="page-header">
     <h1>Stornogründe</h1>
-    <button class="btn-primary" on:click={openCreate}>+ Neu</button>
+    <button class="btn-primary" onclick={openCreate}>+ Neu</button>
   </div>
 
   {#if loading}
@@ -83,7 +85,7 @@
             <td>{r.name}</td>
             <td>{typeLabel(r.booking_type)}</td>
             <td>{r.is_active ? '✓' : ''}</td>
-            <td class="actions"><button class="btn-ghost" on:click={() => openEdit(r)}>Bearbeiten</button></td>
+            <td class="actions"><button class="btn-ghost" onclick={() => openEdit(r)}>Bearbeiten</button></td>
           </tr>
         {/each}
       </tbody>
@@ -92,7 +94,7 @@
 </div>
 
 <Modal bind:open={modalOpen} title={editing ? 'Stornogrund bearbeiten' : 'Neuer Stornogrund'}>
-  <form on:submit|preventDefault={save}>
+  <form onsubmit={preventDefault(save)}>
     <div class="field">
       <label for="cr-name">Name</label>
       <input id="cr-name" bind:value={formName} required disabled={saving || deleting}
@@ -112,12 +114,12 @@
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">
       {#if editing}
-        <button type="button" class="btn-ghost danger" on:click={remove} disabled={saving || deleting}>
+        <button type="button" class="btn-ghost danger" onclick={remove} disabled={saving || deleting}>
           {deleting ? 'Löschen…' : 'Löschen'}
         </button>
       {/if}
       <div class="spacer"></div>
-      <button type="button" class="btn-ghost" on:click={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
+      <button type="button" class="btn-ghost" onclick={() => (modalOpen = false)} disabled={saving || deleting}>Abbrechen</button>
       <button type="submit" class="btn-primary" disabled={saving || deleting}>{saving ? 'Speichern…' : 'Speichern'}</button>
     </div>
   </form>

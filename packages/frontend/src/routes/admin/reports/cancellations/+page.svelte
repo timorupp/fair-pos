@@ -16,15 +16,15 @@
     reason_name: string; booking_type: string;
   };
 
-  let selectedEventId: string | null = null;
-  let items: ItemRow[] = [];
-  let summary: SummaryRow[] = [];
-  let loading = false;
-  let error = '';
+  let selectedEventId: string | null = $state(null);
+  let items: ItemRow[] = $state([]);
+  let summary: SummaryRow[] = $state([]);
+  let loading = $state(false);
+  let error = $state('');
 
   /** Filters */
-  let userFilter: string | 'all' = 'all';
-  let typeFilter: '' | 'cancellation' | 'free_of_charge' = '';
+  let userFilter: string | 'all' = $state('all');
+  let typeFilter: '' | 'cancellation' | 'free_of_charge' = $state('');
 
   /** Reload report data when the event selection changes. */
   async function onEventChange() {
@@ -42,14 +42,14 @@
   }
 
   /** Returns the items list with the active user/type filters applied. */
-  $: filteredItems = items.filter((it) => {
+  let filteredItems = $derived(items.filter((it) => {
     if (userFilter !== 'all' && it.user_name !== userFilter) return false;
     if (typeFilter && it.booking_type !== typeFilter) return false;
     return true;
-  });
+  }));
 
   /** Re-aggregates the summary when filters are active. */
-  $: filteredSummary = (() => {
+  let filteredSummary = $derived((() => {
     if (userFilter === 'all' && !typeFilter) return summary;
     const by = new Map<string, { user_name: string; count: number; total: number }>();
     for (const it of filteredItems) {
@@ -60,9 +60,9 @@
       by.set(key, entry);
     }
     return [...by.values()].sort((a, b) => b.total - a.total).map((r) => ({ user_id: null, ...r }));
-  })();
+  })());
 
-  $: userOptions = ['all', ...new Set(items.map((it) => it.user_name))];
+  let userOptions = $derived(['all', ...new Set(items.map((it) => it.user_name))]);
 
   /**
    * Formats a number as a German euro amount with two decimals.

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { run } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -16,33 +18,37 @@
     line_total: number;     // gross total for that quantity
   };
 
-  let registerId = '';
-  let tableId = '';
-  let groups: OpenGroup[] = [];
+  let registerId = $state('');
+  let tableId = $state('');
+  let groups: OpenGroup[] = $state([]);
   // Map from group_key → quantity selected for this checkout.
-  let selected: Map<string, number> = new Map();
-  let loading = true;
-  let error = '';
+  let selected: Map<string, number> = $state(new Map());
+  let loading = $state(true);
+  let error = $state('');
 
   // Confirmation / result modal — reuses the same QR-dialog pattern as the Bonkasse.
-  let confirmationOpen = false;
-  let busy = false;
-  let lastInvoiceId: string | null = null;
-  let lastReceiptNumber: string | null = null;
-  let printDone = false;
-  let printing = false;
+  let confirmationOpen = $state(false);
+  let busy = $state(false);
+  let lastInvoiceId: string | null = $state(null);
+  let lastReceiptNumber: string | null = $state(null);
+  let printDone = $state(false);
+  let printing = $state(false);
   /** Set when a configured TSE failed to sign the sale — the sale still went through, see docs/TSE-Integration.md. */
-  let tseWarning: string | null = null;
+  let tseWarning: string | null = $state(null);
 
   // Cancel dialog
-  let cancelOpen = false;
-  let cancelReasonId = '';
-  let cancelReasons: { id: string; name: string; booking_type: 'cancellation' | 'free_of_charge' }[] = [];
-  let canceling = false;
-  let cancelError = '';
+  let cancelOpen = $state(false);
+  let cancelReasonId = $state('');
+  let cancelReasons: { id: string; name: string; booking_type: 'cancellation' | 'free_of_charge' }[] = $state([]);
+  let canceling = $state(false);
+  let cancelError = $state('');
 
-  $: registerId = ($page.params['id'] ?? '') as string;
-  $: tableId = ($page.params['tableId'] ?? '') as string;
+  run(() => {
+    registerId = ($page.params['id'] ?? '') as string;
+  });
+  run(() => {
+    tableId = ($page.params['tableId'] ?? '') as string;
+  });
 
   onMount(async () => {
     await Promise.all([loadOpen(), loadReasons()]);
@@ -85,11 +91,11 @@
     selected = next;
   }
 
-  $: selectedCount = [...selected.values()].reduce((s, n) => s + n, 0);
-  $: selectedTotal = Math.round(groups.reduce((s, g) => {
+  let selectedCount = $derived([...selected.values()].reduce((s, n) => s + n, 0));
+  let selectedTotal = $derived(Math.round(groups.reduce((s, g) => {
     const n = selected.get(g.group_key) ?? 0;
     return s + (g.unit_price + (g.unit_deposit ?? 0)) * n;
-  }, 0) * 100) / 100;
+  }, 0) * 100) / 100);
 
   /** Returns the quantities-array to send to the API, dropping zero entries. */
   function selectedQuantities(): { group_key: string; count: number }[] {
@@ -171,7 +177,7 @@
 
 <div class="page">
   <header class="header">
-    <button class="btn-ghost" on:click={() => goto(`/register/${registerId}/tables/${tableId}`)}>← Tisch</button>
+    <button class="btn-ghost" onclick={() => goto(`/register/${registerId}/tables/${tableId}`)}>← Tisch</button>
     <h1>Kassieren</h1>
   </header>
 
@@ -206,9 +212,9 @@
             <td class="num">{g.quantity}</td>
             <td class="num">
               <div class="stepper">
-                <button class="step-btn" on:click={() => changeQty(g, -1)} disabled={sel <= 0}>−</button>
+                <button class="step-btn" onclick={() => changeQty(g, -1)} disabled={sel <= 0}>−</button>
                 <span class="step-val">{sel}</span>
-                <button class="step-btn" on:click={() => changeQty(g, +1)} disabled={sel >= g.quantity}>+</button>
+                <button class="step-btn" onclick={() => changeQty(g, +1)} disabled={sel >= g.quantity}>+</button>
               </div>
             </td>
             <td class="num">{fmt(unit)} €</td>
@@ -218,7 +224,7 @@
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="2"><button class="btn-ghost" on:click={resetAll}>Zurücksetzen</button></td>
+          <td colspan="2"><button class="btn-ghost" onclick={resetAll}>Zurücksetzen</button></td>
           <td class="num"><strong>{selectedCount}</strong></td>
           <td class="num muted">Summe</td>
           <td class="num total"><strong>{fmt(selectedTotal)} €</strong></td>
@@ -227,11 +233,11 @@
     </table>
 
     <div class="actions">
-      <button class="btn-ghost danger" on:click={openCancelDialog} disabled={selectedCount === 0 || busy}>
+      <button class="btn-ghost danger" onclick={openCancelDialog} disabled={selectedCount === 0 || busy}>
         Stornieren / Kostenfrei
       </button>
       <div class="spacer"></div>
-      <button class="btn-primary" on:click={charge} disabled={selectedCount === 0 || busy}>
+      <button class="btn-primary" onclick={charge} disabled={selectedCount === 0 || busy}>
         {busy ? 'Kassiere…' : 'Kassieren'}
       </button>
     </div>
@@ -255,9 +261,9 @@
     {#if printDone}<p class="success-text">✓ Bon wird gedruckt</p>{/if}
 
     <div class="modal-actions">
-      <button class="btn-ghost" on:click={finishConfirmation} disabled={printing}>Rechnung per QR Code gescannt</button>
+      <button class="btn-ghost" onclick={finishConfirmation} disabled={printing}>Rechnung per QR Code gescannt</button>
       <div class="spacer"></div>
-      <button class="btn-primary" on:click={printReceipt} disabled={printing || printDone}>
+      <button class="btn-primary" onclick={printReceipt} disabled={printing || printDone}>
         {printing ? 'Drucke…' : 'Rechnung drucken'}
       </button>
     </div>
@@ -286,9 +292,9 @@
   {#if cancelError}<p class="error-text">{cancelError}</p>{/if}
 
   <div class="modal-actions">
-    <button class="btn-ghost" on:click={() => (cancelOpen = false)} disabled={canceling}>Abbrechen</button>
+    <button class="btn-ghost" onclick={() => (cancelOpen = false)} disabled={canceling}>Abbrechen</button>
     <div class="spacer"></div>
-    <button class="btn-primary danger" on:click={confirmCancel} disabled={canceling || !cancelReasonId}>
+    <button class="btn-primary danger" onclick={confirmCancel} disabled={canceling || !cancelReasonId}>
       {canceling ? 'Bestätige…' : 'Bestätigen'}
     </button>
   </div>
