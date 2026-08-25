@@ -222,7 +222,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   zugeordneter Kasse (409 + Meldung, Drucker bleibt bestehen). FK-Referenzen auf
   `printer(id)`: `register.printer_id`, `article.printer_id`, `print_job.printer_id`
   (NOT NULL).
-- [ ] **#58** TSE-Zeitsynchronisation + Self-Test (`maintainTse`) tatsächlich aufrufen
+- [x] **#58** TSE-Zeitsynchronisation + Self-Test (`maintainTse`) tatsächlich aufrufen
   Gefunden bei der Live-Installation (2026-08-24), als die Frage aufkam, wofür
   die TimeAdmin-PIN in den Systemeinstellungen eigentlich gebraucht wird:
   `tse/client.ts` hat eine fertige `maintainTse(timeAdminPin)`-Funktion, die
@@ -236,14 +236,12 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `cmdMaintain`) führt Self-Test und Zeitsync bereits bewusst in einer
   Operation aus (Self-Test muss laut Kommentar dort sogar vor dem Zeitsync
   laufen, weil er die TSE-Zeit invalidiert) — kein separater Task für den
-  Self-Test nötig, `maintainTse()` unten deckt automatisch beides ab, sobald
-  sie aufgerufen wird. Ohne regelmäßige Ausführung verliert die TSE laut
-  KassenSichV irgendwann die gültige Zeitreferenz bzw. den gültigen
-  Self-Test-Status. Bei der Umsetzung überlegen, was ein guter Auslösepunkt
-  ist (z.B. beim Backend-Start, wenn einer der beiden Schwellwerte
-  unterschritten wird; beim Tagesabschluss; oder ein expliziter „Jetzt
-  synchronisieren"-Button in der Admin-UI) — noch nicht entschieden,
-  zurückgestellt.
+  Self-Test nötig, `maintainTse()` deckt automatisch beides ab, sobald sie
+  aufgerufen wird.
+  **Zusammengeführt in Task #64 (2026-08-24):** Kein eigenständiger Task
+  mehr — der `maintainTse()`-Aufruf wird als einer der automatischen
+  Health-Checks in #64 umgesetzt (dort auch der endgültig festgelegte
+  Auslösepunkt: Backend-Start, siehe #64).
 - [ ] **#59** TSE-Status-Karte: Public-Key-Zeile läuft über den Kartenrahmen hinaus
   Gefunden bei der Live-Installation (Screenshot, 2026-08-24):
   `admin/settings/system/+page.svelte`, die `.kv`-Grid-Zeile für „Public Key"
@@ -332,7 +330,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   dem globalen Banner in `admin/+layout.svelte`). Siehe auch Task #60 für die
   geplante Server/Browser-Zeitabweichungs-Warnung, die konzeptionell
   ähnlich/ergänzend auf derselben Seite sitzen könnte.
-- [ ] **#64** System-Health-Check (Sammlung technischer Prüfungen)
+- [ ] **#64** System-Health-Check (Sammlung technischer Prüfungen, automatisch beim Start)
   Eine Sammelstelle für technische Systemprüfungen, unabhängig von
   Business-Zuständen (die deckt eher Task #63 ab) — z.B. genug freier
   Festplattenspeicher auf allen Volumes, Datenbank fehlerfrei (keine
@@ -345,6 +343,22 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   und mit vertretbarem Aufwand umsetzbar sind (z.B. Festplattenspeicher via
   `statvfs`/`df`, DB-Integrität via `pg_catalog`-Abfragen oder `VACUUM`/
   `ANALYZE`-Fehlerstatus).
+
+  **Ergänzt (2026-08-24):**
+  - **Task #58 ist Teil dieses Tasks:** der `maintainTse()`-Aufruf
+    (Self-Test + Zeitsync der TSE, siehe #58) läuft als einer der
+    Health-Checks hier mit, nicht als eigenständiger Mechanismus.
+  - Die Checks sollen **automatisch beim Systemstart** laufen (Backend-Boot,
+    analog zu `runMigrations()` in `index.ts`), nicht nur auf Abruf.
+  - `maintainTse()` zusätzlich **manuell auslösbar** im TSE-Bereich der
+    Admin-UI (Systemeinstellungen → System, künftig ggf. eigene Seite siehe
+    Task #65) — eigener Button neben "TSE testen", nicht nur automatisch
+    beim Start.
+  - Ergebnisse jedes Laufs **in ein Protokoll schreiben** (Format/Ablageort
+    noch offen — eigene DB-Tabelle vs. Logdatei; ggf. an das bestehende
+    `tse_outage`-Muster anlehnen, das für TSE-Ausfälle schon eine Art
+    Protokollierung macht).
+  - Fehlerhafte Checks sollen sich im Dashboard (Task #63) zeigen.
 - [ ] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
   Aktuell leben „TSE-Verbindung" und „TSE-Status" als zwei Karten mitten auf
   der allgemeinen `/admin/settings/system`-Seite (zusammen mit
@@ -370,3 +384,22 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   „kein Docker, alles nativ"-Architekturentscheidung (`docs/SETUP.md` →
   „Production-Deployment") verträgt. Ergebnis gehört in
   `docs/Installationsanleitung.md` als neuer Abschnitt.
+
+  **Bevorzugtes Konzept, noch nicht final entschieden (2026-08-24):**
+  Eigene lokale CA (z.B. via `mkcert`) statt Let's Encrypt (keine Domain
+  nötig, kein Internet-Zwang — passt zum Offline-fähigen Charakter von
+  FairPOS) und statt reinem Klick-weg-Selbstsigniert (schlechte UX, trainiert
+  Nutzer:innen darauf, Sicherheitswarnungen wegzuklicken). Verteilung des
+  öffentlichen CA-Zertifikats (nicht der private Key!) über einen bewusst
+  **unverschlüsselten** Download-Endpunkt (z.B. `http://<server-ip>/ca.crt`
+  — muss HTTP sein, sonst Henne-Ei-Problem: ein Gerät ohne CA-Vertrauen kann
+  die Datei nicht warnungsfrei über HTTPS laden), plus Onboarding-Seite mit
+  QR-Code + Schritt-für-Schritt-Anleitung je Plattform (Android/iOS/Windows/
+  macOS).
+  **Offene Hürde:** Das Installieren eines CA-Zertifikats in den
+  Geräte-Trust-Store braucht auf den meisten Plattformen Admin-/Geräte-
+  Besitzrechte — bei privaten/dienstlich verwalteten Geräten von Helfer:innen
+  ggf. nicht ohne Weiteres möglich. Kein Web-Standard kann das automatisieren
+  (wäre sonst ein Sicherheitsloch). Muss bei der endgültigen Entscheidung
+  berücksichtigt werden — evtl. bleibt der einfache Klick-weg-Selbstsignierte
+  Weg für Geräte ohne Admin-Zugriff als Fallback nötig.
