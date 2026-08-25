@@ -436,7 +436,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `docs/Rechtliche-Anforderungen.md` (dort schon vorhanden, kein zusätzlicher
   Verweis in der Datei selbst nötig, da sie bereits das maßgebliche Dokument
   ist, auf das README verweist).
-- [ ] **#68** npm-Vulnerabilities + veraltete Pakete aufräumen
+- [x] **#68** npm-Vulnerabilities + veraltete Pakete aufräumen
   Aufgekommen beim Server-Update (2026-08-25): `npm ci` meldet 24
   Vulnerabilities (1 niedrig, 13 mittel, 10 hoch) sowie mehrere
   deprecated-Warnungen (`inflight`, `rimraf@2`, `lodash.isequal`,
@@ -449,6 +449,29 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Priorität), gezielt einzeln aktualisieren statt pauschal, danach volle
   Testsuite + Build gegenprüfen. Bei kassenrelevanter Software lieber
   gründlich als schnell.
+  **Erledigt (2026-08-25):** Alle 24 Findings einzeln nachverfolgt (installierte
+  Version, tatsächliche Codenutzung, Upgrade-Pfad, Breaking Changes) und in
+  sechs Kategorien zerlegt:
+  - **Gefahrlos, umgesetzt:** `npm audit fix` (ohne `--force`) — behebt 9
+    Findings rein innerhalb bestehender SemVer-Ranges (`@sveltejs/kit`
+    2.67.0→2.70.3, `brace-expansion`, `concurrently` 9.2.3→9.2.4, `fast-uri`,
+    `find-my-way`, `nanoid`, `postcss`, `protobufjs`, `shell-quote`).
+  - **Produktions-Abhängigkeit, Major-Bump, verifiziert unschädlich:**
+    `@fastify/static` 8.3.0→10.1.3 (high, Path-Traversal/Auth-Bypass). Einzige
+    dokumentierte Breaking Change zwischen 8→10 ist die `setHeaders`-Signatur
+    (Node-`Response`→`FastifyReply`) — `app.ts` nutzt `setHeaders` nirgends
+    (nur `root`/`prefix`), also gezielt gezogen.
+  - Danach volle Testsuite + Build gegengeprüft: Backend-Unit (235/235),
+    Frontend-Unit (49/49), Backend-Integration inkl. Static-File-Pfad
+    (144/144), `npm run build` — alles grün, keine Regression.
+  - **Test-only Tooling mit Node-Versionskonflikt, Framework-Migrationskette
+    ohne isolierten Fix:** ausgelagert in eigene Tasks #70 (testcontainers
+    12.x verlangt Node ≥22.22) und #71 (Svelte-5-Migration nötig, um
+    vite/esbuild/svelte-hmr/vitefu zu fixen).
+  - **Kein Upstream-Fix verfügbar, als Restrisiko dokumentiert:** siehe
+    `DANGER.md` D-033 (exceljs/uuid) und D-034 (cookie via SvelteKit).
+  16 der ursprünglich 24 Findings bleiben offen — vollständig aufgeschlüsselt
+  in #70/#71/DANGER.md, kein Fund wurde stillschweigend fallengelassen.
 - [x] **#69** Wording „Kategorie" → „Artikelgruppe" vereinheitlichen
   **Erledigt (2026-08-25):** Gefunden beim Live-Testen — UI/Fehlermeldungen
   benutzten uneinheitlich „Kategorie"/„Artikelkategorie"/„Artikelgruppe" für
@@ -462,3 +485,33 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Uneinheitlichkeit). `docs/Rechtliche-Anforderungen.md:67` bewusst
   unverändert gelassen — dortiges „Kategorie" bezeichnet etwas anderes
   (Gruppierung der ELSTER-Meldepflichtangaben, nicht `article_category`).
+- [ ] **#70** Test-Tooling: `testcontainers` auf 12.x heben (Node-≥22.22-Frage klären)
+  Bei der Analyse zu Task #68 gefunden: `testcontainers`/
+  `@testcontainers/postgresql` 10.28.0→12.0.4 würde die moderate/high
+  Vulnerabilities in `dockerode`/`undici` beheben (reine `devDependencies`,
+  laufen nie in Produktion). Zwei Breaking Changes recherchiert: (a) Node-
+  Mindestversion springt in v12 auf `>=22.22` — aktuell läuft überall (lokale
+  Dev-Maschinen, vermutlich CI) Node 20.x, genau die auch in
+  `docs/Installationsanleitung.md` für die **Produktion** dokumentierte
+  Version (Produktion selbst bräuchte kein Node 22, `testcontainers` läuft
+  dort nie — aber jede Maschine, die `npm run test:integration` ausführen
+  will, müsste umsteigen). (b) Default-Wartestrategie für Container ändert
+  sich (Docker-Healthcheck statt reinem Port-Listening) — gegen
+  `src/test/global-setup.ts` zu prüfen. Bewusst nicht in #68 mitgezogen, da
+  die Node-Versionsfrage das ganze Team/CI betrifft und eine eigene
+  Entscheidung verdient.
+- [ ] **#71** Frontend: Svelte-4→5-Migration (einziger Weg, um vite/esbuild/svelte-hmr/vitefu-CVEs zu schließen)
+  Bei der Analyse zu Task #68 gefunden: die Vulnerabilities in `vite`,
+  `esbuild` (transitiv über vite), `svelte-hmr`, `vitefu` und
+  `@sveltejs/vite-plugin-svelte` selbst hängen zusammen — per
+  `npm view <pkg> peerDependencies` verifiziert, dass bereits die niedrigste
+  Version von `@sveltejs/vite-plugin-svelte`, die den Fix enthält (5.0.0),
+  `svelte: ^5.0.0` verlangt. Das Projekt läuft aber auf Svelte 4.2.20. Diese
+  CVEs lassen sich also nicht isoliert patchen, nur über eine vollständige
+  Migration (Runes-Umstellung, kein reines Dependency-Update). Praktisches
+  Risiko niedriger als der Schweregrad vermuten lässt: Frontend läuft im
+  SPA-Modus (`adapter-static`, siehe `CLAUDE.md`) — die SSR-bezogenen
+  Svelte-CVEs (XSS via SSR-Spread-Attribute etc.) greifen nur bei aktivem
+  SSR, nicht im ausgelieferten statischen Build; die Vite/esbuild-CVEs
+  betreffen primär den Dev-Server. Bewusst nicht in #68 mitgezogen — eigene
+  Framework-Migration mit vollem Regressionstest, keine Bereinigung.
