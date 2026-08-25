@@ -5,8 +5,11 @@
  * dedicated routes already have their own larger files (auth/closings/reports).
  */
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import {
@@ -15,6 +18,11 @@ import {
 } from '../../test/fixtures.js';
 import { ensureSystemSerial, initReceiptCounter } from '../../system/bootstrap.js';
 import { isValidSystemSerial } from '../../system/serial.js';
+
+const SUDO_STUB_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..', '..', 'test', 'fixtures', 'sudoStub.sh',
+);
 
 beforeAll(async () => { await getTestApp(); });
 afterAll(closeTestApp);
@@ -393,5 +401,103 @@ describe('Bootstrap: ensureSystemSerial / initReceiptCounter', () => {
       `SELECT value FROM system_setting WHERE key = 'receipt_counter'`,
     );
     expect(Number(result.rows[0]!.value)).toBe(1000);
+  });
+});
+
+describe('PUT /api/admin/system/time', () => {
+  beforeEach(() => { config.sudoPath = SUDO_STUB_PATH; });
+  afterAll(() => { config.sudoPath = null; });
+
+  it('sets the system time via the sudo/timedatectl stub', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/time',
+      headers: { cookie: adminCookie },
+      payload: { time: '2026-08-24T18:35:00' },
+    });
+    expect(response.statusCode).toBe(204);
+  });
+
+  it('rejects malformed input with 500 and a clear message, without calling sudo', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/time',
+      headers: { cookie: adminCookie },
+      payload: { time: 'not-a-date' },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.json().error).toMatch(/Ungültiges Datumsformat/);
+  });
+
+  it('returns 400 when no time value is sent', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/time',
+      headers: { cookie: adminCookie },
+      payload: {},
+    });
+    expect(response.statusCode).toBe(400);
+  });
+});
+
+describe('PUT /api/admin/system/timezone', () => {
+  beforeEach(() => { config.sudoPath = SUDO_STUB_PATH; });
+  afterAll(() => { config.sudoPath = null; });
+
+  it('sets the system timezone via the sudo/timedatectl stub', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/timezone',
+      headers: { cookie: adminCookie },
+      payload: { timezone: 'Europe/Berlin' },
+    });
+    expect(response.statusCode).toBe(204);
+  });
+
+  it('rejects an unknown timezone with 500 and a clear message, without calling sudo', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/timezone',
+      headers: { cookie: adminCookie },
+      payload: { timezone: 'Not/A_Real_Zone' },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.json().error).toMatch(/Unbekannte Zeitzone/);
+  });
+
+  it('returns 400 when no timezone is sent', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/timezone',
+      headers: { cookie: adminCookie },
+      payload: {},
+    });
+    expect(response.statusCode).toBe(400);
+  });
+});
+
+describe('POST /api/admin/system/shutdown', () => {
+  beforeEach(() => { config.sudoPath = SUDO_STUB_PATH; });
+  afterAll(() => { config.sudoPath = null; });
+
+  it('shuts down via the sudo/systemctl stub', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/system/shutdown',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(204);
+  });
+
+  it('returns 500 with a clear message when the underlying command fails (e.g. missing sudoers rule)', async () => {
+    process.env['SUDO_STUB_FAIL'] = '1';
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/system/shutdown',
+      headers: { cookie: adminCookie },
+    });
+    delete process.env['SUDO_STUB_FAIL'];
+    expect(response.statusCode).toBe(500);
+    expect(response.json().error).toMatch(/Server konnte nicht heruntergefahren werden/);
   });
 });

@@ -175,6 +175,7 @@
             <a href="/admin/settings/company" class:active={isActive('/admin/settings/company')}>Unternehmensdaten</a>
             <a href="/admin/settings/print-queue" class:active={isActive('/admin/settings/print-queue')}>Druckwarteschlange</a>
             <a href="/admin/settings/printers" class:active={isActive('/admin/settings/printers')}>Drucker</a>
+            <a href="/admin/settings/tse" class:active={isActive('/admin/settings/tse')}>TSE</a>
             <a href="/admin/settings/system" class:active={isActive('/admin/settings/system')}>System</a>
           </div>
         {/if}

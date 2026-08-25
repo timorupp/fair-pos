@@ -242,6 +242,23 @@ export const api = {
     system: {
       status: (): Promise<{ system_serial: string; timezone: string; server_time: string }> =>
         request('GET', '/admin/system/status'),
+      /**
+       * Manually sets the server's system clock (Task #60) — `time` in
+       * `YYYY-MM-DDTHH:MM:SS` form, as sent by an
+       * `<input type="datetime-local" step="1">`. Requires a sudoers rule on
+       * the server (see docs/Installationsanleitung.md); fails with a clear
+       * error otherwise.
+       */
+      setTime: (time: string): Promise<void> => request('PUT', '/admin/system/time', { time }),
+      /** Manually sets the server's system timezone (Task #60 follow-up) — an IANA identifier, e.g. `Europe/Berlin`. */
+      setTimezone: (timezone: string): Promise<void> => request('PUT', '/admin/system/timezone', { timezone }),
+      /**
+       * Cleanly shuts the server down (Task #61) — so a normal Vereins-
+       * Helfer:in never needs shell access. Requires a sudoers rule on the
+       * server (see docs/Installationsanleitung.md); fails with a clear
+       * error otherwise. Executes immediately — confirm in the UI first.
+       */
+      shutdown: (): Promise<void> => request('POST', '/admin/system/shutdown'),
     },
 
     backup: {

@@ -242,18 +242,14 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   mehr — der `maintainTse()`-Aufruf wird als einer der automatischen
   Health-Checks in #64 umgesetzt (dort auch der endgültig festgelegte
   Auslösepunkt: Backend-Start, siehe #64).
-- [ ] **#59** TSE-Status-Karte: Public-Key-Zeile läuft über den Kartenrahmen hinaus
-  Gefunden bei der Live-Installation (Screenshot, 2026-08-24):
-  `admin/settings/system/+page.svelte`, die `.kv`-Grid-Zeile für „Public Key"
-  (`.pubkey`, `word-break: break-all`) bricht trotzdem nicht um und läuft über
-  den Kartenrahmen hinaus. Vermutliche Ursache: `.kv` ist
-  `grid-template-columns: max-content 1fr` — Grid-Items haben per Default
-  `min-width: auto`, wodurch die `1fr`-Spalte trotz `word-break` nicht unter
-  die intrinsische (ungebrochene) Breite des Inhalts schrumpft. Ansatz:
-  `min-width: 0` auf `.kv dd` (oder gezielt auf `.pubkey`) ergänzen, ggf.
-  zusätzlich `overflow-wrap: anywhere` statt/neben `word-break: break-all`.
-  Noch nicht umgesetzt.
-- [ ] **#60** Systemzeit des Servers anzeigen + manuell setzen können
+- [x] **#59** TSE-Status-Karte: Public-Key-Zeile läuft über den Kartenrahmen hinaus
+  **Erledigt (2026-08-24):** Ursache bestätigt (Grid-Item-Default
+  `min-width: auto` verhindert das Schrumpfen der `1fr`-Spalte trotz
+  `word-break`). Fix in `admin/settings/system/+page.svelte`:
+  `grid-template-columns: max-content minmax(0, 1fr)` (statt `1fr`) +
+  `min-width: 0` auf `.kv dd` + zusätzlich `overflow-wrap: anywhere` neben
+  dem bestehenden `word-break: break-all` auf `.pubkey`.
+- [x] **#60** Systemzeit des Servers anzeigen + manuell setzen können
   Aufgekommen bei der Live-Installation (2026-08-24) im Zusammenhang mit
   Task #58: die TSE-Zeitsynchronisation gleicht die TSE-Uhr gegen die
   **Systemzeit des `fairpos`-Servers** ab — wenn die falsch steht, synchronisiert
@@ -286,7 +282,25 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   der manuellen Zeiteinstellung selbst ein Button „Aktuelle Browserzeit
   übernehmen" — übernimmt `new Date()` des Browsers als Vorschlagswert statt
   manueller Eingabe von Hand.
-- [ ] **#61** Shutdown-Button in der Admin-UI
+  **Erledigt (2026-08-24):** Vollständig umgesetzt. Backend:
+  `system/time.ts` (`setSystemTime`/`setSystemTimezone`, letztere validiert
+  gegen `Intl.supportedValuesOf('timeZone')` bevor `sudo` überhaupt
+  aufgerufen wird), Routen `PUT /api/admin/system/time` +
+  `PUT /api/admin/system/timezone`, `config.sudoPath` als Test-Override
+  (Muster wie `pgDumpPath`/`tseCliPath`) mit neuem
+  `test/fixtures/sudoStub.sh`. Frontend: Zeitzone jetzt ein `<select>`
+  (befüllt aus `Intl.supportedValuesOf('timeZone')`, kein extra
+  Backend-Roundtrip nötig) statt reiner Anzeige, „Aktuelle Browserzeit
+  übernehmen"-Button, Abweichungs-Warnung auf der Admin-Startseite
+  (`admin/+page.svelte`, >30s Differenz Browser/Server). Sudoers-Doku in
+  `docs/Installationsanleitung.md` Abschnitt 13 (inkl. Fund: `set-time`
+  funktioniert gar nicht, solange NTP aktiv ist — Abschnitt 13.1 lässt es
+  vorher deaktivieren). Unit- + Integrationstests für beide Routen/Funktionen.
+  **Noch offen (bewusst zurückgestellt für die nächste Session):** die
+  eigentliche `sudoers`-Datei muss noch live auf dem Server angelegt werden
+  (SSH-Zugriff nötig, hat niemand aus dieser Session heraus) — bis dahin
+  liefern beide Endpunkte eine klare Fehlermeldung statt zu funktionieren.
+- [x] **#61** Shutdown-Button in der Admin-UI
   Gewünscht, damit ein normaler Vereins-Nutzer den Server kontrolliert
   herunterfahren kann, ohne auf die Shell zu müssen. Gleiches technisches
   Muster wie Task #60: `fairpos` braucht dafür eine eng zugeschnittene
@@ -295,6 +309,14 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   UI-seitig unbedingt mit deutlicher Sicherheitsabfrage (analog zu anderen
   destruktiven Aktionen in der App, z.B. Backup-Restore/Reset-Diskussionen)
   — ein versehentlicher Klick legt sofort den laufenden Kassenbetrieb lahm.
+  **Erledigt (2026-08-24):** `system/shutdown.ts` (`shutdownServer`, ruft
+  `sudo systemctl poweroff` — fixer Befehl, keine Nutzereingabe, daher keine
+  Validierung nötig), Route `POST /api/admin/system/shutdown`, neue Karte
+  „Server herunterfahren" in `admin/settings/system/+page.svelte` mit
+  `confirm()`-Sicherheitsabfrage. Gleiche `sudoers`-Regel wie #60 (ein
+  gemeinsamer Abschnitt 13 in der Installationsanleitung), gleiches
+  Test-Stub-Muster. **Noch offen:** wie bei #60 — `sudoers`-Datei muss noch
+  live auf dem Server angelegt werden.
 - [x] **#62** Open-Source-Lizenz für das Repo hinzufügen
   **Erledigt (2026-08-24):** Lizenzen verglichen (MIT, Apache-2.0, GPL-3.0,
   AGPL-3.0) — Abhängigkeiten (`license-checker`-Scan über das ganze Monorepo)
@@ -359,17 +381,15 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     `tse_outage`-Muster anlehnen, das für TSE-Ausfälle schon eine Art
     Protokollierung macht).
   - Fehlerhafte Checks sollen sich im Dashboard (Task #63) zeigen.
-- [ ] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
-  Aktuell leben „TSE-Verbindung" und „TSE-Status" als zwei Karten mitten auf
-  der allgemeinen `/admin/settings/system`-Seite (zusammen mit
-  Kassensystem-Seriennummer, Zeitzone/Serverzeit, Server-Adresse,
-  Datenbank-Backup) — die TSE-Karten sind inzwischen recht umfangreich
-  (Mount-Pfad/Auto-erkennen, Client-ID, TimeAdmin-PIN, ausführliche
-  Status-Anzeige mit Rohdaten-Aufklapper) und würden besser auf eine eigene
-  Seite passen, analog zu „Unternehmensdaten" oder „Drucker", die auch
-  jeweils eigene Nav-Punkte haben (`admin/+layout.svelte`). Neuer Nav-Punkt
-  z.B. `/admin/settings/tse`, restliche „System"-Seite bleibt für
-  Seriennummer/Zeitzone/Server-Adresse/Backup.
+- [x] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
+  **Erledigt (2026-08-24):** Neue Seite `admin/settings/tse/+page.svelte`
+  mit den beiden Karten „TSE-Verbindung" und „TSE-Status" (inkl. eigenem
+  Speichern-Button, der nur noch `tse_mount_point`/`tse_client_id`/
+  `tse_time_admin_pin` sendet — das Backend-PUT war schon immer ein
+  partielles Upsert, kein Problem). `admin/settings/system/+page.svelte`
+  bereinigt (nur noch Seriennummer/Zeitzone/Server-Adresse/Backup, eigener
+  Speichern-Button nur für `server_address`). Neuer Nav-Punkt „TSE" in
+  `admin/+layout.svelte`. Der CSS-Fix aus Task #59 ist mit umgezogen.
 - [ ] **#66** SSL/HTTPS-Einrichtung dokumentieren
   Die Installationsanleitung deckt aktuell nur reines HTTP ab
   (`http://<server-ip>:3000`) — genau das hat D-030 (kaputte
@@ -403,3 +423,16 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   (wäre sonst ein Sicherheitsloch). Muss bei der endgültigen Entscheidung
   berücksichtigt werden — evtl. bleibt der einfache Klick-weg-Selbstsignierte
   Weg für Geräte ohne Admin-Zugriff als Fallback nötig.
+- [x] **#67** Produktbeschreibung + Haftungsausschluss (README/Repo-weit)
+  **Erledigt (2026-08-24):** `README.md` um eine ausführlichere
+  Produktbeschreibung (was FairPOS ist, für wen, welches Problem es löst,
+  Kernfunktionen) sowie eine neue "Haftungsausschluss"-Sektion ergänzt —
+  Nutzung auf eigenes Risiko, keine Garantie der Konformität mit KassenSichV/
+  GoBD/AO (mit Verweis auf die entsprechenden Klauseln in `LICENSE`
+  Abschnitte 15/16), aber die Software orientiert sich generell an
+  deutschem Recht und versucht ernsthaft, die einschlägigen Vorgaben
+  abzubilden — für die ehrliche Detailaufstellung, was konkret umgesetzt
+  wurde und wo Vereinfachungen getroffen wurden, Verweis auf
+  `docs/Rechtliche-Anforderungen.md` (dort schon vorhanden, kein zusätzlicher
+  Verweis in der Datei selbst nötig, da sie bereits das maßgebliche Dokument
+  ist, auf das README verweist).

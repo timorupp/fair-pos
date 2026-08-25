@@ -214,6 +214,15 @@ schon existiert).
 Details zur Architektur: `docs/TSE-Integration.md`. Hier nur die für die
 Installation relevanten Schritte.
 
+**Kein SDK/keine TSE vorhanden?** Diesen ganzen Abschnitt einfach
+überspringen und direkt mit Abschnitt 9 weitermachen. FairPOS funktioniert
+vollständig ohne TSE — Belege bleiben dann unsigniert (KassenSichV
+ausdrücklich tolerierter Zustand bei TSE-Ausfall/-Abwesenheit, siehe
+`docs/TSE-Integration.md` → „TSE-Ausfall"), kassiert wird trotzdem ganz
+normal weiter. Relevant z.B. außerhalb Deutschlands ohne vergleichbare
+TSE-Pflicht, oder für reine Testinstallationen (siehe README
+„Haftungsausschluss").
+
 ### 8.1 `tseCli` bauen
 
 Das Swissbit-SDK ist aus Lizenzgründen nicht Teil dieses Repos (gitignored) —
@@ -410,3 +419,85 @@ cp -r packages/frontend/build/* packages/backend/public/
 npm run db:migrate
 sudo systemctl restart fairpos
 ```
+
+---
+
+## 13. Optionale privilegierte Admin-Aktionen (Sudoers)
+
+Drei Funktionen in der Admin-UI (Systemeinstellungen → System) brauchen
+Root-Rechte, die der `fairpos`-Service-User bewusst nicht hat (Abschnitt 4):
+Systemzeit und Zeitzone manuell setzen (Task #60) und Server herunterfahren
+(Task #61). Alle drei Endpunkte sind bereits implementiert und rufen `sudo`
+auf — ohne die folgende `sudoers`-Regel schlagen sie mit einer klaren
+Fehlermeldung fehl, statt etwas Unerwartetes zu tun. Ohne diesen Abschnitt
+funktioniert der Rest von FairPOS unverändert — alle drei Funktionen sind
+rein optional.
+
+### 13.1 Voraussetzung: NTP deaktivieren
+
+**`timedatectl set-time` verweigert den Dienst, solange automatische
+Zeitsynchronisation (NTP, standardmäßig aktiv via `systemd-timesyncd`)
+eingeschaltet ist** — ohne diesen Schritt schlägt das manuelle Setzen der
+Systemzeit über die Admin-UI garantiert fehl, unabhängig von der
+`sudoers`-Regel unten:
+
+```bash
+timedatectl show -p NTP    # zur Kontrolle: sollte "NTP=yes" zeigen (Standard)
+sudo timedatectl set-ntp false
+timedatectl show -p NTP    # jetzt "NTP=no"
+```
+
+Sinnvoll ohnehin, da der Server laut Konzept auch ganz ohne Internet/NTP
+laufen soll (siehe „Datum und Uhrzeit" in `docs/Anforderungen.md`).
+Zeitzone-Setzen (`set-timezone`) ist davon **nicht** betroffen, funktioniert
+unabhängig vom NTP-Status.
+
+### 13.2 Sudoers-Regel anlegen
+
+**Bewusst kein Full-Sudo** — die Regel erlaubt exakt drei Befehle, sonst
+nichts:
+
+```bash
+cat <<'EOF' | sudo tee /tmp/fairpos-system-control > /dev/null
+fairpos ALL=(root) NOPASSWD: /usr/bin/timedatectl set-time *
+fairpos ALL=(root) NOPASSWD: /usr/bin/timedatectl set-timezone *
+fairpos ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff
+EOF
+sudo visudo -c -f /tmp/fairpos-system-control && \
+  sudo install -m 0440 -o root -g root /tmp/fairpos-system-control /etc/sudoers.d/fairpos-system-control && \
+  rm /tmp/fairpos-system-control
+```
+
+`visudo -c -f` prüft die Syntax einer beliebigen Datei, **bevor** sie nach
+`/etc/sudoers.d/` installiert wird — ein Syntaxfehler in einer live
+installierten Sudoers-Datei kann `sudo` systemweit blockieren, das hier
+vermeidet das. `-m 0440 -o root -g root` sind Pflicht: `sudo` weigert sich,
+unsicher berechtigte Dateien zu lesen.
+
+**Pfade prüfen** — auf den meisten Ubuntu-Systemen (inkl. den in dieser
+Anleitung getesteten 24.04/26.04) sind `/usr/bin/timedatectl` und
+`/usr/bin/systemctl` korrekt, aber sicherheitshalber gegenprüfen:
+
+```bash
+which timedatectl systemctl
+```
+
+Falls abweichend, die Pfade in der Regel oben entsprechend anpassen.
+
+**Verifizieren, ohne den Server tatsächlich zu beeinflussen** — zeigt, was
+`fairpos` per `sudo` darf, ohne etwas davon auszuführen:
+
+```bash
+sudo -u fairpos sudo -n -l
+```
+
+Sollte genau die drei Zeilen aus der Regel oben zeigen, ohne nach einem
+Passwort zu fragen (`-n` bricht sofort ab, statt zu warten, falls doch eins
+nötig wäre — dann stimmt etwas an der Regel/Dateiberechtigung nicht).
+
+**Echter Funktionstest:**
+- Systemzeit/Zeitzone setzen: über die Admin-UI (Systemeinstellungen →
+  System) einen Wert setzen und prüfen, dass die Erfolgsmeldung erscheint
+  und `date`/`timedatectl` auf dem Server sich tatsächlich geändert haben.
+- Shutdown: **fährt den Server wirklich herunter** — bewusst am Ende einer
+  Session testen, nicht nebenbei.

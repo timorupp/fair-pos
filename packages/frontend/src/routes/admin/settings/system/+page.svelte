@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { api, type TseStatus, type TseMountCandidate } from '$lib/api';
+  import { api } from '$lib/api';
   import { copyToClipboard } from '$lib/clipboard';
 
   // ── Read-only system status ────────────────────────────────────────────────
@@ -11,29 +11,36 @@
   let statusError = '';
   let tick = 0; // re-renders the clock every second by changing a reactive dependency
 
-  // ── Editable settings (server_address, TSE connection) ──
+  // ── Editable settings (server_address) ──
   let settings: Record<string, string> = {};
   let editableLoading = true;
   let saving = false;
   let saveError = '';
   let saveSuccess = false;
 
-  // ── TSE connection test ────────────────────────────────────────────────────
-  let tseTesting = false;
-  let tseResult: TseStatus | null = null;
-  let tseTestError = '';
+  // ── Manual system-time set (Task #60) — the TSE syncs its clock against
+  // this server's system time, and the register can run fully offline, so
+  // NTP isn't assumed reachable. Requires a sudoers rule on the server, see
+  // docs/Installationsanleitung.md. ──
+  let setTimeValue = '';
+  let settingTime = false;
+  let setTimeError = '';
+  let setTimeSuccess = false;
 
-  // ── TSE mount-point candidates (dropdown + Auto-erkennen) ──────────────────
-  let tseCandidates: TseMountCandidate[] = [];
-  let candidatesLoading = false;
-  let candidatesError = '';
-  let detecting = false;
-  let detectMessage = '';
+  // ── Manual timezone set (Task #60 follow-up) — full time control via the
+  // UI needs both the clock and the timezone. ──
+  const availableTimezones = typeof Intl.supportedValuesOf === 'function'
+    ? Intl.supportedValuesOf('timeZone').sort((a, b) => a.localeCompare(b))
+    : [];
+  let setTimezoneValue = '';
+  let settingTimezone = false;
+  let setTimezoneError = '';
+  let setTimezoneSuccess = false;
 
   let clockTimer: ReturnType<typeof setInterval> | null = null;
 
   onMount(async () => {
-    await Promise.all([loadStatus(), loadSettings(), loadCandidates()]);
+    await Promise.all([loadStatus(), loadSettings()]);
     clockTimer = setInterval(() => { tick++; }, 1000);
   });
 
@@ -45,6 +52,7 @@
       const status = await api.admin.system.status();
       systemSerial = status.system_serial;
       timezone = status.timezone;
+      setTimezoneValue = status.timezone;
       serverTime = new Date(status.server_time);
     } catch (e) {
       statusError = e instanceof Error ? e.message : 'Fehler';
@@ -65,9 +73,6 @@
     try {
       await api.admin.settings.save({
         server_address: settings['server_address'] ?? '',
-        tse_mount_point: settings['tse_mount_point'] ?? '',
-        tse_client_id: settings['tse_client_id'] ?? '',
-        tse_time_admin_pin: settings['tse_time_admin_pin'] ?? '',
       });
       saveSuccess = true;
     } catch (e) {
@@ -75,68 +80,62 @@
     } finally { saving = false; }
   }
 
-  /** Calls into the TSE hardware to confirm the configured connection actually works. */
-  async function testTse() {
-    tseTesting = true; tseTestError = ''; tseResult = null;
-    try {
-      tseResult = await api.admin.tse.status();
-    } catch (e) {
-      tseTestError = e instanceof Error ? e.message : 'Fehler';
-    } finally { tseTesting = false; }
-  }
-
-  /** Lists currently-mounted removable filesystems for the dropdown — a cheap local `lsblk` call, not a TSE hardware access, so safe to run automatically. */
-  async function loadCandidates() {
-    candidatesLoading = true; candidatesError = '';
-    try {
-      const result = await api.admin.tse.candidates();
-      tseCandidates = result.candidates;
-    } catch (e) {
-      candidatesError = e instanceof Error ? e.message : 'Fehler';
-    } finally { candidatesLoading = false; }
-  }
-
-  /**
-   * "Auto-erkennen" — probes every removable mount point via the TSE
-   * hardware itself (worm_init validates whether it's really a TSE) and
-   * fills the Mount-Pfad field with the first one found. Doesn't save by
-   * itself — the admin still confirms via the usual "Speichern" button,
-   * consistent with every other field on this page.
-   */
-  async function detectTse() {
-    detecting = true; detectMessage = '';
-    try {
-      const result = await api.admin.tse.detect();
-      if (result.mountPoint) {
-        settings['tse_mount_point'] = result.mountPoint;
-        saveSuccess = false;
-        detectMessage = `TSE gefunden: ${result.mountPoint}. Bitte unten speichern.`;
-      } else if (result.candidatesTried === 0) {
-        detectMessage = 'Kein Wechseldatenträger gefunden — ist die TSE eingesteckt?';
-      } else {
-        detectMessage = `Keine TSE gefunden (${result.candidatesTried} Wechseldatenträger geprüft).`;
-      }
-    } catch (e) {
-      detectMessage = e instanceof Error ? e.message : 'Fehler';
-    } finally {
-      detecting = false;
-      await loadCandidates();
-    }
-  }
-
-  /** Formats a seconds-until countdown as whole days for readability. */
-  function formatDaysFromSeconds(seconds: number): string {
-    return `${Math.floor(seconds / 86400)} Tage`;
-  }
-
-  function copyTseResult() {
-    if (!tseResult) return;
-    copyToClipboard(JSON.stringify(tseResult, null, 2));
-  }
-
   /** Returns the current wall-clock time, advanced from the server baseline by the elapsed `tick` seconds. */
   $: liveTime = serverTime ? new Date(serverTime.getTime() + tick * 1000) : null;
   // ESLint doesn't see `tick` as used in the expression above without referencing it; that's the point.
+
+  /** Formats a Date as `YYYY-MM-DDTHH:MM:SS` in local time, matching what `<input type="datetime-local" step="1">` needs/produces. */
+  function toDatetimeLocal(date: Date): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+      `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  }
+
+  /** Prefills the time-set field with the browser's own current time. */
+  function useBrowserTime() {
+    setTimeValue = toDatetimeLocal(new Date());
+    setTimeSuccess = false;
+  }
+
+  async function submitSetTime() {
+    if (!setTimeValue) return;
+    setTimeError = ''; setTimeSuccess = false; settingTime = true;
+    try {
+      await api.admin.system.setTime(setTimeValue);
+      setTimeSuccess = true;
+      await loadStatus();
+    } catch (e) {
+      setTimeError = e instanceof Error ? e.message : 'Fehler';
+    } finally { settingTime = false; }
+  }
+
+  async function submitSetTimezone() {
+    if (!setTimezoneValue) return;
+    setTimezoneError = ''; setTimezoneSuccess = false; settingTimezone = true;
+    try {
+      await api.admin.system.setTimezone(setTimezoneValue);
+      setTimezoneSuccess = true;
+      await loadStatus();
+    } catch (e) {
+      setTimezoneError = e instanceof Error ? e.message : 'Fehler';
+    } finally { settingTimezone = false; }
+  }
+
+  // ── Shutdown (Task #61) ──
+  let shuttingDown = false;
+  let shutdownError = '';
+
+  async function requestShutdown() {
+    if (!confirm('Server jetzt wirklich herunterfahren? Das beendet den laufenden Kassenbetrieb sofort und der Server muss vor Ort wieder eingeschaltet werden.')) return;
+    shutdownError = ''; shuttingDown = true;
+    try {
+      await api.admin.system.shutdown();
+      // No further UI update expected — the server is going down.
+    } catch (e) {
+      shutdownError = e instanceof Error ? e.message : 'Fehler';
+      shuttingDown = false;
+    }
+  }
 
   function copySerial() {
     if (!systemSerial) return;
@@ -166,14 +165,55 @@
   <!-- Timezone & server time ─────────────────────────────────────────────────── -->
   <section class="card">
     <h2>Zeitzone &amp; Serverzeit</h2>
-    <p class="hint">Wird vom Betriebssystem des Servers übernommen. Änderung erfolgt in der Linux-Konfiguration des Servers, nicht in der Anwendung.</p>
+    <p class="hint">
+      Beides ist wichtig für die TSE-Zeitsynchronisation (die TSE gleicht sich gegen
+      <em>diese</em> Serverzeit/-zeitzone ab) — da die Kasse auch offline läuft, können
+      beide hier manuell gesetzt werden, statt auf NTP zu warten (NTP muss dafür auf dem
+      Server deaktiviert sein, siehe Installationsanleitung Abschnitt 13).
+    </p>
     {#if statusLoading}
       <p class="muted">Lade…</p>
     {:else}
       <dl class="kv">
-        <dt>Zeitzone</dt><dd><code>{timezone}</code></dd>
         <dt>Aktuelle Uhrzeit</dt><dd>{liveTime ? liveTime.toLocaleString('de-DE') : '—'}</dd>
       </dl>
+
+      <div class="field set-time-field">
+        <label for="set-time">Systemzeit setzen</label>
+        <div class="set-time-row">
+          <input
+            id="set-time"
+            type="datetime-local"
+            step="1"
+            bind:value={setTimeValue}
+            disabled={settingTime}
+          />
+          <button class="btn-ghost" type="button" on:click={useBrowserTime} disabled={settingTime}>
+            Aktuelle Browserzeit übernehmen
+          </button>
+          <button class="btn-primary" type="button" on:click={submitSetTime} disabled={settingTime || !setTimeValue}>
+            {settingTime ? 'Setze…' : 'Setzen'}
+          </button>
+        </div>
+        {#if setTimeError}<p class="error-text">{setTimeError}</p>{/if}
+        {#if setTimeSuccess}<p class="success-text">Systemzeit gesetzt.</p>{/if}
+      </div>
+
+      <div class="field set-time-field">
+        <label for="set-timezone">Zeitzone setzen</label>
+        <div class="set-time-row">
+          <select id="set-timezone" bind:value={setTimezoneValue} disabled={settingTimezone}>
+            {#each availableTimezones as tz}
+              <option value={tz}>{tz}</option>
+            {/each}
+          </select>
+          <button class="btn-primary" type="button" on:click={submitSetTimezone} disabled={settingTimezone || !setTimezoneValue || setTimezoneValue === timezone}>
+            {settingTimezone ? 'Setze…' : 'Setzen'}
+          </button>
+        </div>
+        {#if setTimezoneError}<p class="error-text">{setTimezoneError}</p>{/if}
+        {#if setTimezoneSuccess}<p class="success-text">Zeitzone gesetzt.</p>{/if}
+      </div>
     {/if}
   </section>
 
@@ -208,115 +248,17 @@
     <a class="btn-primary" href={api.admin.backup.downloadUrl()}>Backup herunterladen</a>
   </section>
 
-  <!-- TSE connection (editable) ─────────────────────────────────────────────── -->
+  <!-- Shutdown ───────────────────────────────────────────────────────────────── -->
   <section class="card">
-    <h2>TSE-Verbindung</h2>
+    <h2>Server herunterfahren</h2>
     <p class="hint">
-      Zugangsdaten für die Swissbit USB-TSE. Der Admin-PIN/PUK der TSE wird hier
-      bewusst nicht abgefragt — er wird nur bei der einmaligen Erstinbetriebnahme
-      benötigt und nicht dauerhaft gespeichert (siehe docs/TSE-Integration.md, Abschnitt 7).
+      Fährt den Server kontrolliert herunter, ohne dass jemand dafür auf die Shell muss.
+      Danach muss der Server vor Ort wieder eingeschaltet werden.
     </p>
-    {#if editableLoading}
-      <p class="muted">Lade…</p>
-    {:else}
-      <div class="field">
-        <label for="tse-mount-point">Mount-Pfad (USB-Stick)</label>
-        <input
-          id="tse-mount-point"
-          value={settings['tse_mount_point'] ?? ''}
-          on:input={(e) => { settings['tse_mount_point'] = e.currentTarget.value; saveSuccess = false; }}
-          placeholder="z. B. /mnt/tse-usb"
-          disabled={saving}
-        />
-        <div class="tse-detect-row">
-          <select
-            aria-label="Gefundene Wechseldatenträger"
-            disabled={candidatesLoading || tseCandidates.length === 0}
-            on:change={(e) => {
-              if (e.currentTarget.value) { settings['tse_mount_point'] = e.currentTarget.value; saveSuccess = false; }
-            }}
-          >
-            <option value="">
-              {#if candidatesLoading}Lade Wechseldatenträger…
-              {:else if tseCandidates.length === 0}Keine Wechseldatenträger gefunden
-              {:else}Gefundenen Mount-Pfad wählen…{/if}
-            </option>
-            {#each tseCandidates as candidate}
-              <option value={candidate.mountPoint}>{candidate.mountPoint} ({candidate.device})</option>
-            {/each}
-          </select>
-          <button class="btn-ghost" type="button" on:click={detectTse} disabled={detecting}>
-            {detecting ? 'Suche…' : 'Auto-erkennen'}
-          </button>
-        </div>
-        {#if candidatesError}<p class="error-text">{candidatesError}</p>{/if}
-        {#if detectMessage}<p class="hint detect-message">{detectMessage}</p>{/if}
-      </div>
-      <div class="field">
-        <label for="tse-client-id">Client-ID</label>
-        <input
-          id="tse-client-id"
-          value={settings['tse_client_id'] ?? ''}
-          on:input={(e) => { settings['tse_client_id'] = e.currentTarget.value; saveSuccess = false; }}
-          placeholder="z. B. FairPOS-1"
-          disabled={saving}
-        />
-      </div>
-      <div class="field">
-        <label for="tse-time-admin-pin">TimeAdmin-PIN</label>
-        <input
-          id="tse-time-admin-pin"
-          type="password"
-          autocomplete="off"
-          value={settings['tse_time_admin_pin'] ?? ''}
-          on:input={(e) => { settings['tse_time_admin_pin'] = e.currentTarget.value; saveSuccess = false; }}
-          disabled={saving}
-        />
-      </div>
-    {/if}
-  </section>
-
-  <!-- TSE connection test ───────────────────────────────────────────────────── -->
-  <section class="card">
-    <h2>TSE-Status</h2>
-    <p class="hint">Prüft die Verbindung zur konfigurierten TSE und zeigt deren aktuelle Statusdaten an.</p>
-    <button class="btn-ghost" on:click={testTse} disabled={tseTesting}>
-      {tseTesting ? 'Teste…' : 'TSE testen'}
+    <button class="btn-ghost danger" on:click={requestShutdown} disabled={shuttingDown}>
+      {shuttingDown ? 'Fährt herunter…' : 'Server herunterfahren'}
     </button>
-
-    {#if tseTestError}<p class="error-text">{tseTestError}</p>{/if}
-
-    {#if tseResult}
-      {#if !tseResult.configured}
-        <p class="muted">TSE ist nicht konfiguriert — Mount-Pfad und Client-ID oben eintragen und speichern.</p>
-      {:else if tseResult.error}
-        <p class="error-text">TSE-Fehler: {tseResult.error}</p>
-      {:else if tseResult.info}
-        <dl class="kv">
-          <dt>Self-Test bestanden</dt><dd>{tseResult.info.hasPassedSelfTest ? 'Ja' : 'Nein'}</dd>
-          <dt>Uhrzeit synchronisiert</dt><dd>{tseResult.info.hasValidTime ? 'Ja' : 'Nein'}</dd>
-          <dt>Seriennummer</dt><dd><code>{tseResult.info.tseSerialNumber}</code></dd>
-          <dt>Zertifizierungs-ID</dt><dd><code>{tseResult.info.tseCertificationId}</code></dd>
-          <dt>Formfaktor</dt><dd>{tseResult.info.formFactor}</dd>
-          <dt>Laufende Transaktionen</dt><dd>{tseResult.info.startedTransactions} / {tseResult.info.maxStartedTransactions}</dd>
-          <dt>Verbleibende Signaturen</dt><dd>{tseResult.info.remainingSignatures.toLocaleString('de-DE')} / {tseResult.info.maxSignatures.toLocaleString('de-DE')}</dd>
-          <dt>Zertifikat gültig bis</dt><dd>{new Date(tseResult.info.certificateExpirationDate * 1000).toLocaleDateString('de-DE')}</dd>
-          <dt>Nächster Self-Test</dt><dd>in {formatDaysFromSeconds(tseResult.info.timeUntilNextSelfTest)}</dd>
-          <dt>Nächste Zeitsynchronisation</dt><dd>in {formatDaysFromSeconds(tseResult.info.timeUntilNextTimeSynchronization)}</dd>
-          <dt>Signaturalgorithmus</dt><dd><code>{tseResult.info.signatureAlgorithm}</code></dd>
-          <dt>Zeitformat</dt><dd><code>{tseResult.info.logTimeFormat}</code></dd>
-          <dt>Public Key</dt><dd><code class="pubkey">{tseResult.info.publicKey}</code></dd>
-        </dl>
-
-        <details>
-          <summary>Rohdaten (JSON)</summary>
-          <div class="raw-row">
-            <pre class="raw-json">{JSON.stringify(tseResult.info, null, 2)}</pre>
-            <button class="btn-ghost" on:click={copyTseResult} title="In Zwischenablage kopieren">Kopieren</button>
-          </div>
-        </details>
-      {/if}
-    {/if}
+    {#if shutdownError}<p class="error-text">{shutdownError}</p>{/if}
   </section>
 
   {#if saveError}<p class="error-text">{saveError}</p>{/if}
@@ -348,27 +290,18 @@
     border-radius: var(--radius-sm); user-select: all;
   }
 
-  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1.25rem; margin: 0; font-size: 0.9rem; }
+  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.4rem 1.25rem; margin: 0; font-size: 0.9rem; }
   .kv dt { color: var(--color-text-muted); }
-  .kv dd { margin: 0; }
-  .kv code { font-size: 0.9rem; }
-  .kv .pubkey { word-break: break-all; font-size: 0.75rem; }
-
-  .tse-detect-row { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
-  .tse-detect-row select { flex: 1; max-width: 360px; }
-  .detect-message { margin: 0.4rem 0 0 0; }
+  .kv dd { margin: 0; min-width: 0; }
 
   .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
   .field:last-child { margin-bottom: 0; }
-  .field label { font-size: 0.85rem; color: var(--color-text-muted); }
   .field input { width: 100%; max-width: 360px; }
+
+  .set-time-field { margin-top: 1rem; }
+  .set-time-field label { font-size: 0.85rem; color: var(--color-text-muted); }
+  .set-time-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .set-time-row input, .set-time-row select { width: auto; max-width: 260px; flex: 0 0 auto; }
   .success-text { color: #4caf7d; font-size: 0.875rem; }
   .form-footer { max-width: 640px; padding-top: 0.5rem; }
-
-  .raw-row { display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 0.5rem; }
-  .raw-json {
-    flex: 1; margin: 0; padding: 0.75rem; font-size: 0.8rem; overflow-x: auto;
-    background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-sm);
-  }
-  details summary { cursor: pointer; font-size: 0.85rem; color: var(--color-text-muted); margin-top: 0.75rem; }
 </style>

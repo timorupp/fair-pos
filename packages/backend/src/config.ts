@@ -38,5 +38,13 @@ export const config = {
   // on `pg_dump` being on PATH (installed alongside the distro's `postgresql`
   // package, see docs/Installationsanleitung.md).
   pgDumpPath: process.env['PG_DUMP_PATH'] ?? null,
+  // Override point for tests (points at a stub script) — production relies on
+  // `sudo` being on PATH plus a narrowly-scoped sudoers rule that allows the
+  // `fairpos` service user to run `timedatectl set-time` without a password
+  // (see docs/Installationsanleitung.md, "Systemzeit manuell setzen"). Task
+  // #60 — the service process itself has no permission to change the system
+  // clock (no `CAP_SYS_TIME`), by design (see Abschnitt 4 der
+  // Installationsanleitung).
+  sudoPath: process.env['SUDO_PATH'] ?? null,
   isDev: (process.env['NODE_ENV'] ?? 'development') === 'development',
 };
