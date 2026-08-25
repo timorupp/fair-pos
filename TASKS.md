@@ -280,6 +280,14 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Settings-Endpoints — aber ggf. zusätzliches Logging erwägen). Dieselbe
   Sudoers-Mechanik lässt sich vermutlich für Task #61 (Shutdown-Button)
   wiederverwenden.
+  **Ergänzt (2026-08-24):** Warnung auf der Administrator-Startseite, wenn
+  Server- und Browserzeit um mehr als 30 Sekunden voneinander abweichen
+  (Vergleich clientseitig: Browser-`Date.now()` gegen `server_time` aus
+  `GET /api/admin/system/status`, ähnliches Muster wie der bestehende
+  globale Tagesabschluss-Banner in `admin/+layout.svelte`). Zusätzlich bei
+  der manuellen Zeiteinstellung selbst ein Button „Aktuelle Browserzeit
+  übernehmen" — übernimmt `new Date()` des Browsers als Vorschlagswert statt
+  manueller Eingabe von Hand.
 - [ ] **#61** Shutdown-Button in der Admin-UI
   Gewünscht, damit ein normaler Vereins-Nutzer den Server kontrolliert
   herunterfahren kann, ohne auf die Shell zu müssen. Gleiches technisches
@@ -289,3 +297,76 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   UI-seitig unbedingt mit deutlicher Sicherheitsabfrage (analog zu anderen
   destruktiven Aktionen in der App, z.B. Backup-Restore/Reset-Diskussionen)
   — ein versehentlicher Klick legt sofort den laufenden Kassenbetrieb lahm.
+- [x] **#62** Open-Source-Lizenz für das Repo hinzufügen
+  **Erledigt (2026-08-24):** Lizenzen verglichen (MIT, Apache-2.0, GPL-3.0,
+  AGPL-3.0) — Abhängigkeiten (`license-checker`-Scan über das ganze Monorepo)
+  erzwingen keine bestimmte Wahl (fast ausschließlich MIT/ISC/BSD/Apache-2.0,
+  ein paar LGPL-3.0 als reine npm-Abhängigkeit unproblematisch). Entscheidung:
+  **AGPL-3.0-or-later** — die Netzwerk-Klausel (§13) greift genau beim schon
+  geplanten Szenario "Verein A leiht den Server mit FairPOS an Verein B"
+  (reine Netzwerknutzung ohne klassische Weitergabe, wo GPL-3.0 nicht
+  greifen würde) und verhindert, dass ein kommerzieller Anbieter FairPOS als
+  geschlossene SaaS-Lösung anbietet. Copyright-Halter bewusst generisch:
+  "FairPOS Contributors". Kanonischer Lizenztext direkt von
+  `www.gnu.org/licenses/agpl-3.0.txt` übernommen (kein Fabrizieren von
+  Rechtstext) → `LICENSE` (Repo-Root). `license`-Feld in allen vier
+  `package.json`-Dateien ergänzt. Neue "Lizenz"-Sektion in `README.md`,
+  Kurznotiz in `CLAUDE.md`. Swissbit-TSE-SDK explizit als lizenzrechtlich
+  getrennt dokumentiert (eigener Swissbit-Vertrag, nie Teil des Repos).
+  Nebenbei: prominenter Hinweis auf die benötigte, separat zu beschaffende
+  Swissbit-SDK ergänzt — in `README.md` direkt am Anfang und am Kopf von
+  `docs/Installationsanleitung.md` (vor Abschnitt 1), damit das nicht erst
+  nach vielen Installationsschritten auffällt (Abschnitt 8.1 braucht es
+  zum Bauen von `tseCli`).
+- [ ] **#63** Admin-Startseite zu einem echten Dashboard ausbauen
+  Aktuell (`admin/+page.svelte`) nur ein Platzhalter ("Willkommen, {Name}.
+  Wähle links einen Bereich aus."), keine echten Daten. Idee: Übersicht über
+  Fehler und Systemzustand direkt beim Einloggen — z.B. fehlgeschlagene
+  TSE-Signaturen der letzten Stunde, wartende/fehlgeschlagene Druckaufträge,
+  aber auch positive Statuswerte (z.B. aktueller TSE-Zustand). **Vor der
+  Umsetzung analysieren**, welche Fehler/Systemdaten tatsächlich sinnvoll
+  und verfügbar sind — noch nicht festgelegt, welche Datenquellen konkret
+  einfließen (Kandidaten: `tse_outage`-Tabelle für TSE-Ausfälle, `print_job`
+  für die Druckwarteschlange, `GET /api/admin/tse/status` für den aktuellen
+  TSE-Zustand, ggf. die bereits bestehende Tagesabschluss-Pending-Logik aus
+  dem globalen Banner in `admin/+layout.svelte`). Siehe auch Task #60 für die
+  geplante Server/Browser-Zeitabweichungs-Warnung, die konzeptionell
+  ähnlich/ergänzend auf derselben Seite sitzen könnte.
+- [ ] **#64** System-Health-Check (Sammlung technischer Prüfungen)
+  Eine Sammelstelle für technische Systemprüfungen, unabhängig von
+  Business-Zuständen (die deckt eher Task #63 ab) — z.B. genug freier
+  Festplattenspeicher auf allen Volumes, Datenbank fehlerfrei (keine
+  korrupten Tabellen/Indizes etc.). Verhältnis zu Task #63 (Dashboard) und
+  `scripts/install/smoke-test.sh` (einmaliger Check bei/nach der
+  Installation) noch zu klären — vermutlich ergänzen sich alle drei:
+  Health-Check als wiederverwendbare Prüf-Logik, die sowohl vom
+  Smoke-Test-Skript als auch von einer Dashboard-Kachel (#63) konsumiert
+  werden kann. Noch nicht analysiert, welche konkreten Prüfungen sinnvoll
+  und mit vertretbarem Aufwand umsetzbar sind (z.B. Festplattenspeicher via
+  `statvfs`/`df`, DB-Integrität via `pg_catalog`-Abfragen oder `VACUUM`/
+  `ANALYZE`-Fehlerstatus).
+- [ ] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
+  Aktuell leben „TSE-Verbindung" und „TSE-Status" als zwei Karten mitten auf
+  der allgemeinen `/admin/settings/system`-Seite (zusammen mit
+  Kassensystem-Seriennummer, Zeitzone/Serverzeit, Server-Adresse,
+  Datenbank-Backup) — die TSE-Karten sind inzwischen recht umfangreich
+  (Mount-Pfad/Auto-erkennen, Client-ID, TimeAdmin-PIN, ausführliche
+  Status-Anzeige mit Rohdaten-Aufklapper) und würden besser auf eine eigene
+  Seite passen, analog zu „Unternehmensdaten" oder „Drucker", die auch
+  jeweils eigene Nav-Punkte haben (`admin/+layout.svelte`). Neuer Nav-Punkt
+  z.B. `/admin/settings/tse`, restliche „System"-Seite bleibt für
+  Seriennummer/Zeitzone/Server-Adresse/Backup.
+- [ ] **#66** SSL/HTTPS-Einrichtung dokumentieren
+  Die Installationsanleitung deckt aktuell nur reines HTTP ab
+  (`http://<server-ip>:3000`) — genau das hat D-030 (kaputte
+  Kopieren-Buttons, weil `navigator.clipboard` einen Secure Context
+  braucht) live zutage gefördert. Ein LAN-Server ohne öffentlichen
+  DNS-Namen bekommt kein Let's-Encrypt-Zertifikat — vermutlich
+  selbstsigniertes Zertifikat oder eine lokale CA als praktikabler Weg für
+  dieses Deployment-Modell. Zu klären/dokumentieren: Reverse-Proxy (z.B.
+  nginx/Caddy) vor dem Node-Prozess vs. TLS direkt in Fastify terminieren;
+  wie Nutzer im LAN dem selbstsignierten Zertifikat vertrauen (Browser-
+  Warnung, CA-Import); ob/wie sich das mit der bestehenden
+  „kein Docker, alles nativ"-Architekturentscheidung (`docs/SETUP.md` →
+  „Production-Deployment") verträgt. Ergebnis gehört in
+  `docs/Installationsanleitung.md` als neuer Abschnitt.

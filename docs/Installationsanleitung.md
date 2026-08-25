@@ -6,8 +6,20 @@ dedizierten Ubuntu-Server, **ohne Docker** (Entscheidung siehe
 Technologie-Tabelle). Automatisierte Varianten der wiederholbaren Schritte
 liegen als Skripte in `scripts/install/` (siehe Abschnitt 9).
 
-Getestet gegen: Ubuntu 24.04 LTS. Andere LTS-Versionen sollten funktionieren,
-wurden aber nicht verifiziert.
+Getestet gegen: Ubuntu 24.04 LTS und (vollständig, inkl. echter
+Swissbit-USB-TSE-Hardware, 2026-08-24) Ubuntu 26.04 LTS. Andere
+LTS-Versionen sollten funktionieren, wurden aber nicht verifiziert.
+
+> ⚠️ **Bevor du anfängst — Swissbit-TSE-SDK klären.** Für den echten
+> TSE-Betrieb (Abschnitt 8) wird das proprietäre Swissbit-TSE-SDK benötigt —
+> das ist **nicht** Teil dieses Repos (Lizenzgründe, siehe
+> `docs/TSE-Integration.md` Abschnitt 3) und muss über den eigenen
+> Swissbit-Vertrag separat besorgt werden (genaue Dateiliste:
+> `packages/backend/native/tse-cli/vendor/PLACE_SDK_FILES_HERE.txt`). Ohne
+> dieses SDK lässt sich `tseCli` in Abschnitt 8.1 nicht bauen — das lieber
+> jetzt klären als nach sieben Abschnitten Vorarbeit daran zu scheitern.
+> Alle Abschnitte bis einschließlich 7 (Voraussetzungen bis Datenbank-Setup)
+> funktionieren unabhängig davon.
 
 ---
 

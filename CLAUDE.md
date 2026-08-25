@@ -13,6 +13,18 @@ Session-Memory und bleibt bei Host- oder Session-Wechseln erhalten.
 **Zweck:** KassenSichV-konformes Kassensystem für Vereine, eingesetzt bei
 Veranstaltungen und Festen.
 
+**Lizenz:** AGPL-3.0-or-later (siehe `LICENSE`), © FairPOS Contributors.
+Bewusst Copyleft mit Netzwerk-Klausel gewählt, wegen des geplanten
+Server-Verleih-Szenarios zwischen Vereinen (siehe `docs/Anforderungen.md`).
+Das proprietäre Swissbit-TSE-SDK ist davon unberührt — eigene, separate
+Lizenz, nicht Teil des Repos (`docs/TSE-Integration.md` Abschnitt 3).
+
+**Wichtig bei neuen Abhängigkeiten:** Bei jeder neuen `npm`-Abhängigkeit
+die Lizenz auf Kompatibilität mit AGPL-3.0-or-later prüfen, bevor sie
+hinzugefügt wird — insbesondere bei Copyleft-Lizenzen, die mit AGPL
+kollidieren können (z.B. manche CDDL/EPL-Varianten), und bei jeglicher
+`UNLICENSED`/proprietären Abhängigkeit.
+
 **Kerndokumente** (alle unter `docs/`):
 - `docs/Anforderungen.md` — fachliche Anforderungen (maßgeblich)
 - `docs/Datenmodell.dbml` — Datenbankschema (dbdiagram.io)
