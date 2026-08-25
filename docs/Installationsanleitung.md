@@ -81,9 +81,9 @@ siehe `docs/Anforderungen.md` "Backup-Konzept").
 ## 3. Node.js installieren
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
-node --version   # muss >= 20.x sein
+node --version   # muss >= 24.x sein
 ```
 
 ---

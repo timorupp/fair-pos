@@ -485,7 +485,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Uneinheitlichkeit). `docs/Rechtliche-Anforderungen.md:67` bewusst
   unverändert gelassen — dortiges „Kategorie" bezeichnet etwas anderes
   (Gruppierung der ELSTER-Meldepflichtangaben, nicht `article_category`).
-- [ ] **#70** Test-Tooling: `testcontainers` auf 12.x heben (Node-≥22.22-Frage klären)
+- [x] **#70** Test-Tooling: `testcontainers` auf 12.x heben (Node-≥22.22-Frage klären)
   Bei der Analyse zu Task #68 gefunden: `testcontainers`/
   `@testcontainers/postgresql` 10.28.0→12.0.4 würde die moderate/high
   Vulnerabilities in `dockerode`/`undici` beheben (reine `devDependencies`,
@@ -500,6 +500,44 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `src/test/global-setup.ts` zu prüfen. Bewusst nicht in #68 mitgezogen, da
   die Node-Versionsfrage das ganze Team/CI betrifft und eine eigene
   Entscheidung verdient.
+  **Erledigt (2026-08-25):** Beide Sorgen aus der #68-Analyse vertieft geprüft:
+  - **Wartestrategie:** Quellcode von `@testcontainers/postgresql@10.28.0` vs.
+    `12.0.4` direkt verglichen (`npm pack` + `grep`) — beide Versionen setzen in
+    `PostgreSqlContainer` identisch `Wait.forAll([Wait.forHealthCheck(),
+    Wait.forListeningPorts()])` und legen bei Bedarf selbst einen
+    `pg_isready`-Healthcheck an. Die in den Release Notes erwähnte
+    Default-Änderung betrifft nur `GenericContainer`/`DockerComposeEnvironment`
+    ohne explizite Strategie — für uns folgenlos, da `global-setup.ts`
+    ausschließlich `PostgreSqlContainer` nutzt.
+  - **Node-Version:** präziser als angenommen — `testcontainers@12.0.4` selbst
+    hat kein `engines`-Feld; erst `@testcontainers/postgresql`s `^12.0.4`-Range
+    löst standardmäßig auf `12.1.0`+ auf, die `>=22.22` deklarieren. Da
+    `engine-strict` in diesem Repo nicht gesetzt ist (npm-Default `false`),
+    wäre das nur eine `EBADENGINE`-Warnung, kein Install-Fehler. Kein
+    CI-Workflow im Repo gefunden (`.github/workflows` existiert nicht) —
+    „betrifft CI" aus der ursprünglichen Formulierung trifft nicht zu, nur
+    lokale Dev-Maschinen sind betroffen.
+  - **Größerer, unabhängiger Fund:** Node 20 ("Iron") ist laut offiziellem
+    Node-Release-Schedule bereits seit 2026-04-30 EOL — keine
+    Security-Patches vom Node-Projekt mehr, betrifft direkt die dokumentierte
+    Produktionsinstallation (`setup_20.x`). Dem Nutzer vorgelegt: Node-Baseline
+    komplett anheben statt nur testcontainers isoliert zu betrachten.
+    Entscheidung: **Node 24 LTS** (aktuelle Active-LTS seit 2025-10-28, Support
+    bis 2028-04-30) statt Node 22 (bereits in reiner Maintenance-Phase).
+  - Umgesetzt: `testcontainers`/`@testcontainers/postgresql` auf `^12.0.4`
+    (`packages/backend/package.json`); `engines.node` in `package.json`
+    (Repo-Root) auf `>=24.0.0`; `docs/Installationsanleitung.md` Abschnitt 3
+    auf `setup_24.x` umgestellt. Dev-Rechner selbst per NodeSource-Befehl auf
+    Node 24.19.0 gehoben (vom Nutzer ausgeführt, da diese Session keine
+    `sudo`-Rechte hat) — danach `npm ci` + volle Suite unter echtem Node 24
+    gegengeprüft: Build ✓, Backend-Unit 235/235 ✓, Frontend-Unit 49/49 ✓,
+    Backend-Integration 144/144 ✓ (testcontainers 12.x + Postgres-Container
+    real getestet, keine `EBADENGINE`-Warnung mehr). npm-Vulnerabilities damit
+    von 16 auf 12 gesunken (nur noch Kategorie D/E/F aus der #68-Analyse
+    offen, siehe #71/DANGER.md).
+  **Noch offen:** die Produktions-Node-Version muss noch manuell auf dem
+  echten Server umgestellt werden (SSH-Zugriff nötig, hat niemand aus dieser
+  Session heraus — gleiches Muster wie die `sudoers`-Einrichtung bei #60/#61).
 - [ ] **#71** Frontend: Svelte-4→5-Migration (einziger Weg, um vite/esbuild/svelte-hmr/vitefu-CVEs zu schließen)
   Bei der Analyse zu Task #68 gefunden: die Vulnerabilities in `vite`,
   `esbuild` (transitiv über vite), `svelte-hmr`, `vitefu` und
