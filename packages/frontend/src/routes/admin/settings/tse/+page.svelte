@@ -53,9 +53,14 @@
     } finally { saving = false; }
   }
 
-  /** Calls into the TSE hardware to confirm the configured connection actually works. */
+  /**
+   * Calls into the TSE hardware to confirm the configured connection actually works.
+   * Also clears a stale result from `runMaintain()` — the two actions share one TSE
+   * connection, so a leftover error from the other button reads as still-current otherwise.
+   */
   async function testTse() {
     tseTesting = true; tseTestError = ''; tseResult = null;
+    maintainError = ''; maintainSuccess = false;
     try {
       tseResult = await api.admin.tse.status();
     } catch (e) {
@@ -63,9 +68,13 @@
     } finally { tseTesting = false; }
   }
 
-  /** Runs self-test + time sync on the TSE — needed once after a fresh setup, since nothing calls this automatically yet. */
+  /**
+   * Runs self-test + time sync on the TSE — needed once after a fresh setup, since nothing calls this automatically yet.
+   * Also clears a stale result from `testTse()`, for the same reason as above.
+   */
   async function runMaintain() {
     maintaining = true; maintainError = ''; maintainSuccess = false;
+    tseTestError = ''; tseResult = null;
     try {
       await api.admin.tse.maintain();
       maintainSuccess = true;
@@ -268,7 +277,7 @@
   .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.4rem 1.25rem; margin: 0; font-size: 0.9rem; }
   .kv dt { color: var(--color-text-muted); }
   .kv dd { margin: 0; min-width: 0; }
-  .kv code { font-size: 0.9rem; }
+  .kv code { font-size: 0.9rem; word-break: break-all; overflow-wrap: anywhere; }
   .kv .pubkey { word-break: break-all; overflow-wrap: anywhere; font-size: 0.75rem; }
 
   .tse-detect-row { display: flex; gap: 0.5rem; margin-top: 0.4rem; }

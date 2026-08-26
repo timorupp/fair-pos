@@ -50,23 +50,54 @@ function requireTseConfig(): { mountPoint: string; clientId: string } {
 }
 
 /**
+ * Default per-call timeout for CLI commands that don't run a self-test.
+ * A worked example from live hardware (2026-08-26): calling `maintain` right
+ * after plugging the TSE in — no prior command issued — reliably timed out
+ * even 20+ seconds after insertion, but succeeded immediately once preceded
+ * by any other call (e.g. `info`). Points at the TSE's own internal
+ * warm-up/boot sequence starting only on its *first received command*, not
+ * on physical insertion — so the very first command against a freshly
+ * plugged-in TSE should budget for that, on top of whatever the command
+ * itself needs. See {@link SELF_TEST_TIMEOUT_MS}.
+ */
+const DEFAULT_TIMEOUT_MS = 15_000;
+
+/**
+ * Timeout for CLI commands that run a self-test internally (`setup`,
+ * `maintain` — see `native/tse-cli/src/tseCli.cpp`'s `cmdMaintain`, which
+ * explicitly runs `worm_tse_runSelfTest` before anything else). Self-test is
+ * a heavier operation than a plain read/transaction call, and — per the
+ * finding above — may also have to absorb the TSE's cold-start warm-up on
+ * the first command after insertion. Generous on purpose: this runs from an
+ * explicit admin action or one-time setup, never on the hot checkout path,
+ * so a slower ceiling costs nothing when the TSE responds promptly.
+ */
+const SELF_TEST_TIMEOUT_MS = 60_000;
+
+/**
  * Runs the TSE CLI with the given command and arguments, and parses its
  * single-line JSON response.
  *
  * @param mountPoint - Filesystem mount point of the TSE (first CLI argument).
  * @param command - CLI subcommand (`setup`, `start`, `info`, ...).
  * @param args - Remaining positional arguments for that subcommand.
+ * @param timeoutMs - Max time to wait for the CLI to exit, in milliseconds — see {@link DEFAULT_TIMEOUT_MS}/{@link SELF_TEST_TIMEOUT_MS}.
  * @returns The parsed `result` object on success.
  * @throws {TseError} When the CLI reports `ok: false`.
  * @throws {Error} When the CLI produced no parseable output at all (crash, missing binary, ...).
  */
-async function runCli<T>(mountPoint: string, command: string, args: string[]): Promise<T> {
+async function runCli<T>(
+  mountPoint: string,
+  command: string,
+  args: string[],
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
   const cliPath = config.tseCliPath ?? DEFAULT_CLI_PATH;
   const stdout = await new Promise<string>((resolve, reject) => {
     execFile(
       cliPath,
       [mountPoint, command, ...args],
-      { timeout: 15_000, maxBuffer: 1024 * 1024 },
+      { timeout: timeoutMs, maxBuffer: 1024 * 1024 },
       (err, stdout, stderr) => {
         // execFile treats a non-zero exit code as an error, but our CLI always
         // prints a valid JSON envelope on stdout regardless of exit code — the
@@ -204,7 +235,9 @@ export function getTseInfoAt(mountPoint: string): Promise<TseInfo> {
 export function maintainTse(timeAdminPin: string): Promise<void> {
   return enqueueTseCall(async () => {
     const { mountPoint, clientId } = requireTseConfig();
-    await runCli<Record<string, never>>(mountPoint, 'maintain', [clientId, timeAdminPin]);
+    await runCli<Record<string, never>>(
+      mountPoint, 'maintain', [clientId, timeAdminPin], SELF_TEST_TIMEOUT_MS,
+    );
   });
 }
 
@@ -223,13 +256,11 @@ export function setupTse(opts: {
 }): Promise<void> {
   return enqueueTseCall(async () => {
     const { mountPoint, clientId } = requireTseConfig();
-    await runCli<Record<string, never>>(mountPoint, 'setup', [
-      clientId,
-      opts.credentialSeed,
-      opts.adminPuk,
-      opts.adminPin,
-      opts.timeAdminPin,
-    ]);
+    await runCli<Record<string, never>>(
+      mountPoint, 'setup',
+      [clientId, opts.credentialSeed, opts.adminPuk, opts.adminPin, opts.timeAdminPin],
+      SELF_TEST_TIMEOUT_MS,
+    );
   });
 }
 

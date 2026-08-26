@@ -319,12 +319,22 @@
     border-radius: var(--radius-sm);
   }
 
+  /*
+   * Rest state deliberately muted (blended toward black) instead of the raw,
+   * fully-saturated --color-primary straight from black text-on-dark-bg — a
+   * flat, fully-bright accent read as too harsh against the near-black page
+   * background (found live during hardware testing). Hover/press then step
+   * up through the original accent tones, so pressing a button visibly
+   * "activates" it rather than the color just sitting there at full
+   * intensity all the time.
+   */
   :global(.btn-primary) {
-    padding: 0.5rem 1rem; background: var(--color-primary); border: none;
-    border-radius: var(--radius-sm); color: #fff; font-size: 0.875rem;
-    font-weight: 500; transition: background 0.15s;
+    padding: 0.5rem 1rem; background: color-mix(in srgb, var(--color-primary) 78%, black); border: none;
+    border-radius: var(--radius-sm); color: #eef1fb; font-size: 0.875rem;
+    font-weight: 600; transition: background 0.15s;
   }
-  :global(.btn-primary:hover) { background: var(--color-primary-hover); }
+  :global(.btn-primary:hover) { background: var(--color-primary); }
+  :global(.btn-primary:active) { background: var(--color-primary-hover); }
   :global(.btn-primary:disabled) { opacity: 0.5; cursor: not-allowed; }
 
   :global(.btn-ghost) {

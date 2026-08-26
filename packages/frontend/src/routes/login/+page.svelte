@@ -221,13 +221,14 @@
     font-size: 0.875rem;
   }
 
+  /* Rest state muted, hover/press step up through the original accent tones — see admin/+layout.svelte for the full rationale (kept consistent app-wide). */
   .btn-primary {
     margin-top: 0.5rem;
     padding: 0.85rem;
-    background: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 78%, black);
     border: none;
     border-radius: var(--radius-sm);
-    color: #fff;
+    color: #eef1fb;
     font-size: 1rem;
     font-weight: 600;
     transition: background 0.15s, opacity 0.15s;
@@ -239,6 +240,10 @@
   }
 
   .btn-primary:hover:not(:disabled) {
+    background: var(--color-primary);
+  }
+
+  .btn-primary:active:not(:disabled) {
     background: var(--color-primary-hover);
   }
 

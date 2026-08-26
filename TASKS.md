@@ -387,9 +387,35 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   eingerichtete TSE hatte nie eine gültige Uhrzeit, jede Signierung schlug
   mit `WORM_ERROR_NO_TIME_SET` fehl (siehe `DANGER.md` D-038-Fortsetzung).
   `POST /api/admin/tse/maintain` + „Zeit synchronisieren"-Button in
-  `settings/tse/+page.svelte` sind fertig und getestet. **Weiterhin offen:**
+  `settings/tse/+page.svelte` sind fertig, getestet und **live bestätigt**
+  (2026-08-26: TSE signiert seitdem fehlerfrei in Bonkasse und
+  Bedienungskasse). **Weiterhin offen:**
   automatischer Aufruf beim Backend-Start, Protokollierung der Läufe,
   Anzeige fehlerhafter Checks im Dashboard (#63) — der Rest dieses Tasks.
+
+  **Verhalten beim automatischen Start-Check präzisiert (2026-08-26):**
+  Schlägt der automatische `maintainTse()`-Aufruf beim Backend-Start fehl
+  (TSE nicht erreichbar/noch nicht initialisiert), soll das **nicht** den
+  Start blockieren oder als harter Fehler erscheinen — stattdessen eine
+  Meldung „TSE noch initialisiert" im Dashboard (Task #63), die der Admin
+  sieht und daraufhin den Zeitsync manuell nachholt (Button existiert
+  bereits, siehe oben). Deckt sich mit dem bereits bestehenden
+  AEAO-zu-§146a-Nr.1.14.3-Prinzip in `tse/signing.ts` — Betrieb ohne
+  funktionierende TSE ist zulässig, muss nur sichtbar/behebbar sein, nicht
+  den Betrieb blockieren.
+
+  **Lücke gefunden (2026-08-26):** ein "nur beim Backend-Start"-Check deckt
+  nicht den Fall ab, dass die TSE danach zwischenzeitlich die Verbindung
+  verliert (USB-Stick gezogen/wackelt, kurzer Stromausfall o.ä.) — nach dem
+  erneuten Verbinden braucht sie vermutlich wieder Self-Test + Zeitsync,
+  bevor sie erneut signieren kann (noch nicht verifiziert, ob das SDK das
+  tatsächlich so verlangt, aber plausibel angesichts `WORM_ERROR_NO_TIME_SET`
+  bei der ursprünglichen frischen Einrichtung). Ein einmaliger Start-Check
+  bildet das nicht ab. **Nutzervorschlag: Konzept nochmal grundsätzlich
+  überdenken** — statt (oder zusätzlich zu) dem Start-Check ein
+  wiederkehrender Hintergrund-Job, der die TSE regelmäßig prüft und bei
+  Bedarf automatisch nachsynchronisiert, statt nur einmal beim Boot und
+  sonst rein manuell über den Button.
 - [x] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
   **Erledigt (2026-08-24):** Neue Seite `admin/settings/tse/+page.svelte`
   mit den beiden Karten „TSE-Verbindung" und „TSE-Status" (inkl. eigenem
@@ -676,7 +702,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   „Abmelden"-Button auf der Kassen-Auswahl-Seite saß zu prominent direkt in
   der Überschrift. **Nachgebessert (2026-08-26):** von der Kopfzeile ans
   Ende der Seite verschoben, unter die Kassenliste, mittig, als klar
-  untergeordnete Aktion. **Diese Nachbesserung noch nicht live bestätigt.**
+  untergeordnete Aktion. **Live bestätigt (2026-08-26).**
 - [x] **#75** Brand-Icon vor „FairPOS"-Schriftzug in Admin- und Kassen-UI ergänzen
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26): der Login-Screen
   zeigt bereits ein Platzhalter-Icon (⊕) vor „FairPOS", die Admin- und
@@ -711,19 +737,58 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Bonkasse tatsächlich die richtige Lösung ist (z. B. Platzverbrauch bei
   leerer/kurzer Bestellung auf kleinen Bildschirmen gegenprüfen) oder ob ein
   anderes Layout-Konzept besser passt.
-- [ ] **#77** Button-Style app-weit überarbeiten (Kontrast aktuell sehr stark: weiß auf dunkelblau)
+- [x] **#77** Button-Style app-weit überarbeiten (Kontrast aktuell sehr stark: weiß auf dunkelblau)
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
-  „Ggf. den Button-Style optimieren für alle Buttons" — bewusst nur als Task
-  angelegt, kein Fix in dieser Session, da eine Designentscheidung nötig ist
-  (welche Farbe/welcher Kontrast stattdessen). Technischer Fund als
-  Ausgangspunkt: es gibt genau **eine** Stelle, an der `.btn-primary`/
-  `.btn-ghost` app-weit (Admin **und** Kassen-UI, obwohl konzeptionell
-  getrennte Bereiche) ihre Farben bekommen —
-  `admin/+layout.svelte:322-336`, `:global(.btn-primary)`/
-  `:global(.btn-ghost)`. Aktuell: `.btn-primary` = `background:
-  var(--color-primary)` (`#4f7cff`) + `color: #fff`; `.btn-ghost` =
-  transparenter Hintergrund + `var(--color-text-muted)`-Text mit
-  Rahmen. Andere Dateien überschreiben dort nur Größen (`padding`,
-  `font-size`, `min-height` fürs Touch-Target), nie die Farben — eine
-  Änderung an dieser einen Stelle wirkt sich also konsistent auf die ganze
-  App aus, kein Duplizierungsproblem.
+  „Ggf. den Button-Style optimieren für alle Buttons". Technischer Fund als
+  Ausgangspunkt: `admin/+layout.svelte:322-336`, `:global(.btn-primary)`/
+  `:global(.btn-ghost)`, ist die Stelle, von der Admin **und** Kassen-UI
+  ihre Button-Farben erben (obwohl konzeptionell getrennte Bereiche) —
+  Korrektur zur ursprünglichen Notiz: die Login-Seite hat eine **zweite,
+  eigenständige** lokale `.btn-primary`-Definition (`login/+page.svelte`,
+  da außerhalb von Admin-/Register-Layout), nicht mitbetroffen von der einen
+  globalen Stelle. Beide angepasst. Aktuell vorher: `.btn-primary` =
+  `background: var(--color-primary)` (`#4f7cff`) + `color: #fff` — reines
+  Weiß auf vollgesättigtem Blau direkt gegen den fast schwarzen
+  Seitenhintergrund (`--color-bg: #0f1117`) wirkte hart/grell.
+  **Erledigt (2026-08-26):** Ruhezustand über `color-mix(in srgb,
+  var(--color-primary) 78%, black)` bewusst abgedunkelt/gedämpft (aus dem
+  bestehenden Token abgeleitet, kein neuer Hex-Wert), Text von `#fff` auf
+  `#eef1fb` leicht gedämpft, Schriftgewicht 500→600 zum Ausgleich der
+  reduzierten Rohhelligkeit. Hover geht zurück auf den ursprünglichen
+  `var(--color-primary)`, Press/Active auf das schon vorhandene
+  `var(--color-primary-hover)` — der Button „aktiviert" sich sichtbar bei
+  Interaktion, statt durchgehend in voller Intensität dazustehen.
+  `.btn-ghost` bewusst unverändert gelassen — die gemeldete Härte betraf nur
+  `.btn-primary` (weiß auf blau), `.btn-ghost` ist bereits gedämpft
+  (transparenter Hintergrund, `--color-text-muted`). **Noch nicht live durch
+  den Nutzer bestätigt** — erste, begründete Anpassung, kein endgültiger
+  Farbwert; ggf. nach dem nächsten Live-Blick nachjustieren.
+- [ ] **#78** (Low Prio) QR-Code auch auf den Bondrucker-Ausdruck bringen
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): der PDF-Beleg
+  zeigt einen QR-Code (DSFinV-K Anhang I, `receipt/qr.ts`), der physische
+  Bon-Ausdruck über den Thermodrucker (`escpos-receipt.ts`) nicht — kein
+  Compliance-Problem (siehe `docs/Rechtliche-Anforderungen.md` Abschnitt 2:
+  „✅ Geprüft (August 2026)" — alle 11 Pflichtangaben stehen auf beiden
+  Ausgaben als Klartext, kein Feld fehlt), aber inkonsistent zwischen den
+  beiden Ausgabekanälen. Nutzer-Einschätzung: niedrige Priorität. Technisch
+  machbar über ESC/POS-QR-Druckbefehle (`GS ( k ...`, von den meisten
+  modernen Thermodruckern unterstützt), aber druckerabhängig und noch nicht
+  untersucht, ob/wie zuverlässig das über alle in der Zielumgebung
+  eingesetzten Druckermodelle funktioniert.
+- [ ] **#79** Druckauftrag „Abbrechen" soll auf Status „abgebrochen" statt Löschen umstellen
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26). Aktuell löscht
+  „Abbrechen" den `print_job`-Datensatz komplett (`DELETE FROM print_job
+  WHERE id = $1`, an zwei Stellen: `routes/admin/printers.ts` und
+  `routes/admin/print-jobs.ts` — evtl. dabei auch klären, ob beide Routen
+  noch gebraucht werden oder eine davon veraltet ist). Nutzervorgabe:
+  stattdessen einen neuen Status setzen (z.B. `cancelled`), der über den
+  bestehenden Status-Filter der Druckwarteschlangen-Seite
+  (`admin/settings/print-queue/+page.svelte`, aktuell `pending`/`printing`/
+  `failed`/`done`) sichtbar bleibt — für Transparenz, was abgebrochen wurde,
+  statt es spurlos verschwinden zu lassen.
+  **Technischer Umfang:** Migration für den neuen `status`-Wert (aktuell
+  `CHECK (status IN ('pending', 'printing', 'done', 'failed'))` in
+  `0001_initial.sql` — laut Konvention als neue nummerierte Migration, nicht
+  rückwirkend ändern); beide Backend-Endpunkte von `DELETE` auf ein `UPDATE
+  ... SET status = 'cancelled'` umstellen; Frontend-Status-Filter um den
+  neuen Wert ergänzen.
