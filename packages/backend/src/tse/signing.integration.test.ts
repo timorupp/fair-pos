@@ -122,6 +122,12 @@ describe('signTseTransaction', () => {
     const result = await signTseTransaction('AVSonstige', Buffer.from('x'));
     expect(result.signature).toBeNull();
     expect(result.warning).toMatch(/nicht erreichbar/);
+    // The underlying CLI/SDK error text AND numeric Swissbit error code must
+    // reach the UI — a bare "nicht erreichbar" hides the actual cause (e.g.
+    // an unregistered client ID) from the operator, who has no other way to
+    // see it (no admin-UI outage log yet, see Task #63/#72).
+    expect(result.warning).toContain('boom');
+    expect(result.warning).toContain('Code 1');
     expect(await openOutageCount()).toBe(1);
   });
 

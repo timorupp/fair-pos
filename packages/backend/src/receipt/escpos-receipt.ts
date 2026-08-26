@@ -106,7 +106,7 @@ export function buildReceiptEscPos(d: ReceiptData): Buffer {
     // Long signatures will wrap automatically across printer columns.
     parts.push(line(`Signatur: ${d.tseSignature}`));
   } else {
-    parts.push(line('Signatur: ! TSE noch nicht aktiv'));
+    parts.push(line('Signatur: ! TSE Fehler !'));
   }
 
   parts.push(ALIGN_CTR, line(''), line('Danke für Ihren Einkauf!'), ALIGN_LFT, FEED3, CUT);

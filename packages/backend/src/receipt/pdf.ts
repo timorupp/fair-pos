@@ -149,7 +149,7 @@ function layout(doc: PDFKit.PDFDocument, d: ReceiptData, qrPng: Buffer): void {
     // Signatures are long — wrap them so they fit in the narrow column.
     doc.text(`Signatur: ${d.tseSignature}`, { width: W });
   } else {
-    doc.fillColor('#a00').text('Signatur: ⚠ TSE noch nicht aktiv', { width: W }).fillColor('black');
+    doc.fillColor('#a00').text('Signatur: ⚠ TSE Fehler', { width: W }).fillColor('black');
   }
   doc.moveDown(0.4);
 

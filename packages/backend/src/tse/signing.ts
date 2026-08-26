@@ -19,6 +19,24 @@ import { config } from '../config.js';
 import { startTransaction, finishTransaction } from './client.js';
 import { recordTseFailure, recordTseRecovered } from './outage.js';
 import { KASSENBELEG_PROCESS_TYPE, buildAvBelegabbruchProcessData } from './processData.js';
+import { TseError } from './types.js';
+
+/**
+ * Formats a caught error into a loggable/displayable reason string. Appends
+ * the numeric Swissbit SDK error code for a {@link TseError} (see
+ * `native/tse-cli/vendor/include/WormDLL/wormError.h` for what each code
+ * means) — the CLI's own message text alone (e.g. "worm_transaction_start
+ * failed") is the same for every distinct underlying cause, so without the
+ * code an admin can't tell an unregistered client from a full transaction
+ * counter from an expired self-test.
+ *
+ * @param e - The value caught from a failed `client.ts` call.
+ * @returns A human-readable reason string, never empty.
+ */
+function describeTseError(e: unknown): string {
+  if (e instanceof TseError) return `${e.message} (Code ${e.code})`;
+  return e instanceof Error ? e.message : String(e);
+}
 
 /** The six `tse_*` columns shared by `invoice`, `service_order`, and `order_cancellation`. */
 export interface TseSignatureFields {
@@ -78,10 +96,11 @@ export async function signTseTransaction(
     start = await startTransaction('', Buffer.alloc(0));
   } catch (e) {
     // Never started — there is nothing to abort on the TSE.
-    await recordTseFailure(e instanceof Error ? e.message : String(e)).catch(() => { /* logging must not break the sale */ });
+    const reason = describeTseError(e);
+    await recordTseFailure(reason).catch(() => { /* logging must not break the sale */ });
     return {
       signature: null,
-      warning: 'TSE nicht erreichbar — Vorgang wurde ohne TSE-Signatur gebucht. Bitte Störung schnellstmöglich beheben.',
+      warning: `TSE nicht erreichbar (${reason}) — Vorgang wurde ohne TSE-Signatur gebucht. Bitte Störung schnellstmöglich beheben.`,
     };
   }
 
@@ -107,10 +126,11 @@ export async function signTseTransaction(
     // genuinely unreachable this fails too, and we can't do anything further.
     await finishTransaction(start.transactionNumber, KASSENBELEG_PROCESS_TYPE, buildAvBelegabbruchProcessData())
       .catch(() => { /* best-effort cleanup — the caller's warning below covers this either way */ });
-    await recordTseFailure(e instanceof Error ? e.message : String(e)).catch(() => { /* logging must not break the sale */ });
+    const reason = describeTseError(e);
+    await recordTseFailure(reason).catch(() => { /* logging must not break the sale */ });
     return {
       signature: null,
-      warning: 'TSE nicht erreichbar — Vorgang wurde ohne TSE-Signatur gebucht. Bitte Störung schnellstmöglich beheben.',
+      warning: `TSE nicht erreichbar (${reason}) — Vorgang wurde ohne TSE-Signatur gebucht. Bitte Störung schnellstmöglich beheben.`,
     };
   }
 }

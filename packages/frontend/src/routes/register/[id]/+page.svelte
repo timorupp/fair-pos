@@ -359,6 +359,7 @@
     padding: 0.5rem; cursor: pointer; min-height: 70px;
     transition: filter 0.05s, transform 0.05s;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    overflow-wrap: anywhere;
   }
   .grid-btn:hover { filter: brightness(1.1); }
   .grid-btn:active { transform: scale(0.97); }

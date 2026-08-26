@@ -605,3 +605,96 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   diese Session hat keinen Browser, nur HTTP-Ebene wurde geprüft. Laut
   `CLAUDE.md`-Konvention für Frontend-Änderungen vor Produktivsetzung
   zwingend nachzuholen, siehe auch `docs/Manueller-Testplan.md`.
+- [ ] **#72** TSE-Ausfall-Log als eigene Auswertungsseite in der Admin-UI
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): `signTseTransaction()`
+  zeigte bisher nur die generische Meldung „TSE nicht erreichbar" in der
+  Bedienungskasse-UI (`tseWarning`), ohne den tatsächlichen Grund — der wird
+  zwar bereits in `tse_outage.reason` geloggt (siehe `tse/outage.ts`), ist
+  aber nirgends in der Admin-UI einsehbar. Nutzerwunsch: eine echte
+  Log-Ansicht für Admins (Liste vergangener/offener Ausfälle mit Zeitpunkt +
+  Fehlergrund), analog zu den bestehenden Auswertungsseiten
+  (`admin/reports/*`) — dann muss die Detailmeldung nicht mehr im
+  Bedienungsfrontend erscheinen, das für Nicht-Admin-Bedienpersonal gedacht
+  ist.
+  **Abgrenzung zu #63** (Dashboard-Ausbau): #63 ist eher eine
+  Zusammenfassungs-/Alarm-Kachel auf der Startseite („N Ausfälle in der
+  letzten Stunde"); dieser Task ist die dazugehörige **Detail-Log-Seite**
+  zum Durchklicken/Nachschlagen — beide ergänzen sich, #63 könnte später auf
+  diese Seite verlinken. Absichtlich getrennt gehalten, damit dieser Task
+  auch unabhängig von der (noch unklar terminierten) vollen
+  Dashboard-Überarbeitung umgesetzt werden kann.
+  **Zwischenzeitliche Übergangslösung (2026-08-26):** Bis diese Seite
+  existiert, zeigt `signTseTransaction()`s `warning` bewusst den echten
+  Fehlergrund inline (`TSE nicht erreichbar (<Grund>) — ...`) — sonst wäre
+  während des laufenden Hardware-Tests kein Fehlergrund ohne direkten
+  DB-Zugriff sichtbar gewesen. Sobald dieser Task umgesetzt ist: erneut
+  abwägen, ob die Bedienungskasse-Meldung wieder auf die generische Variante
+  zurückgestellt wird (Nutzerpräferenz) oder der Grund als hilfreicher
+  Sofort-Hinweis bestehen bleibt — bewusst nicht vorab entschieden.
+- [x] **#73** Server-Adresse-Einstellung: Beschreibung verbessern + Testfunktion
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): unklar, ob das
+  Feld „Server-Adresse (QR-Code)" mit oder ohne `http://`-Präfix befüllt
+  werden muss — Hinweistext und Placeholder erwähnten das Protokoll gar
+  nicht. Nutzerwunsch: mit Protokoll angeben lassen (der Admin weiß am
+  besten, welches gilt), dazu ein Test-Button, der QR-Code + Link zum
+  direkten Ausprobieren zeigt. Der zugehörige echte Bug (Backend hängte
+  `http://` unbedingt vor den Wert, unabhängig von einem evtl. schon
+  angegebenen Protokoll) ist separat in `DANGER.md` D-041 dokumentiert.
+  **Erledigt (2026-08-26):** Hinweistext + Placeholder überarbeitet (Protokoll
+  erwähnt, Beispiel mit `http://`/`https://`). Neuer „Testen"-Button neben
+  dem Feld öffnet ein Modal mit QR-Code + Link zur konfigurierten
+  Serveradresse (analog zum bestehenden „QR-Login-Link"-Muster in
+  `users/+page.svelte`, reine Frontend-Vorschau — normalisiert das Protokoll
+  clientseitig nach derselben Regel wie `buildReceiptQrUrl()` im Backend,
+  Kommentar verweist auf beide Stellen). Admin kann mit dem eigenen Handy im
+  WLAN sofort verifizieren, ohne erst eine echte Rechnung anzulegen.
+  **Noch nicht live durch den Nutzer bestätigt.**
+- [x] **#74** Bedienungskasse-Header: „Kasse wechseln" + „Abmelden" durch ein Icon ersetzen
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): die beiden
+  Text-Buttons im Header nehmen auf den kleinen Touch-Bildschirmen der
+  Zielhardware unnötig viel Platz weg. Nutzervorgabe: nur noch ein Home-/
+  Exit-Icon, das auf den „Kasse wechseln"-Screen führt — dort gibt es
+  bereits die Kassenliste, ein „Abmelden"-Button zieht ebenfalls dorthin um.
+  **Erledigt (2026-08-26):** `register/+layout.svelte` — beide Text-Buttons
+  durch einen einzelnen Icon-Button (⌂, `aria-label`/`title` „Kasse
+  wechseln") ersetzt, bleibt wie zuvor auf der Kassen-Auswahl-Seite selbst
+  ausgeblendet (nichts, wohin man von dort wechseln könnte). Die jetzt tote
+  `logout()`-Funktion aus dem Layout entfernt. `register/+page.svelte`
+  (Kassen-Auswahl) — neue Kopfzeile mit „Abmelden"-Button, `logout()`-Logik
+  von dort übernommen (identisches Verhalten: löscht nur die
+  Register-Session, eine evtl. offene Admin-Session bleibt unangetastet).
+  **Noch nicht live durch den Nutzer bestätigt.**
+- [x] **#75** Brand-Icon vor „FairPOS"-Schriftzug in Admin- und Kassen-UI ergänzen
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): der Login-Screen
+  zeigt bereits ein Platzhalter-Icon (⊕) vor „FairPOS", die Admin- und
+  Kassen-Header zeigen bisher nur den nackten Schriftzug. Nutzerwunsch: das
+  gleiche Platzhalter-Icon überall ergänzen, damit die Marke konsistent
+  auftritt — das eigentliche Icon wird ggf. später durch ein echtes Logo
+  ersetzt, aber die Stelle soll schon jetzt überall vorgesehen sein.
+  **Erledigt (2026-08-26):** `⊕` (dasselbe Zeichen wie auf dem Login-Screen)
+  vor „FairPOS" ergänzt in `admin/+layout.svelte` (Sidebar-Header) und
+  `register/+layout.svelte` (Kassen-Header, in kleinerer Form passend zur
+  Topbar-Höhe). Keine weiteren Fundstellen — Login-Screen selbst hatte es
+  schon. **Noch nicht live durch den Nutzer bestätigt.**
+- [ ] **#76** Bonkasse: Artikel-Grid verschiebt sich beim Antippen (Buttons wandern unter dem Finger weg)
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
+  „hier müssen wir uns Gedanken über eine gute Lösung machen" — bewusst nur
+  als Task angelegt, kein Fix in dieser Session. Beobachtung: In der
+  Bonkasse (`register/[id]/+page.svelte`) wächst die Bestellpositions-Liste
+  (`.order-section`) bei jedem angetippten Artikel, bis sie ihre Kappung
+  erreicht — dabei rutscht das Artikel-Grid (`.grid-section`) darunter jedes
+  Mal ein Stück nach unten. Bei schnellem Nacheinander-Antippen (typischer
+  Bonkasse-Anwendungsfall: mehrere Getränke direkt hintereinander) landet
+  der nächste Fingertipp dadurch nicht mehr auf dem beabsichtigten Button.
+  **Mögliche Ursache identifiziert (nicht als fertige Lösung zu verstehen):**
+  `.order-section` nutzt hier `max-height: 40vh` statt einer festen `height`
+  — die Sektion wächst also erst bis zur Kappung mit jedem neuen Artikel
+  natürlich mit, statt von Anfang an eine feste Höhe zu belegen und intern
+  zu scrollen. Die strukturell sehr ähnliche Bestellansicht der
+  Bedienungskasse (`register/[id]/tables/[tableId]/order/+page.svelte`)
+  nutzt für dieselbe Sektion bereits `height: 35vh; min-height: 220px;`
+  (feste Höhe) und zeigt das Problem vermutlich deshalb nicht — als
+  möglicher Ansatzpunkt, aber noch offen, ob eine feste Höhe für die
+  Bonkasse tatsächlich die richtige Lösung ist (z. B. Platzverbrauch bei
+  leerer/kurzer Bestellung auf kleinen Bildschirmen gegenprüfen) oder ob ein
+  anderes Layout-Konzept besser passt.

@@ -63,8 +63,8 @@ describe('buildReceiptEscPos', () => {
     expect(buf.subarray(0, 5).equals(Buffer.from([0x1b, 0x40, 0x1b, 0x74, 0x13]))).toBe(true);
   });
 
-  it('shows the TSE-not-active hint when no signature is present', () => {
+  it('shows the TSE-error hint when no signature is present', () => {
     const buf = buildReceiptEscPos(data);
-    expect(buf.includes('TSE noch nicht aktiv')).toBe(true);
+    expect(buf.includes('TSE Fehler')).toBe(true);
   });
 });

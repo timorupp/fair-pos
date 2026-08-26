@@ -307,9 +307,22 @@
   .center { text-align: center; padding: 1rem; }
   .hint { font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1rem; }
 
-  .checkout-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  /* table-layout: fixed + explicit widths on the numeric columns keeps them
+     visible at all times; the unconstrained first column (Position) takes
+     whatever space is left and truncates with an ellipsis instead of
+     pushing the later columns off-screen. On a wider viewport (e.g.
+     landscape) the table itself is wider, so the name column gets more
+     room automatically — no separate breakpoint needed. */
+  .checkout-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; table-layout: fixed; }
   .checkout-table th, .checkout-table td { padding: 0.5rem; text-align: left; border-bottom: 1px solid var(--color-border); }
   .checkout-table th.num, .checkout-table td.num { text-align: right; }
+  .checkout-table td:first-child {
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .checkout-table th:nth-child(2), .checkout-table td:nth-child(2) { width: 3.5em; }
+  .checkout-table th:nth-child(3), .checkout-table td:nth-child(3) { width: 7.5em; }
+  .checkout-table th:nth-child(4), .checkout-table td:nth-child(4) { width: 4.5em; }
+  .checkout-table th:nth-child(5), .checkout-table td:nth-child(5) { width: 4.5em; }
   .g-name { font-weight: 600; }
   .g-opts { font-size: 0.8rem; color: var(--color-text-muted); }
   .stepper { display: inline-flex; align-items: center; gap: 0.4rem; }

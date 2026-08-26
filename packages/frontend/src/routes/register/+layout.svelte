@@ -37,26 +37,19 @@
     }
   });
 
-  /** Clears only the register-session cookie; an admin session, if any, stays. */
-  async function logout() {
-    try { await api.auth.register.logout(); } catch { /* ignore */ }
-    registerUser.set(null);
-    goto('/login');
-  }
 </script>
 
 <svelte:head><title>{tabTitle}</title></svelte:head>
 
 <div class="shell">
   <header class="topbar">
-    <div class="brand">FairPOS — Kasse</div>
+    <div class="brand"><span class="brand-icon">⊕</span> FairPOS</div>
     <div class="spacer"></div>
     {#if $registerUser}
       <span class="user-name">{$registerUser.name}</span>
       {#if !onRegisterPicker}
-        <button class="btn-ghost" onclick={() => goto('/register')}>Kasse wechseln</button>
+        <button class="btn-ghost icon-btn" onclick={() => goto('/register')} aria-label="Kasse wechseln" title="Kasse wechseln">⌂</button>
       {/if}
-      <button class="btn-ghost" onclick={logout}>Abmelden</button>
     {/if}
   </header>
 
@@ -74,9 +67,14 @@
     padding: 0.6rem 1rem; background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
   }
-  .brand { font-weight: 700; font-size: 0.95rem; }
+  .brand { display: flex; align-items: center; gap: 0.35rem; font-weight: 700; font-size: 0.95rem; }
+  .brand-icon { font-size: 1.1rem; color: var(--color-primary); line-height: 1; }
   .spacer { flex: 1; }
   .user-name { font-size: 0.85rem; color: var(--color-text-muted); }
+  .icon-btn {
+    width: 44px; height: 44px; padding: 0; font-size: 1.3rem;
+    display: flex; align-items: center; justify-content: center;
+  }
   .center { text-align: center; padding: 4rem; }
 
   /* ── Touch-friendly button sizing inside the cash-register UIs ──

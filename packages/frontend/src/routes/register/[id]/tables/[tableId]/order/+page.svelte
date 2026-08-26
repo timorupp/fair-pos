@@ -302,7 +302,18 @@
   }
   .order-line:last-child { border-bottom: none; }
   .line-dot { width: 10px; height: 10px; border-radius: 50%; }
-  .line-name { font-weight: 600; }
+  /* min-width: 0 overrides the grid item's implicit min-width: auto (min-content), which
+     would otherwise refuse to shrink below the full name's width and push the price
+     columns off-screen — truncate with an ellipsis instead of wrapping or overflowing.
+     On a wider viewport (e.g. landscape) the 1fr track simply gets more room, so more
+     of the name shows before truncation kicks in — no separate breakpoint needed. */
+  .line-name {
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
   .line-options { font-size: 0.8rem; color: var(--color-text-muted); font-weight: 400; }
   .line-unit { font-size: 0.8rem; text-align: right; }
   .line-total { font-weight: 600; text-align: right; }
@@ -333,6 +344,7 @@
     padding: 0.5rem; cursor: pointer; min-height: 70px;
     transition: filter 0.05s, transform 0.05s;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    overflow-wrap: anywhere;
   }
   .grid-btn:hover { filter: brightness(1.1); }
   .grid-btn:active { transform: scale(0.97); }

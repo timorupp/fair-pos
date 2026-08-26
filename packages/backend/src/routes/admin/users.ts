@@ -25,14 +25,28 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
     return reply.send(result.rows);
   });
 
-  /** POST /api/admin/users — create a new user. */
+  /**
+   * POST /api/admin/users — create a new user.
+   *
+   * A password is only required for admins — they authenticate via
+   * `/api/auth/admin/login` (username + password). Non-admin (register)
+   * users authenticate exclusively via QR-token exchange
+   * (`/api/auth/register/token`, see `auth.ts`) and never enter a password;
+   * `/admin/login` also refuses non-admins outright, so a non-admin's
+   * password is never actually checked anywhere. `password_hash` is
+   * `NOT NULL` in the schema, so one not supplied is filled with a random,
+   * unguessable value the user is never given.
+   */
   app.post('/', async (req, reply) => {
     const body = req.body as { name?: string; password?: string; is_admin?: boolean; is_active?: boolean };
-    if (!body.name || !body.password) {
-      return reply.status(400).send({ error: 'Name und Passwort erforderlich' });
+    if (!body.name) {
+      return reply.status(400).send({ error: 'Name erforderlich' });
+    }
+    if (body.is_admin && !body.password) {
+      return reply.status(400).send({ error: 'Passwort erforderlich für Administrator' });
     }
 
-    const hash = await hashPassword(body.password);
+    const hash = await hashPassword(body.password || randomBytes(32).toString('hex'));
     try {
       const result = await query<UserRow>(
         `INSERT INTO "user" (name, password_hash, is_admin, is_active)

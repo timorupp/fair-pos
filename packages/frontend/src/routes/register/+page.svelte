@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api';
+  import { registerUser } from '$lib/stores/user';
 
   type RegisterRow = {
     id: string; name: string;
@@ -32,10 +33,20 @@
 
   const typeLabel = (t: RegisterRow['type']) =>
     t === 'receipt_register' ? 'Bonkasse' : 'Bedienungskasse';
+
+  /** Clears only the register-session cookie; an admin session, if any, stays. */
+  async function logout() {
+    try { await api.auth.register.logout(); } catch { /* ignore */ }
+    registerUser.set(null);
+    goto('/login');
+  }
 </script>
 
 <div class="page">
-  <h1>Kasse wählen</h1>
+  <div class="header">
+    <h1>Kasse wählen</h1>
+    <button class="btn-ghost" onclick={logout}>Abmelden</button>
+  </div>
   {#if loading}
     <p class="muted">Lade…</p>
   {:else if error}
@@ -59,7 +70,8 @@
 
 <style>
   .page { padding: 2rem; max-width: 720px; margin: 0 auto; }
-  h1 { font-size: 1.25rem; margin-bottom: 1.25rem; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+  h1 { font-size: 1.25rem; margin: 0; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
   .card {
     display: flex; flex-direction: column; gap: 0.5rem;

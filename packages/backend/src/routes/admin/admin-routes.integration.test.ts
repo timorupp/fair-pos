@@ -106,6 +106,28 @@ describe('Admin users', () => {
     expect(dup.statusCode).toBe(409);
   });
 
+  it('creates a non-admin user without a password (register users authenticate via QR token, not password)', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/users',
+      headers: { cookie: adminCookie },
+      payload: { name: 'no-password-operator', is_admin: false },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().is_admin).toBe(false);
+  });
+
+  it('refuses to create an admin user without a password (400)', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/users',
+      headers: { cookie: adminCookie },
+      payload: { name: 'passwordless-admin', is_admin: true },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe('Passwort erforderlich für Administrator');
+  });
+
   it('deletes a user with no history references (hard delete, Task #56)', async () => {
     const app = await getTestApp();
     const unused = await createTestUser({ isAdmin: false });

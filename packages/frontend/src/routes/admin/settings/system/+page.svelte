@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';
   import { copyToClipboard } from '$lib/clipboard';
+  import Modal from '$lib/components/Modal.svelte';
 
   // ── Read-only system status ────────────────────────────────────────────────
   let systemSerial = $state('');
@@ -36,6 +37,16 @@
   let settingTimezone = $state(false);
   let setTimezoneError = $state('');
   let setTimezoneSuccess = $state(false);
+
+  // ── Server-Adresse test preview ── mirrors the normalization rule the
+  // backend applies in receipt/qr.ts (buildReceiptQrUrl) — keep both in sync.
+  let addressTestOpen = $state(false);
+  let addressTestUrl = $derived.by(() => {
+    const value = settings['server_address']?.trim();
+    if (!value) return '';
+    const base = /^https?:\/\//i.test(value) ? value.replace(/\/+$/, '') : `http://${value}`;
+    return `${base}/`;
+  });
 
   let clockTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -219,7 +230,12 @@
   <!-- Server address (editable) ──────────────────────────────────────────────── -->
   <section class="card">
     <h2>Server-Adresse (QR-Code)</h2>
-    <p class="hint">Lokale Netzwerkadresse des Servers. Wird in den QR-Code des Kassenbons eingebettet — Kunden im selben WLAN scannen und sehen ihren Bon als PDF.</p>
+    <p class="hint">
+      Lokale Netzwerkadresse des Servers. Wird in den QR-Code des Kassenbons eingebettet —
+      Kunden im selben WLAN scannen und sehen ihren Bon als PDF. Am besten mit Protokoll angeben
+      (<code>http://</code> oder <code>https://</code>) — welches Protokoll der Server tatsächlich
+      spricht, weißt du als Admin am besten. Ohne Angabe wird <code>http://</code> angenommen.
+    </p>
     {#if editableLoading}
       <p class="muted">Lade…</p>
     {:else}
@@ -227,10 +243,13 @@
         <input
           value={settings['server_address'] ?? ''}
           oninput={(e) => { settings['server_address'] = e.currentTarget.value; saveSuccess = false; }}
-          placeholder="z. B. 192.168.1.10 oder fairpos.local"
+          placeholder="z. B. http://192.168.1.10 oder https://fairpos.local"
           disabled={saving}
         />
       </div>
+      <button class="btn-ghost" onclick={() => (addressTestOpen = true)} disabled={!addressTestUrl}>
+        Testen
+      </button>
     {/if}
   </section>
 
@@ -270,6 +289,23 @@
   </div>
 </div>
 
+<Modal bind:open={addressTestOpen} title="Server-Adresse testen">
+  <div class="token-box">
+    <p class="muted">
+      Mit dem Handy im selben WLAN scannen — landest du auf der FairPOS-Startseite, ist die Adresse korrekt.
+    </p>
+    {#if addressTestUrl}
+      <img class="token-qr" src="/api/admin/qr.png?data={encodeURIComponent(addressTestUrl)}&size=320" alt="QR-Code zum Testen der Server-Adresse" />
+    {/if}
+    <code class="token-url">{addressTestUrl}</code>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick={() => (addressTestOpen = false)}>Schließen</button>
+      <button class="btn-ghost" onclick={() => window.open(addressTestUrl, '_blank')}>In neuem Tab öffnen</button>
+      <button class="btn-primary" onclick={() => copyToClipboard(addressTestUrl)}>Link kopieren</button>
+    </div>
+  </div>
+</Modal>
+
 <style>
   .card {
     background: var(--color-surface); border: 1px solid var(--color-border);
@@ -303,4 +339,16 @@
   .set-time-row input, .set-time-row select { width: auto; max-width: 260px; flex: 0 0 auto; }
   .success-text { color: #4caf7d; font-size: 0.875rem; }
   .form-footer { max-width: 640px; padding-top: 0.5rem; }
+
+  .token-box { display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
+  .token-qr {
+    align-self: center; width: 220px; height: 220px;
+    background: white; padding: 0.5rem; border-radius: var(--radius-sm);
+  }
+  .token-url {
+    display: block; padding: 0.75rem;
+    background: var(--color-surface-2); border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm); font-size: 0.8rem;
+    word-break: break-all; color: var(--color-text);
+  }
 </style>

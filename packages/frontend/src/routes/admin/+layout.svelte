@@ -129,7 +129,7 @@
 {:else}
 <div class="shell">
   <aside>
-    <div class="brand">FairPOS</div>
+    <div class="brand"><span class="brand-icon">⊕</span> FairPOS</div>
     <nav>
       <a href="/admin" class:active={isActive('/admin', true)}>Dashboard</a>
 
@@ -239,10 +239,12 @@
   }
 
   .brand {
+    display: flex; align-items: center; gap: 0.4rem;
     font-size: 1rem; font-weight: 700; color: var(--color-primary);
     letter-spacing: -0.02em; padding: 0 1.25rem 1.25rem;
     border-bottom: 1px solid var(--color-border); margin-bottom: 0.5rem;
   }
+  .brand-icon { font-size: 1.2rem; line-height: 1; }
 
   nav { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 0 0.5rem; overflow-y: auto; }
 

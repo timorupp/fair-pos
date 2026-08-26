@@ -14,7 +14,7 @@ import { nextReceiptNumber } from '../receipt/sequence.js';
 import { buildReceiptEscPos } from '../receipt/escpos-receipt.js';
 import { loadReceiptByToken } from '../receipt/data.js';
 import { enqueuePrintJob } from '../print/enqueue.js';
-import { renderQrPng } from '../receipt/qr.js';
+import { renderQrPng, buildReceiptQrUrl } from '../receipt/qr.js';
 import {
   bucketItemsByPrinter, buildOrderSlipEscPos,
   buildPickupSlipEscPos, buildDepositSlipEscPos,
@@ -428,8 +428,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const addr = await query<{ value: string }>(
       `SELECT value FROM system_setting WHERE key = 'server_address'`,
     );
-    const host = addr.rows[0]?.value ?? req.headers.host ?? 'localhost';
-    const url = `http://${host}/receipt/${inv.receipt_token}`;
+    const url = buildReceiptQrUrl(addr.rows[0]?.value, req.headers.host ?? 'localhost', inv.receipt_token);
     const png = await renderQrPng(url, 320);
     reply.header('Content-Type', 'image/png').header('Cache-Control', 'no-store').send(png);
   });

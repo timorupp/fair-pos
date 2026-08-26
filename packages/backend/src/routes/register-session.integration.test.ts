@@ -230,6 +230,43 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
   });
 });
 
+describe('GET /api/register-session/invoices/:id/qr.png', () => {
+  it('renders a PNG for a valid invoice', async () => {
+    const app = await getTestApp();
+    const checkout = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    const invoiceId = checkout.json().invoice_id;
+
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/invoices/${invoiceId}/qr.png`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toBe('image/png');
+  });
+
+  it('404s for an invoice belonging to a register the user has no access to', async () => {
+    const app = await getTestApp();
+    const checkout = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    const invoiceId = checkout.json().invoice_id;
+
+    const otherUser = await createTestUser({ isAdmin: false });
+    const otherCookie = await loginAsRegisterUser(app, otherUser.id);
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/invoices/${invoiceId}/qr.png`,
+      headers: { cookie: otherCookie },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+});
+
 describe('Bonkasse checkout: TSE-Signierung', () => {
   it('stores the TSE signature on the invoice when signing succeeds', async () => {
     config.tseMountPoint = '/tmp/fake-tse';
