@@ -77,6 +77,33 @@
   }
   .center { text-align: center; padding: 4rem; }
 
+  /*
+   * Base colors for .btn-primary/.btn-ghost — duplicated from
+   * admin/+layout.svelte rather than shared, because admin and register are
+   * separate top-level route trees with their own code-split CSS chunk (the
+   * register UI never loads admin's layout, or vice versa) — confirmed via
+   * the build output when a button-contrast fix applied only to admin
+   * turned out to never have reached here. Keep both in sync by hand if
+   * either changes.
+   */
+  :global(.btn-primary) {
+    padding: 0.5rem 1rem; background: color-mix(in srgb, var(--color-primary) 78%, black); border: none;
+    border-radius: var(--radius-sm); color: #eef1fb; font-size: 0.875rem;
+    font-weight: 600; transition: background 0.15s;
+  }
+  :global(.btn-primary:hover) { background: var(--color-primary); }
+  :global(.btn-primary:active) { background: var(--color-primary-hover); }
+  :global(.btn-primary:disabled) { opacity: 0.5; cursor: not-allowed; }
+
+  :global(.btn-ghost) {
+    padding: 0.35rem 0.65rem; background: transparent; border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: 0.8rem;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  :global(.btn-ghost:hover) { border-color: var(--color-text-muted); color: var(--color-text); }
+  :global(.btn-ghost.danger:hover) { border-color: var(--color-danger); color: var(--color-danger); }
+  :global(.btn-ghost:disabled) { opacity: 0.5; cursor: not-allowed; }
+
   /* ── Touch-friendly button sizing inside the cash-register UIs ──
      Targets the Anforderungen rule "Kassen laufen auf Tablet/Smartphone".
      Every button is at least 48 px tall — the Material Design / Apple HIG

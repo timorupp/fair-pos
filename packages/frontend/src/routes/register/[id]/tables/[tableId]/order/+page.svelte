@@ -143,11 +143,6 @@
     return articleById.get(articleId)?.name ?? '?';
   }
 
-  function colorOf(articleId: string): string | null {
-    const slot = slots.find((s) => s.article_id === articleId);
-    return slot?.color ?? null;
-  }
-
   let total = $derived(Math.round(
     order.reduce((s, l) => s + unitPriceOf(l.article_id) * l.quantity, 0) * 100,
   ) / 100);
@@ -204,9 +199,7 @@
     {:else}
       <ul class="order-list">
         {#each order as line, i (i)}
-          {@const c = colorOf(line.article_id)}
           <li class="order-line">
-            <span class="line-dot" style="background:{c ?? '#888'}"></span>
             <span class="line-name">
               {nameOf(line.article_id)}
               {#if line.options}<span class="line-options"> · {line.options}</span>{/if}
@@ -217,7 +210,6 @@
               <span class="qty-val">{line.quantity}</span>
               <button class="qty-btn" onclick={() => changeQuantity(line, +1)}>+</button>
             </div>
-            <span class="line-total">{fmt(unitPriceOf(line.article_id) * line.quantity)} €</span>
           </li>
         {/each}
       </ul>
@@ -296,12 +288,11 @@
   .order-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
   .order-line {
     display: grid;
-    grid-template-columns: 12px 1fr 4em auto 5em;
+    grid-template-columns: 1fr 4em auto;
     align-items: center; gap: 0.6rem;
     padding: 0.4rem 0; border-bottom: 1px solid var(--color-border);
   }
   .order-line:last-child { border-bottom: none; }
-  .line-dot { width: 10px; height: 10px; border-radius: 50%; }
   /* min-width: 0 overrides the grid item's implicit min-width: auto (min-content), which
      would otherwise refuse to shrink below the full name's width and push the price
      columns off-screen — truncate with an ellipsis instead of wrapping or overflowing.
@@ -316,11 +307,22 @@
   }
   .line-options { font-size: 0.8rem; color: var(--color-text-muted); font-weight: 400; }
   .line-unit { font-size: 0.8rem; text-align: right; }
-  .line-total { font-weight: 600; text-align: right; }
-  .qty { display: flex; align-items: center; gap: 0.4rem; }
+  .qty { display: flex; align-items: center; gap: 0.3rem; }
   .qty-btn {
-    width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--color-border);
-    background: var(--color-bg); color: var(--color-text); cursor: pointer; font-size: 1rem;
+    border-radius: 50%; border: 1px solid var(--color-border);
+    background: var(--color-bg); color: var(--color-text); cursor: pointer;
+  }
+  /* Narrow-phone fix (found live, 2026-08-26): the app-wide 44px touch-target
+     rule in register/+layout.svelte left almost no room for the article name
+     on a narrow screen once the dot and total columns were also removed
+     below for the same reason — shrink just this row's steppers instead of
+     relaxing the touch-target rule everywhere else it applies. Needs to
+     out-specificity (not just out-!important) the global rule, since both
+     sides use !important. */
+  .order-line .qty-btn {
+    width: 32px !important; height: 32px !important;
+    min-width: 32px !important; min-height: 32px !important;
+    font-size: 1rem !important;
   }
   .qty-val { min-width: 1.5em; text-align: center; font-weight: 700; }
 

@@ -683,7 +683,14 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   clientseitig nach derselben Regel wie `buildReceiptQrUrl()` im Backend,
   Kommentar verweist auf beide Stellen). Admin kann mit dem eigenen Handy im
   WLAN sofort verifizieren, ohne erst eine echte Rechnung anzulegen.
-  **Noch nicht live durch den Nutzer bestätigt.**
+  **Konzeptionell unzureichend (2026-08-26, Nutzer-Review):** die
+  Testfunktion prüft aktuell die Erreichbarkeit von `/` (Login-Seite) — die
+  `server_address`-Einstellung wird aber ausschließlich für den öffentlichen,
+  nicht-authentifizierten Rechnungs-Endpunkt `/receipt/:token` verwendet
+  (siehe `buildReceiptQrUrl()` in `receipt/qr.ts`). Ob das Erreichen von `/`
+  tatsächlich verlässlich dasselbe testet oder ob Admins dadurch etwas
+  anderes bestätigt bekommen, als sie eigentlich prüfen wollen, ist nicht
+  geklärt — dafür siehe Task #80.
 - [x] **#74** Bedienungskasse-Header: „Kasse wechseln" + „Abmelden" durch ein Icon ersetzen
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26): die beiden
   Text-Buttons im Header nehmen auf den kleinen Touch-Bildschirmen der
@@ -760,9 +767,19 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Interaktion, statt durchgehend in voller Intensität dazustehen.
   `.btn-ghost` bewusst unverändert gelassen — die gemeldete Härte betraf nur
   `.btn-primary` (weiß auf blau), `.btn-ghost` ist bereits gedämpft
-  (transparenter Hintergrund, `--color-text-muted`). **Noch nicht live durch
-  den Nutzer bestätigt** — erste, begründete Anpassung, kein endgültiger
-  Farbwert; ggf. nach dem nächsten Live-Blick nachjustieren.
+  (transparenter Hintergrund, `--color-text-muted`).
+
+  **Nachbesserung (2026-08-26):** Nutzer meldete, die Änderung sei nur im
+  Adminbereich sichtbar gewesen. Ursache: Admin und Kassen-UI sind getrennte
+  Top-Level-Routen mit eigenem code-gesplitteten CSS-Chunk (bestätigt über
+  den Build-Output/Vite-Manifest) — `register/+layout.svelte` hatte für
+  `.btn-primary`/`.btn-ghost` bisher **nie** eigene Farbregeln, nur die
+  Touch-Größen-Overrides. Farbregeln 1:1 aus `admin/+layout.svelte` dorthin
+  dupliziert (mit Kommentar, warum die Duplizierung nötig ist statt
+  eine geteilte Stelle). Über den Build-Output verifiziert: die neue Farbe
+  landet jetzt auch im `register`-Chunk. **Noch nicht live durch den Nutzer
+  bestätigt** — nur technisch verifiziert (Build-Output), nicht selbst im
+  Browser gesehen.
 - [ ] **#78** (Low Prio) QR-Code auch auf den Bondrucker-Ausdruck bringen
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26): der PDF-Beleg
   zeigt einen QR-Code (DSFinV-K Anhang I, `receipt/qr.ts`), der physische
@@ -792,3 +809,72 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   rückwirkend ändern); beide Backend-Endpunkte von `DELETE` auf ein `UPDATE
   ... SET status = 'cancelled'` umstellen; Frontend-Status-Filter um den
   neuen Wert ergänzen.
+- [ ] **#80** Server-Adresse-Testfunktion (Task #73) prüft die falsche Sache — Konzept überarbeiten
+  Beim Nutzer-Review von Task #73 aufgefallen (2026-08-26): der neue
+  „Testen"-Button in den Systemeinstellungen zeigt einen QR-Code + Link zu
+  `<server_address>/` — das ist die Login-Seite des Backends. Die
+  `server_address`-Einstellung wird aber ausschließlich für den öffentlichen,
+  nicht-authentifizierten Rechnungs-Endpunkt `/receipt/:token`
+  verwendet — genau der Pfad, den ein Kunde nach dem Bezahlen scannt, um
+  seine PDF-Rechnung zu sehen, ganz ohne Login. Ob das Backend unter der
+  konfigurierten Adresse erreichbar ist, muss nicht zwingend heißen, dass
+  auch der öffentliche Rechnungs-Pfad im selben Sinne „funktioniert" (und
+  umgekehrt), auch wenn beide vom selben Fastify-Prozess bedient werden —
+  ungeklärt, ob Admins durch den Test etwas anderes bestätigt bekommen, als
+  sie eigentlich prüfen wollen.
+  **Zu klären, bevor implementiert wird:** Wie sieht ein Test aus, der
+  wirklich den `/receipt/:token`-Pfad abbildet, wenn beim Testen (noch)
+  keine echte Rechnung/kein echter Token existiert? Optionen zum Abwägen:
+  ein eigener, dedizierter Test-Endpunkt, der wie `/receipt/:token`
+  aussieht/sich verhält, aber keinen echten Token braucht; ein Hinweistext,
+  der ehrlich sagt, was der Test tatsächlich zeigt (reine
+  Netzwerk-Erreichbarkeit des Servers) statt zu suggerieren, der komplette
+  Rechnungs-Abruf sei geprüft; oder etwas anderes — noch keine Entscheidung
+  getroffen.
+- [x] **#81** Checkout-/Bestell-Tabellen-Overflow (D-039) — Nachbesserung
+  Der erste Fix (`.line-name` mit `min-width: 0` + Ellipsis auf der
+  Bestellansicht, `table-layout: fixed` mit festen Spaltenbreiten auf der
+  Checkout-Tabelle — siehe `DANGER.md` D-039) war beim erneuten Live-Test
+  nicht ausreichend: „teilweise gelöst aber passt noch nicht ganz" (Nutzer,
+  2026-08-26). Präzisiert per Screenshot: auf einem iPhone (schmaler
+  Bildschirm) verschwand der Artikelname jetzt **komplett** — die
+  Ellipsis-Lösung konnte zwar schrumpfen, aber die übrigen Spalten (farbiger
+  Punkt, Einzelpreis, +/−-Stepper, Gesamtpreis) beanspruchten so viel Platz,
+  dass für den Namen praktisch nichts mehr übrig blieb. Nutzervorgabe:
+  Platz sparen statt nur schrumpfen lassen — farbigen Punkt vor jeder Zeile
+  entfernen, +/−-Buttons verkleinern, Gesamtpreis-Spalte (ganz rechts)
+  komplett weglassen.
+  **Erledigt (2026-08-26)**, auf beiden betroffenen Screens
+  (`register/[id]/+page.svelte` Bonkasse, `.../order/+page.svelte`
+  Bedienungskasse-Bestellansicht — identisches Layout-Muster, konsistent
+  behandelt; die zuvor nur auf der Bestellansicht vorhandene
+  Ellipsis-Behandlung fehlte in der Bonkasse ganz und wurde dabei ergänzt):
+  `.line-dot` (Punkt) und `.line-total` (Gesamtpreis je Zeile) aus Markup und
+  Grid-Spalten entfernt (`grid-template-columns` von `12px 1fr 4em auto 5em`
+  auf `1fr 4em auto`), jetzt tote `colorOf()`-Helper mit entfernt. Stepper-
+  Buttons (`.qty-btn`) von 44px (aus dem app-weiten Touch-Target-Minimum in
+  `register/+layout.svelte`, per `!important`) auf 32px verkleinert — bewusst
+  nur für diese Zeilen per höherer Selektor-Spezifität überschrieben, statt
+  das app-weite Minimum überall aufzuweichen. Die Gesamtsumme über alle
+  Positionen (`.total-row`, unterhalb der Liste) bleibt unverändert
+  bestehen — nur die Zeilen-Einzelsumme fiel weg, kein Informationsverlust
+  bei „was kostet das insgesamt". **Noch nicht live durch den Nutzer
+  bestätigt.**
+- [x] **#82** Update-Ablauf als Skript (`scripts/install/update.sh`)
+  Aufgekommen beim Hardware-Test (2026-08-26) — der Update-Ablauf aus
+  Abschnitt 12 der Installationsanleitung wurde an diesem Tag mehrfach von
+  Hand wiederholt. Nutzervorgabe: von einem beliebigen Account per `sudo`
+  startbar, das Skript soll selbst prüfen, ob es Root-Rechte hat, und intern
+  mit dem richtigen (Service-)User arbeiten.
+  **Erledigt (2026-08-26):** `scripts/install/update.sh` — bricht ab, wenn
+  nicht als root gestartet; ermittelt den Service-User nicht per Annahme,
+  sondern liest ihn aus der bereits installierten systemd-Unit
+  (`/etc/systemd/system/fairpos.service`, `User=`-Zeile) zurück, Fallback
+  `fairpos` falls die Unit noch nicht existiert. `git pull`/`npm ci`/Build/
+  Migration laufen über `sudo -u <service-user>`, damit im Checkout nichts
+  root-owned zurückbleibt — nur `systemctl restart` läuft tatsächlich als
+  root. Schließt mit einem Aufruf von `smoke-test.sh` ab. Ausführbar-Bit
+  gesetzt (`git update-index --chmod=+x`, siehe D-028 zur WSL-Falle).
+  In Abschnitt 9 (Skript-Tabelle) und Abschnitt 12 (Updates) der
+  Installationsanleitung referenziert, alte manuelle Befehlsfolge bleibt als
+  Fallback dokumentiert. **Noch nicht live auf dem Server verifiziert.**

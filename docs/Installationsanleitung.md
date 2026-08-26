@@ -344,6 +344,7 @@ voraussetzt) sind als idempotente Skripte in `scripts/install/` hinterlegt:
 | `scripts/install/03-build.sh` | `npm ci`, Build, Frontend-Kopie nach `packages/backend/public/` |
 | `scripts/install/04-systemd.sh` | systemd-Unit installieren + aktivieren |
 | `scripts/install/smoke-test.sh` | DB-Verbindung, TSE-Erreichbarkeit (falls konfiguriert), Backend-Healthcheck |
+| `scripts/install/update.sh` | Update-Ablauf (Abschnitt 12) — als `sudo` von einem beliebigen Account startbar, führt `git pull`/`npm ci`/Build/Migration intern selbst als Service-User aus (liest den Namen aus der installierten systemd-Unit), nur der Neustart läuft als root |
 
 Reihenfolge: `01` → Service-User anlegen (Abschnitt 4) → `.env` ausfüllen →
 `02` → `03` → `npm run db:migrate` → `04` → `smoke-test.sh`.
@@ -408,6 +409,16 @@ TSE-Status (`GET /api/admin/tse/status`, falls konfiguriert), Login als Admin
 ---
 
 ## 12. Updates
+
+```bash
+sudo /opt/fairpos/scripts/install/update.sh
+```
+
+Führt den kompletten Ablauf aus (`git pull`, `npm ci`, Build, Frontend-Kopie,
+Migration, Neustart, Smoke-Test) — `git`/`npm`/Migration laufen dabei intern
+als Service-User, nicht als root, auch wenn das Skript selbst per `sudo`
+gestartet wird. Äquivalent manuell, falls das Skript einmal nicht zur Hand
+ist:
 
 ```bash
 cd /opt/fairpos

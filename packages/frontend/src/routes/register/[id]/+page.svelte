@@ -103,11 +103,6 @@
   function plus(articleId: string)  { order = adjustQuantity(order, articleId, 1); }
   function minus(articleId: string) { order = adjustQuantity(order, articleId, -1); }
 
-  function colorOf(articleId: string): string | null {
-    const slot = slots.find((s) => s.article_id === articleId);
-    return slot?.color ?? null;
-  }
-
   function nameOf(articleId: string): string {
     return articleById.get(articleId)?.name ?? '?';
   }
@@ -212,9 +207,7 @@
       {:else}
         <ul class="order-list">
           {#each order as line (line.article_id)}
-            {@const c = colorOf(line.article_id)}
             <li class="order-line">
-              <span class="line-dot" style="background:{c ?? '#888'}"></span>
               <span class="line-name">{nameOf(line.article_id)}</span>
               <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
               <div class="qty">
@@ -222,7 +215,6 @@
                 <span class="qty-val">{line.quantity}</span>
                 <button class="qty-btn" onclick={() => plus(line.article_id)}>+</button>
               </div>
-              <span class="line-total">{fmt(unitPriceOf(line.article_id) * line.quantity)} €</span>
             </li>
           {/each}
         </ul>
@@ -319,22 +311,35 @@
   .order-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
   .order-line {
     display: grid;
-    grid-template-columns: 12px 1fr 4em auto 5em;
+    grid-template-columns: 1fr 4em auto;
     align-items: center; gap: 0.6rem;
     padding: 0.4rem 0;
     border-bottom: 1px solid var(--color-border);
   }
   .order-line:last-child { border-bottom: none; }
-  .line-dot { width: 10px; height: 10px; border-radius: 50%; }
-  .line-name { font-weight: 600; }
+  /* min-width: 0 overrides the grid item's implicit min-width: auto (min-content) so the
+     name can shrink instead of pushing the price columns off-screen — see the matching
+     comment in .../order/+page.svelte for the full rationale (same layout pattern here). */
+  .line-name {
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
   .line-unit { font-size: 0.8rem; text-align: right; }
-  .line-total { font-weight: 600; text-align: right; }
-  .qty { display: flex; align-items: center; gap: 0.4rem; }
+  .qty { display: flex; align-items: center; gap: 0.3rem; }
   .qty-btn {
-    width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--color-border);
-    background: var(--color-bg); color: var(--color-text); cursor: pointer; font-size: 1rem;
+    border-radius: 50%; border: 1px solid var(--color-border);
+    background: var(--color-bg); color: var(--color-text); cursor: pointer;
   }
   .qty-btn:hover { background: var(--color-surface-hover); }
+  /* Narrow-phone fix, see .../order/+page.svelte for the full rationale. */
+  .order-line .qty-btn {
+    width: 32px !important; height: 32px !important;
+    min-width: 32px !important; min-height: 32px !important;
+    font-size: 1rem !important;
+  }
   .qty-val { min-width: 1.5em; text-align: center; font-weight: 700; }
 
   .total-row {
