@@ -416,6 +416,21 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   wiederkehrender Hintergrund-Job, der die TSE regelmäßig prüft und bei
   Bedarf automatisch nachsynchronisiert, statt nur einmal beim Boot und
   sonst rein manuell über den Button.
+
+  **Präzisiert nach echtem Test auf der Hardware (2026-08-26):** Nutzer hat
+  den Self-Test direkt ausprobiert — läuft in der Praxis sehr schnell und
+  ressourcenarm, blockiert die TSE nur kurz. Vorschlag für den
+  Hintergrund-Job: nicht blind im festen Intervall `maintainTse()` (voller
+  Self-Test + Zeitsync) aufrufen, sondern zweistufig arbeiten — zyklisch nur
+  den günstigen `info`-Aufruf (`getTseInfo()`) machen, dessen Ergebnis
+  bereits `hasValidTime`/`hasPassedSelfTest` enthält (siehe `TseInfo` in
+  `tse/types.ts`, auch schon in der Status-Karte der Admin-UI sichtbar), und
+  den vollen, aufwendigeren `maintainTse()`-Aufruf nur auslösen, wenn dieser
+  günstige Check tatsächlich Bedarf anzeigt. Noch zu klären: sinnvolles
+  Polling-Intervall für den `info`-Check, und ob `hasPassedSelfTest`
+  überhaupt zwischen zwei erfolgreichen `maintain`-Läufen wieder auf
+  „nicht bestanden" zurückfällt (z. B. nach einem Verbindungsverlust) oder
+  ob dafür ein anderes Signal nötig ist.
 - [x] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
   **Erledigt (2026-08-24):** Neue Seite `admin/settings/tse/+page.svelte`
   mit den beiden Karten „TSE-Verbindung" und „TSE-Status" (inkl. eigenem
@@ -722,7 +737,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `register/+layout.svelte` (Kassen-Header, in kleinerer Form passend zur
   Topbar-Höhe). Keine weiteren Fundstellen — Login-Screen selbst hatte es
   schon. **Live bestätigt (2026-08-26).**
-- [ ] **#76** Bonkasse: Artikel-Grid verschiebt sich beim Antippen (Buttons wandern unter dem Finger weg)
+- [x] **#76** Bonkasse: Artikel-Grid verschiebt sich beim Antippen (Buttons wandern unter dem Finger weg)
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
   „hier müssen wir uns Gedanken über eine gute Lösung machen" — bewusst nur
   als Task angelegt, kein Fix in dieser Session. Beobachtung: In der
@@ -744,6 +759,30 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Bonkasse tatsächlich die richtige Lösung ist (z. B. Platzverbrauch bei
   leerer/kurzer Bestellung auf kleinen Bildschirmen gegenprüfen) oder ob ein
   anderes Layout-Konzept besser passt.
+
+  **Design festgelegt und umgesetzt (2026-08-26):** Nutzervorgabe — echtes
+  responsives Verhalten statt nur eine feste Höhe: auf schmalen Bildschirmen
+  (Handheld) Artikel-Grid **über** der Liste, beide wachsen frei mit ihrem
+  Inhalt, keine interne Höhenbegrenzung mehr — die ganze Seite scrollt. Ab
+  einer Tablet-Breite (z. B. iPad) wird die Bestellliste stattdessen eine
+  Seitenleiste rechts (~30 % Breite) neben dem Grid, die selbst scrollt
+  (`position: sticky`) und beim Scrollen durchs Grid sichtbar bleibt.
+  Ausdrücklicher Wunsch: **eine** Implementierung statt zwei separat
+  gepflegter Layouts — machbar über CSS Grid mit `grid-template-areas`,
+  reines CSS über einen Media-Query-Breakpoint (768px), keine
+  Doppel-Komponente, keine JS-Logik nötig, identische DOM-Reihenfolge in
+  beiden Ansichten.
+  **Erledigt (2026-08-26):** Neue `.pos-layout`-Grid-Umschließung in
+  `register/[id]/+page.svelte` (Bonkasse) und `.../order/+page.svelte`
+  (Bedienungskasse-Bestellansicht) — beide identisch aufgebaut. Alte feste
+  Höhen/interne Scrollbereiche (`max-height: 40vh` bzw. `height: 35vh` +
+  `overflow-y: auto` auf `.order-section`, `flex:1; overflow:auto` auf
+  `.grid-section`) entfernt; Sidebar-Verhalten (`position: sticky` +
+  `max-height`/`overflow-y: auto`) nur innerhalb des Media Querys aktiv.
+  **Noch nicht live durch den Nutzer bestätigt** (Testfall: schnelles
+  Nacheinander-Antippen auf dem Handheld sollte jetzt keine
+  Button-Verschiebung mehr zeigen; auf einem breiteren Gerät sollte die
+  Liste als Seitenleiste erscheinen).
 - [x] **#77** Button-Style app-weit überarbeiten (Kontrast aktuell sehr stark: weiß auf dunkelblau)
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
   „Ggf. den Button-Style optimieren für alle Buttons". Technischer Fund als
@@ -777,9 +816,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Touch-Größen-Overrides. Farbregeln 1:1 aus `admin/+layout.svelte` dorthin
   dupliziert (mit Kommentar, warum die Duplizierung nötig ist statt
   eine geteilte Stelle). Über den Build-Output verifiziert: die neue Farbe
-  landet jetzt auch im `register`-Chunk. **Noch nicht live durch den Nutzer
-  bestätigt** — nur technisch verifiziert (Build-Output), nicht selbst im
-  Browser gesehen.
+  landet jetzt auch im `register`-Chunk. **Live bestätigt (2026-08-26).**
 - [ ] **#78** (Low Prio) QR-Code auch auf den Bondrucker-Ausdruck bringen
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26): der PDF-Beleg
   zeigt einen QR-Code (DSFinV-K Anhang I, `receipt/qr.ts`), der physische
@@ -858,8 +895,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   das app-weite Minimum überall aufzuweichen. Die Gesamtsumme über alle
   Positionen (`.total-row`, unterhalb der Liste) bleibt unverändert
   bestehen — nur die Zeilen-Einzelsumme fiel weg, kein Informationsverlust
-  bei „was kostet das insgesamt". **Noch nicht live durch den Nutzer
-  bestätigt.**
+  bei „was kostet das insgesamt". **Live bestätigt (2026-08-26).**
 - [x] **#82** Update-Ablauf als Skript (`scripts/install/update.sh`)
   Aufgekommen beim Hardware-Test (2026-08-26) — der Update-Ablauf aus
   Abschnitt 12 der Installationsanleitung wurde an diesem Tag mehrfach von
@@ -877,4 +913,42 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   gesetzt (`git update-index --chmod=+x`, siehe D-028 zur WSL-Falle).
   In Abschnitt 9 (Skript-Tabelle) und Abschnitt 12 (Updates) der
   Installationsanleitung referenziert, alte manuelle Befehlsfolge bleibt als
-  Fallback dokumentiert. **Noch nicht live auf dem Server verifiziert.**
+  Fallback dokumentiert.
+  **Erste Live-Ausführung (2026-08-26):** Alle Schritte (Pull, Build,
+  Migration, Neustart) liefen als `fairpos` erfolgreich durch — der
+  abschließende Smoke-Test schlug allerdings beim Health-Check fehl, weil
+  der Backend-Prozess nach dem Neustart noch nicht ganz hochgefahren war
+  (`systemctl restart` gilt schon als „aktiv", bevor der Port gebunden ist)
+  — behoben in `smoke-test.sh` selbst, siehe `DANGER.md` D-045 (Retry statt
+  Einzelversuch). Rest des Update-Ablaufs damit bereits live verifiziert.
+- [x] **#83** Label „Gesamt" vor dem Summenbetrag entfernen (Bonkasse + Bedienungskasse-Bestellansicht)
+  Aufgekommen beim Hardware-Test (2026-08-26), Nutzervorgabe: ergibt sich aus
+  dem Kontext (großer Betrag direkt neben dem „Kassieren"/„Bestellen"-Button),
+  braucht kein eigenes Label.
+  **Erledigt (2026-08-26):** `<span class="total-label">Gesamt</span>` aus
+  `register/[id]/+page.svelte` (Bonkasse) und `.../order/+page.svelte`
+  (Bedienungskasse-Bestellansicht) entfernt, jetzt tote `.total-label`-CSS-
+  Regel in beiden Dateien mit entfernt. `checkout/+page.svelte` bewusst
+  unverändert — dort steht „Summe" als Tabellen-Zellwert unter einer
+  gleichnamigen Spaltenüberschrift, ein anderer, nicht vom Nutzer
+  angesprochener Kontext. **Noch nicht live durch den Nutzer bestätigt.**
+- [ ] **#84** Artikel löschen, das bereits verkauft wurde → „Internal Server Error" statt klarer Fehlermeldung
+  Aufgekommen beim Hardware-Test (2026-08-26). Bestätigt: `DELETE
+  /api/admin/articles/:id` (`routes/admin/articles.ts`) fängt anders als die
+  Endpunkte für Kassen/Benutzer/Drucker (Task #54/#56/#57) keine
+  `23503`-Fremdschlüsselverletzung ab — `order_item.article_id` ist `NOT
+  NULL REFERENCES article(id)` ohne `ON DELETE CASCADE`
+  (`0001_initial.sql`), ein bereits verkaufter Artikel kann also nie
+  gelöscht werden, der rohe Postgres-Fehler geht aber ungefangen als 500 an
+  den Client durch. Nutzervorgabe: Artikel müssen irgendwie entfernbar
+  bleiben (sonst sammeln sie sich endlos an), Vorschlag: nur logisch löschen
+  (im UI ausblenden) statt hart aus der DB zu entfernen.
+  **Guter Ausgangspunkt für die Umsetzung:** `article.is_active` existiert
+  bereits (im Gegensatz zu Task #55/#56, wo das Feld erst per Migration
+  ergänzt werden musste) — Admin-UI hat auch schon eine vollständige
+  „Aktiv"-Checkbox samt Listen-Spalte (`admin/articles/+page.svelte`). Es
+  fehlt nur die Backend-Fehlerbehandlung selbst — vermutlich reicht, dem
+  `DELETE`-Handler denselben `23503`→409-Fang wie bei #54/#57 zu geben
+  (Fehlermeldung verweist auf die „Aktiv"-Checkbox statt nur generisch
+  „wird noch verwendet"), kein Migrations- oder Frontend-Aufwand absehbar.
+  Nicht in dieser Session umgesetzt, nur als Task angelegt wie gewünscht.

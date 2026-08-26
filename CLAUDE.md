@@ -51,9 +51,13 @@ Alle Bezeichner im Code und in der Datenbank sind **englisch**:
 - Tabellennamen, Spaltennamen, Enum-Werte
 - Dateinamen für Quellcode
 
-UI-Texte, Kommentare, Dokumentation und Git-Commit-Messages dürfen deutsch sein.
+UI-Texte, Kommentare und Dokumentation dürfen deutsch sein.
 
 Übersetzungen immer aus `Dictionary.md` entnehmen, um Konsistenz zu gewährleisten.
+
+**Git-Commit-Messages sind immer englisch** und ausführlich (nicht nur eine
+Zeile) — Body mit den wesentlichen Änderungen. Kein Warum/Begründung, das
+macht die Message unnötig lang — reicht, um zu sehen was sich geändert hat.
 
 ### Inline-Dokumentation (JSDoc, Englisch)
 

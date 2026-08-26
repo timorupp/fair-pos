@@ -192,63 +192,69 @@
     <p class="error-text">{error}</p>
   {:else}
 
-  <!-- Order list (fixed height, scrolls internally) -->
-  <section class="order-section">
-    {#if order.length === 0}
-      <p class="empty">Noch keine Artikel.</p>
-    {:else}
-      <ul class="order-list">
-        {#each order as line, i (i)}
-          <li class="order-line">
-            <span class="line-name">
-              {nameOf(line.article_id)}
-              {#if line.options}<span class="line-options"> · {line.options}</span>{/if}
-            </span>
-            <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
-            <div class="qty">
-              <button class="qty-btn" onclick={() => changeQuantity(line, -1)}>−</button>
-              <span class="qty-val">{line.quantity}</span>
-              <button class="qty-btn" onclick={() => changeQuantity(line, +1)}>+</button>
-            </div>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-
-    <div class="total-row">
-      <span class="total-label">Gesamt</span>
-      <span class="total-value">{fmt(total)} €</span>
-      <button class="btn-primary place-btn" disabled={order.length === 0 || placing} onclick={placeOrder}>
-        {placing ? 'Bestelle…' : 'Bestellen'}
-      </button>
-    </div>
-    {#if placeError}<p class="error-text">{placeError}</p>{/if}
-  </section>
-
-  <!-- Article grid -->
-  <section class="grid-section">
-    {#if !hasLayout}
-      <p class="muted center">Für diese Kasse ist kein Layout konfiguriert. Bitte den Administrator informieren.</p>
-    {:else if slots.length === 0}
-      <p class="muted center">Das zugewiesene Layout enthält noch keine Artikel. Bitte den Administrator informieren.</p>
-    {:else}
-      <div class="article-grid" style="--cols:{gridCols}; --rows:{gridRows}">
-        {#each gridMatrix as row}
-          {#each row as slot}
-            {#if slot}
-              <button type="button" class="grid-btn" style="background:{slot.color}"
-                      disabled={optionsLoading}
-                      onclick={() => tapSlot(slot)}>
-                {nameOf(slot.article_id)}
-              </button>
-            {:else}
-              <div class="grid-empty"></div>
-            {/if}
+  <!-- Responsive: article grid + order list reflow via CSS grid-template-areas
+       (see .pos-layout) — narrow screens stack grid-then-list top to bottom with
+       no internal scrolling (the whole page scrolls); from the tablet breakpoint
+       up, the list becomes a sticky sidebar next to the grid instead. Same
+       markup/order in the DOM either way, only the CSS placement changes. -->
+  <div class="pos-layout">
+    <!-- Article grid -->
+    <section class="grid-section">
+      {#if !hasLayout}
+        <p class="muted center">Für diese Kasse ist kein Layout konfiguriert. Bitte den Administrator informieren.</p>
+      {:else if slots.length === 0}
+        <p class="muted center">Das zugewiesene Layout enthält noch keine Artikel. Bitte den Administrator informieren.</p>
+      {:else}
+        <div class="article-grid" style="--cols:{gridCols}; --rows:{gridRows}">
+          {#each gridMatrix as row}
+            {#each row as slot}
+              {#if slot}
+                <button type="button" class="grid-btn" style="background:{slot.color}"
+                        disabled={optionsLoading}
+                        onclick={() => tapSlot(slot)}>
+                  {nameOf(slot.article_id)}
+                </button>
+              {:else}
+                <div class="grid-empty"></div>
+              {/if}
+            {/each}
           {/each}
-        {/each}
+        </div>
+      {/if}
+    </section>
+
+    <!-- Order list -->
+    <section class="order-section">
+      {#if order.length === 0}
+        <p class="empty">Noch keine Artikel.</p>
+      {:else}
+        <ul class="order-list">
+          {#each order as line, i (i)}
+            <li class="order-line">
+              <span class="line-name">
+                {nameOf(line.article_id)}
+                {#if line.options}<span class="line-options"> · {line.options}</span>{/if}
+              </span>
+              <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
+              <div class="qty">
+                <button class="qty-btn" onclick={() => changeQuantity(line, -1)}>−</button>
+                <span class="qty-val">{line.quantity}</span>
+                <button class="qty-btn" onclick={() => changeQuantity(line, +1)}>+</button>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      <div class="total-row">
+        <span class="total-value">{fmt(total)} €</span>
+        <button class="btn-primary place-btn" disabled={order.length === 0 || placing} onclick={placeOrder}>
+          {placing ? 'Bestelle…' : 'Bestellen'}
+        </button>
       </div>
-    {/if}
-  </section>
+      {#if placeError}<p class="error-text">{placeError}</p>{/if}
+    </section>
+  </div>
 
   {/if}
 </div>
@@ -279,13 +285,41 @@
   .header h1 { font-size: 1.2rem; margin: 0; flex: 1; }
   .center { text-align: center; padding: 1rem; }
 
+  /* ── Responsive grid+list layout ──────────────────────────────────────
+     Narrow (default): single column, grid above list, both grow with their
+     content — no internal scrolling, the whole page scrolls. From the
+     tablet breakpoint up: two columns, list becomes a sticky sidebar that
+     scrolls on its own so it stays visible while scrolling the grid. Same
+     DOM/markup order either way — see the template comment above. */
+  .pos-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-areas: "grid" "order";
+    gap: 1rem;
+  }
+  .grid-section { grid-area: grid; }
+  .order-section { grid-area: order; }
+  @media (min-width: 768px) {
+    .pos-layout {
+      grid-template-columns: 1fr 30%;
+      grid-template-areas: "grid order";
+      align-items: start;
+    }
+    .order-section {
+      position: sticky;
+      top: 1rem;
+      max-height: calc(100vh - 2rem);
+      overflow-y: auto;
+    }
+  }
+
   .order-section {
     background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: var(--radius); padding: 1rem;
-    height: 35vh; min-height: 220px; display: flex; flex-direction: column;
+    display: flex; flex-direction: column;
   }
   .empty { color: var(--color-text-muted); font-size: 0.9rem; padding: 0.5rem 0; }
-  .order-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+  .order-list { list-style: none; padding: 0; margin: 0; }
   .order-line {
     display: grid;
     grid-template-columns: 1fr 4em auto;
@@ -330,11 +364,9 @@
     display: flex; align-items: center; gap: 0.75rem;
     padding-top: 0.6rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border);
   }
-  .total-label { font-size: 0.9rem; font-weight: 600; }
   .total-value { font-size: 1.25rem; font-weight: 700; flex: 1; }
   .place-btn { padding: 0.6rem 1.5rem; font-size: 1rem; }
 
-  .grid-section { flex: 1; min-height: 0; overflow: auto; }
   .article-grid {
     display: grid;
     grid-template-columns: repeat(var(--cols), minmax(80px, 1fr));

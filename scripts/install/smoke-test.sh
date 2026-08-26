@@ -27,7 +27,25 @@ echo "==> systemd-Service"
 check "fairpos.service ist aktiv" systemctl is-active --quiet fairpos
 
 echo "==> Backend erreichbar"
-check "GET /api/health antwortet mit 200" curl -fsS "http://localhost:${PORT}/api/health"
+# `systemctl restart` gilt schon als "aktiv", sobald der Prozess gestartet
+# wurde — nicht erst, wenn er fertig hochgefahren ist und den Port bindet.
+# Direkt nach einem Neustart (z.B. aus update.sh) käme ein einzelner Versuch
+# oft zu früh — deshalb bis zu 15s in 1s-Schritten erneut versuchen, statt
+# nach dem ersten Fehlschlag sofort aufzugeben.
+health_ok=0
+for _ in $(seq 1 15); do
+  if curl -fsS "http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
+    health_ok=1
+    break
+  fi
+  sleep 1
+done
+if [ "$health_ok" -eq 1 ]; then
+  echo "  [OK]   GET /api/health antwortet mit 200"
+else
+  echo "  [FEHLT] GET /api/health antwortet mit 200 (auch nach 15s erneutem Versuch nicht)"
+  FAILED=1
+fi
 
 echo "==> Datenbank"
 check "PostgreSQL nimmt Verbindungen an (pg_isready)" pg_isready -q -h localhost
