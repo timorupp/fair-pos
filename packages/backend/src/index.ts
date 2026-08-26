@@ -7,6 +7,7 @@ import { buildApp } from './app.js';
 import { config } from './config.js';
 import { startPrintWorker } from './workers/print-worker.js';
 import { ensureSystemSerial, initReceiptCounter } from './system/bootstrap.js';
+import { startTseHealthJob } from './tse/healthJob.js';
 
 async function main(): Promise<void> {
   await runMigrations();
@@ -17,6 +18,7 @@ async function main(): Promise<void> {
   await app.listen({ port: config.port, host: '0.0.0.0' });
 
   startPrintWorker();
+  startTseHealthJob();
 }
 
 main().catch((err) => {

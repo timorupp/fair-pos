@@ -33,7 +33,7 @@ import { TseError } from './types.js';
  * @param e - The value caught from a failed `client.ts` call.
  * @returns A human-readable reason string, never empty.
  */
-function describeTseError(e: unknown): string {
+export function describeTseError(e: unknown): string {
   if (e instanceof TseError) return `${e.message} (Code ${e.code})`;
   return e instanceof Error ? e.message : String(e);
 }

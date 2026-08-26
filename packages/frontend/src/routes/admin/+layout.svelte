@@ -111,6 +111,7 @@
       '/admin/settings/printers',
       '/admin/settings/tse',
       '/admin/settings/system',
+      '/admin/settings/logs',
     ]);
   });
 
@@ -205,6 +206,7 @@
             <a href="/admin/settings/printers" class:active={isActive('/admin/settings/printers')}>Drucker</a>
             <a href="/admin/settings/tse" class:active={isActive('/admin/settings/tse')}>TSE</a>
             <a href="/admin/settings/system" class:active={isActive('/admin/settings/system')}>System</a>
+            <a href="/admin/settings/logs" class:active={isActive('/admin/settings/logs')}>Systemprotokoll</a>
           </div>
         {/if}
       </div>

@@ -51,6 +51,24 @@ describe('longpress', () => {
     expect(onHold).not.toHaveBeenCalled();
   });
 
+  it('does not start holding (no class, no callback) when the button is disabled', () => {
+    node.disabled = true;
+    longpress(node, { onHold });
+    node.dispatchEvent(pointerEvent('pointerdown'));
+    expect(node.classList.contains('holding')).toBe(false);
+    vi.advanceTimersByTime(600);
+    expect(onHold).not.toHaveBeenCalled();
+  });
+
+  it('does not fire onHold if the button becomes disabled mid-hold', () => {
+    longpress(node, { onHold });
+    node.dispatchEvent(pointerEvent('pointerdown'));
+    vi.advanceTimersByTime(300);
+    node.disabled = true;
+    vi.advanceTimersByTime(300);
+    expect(onHold).not.toHaveBeenCalled();
+  });
+
   it('ignores non-primary buttons (e.g. right click)', () => {
     longpress(node, { onHold });
     node.dispatchEvent(pointerEvent('pointerdown', 2));

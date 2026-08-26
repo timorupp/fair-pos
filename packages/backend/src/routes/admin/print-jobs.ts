@@ -21,18 +21,18 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
    * printer name. Drives the print-queue overview page.
    *
    * Query param `status` accepts:
-   *   - `pending | printing | failed | done` → exact-match filter
-   *   - `all` → returns every job including already-completed ones
+   *   - `pending | printing | failed | done | cancelled` → exact-match filter
+   *   - `all` → returns every job including already-completed/cancelled ones
    *   - omitted → returns the three non-terminal statuses (default for the queue view)
    *
    * To keep the table from growing without bound when "all" is selected the
    * response is hard-capped at 500 most-recent rows.
    */
-  app.get<{ Querystring: { status?: 'pending' | 'printing' | 'failed' | 'done' | 'all' } }>(
+  app.get<{ Querystring: { status?: 'pending' | 'printing' | 'failed' | 'done' | 'cancelled' | 'all' } }>(
     '/',
     async (req, reply) => {
       const filterStatus = req.query.status;
-      const allStatuses = ['pending', 'printing', 'failed', 'done'];
+      const allStatuses = ['pending', 'printing', 'failed', 'done', 'cancelled'];
       const statusList =
         filterStatus === 'all' || !filterStatus
           ? (filterStatus === 'all' ? allStatuses : ['pending', 'printing', 'failed'])
@@ -49,9 +49,9 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
           LIMIT 500`,
         [statusList],
       );
-      // Newest-first for "all"/"done" makes more sense; for non-terminal the
-      // operator still wants oldest-first (FIFO of pending work).
-      const rows = filterStatus === 'all' || filterStatus === 'done'
+      // Newest-first for "all"/terminal statuses makes more sense; for
+      // non-terminal the operator still wants oldest-first (FIFO of pending work).
+      const rows = filterStatus === 'all' || filterStatus === 'done' || filterStatus === 'cancelled'
         ? result.rows
         : [...result.rows].reverse();
       return reply.send(rows);
@@ -59,10 +59,13 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
   );
 
   /**
-   * DELETE /api/admin/print-jobs/:id — cancels a queued or terminally-failed job.
-   * Refuses to delete a job currently being printed.
+   * DELETE /api/admin/print-jobs/:id — cancels a queued or terminally-failed
+   * job by setting its status to `cancelled` (Task #79). Refuses a job
+   * currently being printed. Previously deleted the row outright — now kept
+   * so the queue's status filter still shows what was cancelled instead of
+   * it silently disappearing.
    *
-   * @param id - The print_job id to remove.
+   * @param id - The print_job id to cancel.
    */
   app.delete<{ Params: { id: string } }>('/:id', async (req, reply) => {
     const { id } = req.params;
@@ -73,7 +76,7 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
     if (existing.rows[0]!.status === 'printing') {
       return reply.status(409).send({ error: 'Druckauftrag wird gerade ausgeführt und kann nicht abgebrochen werden.' });
     }
-    await query('DELETE FROM print_job WHERE id = $1', [id]);
+    await query(`UPDATE print_job SET status = 'cancelled' WHERE id = $1`, [id]);
     return reply.status(204).send();
   });
 

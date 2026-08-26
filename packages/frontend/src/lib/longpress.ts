@@ -26,12 +26,19 @@ export interface LongpressOptions {
 export function longpress(node: HTMLElement, options: LongpressOptions) {
   let timer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Whether the element is currently disabled — checked both at press-start and again when the hold completes, in case its disabled state changes mid-press. */
+  function isDisabled(): boolean {
+    return node instanceof HTMLButtonElement && node.disabled;
+  }
+
   function start(e: PointerEvent) {
     if (e.button !== 0) return; // primary touch / left mouse button only
+    if (isDisabled()) return;
     node.classList.add('holding');
     timer = setTimeout(() => {
       timer = null;
       node.classList.remove('holding');
+      if (isDisabled()) return;
       options.onHold();
     }, options.durationMs ?? 600);
   }

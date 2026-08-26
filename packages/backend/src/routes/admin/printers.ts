@@ -174,37 +174,4 @@ export async function printersAdminRoute(app: FastifyInstance): Promise<void> {
     const job = await enqueuePrintJob(id, 'test_print', payload);
     return reply.send({ print_job_id: job.id });
   });
-
-  /** GET /api/admin/printers/:id/jobs — list non-terminal jobs queued for this printer. */
-  app.get('/:id/jobs', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const result = await query(
-      `SELECT id, type, status, attempts, created_at, last_attempt_at, error_message
-         FROM print_job
-        WHERE printer_id = $1
-          AND status IN ('pending', 'printing', 'failed')
-        ORDER BY created_at`,
-      [id],
-    );
-    return reply.send(result.rows);
-  });
-
-
-  /**
-   * DELETE /api/admin/printers/:printerId/jobs/:jobId — cancel a queued or terminally-failed job.
-   * Refuses to delete a job currently being printed.
-   */
-  app.delete('/:printerId/jobs/:jobId', async (req, reply) => {
-    const { printerId, jobId } = req.params as { printerId: string; jobId: string };
-    const existing = await query<{ status: string }>(
-      'SELECT status FROM print_job WHERE id = $1 AND printer_id = $2',
-      [jobId, printerId],
-    );
-    if (existing.rows.length === 0) return reply.status(404).send({ error: 'Druckauftrag nicht gefunden' });
-    if (existing.rows[0]!.status === 'printing') {
-      return reply.status(409).send({ error: 'Druckauftrag wird gerade ausgeführt und kann nicht abgebrochen werden.' });
-    }
-    await query('DELETE FROM print_job WHERE id = $1', [jobId]);
-    return reply.status(204).send();
-  });
 }

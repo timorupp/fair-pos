@@ -18,7 +18,7 @@
   let jobs: JobRow[] = $state([]);
   let loading = $state(true);
   let error = $state('');
-  let statusFilter: '' | 'all' | 'pending' | 'printing' | 'failed' | 'done' = $state('');
+  let statusFilter: '' | 'all' | 'pending' | 'printing' | 'failed' | 'done' | 'cancelled' = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
@@ -41,14 +41,15 @@
   }
 
   /**
-   * Cancels (removes) the supplied job. Asks for confirmation first because
-   * the action is destructive — a queued bestellbon that is cancelled here
-   * cannot easily be re-issued without re-doing the order.
+   * Marks the supplied job as `cancelled` (Task #79 — no longer deletes the
+   * row, see routes/admin/print-jobs.ts). Asks for confirmation first: a
+   * queued Bestellbon that is cancelled here cannot easily be re-issued
+   * without re-doing the order.
    *
-   * @param j - The row to remove.
+   * @param j - The row to cancel.
    */
   async function cancelJob(j: JobRow) {
-    if (!confirm(`Druckauftrag (${typeLabel(j.type)} – ${j.printer_name}) wirklich löschen?`)) return;
+    if (!confirm(`Druckauftrag (${typeLabel(j.type)} – ${j.printer_name}) wirklich abbrechen?`)) return;
     try { await api.admin.printJobs.cancel(j.id); await load(); }
     catch (e) { alert(e instanceof Error ? e.message : 'Fehler'); }
   }
@@ -89,6 +90,7 @@
     if (s === 'printing') return 'Druckt…';
     if (s === 'failed') return 'Fehlgeschlagen';
     if (s === 'done') return 'Erledigt';
+    if (s === 'cancelled') return 'Abgebrochen';
     return s;
   }
 
@@ -121,11 +123,12 @@
         <option value="printing">Druckt</option>
         <option value="failed">Fehlgeschlagen</option>
         <option value="done">Erledigt</option>
+        <option value="cancelled">Abgebrochen</option>
       </select>
     </label>
     <p class="hint">
       Automatische Aktualisierung alle 5&nbsp;Sekunden.
-      {#if statusFilter === 'all' || statusFilter === 'done'}<br/>Anzeige auf die 500 neuesten Aufträge begrenzt.{/if}
+      {#if statusFilter === 'all' || statusFilter === 'done' || statusFilter === 'cancelled'}<br/>Anzeige auf die 500 neuesten Aufträge begrenzt.{/if}
     </p>
   </div>
 
@@ -164,7 +167,7 @@
               {#if j.status === 'failed'}
                 <button class="btn-ghost" onclick={() => retryJob(j)}>Wiederholen</button>
               {/if}
-              {#if j.status !== 'done'}
+              {#if j.status !== 'done' && j.status !== 'cancelled'}
                 <button class="btn-ghost danger" onclick={() => cancelJob(j)} disabled={j.status === 'printing'}>
                   Abbrechen
                 </button>
@@ -187,6 +190,7 @@
   .status-printing { color: var(--color-primary); font-weight: 600; }
   .status-failed   { color: var(--color-danger); font-weight: 600; }
   .status-done     { color: #4caf7d; font-weight: 600; }
+  .status-cancelled { color: var(--color-text-muted); font-weight: 600; }
   .err-cell { color: var(--color-danger); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; }
   tr.row-failed { background: rgba(255, 79, 79, 0.04); }
   .actions { display: flex; gap: 0.4rem; }

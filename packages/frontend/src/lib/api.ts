@@ -162,13 +162,6 @@ export const api = {
         request('GET', `/admin/printers/${id}/status`),
       testPrint: (id: string): Promise<{ print_job_id: string }> =>
         request('POST', `/admin/printers/${id}/test-print`),
-      listJobs: (id: string): Promise<{
-        id: string; type: string; status: string; attempts: number;
-        created_at: string; last_attempt_at: string | null; error_message: string | null;
-      }[]> =>
-        request('GET', `/admin/printers/${id}/jobs`),
-      deleteJob: (printerId: string, jobId: string): Promise<void> =>
-        request('DELETE', `/admin/printers/${printerId}/jobs/${jobId}`),
     },
 
     registers: {
@@ -381,11 +374,11 @@ export const api = {
       /**
        * Print jobs across all printers.
        * Without `status`: non-terminal only (pending/printing/failed) — FIFO order.
-       * `status='all'`: every job including completed, capped at 500, newest first.
-       * `status='done'`: only completed jobs, newest first.
+       * `status='all'`: every job including completed/cancelled, capped at 500, newest first.
+       * `status='done'|'cancelled'`: only that terminal status, newest first.
        * `status` `pending|printing|failed`: exact-match.
        */
-      list: (status?: 'pending' | 'printing' | 'failed' | 'done' | 'all'): Promise<{
+      list: (status?: 'pending' | 'printing' | 'failed' | 'done' | 'cancelled' | 'all'): Promise<{
         id: string; printer_id: string; printer_name: string;
         type: string; status: string; attempts: number;
         reference_id: string | null;
@@ -408,6 +401,22 @@ export const api = {
        * @returns Absolute URL path that the admin browser can navigate to.
        */
       pdfUrl: (id: string): string => `/api/admin/print-jobs/${id}/pdf`,
+    },
+
+    logs: {
+      /** Most recent system log entries (Task #64), newest first, capped at 500 rows. `severity`/`category` filter when given. */
+      list: (filter?: { severity?: 'info' | 'warning' | 'error' | undefined; category?: string | undefined }): Promise<{
+        id: string; createdAt: string; severity: 'info' | 'warning' | 'error'; category: string; message: string;
+      }[]> => {
+        const params = new URLSearchParams();
+        if (filter?.severity) params.set('severity', filter.severity);
+        if (filter?.category) params.set('category', filter.category);
+        const qs = params.toString();
+        return request('GET', `/admin/logs${qs ? `?${qs}` : ''}`);
+      },
+
+      /** Distinct categories seen so far, for the filter dropdown. */
+      categories: (): Promise<string[]> => request('GET', '/admin/logs/categories'),
     },
 
     reports: {

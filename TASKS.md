@@ -431,6 +431,43 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   überhaupt zwischen zwei erfolgreichen `maintain`-Läufen wieder auf
   „nicht bestanden" zurückfällt (z. B. nach einem Verbindungsverlust) oder
   ob dafür ein anderes Signal nötig ist.
+
+  **Nutzerentscheidungen (2026-08-26):**
+  - Umfang nur TSE — Festplatte/DB-Integrität wird eigener, manuell
+    auslösbarer Task (noch nicht als eigener Eintrag angelegt).
+  - Polling-Intervall: jede volle Minute.
+  - `hasPassedSelfTest`/`hasValidTime` fallen nach Verbindungsverlust
+    tatsächlich zurück auf „nicht bestanden" — live verifiziert.
+  - Protokollierung in eigener DB-Tabelle, bewusst generisch angelegt
+    (`created_at`, `severity`, `category`, `message`), damit künftige
+    weitere Prüfungen dieselbe Tabelle mitnutzen können.
+  - Log-Viewer als eigenständiges neues Modul in der Admin-UI, unabhängig
+    von Task #63.
+
+  **Erledigt (2026-08-26):**
+  - Migration `0009_system_log.sql` (Tabelle `system_log`).
+  - `system/log.ts` (`logSystemEvent()`).
+  - `tse/healthJob.ts`: zweistufiger Hintergrund-Job (`tick()`, `setInterval`
+    alle 60s über `startTseHealthJob()`, aufgerufen aus `index.ts` nach
+    `startPrintWorker()`) — pollt den günstigen `info`-Aufruf, löst
+    `maintainTse()` nur bei tatsächlichem Bedarf aus. Loggt nur bei
+    Zustandswechsel (gesund→ungesund, ungesund→gesund, oder ein
+    `maintain`-Versuch), nicht bei jedem Tick.
+  - Sowohl der automatische Hintergrund-Job als auch der manuelle „Zeit
+    synchronisieren"-Button (`POST /api/admin/tse/maintain`) erzeugen bei
+    Erfolg einen INFO-Log-Eintrag (Nutzervorgabe).
+  - Neues Admin-Modul „Systemprotokoll" (`admin/settings/logs/+page.svelte`,
+    Backend `GET /api/admin/logs` + `/categories` in `routes/admin/logs.ts`)
+    mit Schweregrad-/Kategorie-Filter, automatischer Aktualisierung alle 10s,
+    auf 500 neueste Einträge begrenzt. Nav-Punkt unter „Einstellungen".
+  - Unit-/Integrationstests für `healthJob.ts`, `system/log.ts` und die
+    neuen/geänderten Routen (`tse.ts`, `logs.ts`) — alle grün, ebenso
+    Typecheck und Build für Backend und Frontend.
+  - **Noch nicht live durch den Nutzer bestätigt** (nur gegen Stub-CLI
+    getestet, noch nicht auf echter Hardware beobachtet).
+
+  **Weiterhin offen:** Anzeige fehlerhafter Checks im Dashboard (#63);
+  Festplatten-/DB-Integritätscheck als eigener Task.
 - [x] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
   **Erledigt (2026-08-24):** Neue Seite `admin/settings/tse/+page.svelte`
   mit den beiden Karten „TSE-Verbindung" und „TSE-Status" (inkl. eigenem
@@ -843,6 +880,29 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   rückwirkend ändern); beide Backend-Endpunkte von `DELETE` auf ein `UPDATE
   ... SET status = 'cancelled'` umstellen; Frontend-Status-Filter um den
   neuen Wert ergänzen.
+
+  **Erledigt (2026-08-26):**
+  - Geprüft, welche der beiden Routen noch gebraucht wird: `GET
+    /api/admin/printers/:id/jobs` + `DELETE
+    /api/admin/printers/:printerId/jobs/:jobId` (`routes/admin/printers.ts`)
+    waren toter Code — weder im Frontend (`api.ts` `listJobs`/`deleteJob`)
+    noch in Tests referenziert. Nutzerentscheidung: entfernt, statt auch
+    umzustellen. Einzig aktiver Pfad ist `routes/admin/print-jobs.ts` (treibt
+    die Druckwarteschlangen-Seite).
+  - Migration `0010_print_job_cancelled.sql`: `print_job_status_check` um
+    `'cancelled'` erweitert.
+  - `DELETE /api/admin/print-jobs/:id` setzt jetzt `status = 'cancelled'`
+    statt den Datensatz zu löschen (Sperre für `status = 'printing'`
+    unverändert). `GET /api/admin/print-jobs` filtert `cancelled` standardmäßig
+    aus der Nicht-Terminal-Ansicht heraus, ist aber über `?status=cancelled`
+    oder `?status=all` sichtbar, dort neueste zuerst.
+  - `admin/settings/print-queue/+page.svelte`: neue Filter-Option
+    „Abgebrochen", Status-Label + Farbe, „Abbrechen"-Button nicht mehr bei
+    bereits abgebrochenen Jobs sichtbar, Bestätigungstext von „löschen" auf
+    „abbrechen" korrigiert.
+  - Neue Integrationstests (`print-jobs.integration.test.ts`, 6 Tests) +
+    Typecheck/Build für Backend und Frontend — alle grün. **Noch nicht live
+    durch den Nutzer bestätigt.**
 - [ ] **#80** Server-Adresse-Testfunktion (Task #73) prüft die falsche Sache — Konzept überarbeiten
   Beim Nutzer-Review von Task #73 aufgefallen (2026-08-26): der neue
   „Testen"-Button in den Systemeinstellungen zeigt einen QR-Code + Link zu
@@ -983,4 +1043,57 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   aus, löst bei vorzeitigem Loslassen/Verlassen nicht aus, ignoriert
   Nicht-Primärtasten (Rechtsklick), `holding`-Klasse korrekt gesetzt/
   entfernt, `destroy()` entfernt alle Listener, konfigurierbare Dauer.
-  **Noch nicht live durch den Nutzer bestätigt.**
+
+  **Nachgebessert (2026-08-26):** Nutzer meldete, die Füllanimation liefe
+  auch bei deaktivierten Buttons — tatsächlich prüfte die Aktion `disabled`
+  gar nicht, hätte also nach voller Haltedauer sogar `onHold` ausgelöst,
+  falls der Browser auf einem deaktivierten Button doch Pointer-Events
+  feuert (uneinheitliches Verhalten je nach Browser/Gerät, kein reines
+  Kosmetik-Risiko). Zwei neue Prüfpunkte in `longpress.ts`: `disabled` wird
+  sowohl beim Start des Haltevorgangs als auch erneut beim Erreichen der
+  vollen Dauer geprüft (falls sich der Zustand währenddessen ändert). 2
+  weitere Unit-Tests (jetzt 10 insgesamt): kein Halte-Start bei bereits
+  deaktiviertem Button, kein `onHold`-Aufruf, wenn der Button erst während
+  des Haltens deaktiviert wird. **Noch nicht live durch den Nutzer
+  bestätigt.**
+- [ ] **#86** Freitext pro Artikel in der Bedienungskasse (zusätzlich zu den vordefinierten Optionen)
+  Nutzerwunsch (2026-08-26): die Bedienung soll zu jedem bestellten Artikel
+  einen Freitext eingeben können (z. B. Sonderwünsche, die keine der
+  vordefinierten Optionen abdeckt). UI-Gestaltung bewusst noch offen — nur
+  als Backlog-Eintrag angelegt.
+  **Backend-seitig bereits verifiziert, kein Handlungsbedarf dort:**
+  `order_item.options` ist eine reine `TEXT`-Spalte (`0001_initial.sql`,
+  keine FK/Länge/Check-Constraint gegen `product_option`);
+  `POST /register-session/.../order` (`routes/register-session.ts`,
+  Body-Typ `{ article_id, quantity, options?: string | null }`) nimmt für
+  `options` bereits jeden beliebigen String entgegen (`pos.options?.trim()`,
+  keine Validierung gegen die konfigurierten Optionsnamen). Ein Freitext
+  ließe sich also technisch schon heute über denselben String transportieren
+  wie die Checkbox-Auswahl — reine Frontend-Aufgabe.
+  **Offene UI-Fragen für die Gestaltung:**
+  - Aktuell öffnet sich der Options-Dialog (`optionsOpen`/`availableOptions`
+    in `.../order/+page.svelte`) nur, wenn der Artikel überhaupt
+    vordefinierte Optionen hat (`tapSlot()` — bei null Optionen wird direkt
+    ohne Dialog hinzugefügt). Soll der Dialog künftig **immer** erscheinen
+    (auch bei Artikeln ohne vordefinierte Optionen), damit Freitext
+    grundsätzlich verfügbar ist?
+  - Freitext und Checkbox-Auswahl kombinieren — wie werden beide im
+    gespeicherten `options`-String zusammengeführt (`confirmOptions()`
+    baut aktuell `[...selectedOptionNames].sort().join(', ')`)? Trennzeichen,
+    Reihenfolge, Längenbegrenzung in der UI (Spalte selbst ist unbegrenzt)?
+  - Wirkt sich das auf die Gruppierung gleicher Positionen aus (Checkout/
+    Bonliste gruppieren aktuell nach `(article_id, options)` — bei
+    Freitext würde jede leicht unterschiedliche Formulierung eine eigene
+    Gruppe erzeugen, das ist bei vordefinierten Optionen bisher nie
+    passiert)?
+- [ ] **#87** Festplatten-/DB-Integritätscheck (manuell auslösbar)
+  Bei der Konzeption des TSE-Health-Checks (#64) bewusst abgetrennt —
+  Nutzerentscheidung (2026-08-26): eigener Task, **nicht** automatisch im
+  Hintergrund-Job, sondern manuell getriggert (z. B. Button in der
+  Admin-UI). Prüfungen noch nicht analysiert — Kandidaten aus der
+  ursprünglichen #64-Beschreibung: genug freier Festplattenspeicher auf
+  allen relevanten Volumes (`statvfs`/`df`), Datenbank fehlerfrei (keine
+  korrupten Tabellen/Indizes, z. B. via `pg_catalog`-Abfragen oder
+  `VACUUM`/`ANALYZE`-Fehlerstatus). Ergebnis vermutlich über dieselbe
+  `system_log`-Tabelle protokollierbar, die #64 dafür bereits generisch
+  angelegt hat.

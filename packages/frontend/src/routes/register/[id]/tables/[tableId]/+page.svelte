@@ -57,7 +57,10 @@
           {#each openGroups as g}
             <li>
               <span class="qty">{g.quantity}×</span>
-              <span class="name">{g.name}{#if g.options}<span class="opts"> · {g.options}</span>{/if}</span>
+              <span class="name">
+                <span class="name-text">{g.name}</span>
+                {#if g.options}<span class="opts">{g.options}</span>{/if}
+              </span>
               <span class="line-total">{fmt(g.line_total)} €</span>
             </li>
           {/each}
@@ -98,7 +101,10 @@
   }
   .open-list li:last-child { border-bottom: none; }
   .qty { font-weight: 700; }
-  .opts { font-size: 0.8rem; color: var(--color-text-muted); }
+  /* Options always on their own line below the name, consistent with the
+     order list and checkout table (see DANGER.md D-046). */
+  .name { display: flex; flex-direction: column; }
+  .opts { display: block; font-size: 0.8rem; color: var(--color-text-muted); }
   .line-total { font-weight: 600; text-align: right; }
   .total-row { display: flex; justify-content: space-between; margin-top: 0.6rem; font-weight: 700; padding-top: 0.5rem; border-top: 1px solid var(--color-border); }
   .total { font-size: 1.15rem; }

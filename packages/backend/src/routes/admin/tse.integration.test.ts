@@ -20,6 +20,7 @@ import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import { createTestUser } from '../../test/fixtures.js';
 import { config } from '../../config.js';
+import { pool } from '../../db/client.js';
 
 /** Test double for native/tse-cli — see tse/client.test.ts for the same fixture. */
 const TSE_CLI_STUB_PATH = path.join(
@@ -182,6 +183,11 @@ describe('POST /api/admin/tse/maintain', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
+
+    const log = await pool.query(
+      `SELECT severity, category FROM system_log`,
+    );
+    expect(log.rows).toEqual([{ severity: 'info', category: 'tse_health' }]);
   });
 
   it('rejects without an admin session', async () => {

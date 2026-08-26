@@ -7,6 +7,8 @@ import { query } from '../../db/client.js';
 import { getTseInfo, maintainTse } from '../../tse/client.js';
 import { detectTse, listTseMountCandidates, type TseMountCandidate } from '../../tse/detect.js';
 import type { TseInfo } from '../../tse/types.js';
+import { describeTseError } from '../../tse/signing.js';
+import { logSystemEvent } from '../../system/log.js';
 
 /** Shape returned by `GET /api/admin/tse/status`. */
 interface TseStatusResponse {
@@ -92,11 +94,12 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
 
   /**
    * POST /api/admin/tse/maintain — manually runs `maintainTse()` (self-test
-   * then time sync, see tse/client.ts). Nothing calls this automatically yet
-   * (Task #64 — a periodic/on-boot health check is still open), so a freshly
-   * set-up TSE never has its clock set until an admin triggers this at least
-   * once. Surfaces beforehand as a confusing `WORM_ERROR_NO_TIME_SET`
-   * (code 4098) on the very first real signing attempt.
+   * then time sync, see tse/client.ts) for the "Zeit synchronisieren" button
+   * in the Settings UI. The periodic health job (tse/healthJob.ts, Task #64)
+   * runs the same operation automatically once a problem is detected, but a
+   * freshly set-up TSE still needs one successful run before its clock is
+   * set — without it, the first real signing attempt fails with a confusing
+   * `WORM_ERROR_NO_TIME_SET` (code 4098).
    */
   app.post('/maintain', async (_req, reply) => {
     if (!config.tseMountPoint || !config.tseClientId) {
@@ -111,9 +114,10 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
     }
     try {
       await maintainTse(timeAdminPin);
+      await logSystemEvent('info', 'tse_health', 'Manueller Self-Test + Zeitsync erfolgreich (Admin-UI).');
       return reply.send({ ok: true });
     } catch (e) {
-      return reply.status(502).send({ error: e instanceof Error ? e.message : 'Unbekannter TSE-Fehler' });
+      return reply.status(502).send({ error: describeTseError(e) });
     }
   });
 }
