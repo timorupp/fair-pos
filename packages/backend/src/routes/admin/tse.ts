@@ -3,7 +3,8 @@
 import type { FastifyInstance } from 'fastify';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
-import { getTseInfo } from '../../tse/client.js';
+import { query } from '../../db/client.js';
+import { getTseInfo, maintainTse } from '../../tse/client.js';
 import { detectTse, listTseMountCandidates, type TseMountCandidate } from '../../tse/detect.js';
 import type { TseInfo } from '../../tse/types.js';
 
@@ -87,5 +88,32 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
       candidatesTried: (result.found ? 1 : 0) + result.triedAndRejected.length,
     };
     return reply.send(response);
+  });
+
+  /**
+   * POST /api/admin/tse/maintain — manually runs `maintainTse()` (self-test
+   * then time sync, see tse/client.ts). Nothing calls this automatically yet
+   * (Task #64 — a periodic/on-boot health check is still open), so a freshly
+   * set-up TSE never has its clock set until an admin triggers this at least
+   * once. Surfaces beforehand as a confusing `WORM_ERROR_NO_TIME_SET`
+   * (code 4098) on the very first real signing attempt.
+   */
+  app.post('/maintain', async (_req, reply) => {
+    if (!config.tseMountPoint || !config.tseClientId) {
+      return reply.status(400).send({ error: 'TSE ist nicht konfiguriert.' });
+    }
+    const pinResult = await query<{ value: string }>(
+      `SELECT value FROM system_setting WHERE key = 'tse_time_admin_pin'`,
+    );
+    const timeAdminPin = pinResult.rows[0]?.value;
+    if (!timeAdminPin) {
+      return reply.status(400).send({ error: 'TimeAdmin-PIN ist nicht gesetzt.' });
+    }
+    try {
+      await maintainTse(timeAdminPin);
+      return reply.send({ ok: true });
+    } catch (e) {
+      return reply.status(502).send({ error: e instanceof Error ? e.message : 'Unbekannter TSE-Fehler' });
+    }
   });
 }

@@ -14,6 +14,11 @@
   let tseResult: TseStatus | null = $state(null);
   let tseTestError = $state('');
 
+  // ── Manual self-test + time sync (Task #58/#64) ─────────────────────────────
+  let maintaining = $state(false);
+  let maintainError = $state('');
+  let maintainSuccess = $state(false);
+
   // ── TSE mount-point candidates (dropdown + Auto-erkennen) ──────────────────
   let tseCandidates: TseMountCandidate[] = $state([]);
   let candidatesLoading = $state(false);
@@ -56,6 +61,17 @@
     } catch (e) {
       tseTestError = e instanceof Error ? e.message : 'Fehler';
     } finally { tseTesting = false; }
+  }
+
+  /** Runs self-test + time sync on the TSE — needed once after a fresh setup, since nothing calls this automatically yet. */
+  async function runMaintain() {
+    maintaining = true; maintainError = ''; maintainSuccess = false;
+    try {
+      await api.admin.tse.maintain();
+      maintainSuccess = true;
+    } catch (e) {
+      maintainError = e instanceof Error ? e.message : 'Fehler';
+    } finally { maintaining = false; }
   }
 
   /** Lists currently-mounted removable filesystems for the dropdown — a cheap local `lsblk` call, not a TSE hardware access, so safe to run automatically. */
@@ -195,8 +211,13 @@
     <button class="btn-ghost" onclick={testTse} disabled={tseTesting}>
       {tseTesting ? 'Teste…' : 'TSE testen'}
     </button>
+    <button class="btn-ghost" onclick={runMaintain} disabled={maintaining}>
+      {maintaining ? 'Synchronisiere…' : 'Zeit synchronisieren'}
+    </button>
 
     {#if tseTestError}<p class="error-text">{tseTestError}</p>{/if}
+    {#if maintainError}<p class="error-text">{maintainError}</p>{/if}
+    {#if maintainSuccess}<p class="success-text">Self-Test + Zeitsync erfolgreich.</p>{/if}
 
     {#if tseResult}
       {#if !tseResult.configured}

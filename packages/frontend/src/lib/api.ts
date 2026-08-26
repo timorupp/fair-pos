@@ -281,6 +281,8 @@ export const api = {
       /** "Auto-erkennen" — probes every removable mount and returns the first one that's a real TSE, if any. */
       detect: (): Promise<{ mountPoint: string | null; candidatesTried: number }> =>
         request('POST', '/admin/tse/detect'),
+      /** Manually runs self-test + time sync (Task #58/#64) — needed once after a fresh TSE setup, since nothing calls this automatically yet. */
+      maintain: (): Promise<{ ok: true }> => request('POST', '/admin/tse/maintain'),
     },
 
     closings: {

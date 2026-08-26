@@ -43,10 +43,7 @@
 </script>
 
 <div class="page">
-  <div class="header">
-    <h1>Kasse wählen</h1>
-    <button class="btn-ghost" onclick={logout}>Abmelden</button>
-  </div>
+  <h1>Kasse wählen</h1>
   {#if loading}
     <p class="muted">Lade…</p>
   {:else if error}
@@ -66,13 +63,16 @@
       {/each}
     </div>
   {/if}
+  <div class="footer">
+    <button class="btn-ghost" onclick={logout}>Abmelden</button>
+  </div>
 </div>
 
 <style>
   .page { padding: 2rem; max-width: 720px; margin: 0 auto; }
-  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
-  h1 { font-size: 1.25rem; margin: 0; }
+  h1 { font-size: 1.25rem; margin: 0 0 1.25rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+  .footer { margin-top: 2rem; display: flex; justify-content: center; }
   .card {
     display: flex; flex-direction: column; gap: 0.5rem;
     padding: 1.5rem; border: 1px solid var(--color-border); border-radius: var(--radius);

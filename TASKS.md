@@ -381,6 +381,15 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     `tse_outage`-Muster anlehnen, das für TSE-Ausfälle schon eine Art
     Protokollierung macht).
   - Fehlerhafte Checks sollen sich im Dashboard (Task #63) zeigen.
+
+  **Teilweise vorgezogen (2026-08-26):** Der manuelle Button (dritter Punkt
+  oben) wurde live beim ersten Hardware-Test dringend — eine frisch
+  eingerichtete TSE hatte nie eine gültige Uhrzeit, jede Signierung schlug
+  mit `WORM_ERROR_NO_TIME_SET` fehl (siehe `DANGER.md` D-038-Fortsetzung).
+  `POST /api/admin/tse/maintain` + „Zeit synchronisieren"-Button in
+  `settings/tse/+page.svelte` sind fertig und getestet. **Weiterhin offen:**
+  automatischer Aufruf beim Backend-Start, Protokollierung der Läufe,
+  Anzeige fehlerhafter Checks im Dashboard (#63) — der Rest dieses Tasks.
 - [x] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
   **Erledigt (2026-08-24):** Neue Seite `admin/settings/tse/+page.svelte`
   mit den beiden Karten „TSE-Verbindung" und „TSE-Status" (inkl. eigenem
@@ -663,7 +672,11 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   (Kassen-Auswahl) — neue Kopfzeile mit „Abmelden"-Button, `logout()`-Logik
   von dort übernommen (identisches Verhalten: löscht nur die
   Register-Session, eine evtl. offene Admin-Session bleibt unangetastet).
-  **Noch nicht live durch den Nutzer bestätigt.**
+  **Icon-Button live bestätigt (2026-08-26).** Nutzer-Feedback dazu: der
+  „Abmelden"-Button auf der Kassen-Auswahl-Seite saß zu prominent direkt in
+  der Überschrift. **Nachgebessert (2026-08-26):** von der Kopfzeile ans
+  Ende der Seite verschoben, unter die Kassenliste, mittig, als klar
+  untergeordnete Aktion. **Diese Nachbesserung noch nicht live bestätigt.**
 - [x] **#75** Brand-Icon vor „FairPOS"-Schriftzug in Admin- und Kassen-UI ergänzen
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26): der Login-Screen
   zeigt bereits ein Platzhalter-Icon (⊕) vor „FairPOS", die Admin- und
@@ -675,7 +688,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   vor „FairPOS" ergänzt in `admin/+layout.svelte` (Sidebar-Header) und
   `register/+layout.svelte` (Kassen-Header, in kleinerer Form passend zur
   Topbar-Höhe). Keine weiteren Fundstellen — Login-Screen selbst hatte es
-  schon. **Noch nicht live durch den Nutzer bestätigt.**
+  schon. **Live bestätigt (2026-08-26).**
 - [ ] **#76** Bonkasse: Artikel-Grid verschiebt sich beim Antippen (Buttons wandern unter dem Finger weg)
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
   „hier müssen wir uns Gedanken über eine gute Lösung machen" — bewusst nur
@@ -698,3 +711,19 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Bonkasse tatsächlich die richtige Lösung ist (z. B. Platzverbrauch bei
   leerer/kurzer Bestellung auf kleinen Bildschirmen gegenprüfen) oder ob ein
   anderes Layout-Konzept besser passt.
+- [ ] **#77** Button-Style app-weit überarbeiten (Kontrast aktuell sehr stark: weiß auf dunkelblau)
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
+  „Ggf. den Button-Style optimieren für alle Buttons" — bewusst nur als Task
+  angelegt, kein Fix in dieser Session, da eine Designentscheidung nötig ist
+  (welche Farbe/welcher Kontrast stattdessen). Technischer Fund als
+  Ausgangspunkt: es gibt genau **eine** Stelle, an der `.btn-primary`/
+  `.btn-ghost` app-weit (Admin **und** Kassen-UI, obwohl konzeptionell
+  getrennte Bereiche) ihre Farben bekommen —
+  `admin/+layout.svelte:322-336`, `:global(.btn-primary)`/
+  `:global(.btn-ghost)`. Aktuell: `.btn-primary` = `background:
+  var(--color-primary)` (`#4f7cff`) + `color: #fff`; `.btn-ghost` =
+  transparenter Hintergrund + `var(--color-text-muted)`-Text mit
+  Rahmen. Andere Dateien überschreiben dort nur Größen (`padding`,
+  `font-size`, `min-height` fürs Touch-Target), nie die Farben — eine
+  Änderung an dieser einen Stelle wirkt sich also konsistent auf die ganze
+  App aus, kein Duplizierungsproblem.

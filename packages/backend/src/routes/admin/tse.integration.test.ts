@@ -13,11 +13,23 @@
  * error, since no real binary exists here) after.
  */
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import { createTestUser } from '../../test/fixtures.js';
 import { config } from '../../config.js';
+
+/** Test double for native/tse-cli — see tse/client.test.ts for the same fixture. */
+const TSE_CLI_STUB_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'test',
+  'fixtures',
+  'tseCliStub.sh',
+);
 
 beforeAll(async () => { await getTestApp(); });
 afterAll(closeTestApp);
@@ -127,5 +139,54 @@ describe('TSE connection settings + status', () => {
     expect(candidates.statusCode).toBe(401);
     const detect = await app.inject({ method: 'POST', url: '/api/admin/tse/detect' });
     expect(detect.statusCode).toBe(401);
+  });
+});
+
+describe('POST /api/admin/tse/maintain', () => {
+  it('rejects when the TSE is not configured', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/maintain',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects when configured but no TimeAdmin PIN is saved', async () => {
+    const app = await getTestApp();
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/maintain',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('succeeds against the stub CLI when fully configured', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: {
+        tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test', tse_time_admin_pin: '123456',
+      },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/maintain',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'POST', url: '/api/admin/tse/maintain' });
+    expect(response.statusCode).toBe(401);
   });
 });
