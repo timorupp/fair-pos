@@ -6,6 +6,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api';
   import Modal from '$lib/components/Modal.svelte';
+  import { longpress } from '$lib/longpress';
 
   type OpenGroup = {
     group_key: string;
@@ -207,7 +208,7 @@
           <tr>
             <td>
               <span class="g-name">{g.name}</span>
-              {#if g.options}<span class="g-opts"> · {g.options}</span>{/if}
+              {#if g.options}<span class="g-opts">{g.options}</span>{/if}
             </td>
             <td class="num">{g.quantity}</td>
             <td class="num">
@@ -237,8 +238,12 @@
         Stornieren / Kostenfrei
       </button>
       <div class="spacer"></div>
-      <button class="btn-primary" onclick={charge} disabled={selectedCount === 0 || busy}>
-        {busy ? 'Kassiere…' : 'Kassieren'}
+      <button class="btn-primary hold-btn"
+              disabled={selectedCount === 0 || busy}
+              use:longpress={{ onHold: charge }}
+              aria-label="Kassieren — gedrückt halten zum Bestätigen">
+        <span class="hold-fill"></span>
+        <span class="hold-label">⏱ {busy ? 'Kassiere…' : 'Kassieren (halten)'}</span>
       </button>
     </div>
   {/if}
@@ -316,15 +321,18 @@
   .checkout-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; table-layout: fixed; }
   .checkout-table th, .checkout-table td { padding: 0.5rem; text-align: left; border-bottom: 1px solid var(--color-border); }
   .checkout-table th.num, .checkout-table td.num { text-align: right; }
-  .checkout-table td:first-child {
-    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-  }
   .checkout-table th:nth-child(2), .checkout-table td:nth-child(2) { width: 3.5em; }
   .checkout-table th:nth-child(3), .checkout-table td:nth-child(3) { width: 7.5em; }
   .checkout-table th:nth-child(4), .checkout-table td:nth-child(4) { width: 4.5em; }
   .checkout-table th:nth-child(5), .checkout-table td:nth-child(5) { width: 4.5em; }
-  .g-name { font-weight: 600; }
-  .g-opts { font-size: 0.8rem; color: var(--color-text-muted); }
+  /* Ellipsis lives on .g-name specifically (not the whole <td>) so .g-opts
+     can sit on its own line below instead of being squeezed onto the same
+     truncated line — narrow column, too little room for both side by side. */
+  .g-name {
+    display: block; font-weight: 600;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .g-opts { display: block; font-size: 0.8rem; color: var(--color-text-muted); }
   .stepper { display: inline-flex; align-items: center; gap: 0.4rem; }
   .step-btn {
     width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--color-border);
@@ -338,6 +346,18 @@
   .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
   .actions .spacer { flex: 1; }
   .actions .btn-primary { padding: 0.7rem 1.5rem; font-size: 1rem; }
+
+  /* Hold-to-confirm (see $lib/longpress) — guards against a stray tap
+     triggering the checkout. The fill sweeps left-to-right while held;
+     .holding's transition duration must match the action's default
+     durationMs (600ms) so the animation and the actual trigger line up. */
+  .hold-btn { position: relative; overflow: hidden; user-select: none; -webkit-user-select: none; }
+  .hold-fill {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 0;
+    background: rgba(255, 255, 255, 0.28); pointer-events: none;
+  }
+  .hold-btn:global(.holding) .hold-fill { width: 100%; transition: width 600ms linear; }
+  .hold-label { position: relative; }
 
   /* Receipt confirmation reuses Bonkasse styles */
   .checkout-body { display: flex; gap: 1.5rem; align-items: center; padding: 0.5rem 0; }

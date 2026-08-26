@@ -9,6 +9,7 @@
   import { num } from '$lib/order';
   import { currentRegisterName } from '$lib/stores/page-title';
   import Modal from '$lib/components/Modal.svelte';
+  import { longpress } from '$lib/longpress';
 
   type Slot = { article_id: string; grid_row: number; grid_col: number; color: string };
 
@@ -232,8 +233,8 @@
           {#each order as line, i (i)}
             <li class="order-line">
               <span class="line-name">
-                {nameOf(line.article_id)}
-                {#if line.options}<span class="line-options"> · {line.options}</span>{/if}
+                <span class="line-name-text">{nameOf(line.article_id)}</span>
+                {#if line.options}<span class="line-options">{line.options}</span>{/if}
               </span>
               <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
               <div class="qty">
@@ -248,8 +249,12 @@
 
       <div class="total-row">
         <span class="total-value">{fmt(total)} €</span>
-        <button class="btn-primary place-btn" disabled={order.length === 0 || placing} onclick={placeOrder}>
-          {placing ? 'Bestelle…' : 'Bestellen'}
+        <button class="btn-primary place-btn hold-btn"
+                disabled={order.length === 0 || placing}
+                use:longpress={{ onHold: placeOrder }}
+                aria-label="Bestellen — gedrückt halten zum Bestätigen">
+          <span class="hold-fill"></span>
+          <span class="hold-label">⏱ {placing ? 'Bestelle…' : 'Bestellen (halten)'}</span>
         </button>
       </div>
       {#if placeError}<p class="error-text">{placeError}</p>{/if}
@@ -335,6 +340,13 @@
   .line-name {
     font-weight: 600;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Options always go on their own line below the name — the name column is
+     narrow (see min-width: 0 above), too little room to fit both side by
+     side without truncating one or the other unreadably. */
+  .line-name-text {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -366,6 +378,18 @@
   }
   .total-value { font-size: 1.25rem; font-weight: 700; flex: 1; }
   .place-btn { padding: 0.6rem 1.5rem; font-size: 1rem; }
+
+  /* Hold-to-confirm (see $lib/longpress) — guards against a stray tap
+     triggering the order. The fill sweeps left-to-right while held;
+     .holding's transition duration must match the action's default
+     durationMs (600ms) so the animation and the actual trigger line up. */
+  .hold-btn { position: relative; overflow: hidden; user-select: none; -webkit-user-select: none; }
+  .hold-fill {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 0;
+    background: rgba(255, 255, 255, 0.28); pointer-events: none;
+  }
+  .hold-btn:global(.holding) .hold-fill { width: 100%; transition: width 600ms linear; }
+  .hold-label { position: relative; }
 
   .article-grid {
     display: grid;

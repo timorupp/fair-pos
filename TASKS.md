@@ -779,10 +779,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `overflow-y: auto` auf `.order-section`, `flex:1; overflow:auto` auf
   `.grid-section`) entfernt; Sidebar-Verhalten (`position: sticky` +
   `max-height`/`overflow-y: auto`) nur innerhalb des Media Querys aktiv.
-  **Noch nicht live durch den Nutzer bestätigt** (Testfall: schnelles
-  Nacheinander-Antippen auf dem Handheld sollte jetzt keine
-  Button-Verschiebung mehr zeigen; auf einem breiteren Gerät sollte die
-  Liste als Seitenleiste erscheinen).
+  **Live bestätigt (2026-08-26).**
 - [x] **#77** Button-Style app-weit überarbeiten (Kontrast aktuell sehr stark: weiß auf dunkelblau)
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
   „Ggf. den Button-Style optimieren für alle Buttons". Technischer Fund als
@@ -920,7 +917,10 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   der Backend-Prozess nach dem Neustart noch nicht ganz hochgefahren war
   (`systemctl restart` gilt schon als „aktiv", bevor der Port gebunden ist)
   — behoben in `smoke-test.sh` selbst, siehe `DANGER.md` D-045 (Retry statt
-  Einzelversuch). Rest des Update-Ablaufs damit bereits live verifiziert.
+  Einzelversuch).
+  **Vollständig live bestätigt (2026-08-26):** zweiter `update.sh`-Lauf mit
+  dem Retry-Fix lief komplett durch, alle Smoke-Test-Checks inkl.
+  Health-Check grün.
 - [x] **#83** Label „Gesamt" vor dem Summenbetrag entfernen (Bonkasse + Bedienungskasse-Bestellansicht)
   Aufgekommen beim Hardware-Test (2026-08-26), Nutzervorgabe: ergibt sich aus
   dem Kontext (großer Betrag direkt neben dem „Kassieren"/„Bestellen"-Button),
@@ -952,3 +952,35 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   (Fehlermeldung verweist auf die „Aktiv"-Checkbox statt nur generisch
   „wird noch verwendet"), kein Migrations- oder Frontend-Aufwand absehbar.
   Nicht in dieser Session umgesetzt, nur als Task angelegt wie gewünscht.
+- [x] **#85** „Halten statt Tippen" (Long-Press) für kritische Kassieren-/Bestellen-Buttons
+  Aufgekommen beim Hardware-Test (2026-08-26): versehentliches Antippen von
+  „Kassieren"/„Bestellen" sollte verhindert werden. Nutzerfrage: sowas wie
+  der iPhone-Slide-to-Answer, gibt's das im Framework? Antwort: nein (reine
+  Svelte-5-App ohne UI-Kit wie Ionic/Material, das sowas mitbringt), ein
+  Swipe-Slider wäre eine komplette Eigenentwicklung. Alternativen
+  vorgeschlagen (Bestätigungsdialog / Swipe-Slider / Long-Press) —
+  Nutzerentscheidung: Long-Press, da deutlich einfacher als ein Slider
+  (kein Drag-Tracking nötig) und wirksamer gegen Fehlklicks als ein
+  zusätzlicher Bestätigungsdialog. Betroffen: Bonkasse „Kassieren",
+  Bedienungskasse „Bestellen" (Bestellansicht) und „Kassieren"
+  (Checkout-Screen). Buttons sollen erkennbar gekennzeichnet sein, damit
+  klar ist, dass sie gehalten statt getippt werden müssen.
+  **Erledigt (2026-08-26):** Neue, wiederverwendbare Svelte-Action
+  `$lib/longpress.ts` (`use:longpress={{ onHold, durationMs? }}`, Default
+  600ms) — feuert `onHold` erst nach durchgehendem Halten, bricht bei
+  vorzeitigem Loslassen/Verlassen des Elements sauber ab. Ein
+  `setTimeout` ist die alleinige Quelle der Wahrheit dafür, ob die Aktion
+  auslöst; eine `holding`-CSS-Klasse treibt zusätzlich eine rein
+  kosmetische Füllanimation (`.hold-btn`/`.hold-fill`, links nach rechts,
+  Transition-Dauer an `durationMs` angeglichen). Kennzeichnung: ⏱-Symbol
+  + „(halten)"-Zusatz im Button-Text, `aria-label` mit vollständiger
+  Erklärung für Screenreader. An allen drei genannten Stellen verdrahtet
+  (`register/[id]/+page.svelte`, `.../order/+page.svelte`,
+  `.../checkout/+page.svelte`) — CSS dort jeweils dupliziert (gleicher
+  Grund wie bei den Button-Grundfarben: separate code-gesplittete
+  Layout-Bäume, siehe Task #77-Nachbesserung). 8 neue Unit-Tests
+  (`longpress.test.ts`, jsdom + Fake-Timer): löst nach voller Haltedauer
+  aus, löst bei vorzeitigem Loslassen/Verlassen nicht aus, ignoriert
+  Nicht-Primärtasten (Rechtsklick), `holding`-Klasse korrekt gesetzt/
+  entfernt, `destroy()` entfernt alle Listener, konfigurierbare Dauer.
+  **Noch nicht live durch den Nutzer bestätigt.**

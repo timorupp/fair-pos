@@ -9,6 +9,7 @@
   import { adjustQuantity, computeOrderTotal, num, type OrderLine } from '$lib/order';
   import { currentRegisterName } from '$lib/stores/page-title';
   import Modal from '$lib/components/Modal.svelte';
+  import { longpress } from '$lib/longpress';
 
   type Slot = { article_id: string; grid_row: number; grid_col: number; color: string };
 
@@ -255,10 +256,12 @@
         {/if}
         <div class="total-row">
           <span class="total-value" class:negative={total < 0}>{fmt(total)} €</span>
-          <button class="btn-primary checkout-btn"
-                  onclick={startCheckout}
-                  disabled={order.length === 0 || checkoutBusy}>
-            {checkoutBusy ? 'Kassiere…' : 'Kassieren'}
+          <button class="btn-primary checkout-btn hold-btn"
+                  use:longpress={{ onHold: startCheckout }}
+                  disabled={order.length === 0 || checkoutBusy}
+                  aria-label="Kassieren — gedrückt halten zum Bestätigen">
+            <span class="hold-fill"></span>
+            <span class="hold-label">⏱ {checkoutBusy ? 'Kassiere…' : 'Kassieren (halten)'}</span>
           </button>
         </div>
         {#if checkoutError && !checkoutOpen}<p class="error-text">{checkoutError}</p>{/if}
@@ -383,6 +386,18 @@
   .total-value { font-size: 1.25rem; font-weight: 700; flex: 1; }
   .total-value.negative { color: var(--color-danger); }
   .checkout-btn { padding: 0.6rem 1.5rem; font-size: 1rem; }
+
+  /* Hold-to-confirm (see $lib/longpress) — guards against a stray tap
+     triggering the checkout. The fill sweeps left-to-right while held;
+     .holding's transition duration must match the action's default
+     durationMs (600ms) so the animation and the actual trigger line up. */
+  .hold-btn { position: relative; overflow: hidden; user-select: none; -webkit-user-select: none; }
+  .hold-fill {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 0;
+    background: rgba(255, 255, 255, 0.28); pointer-events: none;
+  }
+  .hold-btn:global(.holding) .hold-fill { width: 100%; transition: width 600ms linear; }
+  .hold-label { position: relative; }
 
   /* ── Article grid ───────────────────────────────────────────────────── */
   .article-grid {
