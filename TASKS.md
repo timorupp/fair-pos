@@ -1149,6 +1149,17 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   eigene Komponenten-Testsuite in diesem Projekt (wie die übrigen Funktionen
   in dieser Datei bisher auch) — **noch nicht in echtem Browser/live getestet.**
 
+  **Nachgebessert (2026-08-27):** „+ Freitext"-Button wurde nicht als
+  klickbar wahrgenommen — lag daran, dass er innerhalb von `<Modal>`
+  außerhalb von `.modal-actions` liegt und damit weder von der
+  app-weiten 48px-Touch-Target-Regel (`.order-page .btn-ghost`, greift
+  nicht, weil `Modal` als Geschwisterelement von `.order-page` gerendert
+  wird, nicht darin verschachtelt) noch von der `.modal-actions
+  .btn-ghost`-Regel erfasst wurde — blieb dadurch klein und dünn umrandet.
+  Jetzt mit expliziter Größe (volle Breite, 48px Mindesthöhe, größere
+  Schrift) statt sich auf die (hier nicht greifende) globale Regel zu
+  verlassen.
+
   **Nachgebessert (2026-08-27, im Zuge von #88):** bisher war nur das
   Freitextfeld selbst auf 50 Zeichen begrenzt (`maxlength`), nicht die
   **Summe** aus ausgewählten Optionen + Freitext — bei mehreren/langen
@@ -1225,3 +1236,11 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Frontend-Änderung ohne eigene Komponenten-Testsuite in diesem Projekt
   (wie die übrigen Funktionen in dieser Datei) — **noch nicht in echtem
   Browser/live getestet.**
+
+  **Nachgebessert (2026-08-27):** Nutzer bemängelte an Screenshots, dass im
+  „Position wählen"-Schritt nicht erkennbar war, dass die Zeilen anklickbar
+  sind — bisher nur dünne Trennlinien ohne visuelle Button-Anmutung.
+  Umgestellt auf dasselbe „klickbare Karte"-Muster wie `.register-item` in
+  `admin/users/+page.svelte` (Hintergrund + Rahmen + Hover), plus
+  Chevron („›") am Zeilenende als zusätzlicher Hinweis auf den nächsten
+  Schritt.

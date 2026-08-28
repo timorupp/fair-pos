@@ -477,6 +477,7 @@
                 {nameOf(line.article_id)}
                 {#if line.options}<span class="line-options">{line.options}</span>{/if}
               </span>
+              <span class="note-select-chevron">›</span>
             </button>
           </li>
         {/each}
@@ -643,20 +644,35 @@
   .option-list { list-style: none; padding: 0; margin: 0.5rem 0; }
   .option-list li { padding: 0.3rem 0; }
   .option-label { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
-  .freetext-link { padding: 0; margin-top: 0.4rem; }
+  /* Explicit sizing rather than relying on the app-wide 48px touch-target
+     rule (`.order-page .btn-ghost`/`.page .btn-ghost`) — this button lives
+     inside <Modal>, which renders as a sibling of .order-page in the DOM,
+     so that rule never actually reaches it (found live, 2026-08-27: it
+     rendered as a small, easy-to-miss bordered text snippet). */
+  .freetext-link {
+    width: 100%; min-height: 48px; margin-top: 0.6rem;
+    font-size: 0.95rem; font-weight: 600;
+  }
   .freetext-label { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.6rem; font-size: 0.85rem; color: var(--color-text-muted); }
   .freetext-label input { padding: 0.4rem 0.6rem; font-size: 1rem; }
   .modal-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
   .modal-actions .spacer { flex: 1; }
 
-  .note-select-list { list-style: none; padding: 0; margin: 0; }
+  /* Same "clickable card" look as .register-item in admin/users/+page.svelte
+     (background tint + border + hover, plus a trailing chevron) — a plain
+     bordered-divider list read as static text, not as something to tap. */
+  .note-select-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
   .note-select-item {
     display: flex; align-items: center; gap: 0.6rem; width: 100%;
-    padding: 0.5rem 0.3rem; border: none; border-bottom: 1px solid var(--color-border);
-    background: none; color: inherit; text-align: left; cursor: pointer;
+    padding: 0.6rem 0.8rem;
+    background: var(--color-surface-2); border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: inherit; text-align: left; cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
   }
-  .note-select-list li:last-child .note-select-item { border-bottom: none; }
+  .note-select-item:hover { background: color-mix(in srgb, var(--color-surface-2) 85%, white); border-color: var(--color-primary); }
   .note-select-qty { font-weight: 600; min-width: 2.5em; }
-  .note-select-name { display: flex; flex-direction: column; }
+  .note-select-name { display: flex; flex-direction: column; flex: 1; }
+  .note-select-chevron { color: var(--color-text-muted); font-size: 1.2rem; }
   .note-qty { margin: 0.5rem 0; }
 </style>
