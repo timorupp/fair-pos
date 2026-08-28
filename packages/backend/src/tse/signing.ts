@@ -38,6 +38,17 @@ export function describeTseError(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/**
+ * User-facing warning shown in the register UI for any failed signing
+ * attempt — deliberately generic (Task #72): the real reason (from
+ * {@link describeTseError}) is recorded via `recordTseFailure` and only
+ * visible to admins in the TSE-Ausfall-Log
+ * (`admin/reports/tse-outages`), not to register/service staff, both to
+ * keep the message simple for non-admin users and to avoid exposing
+ * technical details on the sales floor.
+ */
+const TSE_UNAVAILABLE_WARNING = 'TSE nicht verfügbar. Bitte informieren Sie den Systemverwalter.';
+
 /** The six `tse_*` columns shared by `invoice`, `service_order`, and `order_cancellation`. */
 export interface TseSignatureFields {
   transactionNumber: number;
@@ -85,7 +96,7 @@ export async function signTseTransaction(
     await recordTseFailure('TSE ist nicht konfiguriert').catch(() => { /* logging must not break the sale */ });
     return {
       signature: null,
-      warning: 'TSE ist nicht konfiguriert — Vorgang wurde ohne TSE-Signatur gebucht.',
+      warning: TSE_UNAVAILABLE_WARNING,
     };
   }
 
@@ -100,7 +111,7 @@ export async function signTseTransaction(
     await recordTseFailure(reason).catch(() => { /* logging must not break the sale */ });
     return {
       signature: null,
-      warning: `TSE nicht erreichbar (${reason}) — Vorgang wurde ohne TSE-Signatur gebucht. Bitte Störung schnellstmöglich beheben.`,
+      warning: TSE_UNAVAILABLE_WARNING,
     };
   }
 
@@ -130,7 +141,7 @@ export async function signTseTransaction(
     await recordTseFailure(reason).catch(() => { /* logging must not break the sale */ });
     return {
       signature: null,
-      warning: `TSE nicht erreichbar (${reason}) — Vorgang wurde ohne TSE-Signatur gebucht. Bitte Störung schnellstmöglich beheben.`,
+      warning: TSE_UNAVAILABLE_WARNING,
     };
   }
 }

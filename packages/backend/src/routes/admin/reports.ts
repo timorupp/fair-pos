@@ -326,4 +326,29 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
       })),
     });
   });
+
+  /**
+   * GET /api/admin/reports/tse-outages — TSE outage log (Task #72), sourced
+   * from `tse_outage` (see tse/outage.ts — written automatically by every
+   * signing attempt, AEAO zu § 146a AO Nr. 1.14.1). Unlike the other reports
+   * here this isn't scoped to an event: an outage isn't tied to a specific
+   * Veranstaltung, so there's no `event_id` filter. Capped at the 500 most
+   * recent rows, newest first.
+   */
+  app.get('/tse-outages', async (_req, reply) => {
+    const result = await query<{ id: string; started_at: Date; ended_at: Date | null; reason: string }>(
+      `SELECT id, started_at, ended_at, reason
+         FROM tse_outage
+        ORDER BY started_at DESC
+        LIMIT 500`,
+    );
+    return reply.send(
+      result.rows.map((r) => ({
+        id: r.id,
+        started_at: r.started_at.toISOString(),
+        ended_at: r.ended_at?.toISOString() ?? null,
+        reason: r.reason,
+      })),
+    );
+  });
 }

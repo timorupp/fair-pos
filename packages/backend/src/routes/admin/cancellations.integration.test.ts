@@ -237,6 +237,6 @@ describe('POST /api/admin/cancellations', () => {
       },
     });
     expect(response.statusCode).toBe(201);
-    expect(response.json().tse_warning).toMatch(/nicht konfiguriert/);
+    expect(response.json().tse_warning).toMatch(/nicht verfügbar/);
   });
 });

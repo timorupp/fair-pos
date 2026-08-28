@@ -249,8 +249,11 @@
   {/if}
 </div>
 
-<!-- Receipt confirmation dialog (mirrors the Bonkasse) -->
-<Modal bind:open={confirmationOpen} title="Rechnung {lastReceiptNumber ?? ''}">
+<!-- Receipt confirmation dialog (mirrors the Bonkasse). Listens for the
+     Modal's `close` event (X / backdrop / Escape) in addition to the two
+     explicit buttons below — closing any other way used to leave the open-
+     items list stale, since only the buttons refreshed it (D-047). -->
+<Modal bind:open={confirmationOpen} title="Rechnung {lastReceiptNumber ?? ''}" on:close={finishConfirmation}>
   {#if lastInvoiceId}
     <div class="checkout-body">
       <div class="qr-wrap">

@@ -469,6 +469,11 @@ export const api = {
           reason_name: string; booking_type: string;
         }[];
       }> => request('GET', `/admin/reports/cancellations${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`),
+
+      /** TSE outage log (Task #72) — not event-scoped, newest first, capped at 500 rows. */
+      tseOutages: (): Promise<{
+        id: string; started_at: string; ended_at: string | null; reason: string;
+      }[]> => request('GET', '/admin/reports/tse-outages'),
     },
 
     tables: {

@@ -337,7 +337,7 @@ describe('Bonkasse checkout: TSE-Signierung', () => {
       payload: { positions: [{ article_id: articleId, quantity: 1 }] },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().tse_warning).toMatch(/nicht konfiguriert/);
+    expect(response.json().tse_warning).toMatch(/nicht verfügbar/);
   });
 });
 
@@ -491,7 +491,7 @@ describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSon
       payload: { positions: [{ article_id: articleId, quantity: 1 }] },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().tse_warning).toMatch(/nicht konfiguriert/);
+    expect(response.json().tse_warning).toMatch(/nicht verfügbar/);
     const items = await pool.query(`SELECT id FROM order_item WHERE dining_table_id = $1`, [tableId]);
     expect(items.rowCount).toBe(1);
   });
@@ -563,7 +563,7 @@ describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSon
       payload: { quantities: [{ group_key: groupKey, count: 1 }] },
     });
     expect(checkout.statusCode).toBe(200);
-    expect(checkout.json().tse_warning).toMatch(/nicht erreichbar/);
+    expect(checkout.json().tse_warning).toMatch(/nicht verfügbar/);
     const paid = await pool.query(`SELECT COUNT(*)::int AS n FROM order_item WHERE status = 'paid'`);
     expect(paid.rows[0]!.n).toBe(1);
   });

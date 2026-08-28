@@ -10,6 +10,7 @@ import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.j
 import {
   createTestPrinter, createTestRegister, createTestUser, seedReceiptCounter,
 } from '../../test/fixtures.js';
+import { recordTseFailure, recordTseRecovered } from '../../tse/outage.js';
 
 beforeAll(async () => { await getTestApp(); });
 afterAll(closeTestApp);
@@ -204,6 +205,42 @@ describe('GET /api/admin/reports/open-positions', () => {
   });
 });
 
+describe('GET /api/admin/reports/tse-outages', () => {
+  it('lists closed and still-open outages, newest first', async () => {
+    await recordTseFailure('erste Störung');
+    await recordTseRecovered();
+    await recordTseFailure('zweite Störung, noch offen');
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/reports/tse-outages',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toHaveLength(2);
+    expect(body[0].reason).toBe('zweite Störung, noch offen');
+    expect(body[0].ended_at).toBeNull();
+    expect(body[1].reason).toBe('erste Störung');
+    expect(body[1].ended_at).not.toBeNull();
+  });
+
+  it('returns an empty list when no outage was ever recorded', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/reports/tse-outages',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json()).toEqual([]);
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/reports/tse-outages' });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
 describe('Authentication required', () => {
   it('all report endpoints reject unauthenticated requests', async () => {
     const app = await getTestApp();
@@ -213,6 +250,7 @@ describe('Authentication required', () => {
       '/api/admin/reports/cancellations',
       '/api/admin/reports/open-positions',
       '/api/admin/reports/events',
+      '/api/admin/reports/tse-outages',
     ]) {
       const r = await app.inject({ method: 'GET', url });
       expect(r.statusCode, `expected 401 for ${url}`).toBe(401);

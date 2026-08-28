@@ -463,8 +463,13 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   - Unit-/Integrationstests für `healthJob.ts`, `system/log.ts` und die
     neuen/geänderten Routen (`tse.ts`, `logs.ts`) — alle grün, ebenso
     Typecheck und Build für Backend und Frontend.
-  - **Noch nicht live durch den Nutzer bestätigt** (nur gegen Stub-CLI
-    getestet, noch nicht auf echter Hardware beobachtet).
+  **Live bestätigt (2026-08-26):** Systemprotokoll-Seite öffnet und zeigt
+  Einträge; Verbindungsverlust/-wiederherstellung wird korrekt geloggt;
+  manuelles „Zeit synchronisieren" erzeugt den INFO-Eintrag; Filter
+  funktionieren. Sofort-Tick beim Backend-Start läuft wie vorgesehen — bei
+  bereits gesunder TSE bewusst **ohne** sichtbaren Log-Eintrag (nur
+  Zustandswechsel werden geloggt), das anfangs wie eine verzögerte erste
+  Prüfung wirkte, war aber erwartetes Verhalten und keine Verzögerung.
 
   **Weiterhin offen:** Anzeige fehlerhafter Checks im Dashboard (#63);
   Festplatten-/DB-Integritätscheck als eigener Task.
@@ -692,7 +697,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   diese Session hat keinen Browser, nur HTTP-Ebene wurde geprüft. Laut
   `CLAUDE.md`-Konvention für Frontend-Änderungen vor Produktivsetzung
   zwingend nachzuholen, siehe auch `docs/Manueller-Testplan.md`.
-- [ ] **#72** TSE-Ausfall-Log als eigene Auswertungsseite in der Admin-UI
+- [x] **#72** TSE-Ausfall-Log als eigene Auswertungsseite in der Admin-UI
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26): `signTseTransaction()`
   zeigte bisher nur die generische Meldung „TSE nicht erreichbar" in der
   Bedienungskasse-UI (`tseWarning`), ohne den tatsächlichen Grund — der wird
@@ -718,6 +723,27 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   abwägen, ob die Bedienungskasse-Meldung wieder auf die generische Variante
   zurückgestellt wird (Nutzerpräferenz) oder der Grund als hilfreicher
   Sofort-Hinweis bestehen bleibt — bewusst nicht vorab entschieden.
+
+  **Erledigt (2026-08-27):**
+  - Neue Auswertungsseite `admin/reports/tse-outages/+page.svelte`
+    (Backend `GET /api/admin/reports/tse-outages` in `routes/admin/
+    reports.ts`) — listet alle `tse_outage`-Zeilen, neueste zuerst, auf 500
+    begrenzt, laufende Ausfälle mit Badge „läuft noch" + Dauer-Anzeige,
+    automatische Aktualisierung alle 30s. Nav-Punkt unter „Auswertungen".
+  - **Übergangslösung zurückgebaut (Nutzerentscheidung):** die
+    Bedienungskasse-Meldung ist wieder generisch — und zwar mit neuem,
+    einheitlichem Text für beide Fälle (nicht konfiguriert UND nicht
+    erreichbar): „TSE nicht verfügbar. Bitte informieren Sie den
+    Systemverwalter." (`TSE_UNAVAILABLE_WARNING` in `tse/signing.ts`).
+    Begründung: Sicherheitsaspekt — Bedien-/Kassenpersonal soll keine
+    technischen Details sehen. Der echte Grund (inkl. Swissbit-Fehlercode)
+    landet weiterhin in `tse_outage.reason` und ist jetzt über die neue
+    Admin-Seite einsehbar.
+  - Bestehende Tests angepasst (`signing.integration.test.ts`,
+    `register-session.integration.test.ts`) auf den neuen Text, neuer
+    Integrationstest für `/tse-outages` in `reports.integration.test.ts`.
+    Alle Suiten (Unit + Integration) sowie Typecheck/Build grün. **Noch
+    nicht live durch den Nutzer bestätigt.**
 - [x] **#73** Server-Adresse-Einstellung: Beschreibung verbessern + Testfunktion
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26): unklar, ob das
   Feld „Server-Adresse (QR-Code)" mit oder ohne `http://`-Präfix befüllt
@@ -863,7 +889,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   modernen Thermodruckern unterstützt), aber druckerabhängig und noch nicht
   untersucht, ob/wie zuverlässig das über alle in der Zielumgebung
   eingesetzten Druckermodelle funktioniert.
-- [ ] **#79** Druckauftrag „Abbrechen" soll auf Status „abgebrochen" statt Löschen umstellen
+- [x] **#79** Druckauftrag „Abbrechen" soll auf Status „abgebrochen" statt Löschen umstellen
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26). Aktuell löscht
   „Abbrechen" den `print_job`-Datensatz komplett (`DELETE FROM print_job
   WHERE id = $1`, an zwei Stellen: `routes/admin/printers.ts` und
@@ -901,8 +927,14 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     bereits abgebrochenen Jobs sichtbar, Bestätigungstext von „löschen" auf
     „abbrechen" korrigiert.
   - Neue Integrationstests (`print-jobs.integration.test.ts`, 6 Tests) +
-    Typecheck/Build für Backend und Frontend — alle grün. **Noch nicht live
-    durch den Nutzer bestätigt.**
+    Typecheck/Build für Backend und Frontend — alle grün.
+
+  **Live bestätigt (2026-08-26):** Abbrechen setzt Status statt zu löschen,
+  Filter „Abgebrochen"/„Alle" zeigen den Job weiterhin, Button verschwindet
+  bei bereits abgebrochenen Jobs. Die 409-Sperre für einen gerade druckenden
+  Job wurde bewusst **nicht** live getestet (Zeitfenster zu knapp, seltener
+  Fall) — Nutzerentscheidung, auf die bestehende automatisierte Testabdeckung
+  zu vertrauen.
 - [ ] **#80** Server-Adresse-Testfunktion (Task #73) prüft die falsche Sache — Konzept überarbeiten
   Beim Nutzer-Review von Task #73 aufgefallen (2026-08-26): der neue
   „Testen"-Button in den Systemeinstellungen zeigt einen QR-Code + Link zu
@@ -1054,8 +1086,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   vollen Dauer geprüft (falls sich der Zustand währenddessen ändert). 2
   weitere Unit-Tests (jetzt 10 insgesamt): kein Halte-Start bei bereits
   deaktiviertem Button, kein `onHold`-Aufruf, wenn der Button erst während
-  des Haltens deaktiviert wird. **Noch nicht live durch den Nutzer
-  bestätigt.**
+  des Haltens deaktiviert wird. **Live bestätigt (2026-08-26).**
 - [ ] **#86** Freitext pro Artikel in der Bedienungskasse (zusätzlich zu den vordefinierten Optionen)
   Nutzerwunsch (2026-08-26): die Bedienung soll zu jedem bestellten Artikel
   einen Freitext eingeben können (z. B. Sonderwünsche, die keine der
@@ -1086,6 +1117,48 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     Freitext würde jede leicht unterschiedliche Formulierung eine eigene
     Gruppe erzeugen, das ist bei vordefinierten Optionen bisher nie
     passiert)?
+
+  **Nutzerentscheidungen (2026-08-27):**
+  - Umfang **nur** Artikel, die bereits vordefinierte Optionen haben — der
+    Dialog öffnet weiterhin wie bisher nur dann. Freitext für Artikel ganz
+    ohne Optionen ist als eigener Task ausgelagert, siehe #88.
+  - Freitextfeld wird in den bestehenden Options-Dialog eingebaut, hinter
+    einem „+ Freitext"-Link eingeklappt (nicht permanent sichtbar), damit
+    der Standardfall ohne Sonderwunsch genauso schnell bleibt wie heute.
+    Einzeiliges Eingabefeld im bestehenden Modal, max. 50 Zeichen.
+  - Zusammenführung: erst alle ausgewählten Optionen, danach der Freitext.
+    Als Trennzeichen sowohl zwischen mehreren Optionen als auch zwischen
+    letzter Option und Freitext ursprünglich Linefeed (`\n`) angedacht —
+    nach Recherche verworfen: `\n` würde in der Anzeige (5 Stellen: Bonliste,
+    Checkout, Tisch-Ansicht, Admin-Reports „Offene Positionen"/„Stornos")
+    ohne `white-space: pre-line`-Ergänzung an allen 5 Stellen unsichtbar
+    kollabieren, im Druck hätte es dagegen korrekt funktioniert. Nutzer hat
+    sich für die einfachere Variante entschieden: **bleibt bei `, '`** wie
+    bisher, keine CSS-Änderungen nötig.
+  - Gruppierung bleibt unverändert (exakter String-Vergleich) — wird
+    bewusst nicht sonderbehandelt, auch wenn dadurch bei identischem
+    Freitext + identischen Optionen weiterhin korrekt gruppiert wird, bei
+    abweichender Formulierung aber nicht.
+
+  **Erledigt (2026-08-27):** `register/[id]/tables/[tableId]/order/+page.svelte`
+  — Options-Dialog um „+ Freitext"-Link erweitert, der ein einzeiliges
+  Eingabefeld (`maxlength=50`) einblendet; `confirmOptions()` hängt den
+  getrimmten Freitext (falls nicht leer) hinter die sortierten Optionsnamen
+  an, gemeinsam mit `, '` verbunden. Zustand wird bei jedem `tapSlot()`-Aufruf
+  zurückgesetzt. Typecheck und Build grün. Reine Frontend-Änderung ohne
+  eigene Komponenten-Testsuite in diesem Projekt (wie die übrigen Funktionen
+  in dieser Datei bisher auch) — **noch nicht in echtem Browser/live getestet.**
+
+  **Nachgebessert (2026-08-27, im Zuge von #88):** bisher war nur das
+  Freitextfeld selbst auf 50 Zeichen begrenzt (`maxlength`), nicht die
+  **Summe** aus ausgewählten Optionen + Freitext — bei mehreren/langen
+  Optionsnamen hätte der kombinierte String trotzdem über 50 Zeichen kommen
+  können. Neue `$derived`-Prüfung (`optionsCombinedLabel`/`optionsTooLong`)
+  deaktiviert „Hinzufügen" mit Hinweistext, sobald die Summe 50 Zeichen
+  überschreitet. `OPTIONS_MAX_LENGTH`-Konstante (vormals
+  `FREETEXT_MAX_LENGTH`) wird jetzt von beiden Dialogen (#86 und #88)
+  gemeinsam genutzt — Klarstellung: 50 Zeichen ist eine reine UI-Konvention,
+  `order_item.options` selbst ist eine unbegrenzte `TEXT`-Spalte.
 - [ ] **#87** Festplatten-/DB-Integritätscheck (manuell auslösbar)
   Bei der Konzeption des TSE-Health-Checks (#64) bewusst abgetrennt —
   Nutzerentscheidung (2026-08-26): eigener Task, **nicht** automatisch im
@@ -1097,3 +1170,58 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `VACUUM`/`ANALYZE`-Fehlerstatus). Ergebnis vermutlich über dieselbe
   `system_log`-Tabelle protokollierbar, die #64 dafür bereits generisch
   angelegt hat.
+- [ ] **#88** Nachträglich Hinweis zu einer bereits platzierten Position hinzufügen (auch für Artikel ohne vordefinierte Optionen)
+  Aus #86 ausgelagert (2026-08-27): dort wurde der Umfang bewusst auf
+  Artikel mit bereits vorhandenen Optionen beschränkt (Dialog öffnet dort
+  ohnehin schon). Dieser Task deckt den restlichen Fall ab — ein Artikel
+  ganz ohne konfigurierte Optionen ruft aktuell (`tapSlot()` in
+  `register/[id]/tables/[tableId]/order/+page.svelte`) gar keinen Dialog
+  auf, sondern fügt die Position direkt hinzu.
+
+  **Konzept-Diskussion (2026-08-27):** Ausgangsfrage: seltener Anwendungsfall,
+  darf den normalen Bestell-Workflow (schneller Tap zum Hinzufügen) nicht
+  stören. Erster Vorschlag (verworfen): kleines Icon direkt an jeder Zeile
+  der Bestellliste, das einen Freitext-only-Dialog öffnet, nur für Artikel
+  ohne Optionen. Nutzer-Einwand: die Bestellliste ist ohnehin schon eng,
+  keine zusätzliche UI dort einbauen.
+
+  **Nutzervorschlag, umgesetzt:** ein neuer Button „Hinweis hinzufügen"
+  unterhalb der kompletten Bestellliste-Karte (inkl. Summe/Bestellen-Zeile,
+  nicht dazwischen — damit nichts mit der primären „Bestellen"-Aktion
+  konkurriert). Öffnet einen zweistufigen Dialog:
+  1. Positionsauswahl — zeigt die Bestellliste (Menge + Name + bisherige
+     Optionen) zur Auswahl, mit Abbrechen-Button.
+  2. Bearbeitung — zeigt den gewählten Artikelnamen, einen Mengen-Stepper
+     (Default 1, Min 1, Max = Menge der Position — für wie viele Einheiten
+     der Hinweis gelten soll) und ein einzeiliges Textfeld, vorbefüllt mit
+     dem bisherigen Optionstext der Position. Speichern splittet die
+     Position bei Bedarf (gewählte Menge < Gesamtmenge): der Rest behält
+     seinen bisherigen Text, der abgespaltene Teil bekommt den neuen.
+
+  **Nutzerentscheidungen (2026-08-27):**
+  - Gilt generisch für **jede** Position, nicht nur für Artikel ohne
+    vordefinierte Optionen — kein Mehraufwand, da der Mechanismus (Text
+    direkt im vorbefüllten Feld bearbeiten) ohnehin nicht unterscheidet.
+  - Ergibt der neue Text nach dem Split exakt den **aktuellen** Optionstext
+    der bearbeiteten Position (keine echte Änderung), bleibt der OK-Button
+    deaktiviert — ein Split ohne inhaltliche Änderung wäre ohnehin sinnlos.
+    Stimmt der neue Text stattdessen zufällig mit einer **anderen** bereits
+    existierenden Position überein, wird automatisch zusammengeführt (wie
+    beim normalen Hinzufügen) — kein Sonderfall, keine Nachfrage.
+  - Abbrechen in Schritt 2 schließt den kompletten Dialog (kein „Zurück" zu
+    Schritt 1).
+  - Zeichenlimit: dieselben 50 Zeichen wie bei #86, da `order_item.options`
+    ohnehin nur eine UI-Konvention dafür hat (unbegrenzte `TEXT`-Spalte) —
+    gemeinsame `OPTIONS_MAX_LENGTH`-Konstante mit #86.
+
+  **Erledigt (2026-08-27):** `register/[id]/tables/[tableId]/order/+page.svelte`
+  — `.order-section` in `.order-card` (Liste + Summe + Bestellen, bisheriges
+  Card-Styling) und einen neuen `.note-btn` außerhalb der Karte aufgeteilt;
+  neuer zweistufiger `Modal`-Dialog (`noteStep: 'select' | 'edit'`) mit
+  `openNoteDialog()`/`selectNoteLine()`/`changeNoteQuantity()`/
+  `applyNoteEdit()`; `mergeOrInsertLine()` als gemeinsame Merge-Logik
+  (identisch zum Verhalten von `addLine()`) für sowohl den unveränderten
+  Rest als auch den abgespaltenen Teil. Typecheck und Build grün. Reine
+  Frontend-Änderung ohne eigene Komponenten-Testsuite in diesem Projekt
+  (wie die übrigen Funktionen in dieser Datei) — **noch nicht in echtem
+  Browser/live getestet.**

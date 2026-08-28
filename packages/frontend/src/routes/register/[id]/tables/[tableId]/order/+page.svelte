@@ -38,6 +38,31 @@
   let optionsLoading = $state(false);
   let availableOptions: { id: string; name: string }[] = $state([]);
   let selectedOptionNames: Set<string> = $state(new Set());
+  /** Whether the "+ Freitext" link has been clicked to reveal the free-text input (Task #86). */
+  let freetextOpen = $state(false);
+  let freetextValue = $state('');
+  /**
+   * Max length for the combined `options` string (selected option names +
+   * free text) — a UI convention (chosen to fit the Bestellbon/order-list
+   * display), not a DB limit (`order_item.options` is an unbounded `TEXT`
+   * column). Shared by the #86 dialog (enforced on the combined result, not
+   * just the free-text input alone) and the #88 note-editor dialog below
+   * (enforced directly via the single field's `maxlength`, since there the
+   * whole string is one editable field).
+   */
+  const OPTIONS_MAX_LENGTH = 50;
+
+  // "Hinweis hinzufügen" note-editor dialog state (Task #88) — lets staff
+  // attach/change a note on an already-placed position, splitting off part
+  // of its quantity if needed. Works on any line — kept generic rather than
+  // limited to articles without predefined options, since the mechanism
+  // doesn't care either way.
+  let noteDialogOpen = $state(false);
+  let noteStep: 'select' | 'edit' = $state('select');
+  /** Index into `order` of the line being edited, or `null` before a line is picked. */
+  let noteSelectedIndex: number | null = $state(null);
+  let noteQuantity = $state(1);
+  let noteText = $state('');
 
   run(() => {
     registerId = ($page.params['id'] ?? '') as string;
@@ -91,6 +116,8 @@
         optionsArticle = article;
         availableOptions = opts.map((o) => ({ id: o.id, name: o.name }));
         selectedOptionNames = new Set();
+        freetextOpen = false;
+        freetextValue = '';
         optionsOpen = true;
       }
     } catch {
@@ -107,10 +134,30 @@
     selectedOptionNames = new Set(selectedOptionNames); // trigger reactivity
   }
 
+  /**
+   * Combines selected option names and free text into the single string
+   * stored as `order_item.options` — options first, free text appended last,
+   * both joined with the same ", " separator.
+   *
+   * @param names - Selected option names.
+   * @param freetext - Raw free-text input (untrimmed).
+   * @returns The combined label, or `null` if both are empty.
+   */
+  function buildOptionsLabel(names: string[], freetext: string): string | null {
+    const parts = [...names].sort();
+    const trimmedFreetext = freetext.trim();
+    if (trimmedFreetext) parts.push(trimmedFreetext);
+    return parts.join(', ') || null;
+  }
+
+  /** Live preview of the combined options string — drives the length check below. */
+  let optionsCombinedLabel = $derived(buildOptionsLabel([...selectedOptionNames], freetextValue));
+  /** Selected options + free text together must not exceed {@link OPTIONS_MAX_LENGTH} (Task #88 follow-up — previously only the free-text input itself was capped). */
+  let optionsTooLong = $derived((optionsCombinedLabel?.length ?? 0) > OPTIONS_MAX_LENGTH);
+
   function confirmOptions() {
-    if (!optionsArticle) return;
-    const optionsLabel = [...selectedOptionNames].sort().join(', ') || null;
-    addLine(optionsArticle.id, optionsLabel);
+    if (!optionsArticle || optionsTooLong) return;
+    addLine(optionsArticle.id, optionsCombinedLabel);
     optionsOpen = false;
     optionsArticle = null;
   }
@@ -132,6 +179,100 @@
     } else {
       order = order.map((l) => (l === line ? { ...l, quantity: next } : l));
     }
+  }
+
+  /** Opens the "Hinweis hinzufügen" dialog (Task #88) at the position-selection step. */
+  function openNoteDialog() {
+    noteStep = 'select';
+    noteSelectedIndex = null;
+    noteDialogOpen = true;
+  }
+
+  /**
+   * Picks the line to edit in the note dialog and advances to the edit step.
+   *
+   * @param i - Index of the chosen line in `order`.
+   */
+  function selectNoteLine(i: number) {
+    const line = order[i];
+    if (!line) return;
+    noteSelectedIndex = i;
+    noteQuantity = 1;
+    noteText = line.options ?? '';
+    noteStep = 'edit';
+  }
+
+  /**
+   * Clamps the note-editor's quantity stepper between 1 and the selected
+   * line's total quantity — that quantity is how many units of the line the
+   * new note text will apply to (the rest, if any, keeps its current text).
+   *
+   * @param delta - `+1` or `-1`.
+   */
+  function changeNoteQuantity(delta: number) {
+    if (noteSelectedIndex === null) return;
+    const max = order[noteSelectedIndex]?.quantity ?? 1;
+    noteQuantity = Math.min(max, Math.max(1, noteQuantity + delta));
+  }
+
+  let noteSelectedLine = $derived(noteSelectedIndex !== null ? (order[noteSelectedIndex] ?? null) : null);
+  /** The text field is capped at {@link OPTIONS_MAX_LENGTH} via `maxlength`, so only the no-op case needs checking here — disables OK when nothing would actually change. */
+  let noteOkDisabled = $derived(
+    !noteSelectedLine || (noteText.trim() || null) === (noteSelectedLine.options ?? null),
+  );
+
+  /**
+   * Merges `quantity` units of `articleId`/`options` into an existing
+   * matching line in `lines` (mutated in place), or inserts a new line at
+   * `insertAt` if no match exists — the same "identical options merge"
+   * behaviour as {@link addLine}, reused here so splitting/editing a note
+   * never leaves two lines with the same `(article_id, options)` around.
+   *
+   * @param lines - The working copy of `order` to mutate.
+   * @param articleId - Article of the line being merged/inserted.
+   * @param options - Resulting options string (or `null`).
+   * @param quantity - Units to merge/insert.
+   * @param insertAt - Index to insert at when no existing match is found.
+   */
+  function mergeOrInsertLine(
+    lines: OrderLine[],
+    articleId: string,
+    options: string | null,
+    quantity: number,
+    insertAt: number,
+  ): void {
+    const existingIndex = lines.findIndex((l) => l.article_id === articleId && (l.options ?? '') === (options ?? ''));
+    if (existingIndex !== -1) {
+      lines[existingIndex] = { ...lines[existingIndex]!, quantity: lines[existingIndex]!.quantity + quantity };
+    } else {
+      lines.splice(insertAt, 0, { article_id: articleId, options, quantity });
+    }
+  }
+
+  /**
+   * Applies the note dialog's edit step (Task #88): the selected quantity of
+   * the chosen line gets the new options text, splitting the line in two if
+   * that's fewer than its total quantity. Silently merges into an existing
+   * identical line if the result happens to match one, same as normal
+   * add-to-order behaviour.
+   */
+  function applyNoteEdit(): void {
+    if (noteSelectedIndex === null || noteOkDisabled) return;
+    const line = order[noteSelectedIndex];
+    if (!line) return;
+    const newValue = noteText.trim() || null;
+
+    const remaining = line.quantity - noteQuantity;
+    const updated = [...order];
+    if (remaining <= 0) {
+      updated.splice(noteSelectedIndex, 1);
+      mergeOrInsertLine(updated, line.article_id, newValue, line.quantity, noteSelectedIndex);
+    } else {
+      updated[noteSelectedIndex] = { ...line, quantity: remaining };
+      mergeOrInsertLine(updated, line.article_id, newValue, noteQuantity, noteSelectedIndex + 1);
+    }
+    order = updated;
+    noteDialogOpen = false;
   }
 
   function unitPriceOf(articleId: string): number {
@@ -226,38 +367,52 @@
 
     <!-- Order list -->
     <section class="order-section">
-      {#if order.length === 0}
-        <p class="empty">Noch keine Artikel.</p>
-      {:else}
-        <ul class="order-list">
-          {#each order as line, i (i)}
-            <li class="order-line">
-              <span class="line-name">
-                <span class="line-name-text">{nameOf(line.article_id)}</span>
-                {#if line.options}<span class="line-options">{line.options}</span>{/if}
-              </span>
-              <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
-              <div class="qty">
-                <button class="qty-btn" onclick={() => changeQuantity(line, -1)}>−</button>
-                <span class="qty-val">{line.quantity}</span>
-                <button class="qty-btn" onclick={() => changeQuantity(line, +1)}>+</button>
-              </div>
-            </li>
-          {/each}
-        </ul>
-      {/if}
+      <div class="order-card">
+        {#if order.length === 0}
+          <p class="empty">Noch keine Artikel.</p>
+        {:else}
+          <ul class="order-list">
+            {#each order as line, i (i)}
+              <li class="order-line">
+                <span class="line-name">
+                  <span class="line-name-text">{nameOf(line.article_id)}</span>
+                  {#if line.options}<span class="line-options">{line.options}</span>{/if}
+                </span>
+                <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
+                <div class="qty">
+                  <button class="qty-btn" onclick={() => changeQuantity(line, -1)}>−</button>
+                  <span class="qty-val">{line.quantity}</span>
+                  <button class="qty-btn" onclick={() => changeQuantity(line, +1)}>+</button>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {/if}
 
-      <div class="total-row">
-        <span class="total-value">{fmt(total)} €</span>
-        <button class="btn-primary place-btn hold-btn"
-                disabled={order.length === 0 || placing}
-                use:longpress={{ onHold: placeOrder }}
-                aria-label="Bestellen — gedrückt halten zum Bestätigen">
-          <span class="hold-fill"></span>
-          <span class="hold-label">⏱ {placing ? 'Bestelle…' : 'Bestellen (halten)'}</span>
-        </button>
+        <div class="total-row">
+          <span class="total-value">{fmt(total)} €</span>
+          <button class="btn-primary place-btn hold-btn"
+                  disabled={order.length === 0 || placing}
+                  use:longpress={{ onHold: placeOrder }}
+                  aria-label="Bestellen — gedrückt halten zum Bestätigen">
+            <span class="hold-fill"></span>
+            <span class="hold-label">⏱ {placing ? 'Bestelle…' : 'Bestellen (halten)'}</span>
+          </button>
+        </div>
+        {#if placeError}<p class="error-text">{placeError}</p>{/if}
       </div>
-      {#if placeError}<p class="error-text">{placeError}</p>{/if}
+
+      <!-- Task #88: rare use case (a note/adjustment on an already-placed
+           position), deliberately kept outside the order card so it doesn't
+           visually compete with the primary "Bestellen" action. -->
+      <button
+        type="button"
+        class="btn-ghost note-btn"
+        disabled={order.length === 0}
+        onclick={openNoteDialog}
+      >
+        Hinweis hinzufügen
+      </button>
     </section>
   </div>
 
@@ -277,11 +432,82 @@
       </li>
     {/each}
   </ul>
+  {#if freetextOpen}
+    <label class="freetext-label">
+      Freitext
+      <input
+        type="text"
+        maxlength={OPTIONS_MAX_LENGTH}
+        bind:value={freetextValue}
+        placeholder="z. B. bitte extra heiß"
+      />
+    </label>
+  {:else}
+    <button class="btn-ghost freetext-link" onclick={() => (freetextOpen = true)}>+ Freitext</button>
+  {/if}
+  {#if optionsTooLong}
+    <p class="error-text small">Zu lang ({optionsCombinedLabel?.length}/{OPTIONS_MAX_LENGTH} Zeichen) — bitte Optionen oder Freitext kürzen.</p>
+  {/if}
   <div class="modal-actions">
     <button class="btn-ghost" onclick={() => (optionsOpen = false)}>Abbrechen</button>
     <div class="spacer"></div>
-    <button class="btn-primary" onclick={confirmOptions}>Hinzufügen</button>
+    <button class="btn-primary" disabled={optionsTooLong} onclick={confirmOptions}>Hinzufügen</button>
   </div>
+</Modal>
+
+<!-- "Hinweis hinzufügen" note-editor dialog (Task #88) — two steps: pick a
+     position, then edit its note text (optionally for only part of its
+     quantity, splitting the line). Works on any position, not just ones
+     whose article has no predefined options — the split/merge logic doesn't
+     care either way. -->
+<Modal
+  bind:open={noteDialogOpen}
+  title={noteStep === 'select' || !noteSelectedLine ? 'Position wählen' : `Hinweis — ${nameOf(noteSelectedLine.article_id)}`}
+>
+  {#if noteStep === 'select'}
+    {#if order.length === 0}
+      <p class="muted">Keine Positionen vorhanden.</p>
+    {:else}
+      <ul class="note-select-list">
+        {#each order as line, i (i)}
+          <li>
+            <button type="button" class="note-select-item" onclick={() => selectNoteLine(i)}>
+              <span class="note-select-qty">{line.quantity}×</span>
+              <span class="note-select-name">
+                {nameOf(line.article_id)}
+                {#if line.options}<span class="line-options">{line.options}</span>{/if}
+              </span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick={() => (noteDialogOpen = false)}>Abbrechen</button>
+    </div>
+  {:else if noteSelectedLine}
+    <p class="muted small">Für wie viele Einheiten soll der Hinweis gelten?</p>
+    <div class="qty note-qty">
+      <button class="qty-btn" onclick={() => changeNoteQuantity(-1)}>−</button>
+      <span class="qty-val">{noteQuantity}</span>
+      <button class="qty-btn" onclick={() => changeNoteQuantity(+1)}>+</button>
+      <span class="muted small">von {noteSelectedLine.quantity}</span>
+    </div>
+    <label class="freetext-label">
+      Hinweis
+      <input
+        type="text"
+        maxlength={OPTIONS_MAX_LENGTH}
+        bind:value={noteText}
+        placeholder="z. B. ohne Eis, bitte extra heiß"
+      />
+    </label>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick={() => (noteDialogOpen = false)}>Abbrechen</button>
+      <div class="spacer"></div>
+      <button class="btn-primary" disabled={noteOkDisabled} onclick={applyNoteEdit}>OK</button>
+    </div>
+  {/if}
 </Modal>
 
 <style>
@@ -303,7 +529,11 @@
     gap: 1rem;
   }
   .grid-section { grid-area: grid; }
-  .order-section { grid-area: order; }
+  /* .order-section is the grid-area container for the whole sidebar column —
+     the visible bordered "card" look lives on the inner .order-card instead,
+     so the Task #88 "Hinweis hinzufügen" button can sit below the card
+     without visually being part of it (see the template comment there). */
+  .order-section { grid-area: order; display: flex; flex-direction: column; gap: 0.75rem; }
   @media (min-width: 768px) {
     .pos-layout {
       grid-template-columns: 1fr 30%;
@@ -318,11 +548,12 @@
     }
   }
 
-  .order-section {
+  .order-card {
     background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: var(--radius); padding: 1rem;
     display: flex; flex-direction: column;
   }
+  .note-btn { align-self: stretch; }
   .empty { color: var(--color-text-muted); font-size: 0.9rem; padding: 0.5rem 0; }
   .order-list { list-style: none; padding: 0; margin: 0; }
   .order-line {
@@ -412,6 +643,20 @@
   .option-list { list-style: none; padding: 0; margin: 0.5rem 0; }
   .option-list li { padding: 0.3rem 0; }
   .option-label { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
+  .freetext-link { padding: 0; margin-top: 0.4rem; }
+  .freetext-label { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.6rem; font-size: 0.85rem; color: var(--color-text-muted); }
+  .freetext-label input { padding: 0.4rem 0.6rem; font-size: 1rem; }
   .modal-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
   .modal-actions .spacer { flex: 1; }
+
+  .note-select-list { list-style: none; padding: 0; margin: 0; }
+  .note-select-item {
+    display: flex; align-items: center; gap: 0.6rem; width: 100%;
+    padding: 0.5rem 0.3rem; border: none; border-bottom: 1px solid var(--color-border);
+    background: none; color: inherit; text-align: left; cursor: pointer;
+  }
+  .note-select-list li:last-child .note-select-item { border-bottom: none; }
+  .note-select-qty { font-weight: 600; min-width: 2.5em; }
+  .note-select-name { display: flex; flex-direction: column; }
+  .note-qty { margin: 0.5rem 0; }
 </style>

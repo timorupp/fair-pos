@@ -69,7 +69,7 @@ describe('signTseTransaction', () => {
   it('reports a warning and opens an outage row when the TSE is not configured', async () => {
     const result = await signTseTransaction('Kassenbeleg-V1', Buffer.from('x'));
     expect(result.signature).toBeNull();
-    expect(result.warning).toMatch(/nicht konfiguriert/);
+    expect(result.warning).toMatch(/nicht verfügbar/);
 
     const outages = await pool.query<{ reason: string }>(`SELECT reason FROM tse_outage WHERE ended_at IS NULL`);
     expect(outages.rows).toHaveLength(1);
@@ -121,13 +121,14 @@ describe('signTseTransaction', () => {
 
     const result = await signTseTransaction('AVSonstige', Buffer.from('x'));
     expect(result.signature).toBeNull();
-    expect(result.warning).toMatch(/nicht erreichbar/);
-    // The underlying CLI/SDK error text AND numeric Swissbit error code must
-    // reach the UI — a bare "nicht erreichbar" hides the actual cause (e.g.
-    // an unregistered client ID) from the operator, who has no other way to
-    // see it (no admin-UI outage log yet, see Task #63/#72).
-    expect(result.warning).toContain('boom');
-    expect(result.warning).toContain('Code 1');
+    // Task #72: the register UI only gets a generic message — no technical
+    // detail for non-admin staff. The underlying CLI/SDK error text AND
+    // numeric Swissbit error code still reach the admin, via `tse_outage`
+    // (surfaced in admin/reports/tse-outages), not via the returned warning.
+    expect(result.warning).toBe('TSE nicht verfügbar. Bitte informieren Sie den Systemverwalter.');
+    const outages = await pool.query<{ reason: string }>(`SELECT reason FROM tse_outage WHERE ended_at IS NULL`);
+    expect(outages.rows[0]!.reason).toContain('boom');
+    expect(outages.rows[0]!.reason).toContain('Code 1');
     expect(await openOutageCount()).toBe(1);
   });
 
@@ -159,7 +160,7 @@ describe('signTseTransaction', () => {
 
       const result = await signTseTransaction('Kassenbeleg-V1', Buffer.from('x'));
       expect(result.signature).toBeNull();
-      expect(result.warning).toMatch(/nicht erreichbar/);
+      expect(result.warning).toMatch(/nicht verfügbar/);
 
       const calls = readCliInvocations();
       expect(calls).toHaveLength(3);
@@ -183,7 +184,7 @@ describe('signTseTransaction', () => {
 
       await expect(signTseTransaction('Kassenbeleg-V1', Buffer.from('x'))).resolves.toMatchObject({
         signature: null,
-        warning: expect.stringMatching(/nicht erreichbar/),
+        warning: expect.stringMatching(/nicht verfügbar/),
       });
 
       const calls = readCliInvocations();
