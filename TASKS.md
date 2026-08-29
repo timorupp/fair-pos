@@ -1267,6 +1267,14 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   eigenständig auf — könnte auch mit korrekt gesetztem `maxAge`
   (siehe #90) zu unvorhersehbaren Zwangs-Logouts auf iPads führen,
   unabhängig von der PWA-Nachrüstung. Vorab nicht zuverlässig ausschließbar.
+  **Vorbereitung (2026-08-29):** Nutzer hat bereits ein Icon-Set (mehrere
+  Auflösungen + SVG-Quelle) und einen `manifest-draft.json` in
+  `tmp-pwa-artifacts/` (Repo-Root, bewusst lokal/unversioniert) abgelegt.
+  Beim Angehen dieses Tasks: Dateien an die richtigen Stellen übertragen
+  (Icons vermutlich nach `packages/frontend/static/`, Manifest nach
+  `packages/frontend/static/manifest.json` o. ä., je nach dann gewählter
+  Struktur) und `tmp-pwa-artifacts/` danach löschen — bzw. löschen, falls
+  sich die vorbereiteten Daten am Ende doch nicht eignen.
 - [ ] **#90** Login-Neukonzeption: PIN-Login statt QR-Einmaltoken, serverseitige Sessions, vereinheitlichtes Admin/Kassen-Login
 
   **Ausgangsproblem (2026-08-27):** Das heutige QR-Einmaltoken-Login
@@ -1459,3 +1467,30 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   beibehalten); ob ein Mindestabstand zwischen zwei PIN-Neuvergaben für
   denselben Benutzer nötig ist (bisher nicht thematisiert, vermutlich
   nicht nötig); Task #89 (PWA-Artefakte) weiterhin unabhängig offen.
+- [ ] **#91** Artikel-Button-Beschriftung bricht je nach Bildschirmbreite unterschiedlich um
+  Aufgekommen beim Live-Test (2026-08-29): `.grid-btn` (Artikel-Kacheln in
+  Bonkasse `register/[id]/+page.svelte` und Bedienungskasse
+  `.../order/+page.svelte`) hat nur `min-height: 70px` und
+  `overflow-wrap: anywhere`, keine feste Höhe. Beispiel „Weizenbier": auf
+  einem schmalen Bildschirm bricht der Text automatisch zweizeilig um und
+  sieht gut aus, auf einem breiten Bildschirm ist die Kachel breit genug
+  für eine Zeile — dieselbe Beschriftung wirkt je nach Gerät
+  unterschiedlich, weil der automatische Umbruch nicht kontrollierbar ist.
+  Aktuell zeigen die Buttons direkt `article.name` (`nameOf()` in beiden
+  Dateien) — dasselbe Feld, das auch auf Rechnungen/im DSFinV-K-Export
+  erscheint.
+  **Zwei Lösungsansätze, noch nicht entschieden:**
+  1. Beschriftung mit manuellen Zeilenumbrüchen eingebbar machen (Admin
+     steuert selbst, wo umgebrochen wird), gerendert mit
+     `white-space: pre-line`, damit der Umbruch auf jedem Bildschirm gleich
+     aussieht. **Wichtig:** darf nicht `article.name` selbst überschreiben
+     (das würde mehrzeilige Namen in Rechnungen/Export/Berichten
+     einschleppen) — bräuchte ein eigenes Feld, z. B. `label` auf
+     `register_layout_slot` (dort gibt es mit `color` schon ein
+     Pro-Slot-Override neben dem Artikel selbst, exakt das gleiche Muster),
+     nullable, fällt ohne gesetzten Wert auf `article.name` zurück.
+  2. Button-Höhe im Kassenlayout-Editor fest einstellbar machen (statt nur
+     `min-height`), damit alle Buttons einheitlich hoch sind, mit
+     `overflow: hidden` bei zu langem Text abschneiden statt umzubrechen.
+  Beide Ansätze schließen sich nicht zwingend aus (feste Höhe + optionale
+  manuelle Umbrüche) — Entscheidung/Kombination noch offen.
