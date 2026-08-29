@@ -135,7 +135,7 @@
 {:else}
 <div class="shell">
   <aside>
-    <div class="brand"><span class="brand-icon">⊕</span> FairPOS</div>
+    <div class="brand"><img class="brand-icon" src="/fairpos-icon.svg" alt="" width="20" height="20" /> FairPOS</div>
     <nav>
       <a href="/admin" class:active={isActive('/admin', true)}>Dashboard</a>
 
@@ -253,7 +253,7 @@
     letter-spacing: -0.02em; padding: 0 1.25rem 1.25rem;
     border-bottom: 1px solid var(--color-border); margin-bottom: 0.5rem;
   }
-  .brand-icon { font-size: 1.2rem; line-height: 1; }
+  .brand-icon { width: 20px; height: 20px; flex-shrink: 0; }
 
   nav { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 0 0.5rem; overflow-y: auto; }
 
@@ -372,7 +372,11 @@
   :global(.field-check) { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
   :global(.field-check label) { font-size: 0.9rem; color: var(--color-text); cursor: pointer; }
 
-  :global(.modal-actions) { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
+  /* flex-wrap as a safety net — a dialog with several buttons (rare, but see
+     the "PIN drucken" dialog which grew to five before being split into two
+     rows) would otherwise overflow the modal's fixed width outright rather
+     than wrapping. */
+  :global(.modal-actions) { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
 
   /* Pending-Z-Bon warning banner — bright amber, full width of the main content area. */
   .closing-banner {

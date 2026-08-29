@@ -3,8 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+    <link rel="manifest" href="%sveltekit.assets%/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#1a1a2e" />
+    <!-- Matches --color-bg in routes/+layout.svelte — keep in sync if the app's background ever changes. -->
+    <meta name="theme-color" content="#0f1117" />
+    <!-- iOS ignores manifest.json entirely for "Add to Home Screen" — these three
+         are what actually gets it into standalone mode with the right icon. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="FairPOS" />
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

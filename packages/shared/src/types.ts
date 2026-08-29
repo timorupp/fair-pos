@@ -24,7 +24,7 @@ export type PaymentMethod = 'cash' | 'card';
 export type PrintJobStatus = 'pending' | 'printing' | 'done' | 'failed';
 
 /** Type of document a print job produces. */
-export type PrintJobType = 'order_slip' | 'receipt' | 'daily_closing' | 'test_print';
+export type PrintJobType = 'order_slip' | 'receipt' | 'daily_closing' | 'test_print' | 'pin_slip';
 
 // ── Domain types ─────────────────────────────────────────────────────────────
 

@@ -76,6 +76,7 @@
     if (t === 'receipt') return 'Kassenbon';
     if (t === 'daily_closing') return 'Z-Bon';
     if (t === 'test_print') return 'Testdruck';
+    if (t === 'pin_slip') return 'PIN-Beleg';
     return t;
   }
 

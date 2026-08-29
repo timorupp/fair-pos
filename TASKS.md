@@ -1267,14 +1267,60 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   eigenständig auf — könnte auch mit korrekt gesetztem `maxAge`
   (siehe #90) zu unvorhersehbaren Zwangs-Logouts auf iPads führen,
   unabhängig von der PWA-Nachrüstung. Vorab nicht zuverlässig ausschließbar.
-  **Vorbereitung (2026-08-29):** Nutzer hat bereits ein Icon-Set (mehrere
-  Auflösungen + SVG-Quelle) und einen `manifest-draft.json` in
-  `tmp-pwa-artifacts/` (Repo-Root, bewusst lokal/unversioniert) abgelegt.
-  Beim Angehen dieses Tasks: Dateien an die richtigen Stellen übertragen
-  (Icons vermutlich nach `packages/frontend/static/`, Manifest nach
-  `packages/frontend/static/manifest.json` o. ä., je nach dann gewählter
-  Struktur) und `tmp-pwa-artifacts/` danach löschen — bzw. löschen, falls
-  sich die vorbereiteten Daten am Ende doch nicht eignen.
+  **Vorbereitung (2026-08-29):** Nutzer hat ein Icon-SVG in
+  `tmp-pwa-artifacts/` vorbereitet (Original in Teal/Grün) — auf Wunsch auf
+  die tatsächliche App-Palette umgefärbt (`--color-primary`/`--color-bg`/
+  `--color-text` aus `routes/+layout.svelte`) und als
+  `fairpos-icon-app-theme.svg` gespeichert; die alten PNGs (aus dem
+  Teal-Original gerendert) wurden vom Nutzer gelöscht, da veraltet.
+
+  **Erledigt (2026-08-29):** PNG-Icon-Set (48–512px, `rsvg-convert`) aus dem
+  neu eingefärbten SVG gerendert, `packages/frontend/static/` angelegt:
+  `manifest.json` (Name/Farben/Icons, `display: fullscreen` wie vom Nutzer
+  vorgegeben, Beschreibung auf Deutsch lokalisiert), `favicon.png` (behebt
+  die bisher kaputte Referenz in `app.html`), `apple-touch-icon.png`
+  (180×180), `icons/icon-{48…512}x{n}.png`. `app.html` bekommt
+  `<link rel="manifest">`, `<link rel="apple-touch-icon">`,
+  `apple-mobile-web-app-capable`/`-status-bar-style`/`-title` — iOS liest
+  `manifest.json` für "Zum Home-Bildschirm" ohnehin nicht, nur diese
+  Meta-Tags zählen dort. `theme-color` dabei von `#1a1a2e` auf das
+  tatsächliche `--color-bg` (`#0f1117`) korrigiert (vorher inkonsistent).
+  Service Worker bewusst **nicht** umgesetzt — Kassensystem braucht ohnehin
+  eine Backend-Verbindung, ein Offline-Modus wäre unnötige Komplexität ohne
+  echten Nutzen.
+
+  Das SVG selbst dauerhaft unter `packages/frontend/static/fairpos-icon.svg`
+  gesichert (nicht nur in `tmp-pwa-artifacts/`, das später gelöscht wird) —
+  Nutzerwunsch: Quelle behalten, um bei künftigen Farbschema-Änderungen
+  jederzeit neue Pixelgrafiken erzeugen zu können. Gleichzeitig das
+  bisherige Platzhalter-Icon (⊕-Zeichen) in der UI ersetzt — `login/+page.svelte`
+  (großes Icon im Anmelde-Screen), `admin/+layout.svelte` und
+  `register/+layout.svelte` (kleines Icon in der jeweiligen Kopfzeile).
+
+  **Zusätzlich (2026-08-29, Nutzerwunsch):** Hinweis „Zum Home-Bildschirm
+  hinzufügen" auf dem PIN-Login-Screen — relevant für Bedienungen, die ihr
+  eigenes Gerät nutzen (nicht für feste Kassen-Tablets). Zeigt
+  plattformspezifische Anleitung (iOS: Teilen-Symbol; Android: Menü),
+  erkennt per `display-mode`-Media-Query + `navigator.standalone` (iOS-
+  Altlast) ob bereits installiert, per User-Agent-Sniffing die Plattform
+  (inkl. iPadOS-13+-Sonderfall, meldet sich als „MacIntel" mit Touch-Punkten
+  statt als iPad). Bewusst **nur** auf dem Login-Screen — nach dem Einloggen
+  keine weitere Störung, auch nicht im normalen Browser-Tab (Nutzervorgabe).
+  Dauerhaft abschaltbar über „×" (localStorage). Neues Modul
+  `lib/pwaInstallHint.ts` mit 12 Unit-Tests (jsdom).
+
+  Kein automatischer Install-Prompt möglich — iOS bietet dafür grundsätzlich
+  keine API, und Chromes automatischer Banner (`beforeinstallprompt`)
+  braucht einen sicheren Kontext (HTTPS/localhost), den FairPOS im
+  Standard-LAN-Betrieb über HTTP nicht hat (siehe Task #66).
+
+  Typecheck, Build (inkl. Kontrolle, dass `manifest.json`/Icons/Meta-Tags im
+  Build-Output ankommen) und volle Testsuite grün. **Noch nicht live durch
+  den Nutzer bestätigt** (insbesondere: echtes "Zum Home-Bildschirm
+  hinzufügen" auf einem echten iOS-/Android-Gerät noch nicht ausprobiert).
+  `tmp-pwa-artifacts/` noch nicht gelöscht — enthält weiterhin beide SVG-
+  Versionen (Original + neu eingefärbt) und den ursprünglichen
+  `manifest-draft.json`, kann nach Bestätigung entfernt werden.
 - [ ] **#90** Login-Neukonzeption: PIN-Login statt QR-Einmaltoken, serverseitige Sessions, vereinheitlichtes Admin/Kassen-Login
 
   **Ausgangsproblem (2026-08-27):** Das heutige QR-Einmaltoken-Login
@@ -1467,6 +1513,46 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   beibehalten); ob ein Mindestabstand zwischen zwei PIN-Neuvergaben für
   denselben Benutzer nötig ist (bisher nicht thematisiert, vermutlich
   nicht nötig); Task #89 (PWA-Artefakte) weiterhin unabhängig offen.
+
+  **Nachbesserungen (2026-08-29):**
+  - Manuelle PIN-Eingabe erlaubt jetzt auch verwechselbare Zeichen
+    (`0`/`O`/`1`/`I`) — nur der Zufallsgenerator vermeidet sie weiterhin.
+    `auth/pin.ts` unterscheidet jetzt `VALID_ALPHABET` (36 Zeichen, für
+    `isValidPinFormat`) von `GENERATOR_ALPHABET` (32 Zeichen, für
+    `generateRandomPin`).
+  - „PIN ändern"-Dialog öffnet jetzt mit **leerem** Feld statt automatisch
+    eine neue PIN vorzuschlagen — sonst könnte der Anwender denken, die
+    angezeigte PIN sei die bereits bestehende (Verwechslungsgefahr, da die
+    echte PIN nie aus dem Hash rekonstruierbar ist). Vorschlag erscheint
+    erst nach explizitem Klick auf „Neu erzeugen".
+  - Neue Funktion „PIN drucken" im PIN-Dialog: druckt Benutzername + PIN
+    über den Standarddrucker aus (`print_job`-Typ `pin_slip`, Migration
+    `0012_print_job_pin_slip.sql`, `buildPinSlip()` in `print/escpos.ts`,
+    `POST /api/admin/users/:id/pin/print`), mit Bestätigungsdialog „Achtung,
+    die PIN wird am Standarddrucker ausgedruckt." vorher. Funktioniert auf
+    dem aktuell angezeigten Feldinhalt, unabhängig davon ob schon
+    gespeichert.
+  - **Bug gefunden und behoben:** die neue „PIN drucken"-Funktion machte aus
+    dem Dialog-Aktionen-Bereich fünf Buttons in einer einzigen, nicht
+    umbrechenden Zeile (`.modal-actions`) — lief auf schmaleren Bildschirmen
+    über den sichtbaren Dialogrand hinaus (Nutzerbericht: „Buttons sind zu
+    groß und außerhalb des sichtbaren Bereichs"). Behoben durch Aufteilung
+    in zwei Zeilen (Hilfsaktionen „Neu erzeugen"/„Kopieren"/„PIN drucken"
+    getrennt von „Abbrechen"/„Speichern") plus `flex-wrap: wrap` als
+    generelles Sicherheitsnetz für `.modal-actions` in jedem Admin-Dialog.
+    Die zusätzlich gemeldete Beobachtung „im ganzen Adminbereich sind die
+    Buttons größer geworden" ließ sich **nicht** bestätigen — Code-Splitting
+    zwischen Admin/Register-Bereich per Vite-Manifest geprüft (keine
+    Überschneidung der CSS-Chunks), Basis-Button-Stile in
+    `admin/+layout.svelte` per Git-Historie auf Unverändertheit geprüft.
+    Falls das Problem weiterhin auftritt, brauchen wir einen Screenshot/
+    genaueren Kontext (Gerät, Browser, welche konkrete Seite).
+  - Bei der Gelegenheit einen echten Bug in `api.ts`s `request()` gefunden
+    und behoben: `Object.assign(error, data)` (für Task #90s
+    `needs_admin_verification`-Weiterleitung) überschrieb `error.message`,
+    falls die Fehlerantwort zufällig ein `message`-Feld enthielt — jetzt
+    werden `error`/`message` beim Kopieren der Zusatzfelder ausgeschlossen.
+    Von der bestehenden Testsuite aufgefangen, bevor es committet wurde.
 - [ ] **#91** Artikel-Button-Beschriftung bricht je nach Bildschirmbreite unterschiedlich um
   Aufgekommen beim Live-Test (2026-08-29): `.grid-btn` (Artikel-Kacheln in
   Bonkasse `register/[id]/+page.svelte` und Bedienungskasse

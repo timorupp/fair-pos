@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0" stop-color="#4f7cff"/>
+      <stop offset="1" stop-color="#0f1117"/>
+    </linearGradient>
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#05060a" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="-0.041" y="-0.041" width="511.965" height="511.965" rx="96" ry="96" fill="url(#bgGrad)" style=""/>
+  <g filter="url(#dropShadow)" transform="matrix(1.14278, 0, 0, 1.14278, -36.609806, -36.609806)" style="">
+    <rect x="112" y="160" width="288" height="240" rx="36" ry="36" fill="none" stroke="#e8eaf0" stroke-width="24" stroke-linejoin="round"/>
+    <path d="M 200 160 L 312 160" stroke="#0f1117" stroke-width="26" stroke-linecap="round"/>
+    <g transform="translate(0, 0)">
+      <path d="M 208 160 L 208 84 C 208 72 216 64 228 64 L 284 64 C 296 64 304 72 304 84 L 304 160 Z" fill="#e8eaf0"/>
+      <path d="M 284 64 C 296 64 304 76 292 84 L 216 84 C 204 84 208 64 228 64 Z" fill="#6b91ff" opacity="0.9"/>
+      <text x="256" y="132" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="46" font-weight="900" fill="#4f7cff" text-anchor="middle" style="white-space: pre;">€</text>
+    </g>
+    <rect x="156" y="228" width="80" height="20" rx="10" fill="#e8eaf0"/>
+    <rect x="156" y="268" width="80" height="20" rx="10" fill="#e8eaf0"/>
+    <rect x="156" y="308" width="56" height="20" rx="10" fill="#e8eaf0"/>
+    <circle cx="316" cy="278" r="44" fill="#e8eaf0"/>
+    <path d="M 316 278 L 316 234 A 44 44 0 0 1 360 278 Z" fill="#4f7cff"/>
+    <circle cx="316" cy="278" r="14" fill="#4f7cff"/>
+    <path d="M 392 112 Q 392 132 412 132 Q 392 132 392 152 Q 392 132 372 132 Q 392 132 392 112 Z" fill="#e8eaf0"/>
+  </g>
+</svg>

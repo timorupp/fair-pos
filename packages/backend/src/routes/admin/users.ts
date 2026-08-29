@@ -4,6 +4,8 @@ import { query } from '../../db/client.js';
 import { hashPassword } from '../../auth/password.js';
 import { formatPinForDisplay, generateRandomPin, hashPin, isValidPinFormat, normalizePin } from '../../auth/pin.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
+import { buildPinSlip } from '../../print/escpos.js';
+import { enqueuePrintJob } from '../../print/enqueue.js';
 
 /** User row returned to the client — never includes password_hash/pin_hash. */
 interface UserRow {
@@ -234,7 +236,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
     const body = req.body as { pin?: string };
     const normalized = normalizePin(body.pin ?? '');
     if (!isValidPinFormat(normalized)) {
-      return reply.status(400).send({ error: 'PIN muss aus 9 Zeichen (A-Z, 2-9, ohne 0/O/1/I) bestehen' });
+      return reply.status(400).send({ error: 'PIN muss aus 9 Zeichen (A-Z, 0-9) bestehen' });
     }
 
     const hash = hashPin(normalized);
@@ -245,5 +247,37 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
     const result = await query('UPDATE "user" SET pin_hash = $1 WHERE id = $2 RETURNING id', [hash, id]);
     if (result.rows.length === 0) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
     return reply.status(204).send();
+  });
+
+  /**
+   * POST /api/admin/users/:id/pin/print — prints a PIN slip (user name + PIN)
+   * on the system-wide default printer. Takes the PIN as plaintext in the
+   * request body — the same trust boundary as `/pin/generate` returning it —
+   * since `pin_hash` can never be reversed to recover it. Deliberately
+   * accepts whatever candidate the admin currently has on screen, whether or
+   * not it has been saved yet via `PUT .../pin` (the natural flow is
+   * generate/type → print for the employee → save).
+   */
+  app.post('/:id/pin/print', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as { pin?: string };
+    const normalized = normalizePin(body.pin ?? '');
+    if (!isValidPinFormat(normalized)) {
+      return reply.status(400).send({ error: 'PIN muss aus 9 Zeichen (A-Z, 0-9) bestehen' });
+    }
+
+    const userResult = await query<{ name: string }>('SELECT name FROM "user" WHERE id = $1', [id]);
+    const user = userResult.rows[0];
+    if (!user) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+
+    const printerResult = await query<{ id: string }>(
+      `SELECT id FROM printer WHERE is_default = true LIMIT 1`,
+    );
+    const printer = printerResult.rows[0];
+    if (!printer) return reply.status(400).send({ error: 'Kein Standarddrucker konfiguriert' });
+
+    const payload = buildPinSlip(user.name, formatPinForDisplay(normalized), new Date());
+    const job = await enqueuePrintJob(printer.id, 'pin_slip', payload);
+    return reply.send({ print_job_id: job.id });
   });
 }

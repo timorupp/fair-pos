@@ -283,6 +283,59 @@ describe('Admin users: PIN management (Task #90)', () => {
     });
     expect(response.statusCode).toBe(204);
   });
+
+  it('PUT /:id/pin accepts visually-ambiguous characters (0/O/1/I) for manual entry — only the generator avoids them', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${user.id}/pin`,
+      headers: { cookie: adminCookie },
+      payload: { pin: 'O0I1O0I1O' },
+    });
+    expect(response.statusCode).toBe(204);
+
+    const login = await app.inject({ method: 'POST', url: '/api/auth/pin', payload: { pin: 'O0I1O0I1O' } });
+    expect(login.statusCode).toBe(200);
+  });
+
+  it('POST /:id/pin/print prints a PIN slip on the default printer', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    await createTestPrinter({ isDefault: true });
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/users/${user.id}/pin/print`,
+      headers: { cookie: adminCookie },
+      payload: { pin: user.pin },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().print_job_id).toBeTruthy();
+
+    const job = await pool.query<{ type: string }>('SELECT type FROM print_job WHERE id = $1', [response.json().print_job_id]);
+    expect(job.rows[0]!.type).toBe('pin_slip');
+  });
+
+  it('POST /:id/pin/print returns 400 when no default printer is configured', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/users/${user.id}/pin/print`,
+      headers: { cookie: adminCookie },
+      payload: { pin: user.pin },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('POST /:id/pin/print rejects a malformed PIN with 400', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/users/${user.id}/pin/print`,
+      headers: { cookie: adminCookie },
+      payload: { pin: 'too-short' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
 });
 
 describe('Admin layouts', () => {

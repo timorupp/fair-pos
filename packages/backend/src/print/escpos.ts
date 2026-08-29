@@ -75,3 +75,34 @@ export function buildTestPrint(
   );
   return Buffer.concat(parts);
 }
+
+/**
+ * Builds an ESC/POS PIN-slip payload (Task #90 follow-up) — the "PIN
+ * drucken" action in the user management's PIN dialog. Layout: bold
+ * "FairPOS" header, user name, PIN in double-size for legibility, timestamp.
+ * ASCII-only — non-ASCII chars in `userName` are dropped.
+ *
+ * @param userName - Name of the user the PIN belongs to.
+ * @param pin - The PIN in its hyphen-grouped display form, e.g. `ABC-DEF-GHJ`.
+ * @param timestamp - Date the slip was generated (printed on the slip).
+ * @returns Raw bytes ready to send via TCP or enqueue as a print job.
+ */
+export function buildPinSlip(userName: string, pin: string, timestamp: Date): Buffer {
+  return Buffer.concat([
+    INIT,
+    selectMode(0x30),                                  // double width + height
+    textLine('FairPOS'),
+    selectMode(0x00),                                  // back to normal
+    textLine('PIN-Zugang'),
+    textLine(''),
+    textLine(`Benutzer: ${userName}`),
+    textLine(''),
+    selectMode(0x30),                                  // double width + height — PIN must be easy to read
+    textLine(pin),
+    selectMode(0x00),                                  // back to normal
+    textLine(''),
+    textLine(formatGermanTimestamp(timestamp)),
+    FEED,
+    CUT,
+  ]);
+}

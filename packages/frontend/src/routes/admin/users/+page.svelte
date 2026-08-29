@@ -33,6 +33,7 @@
   let pinDisplay = $state('');
   let pinSaving = $state(false);
   let pinError = $state('');
+  let pinPrinting = $state(false);
 
   onMount(load);
 
@@ -118,18 +119,17 @@
     pinDisplay = formatPin(normalizePin(target.value));
   }
 
-  /** Opens the PIN modal with a freshly generated candidate — not saved until "Speichern". */
-  async function openPinModal(u: UserRow) {
+  /**
+   * Opens the PIN modal with an empty field — deliberately not pre-filled
+   * with a generated candidate, so it can never look like "this is the
+   * existing PIN" (the actual PIN is never retrievable, only its hash is
+   * stored). A candidate only appears after an explicit "Neu erzeugen" click.
+   */
+  function openPinModal(u: UserRow) {
     pinModalUser = u;
     pinError = '';
     pinDisplay = '';
     pinModal = true;
-    try {
-      const { pin } = await api.admin.users.generatePin(u.id);
-      pinDisplay = pin;
-    } catch (e) {
-      pinError = e instanceof Error ? e.message : 'Fehler';
-    }
   }
 
   /** Fetches another random candidate, discarding the current one (not yet saved). */
@@ -159,6 +159,24 @@
   }
 
   function copyPin() { copyToClipboard(pinDisplay); }
+
+  /**
+   * Prints the currently displayed PIN (saved or not) on the default
+   * printer, after an explicit confirmation — the slip shows the PIN in
+   * clear text, so this shouldn't happen by an accidental click.
+   */
+  async function printPin() {
+    if (!pinModalUser) return;
+    if (!confirm('Achtung, die PIN wird am Standarddrucker ausgedruckt.')) return;
+    pinPrinting = true; pinError = '';
+    try {
+      await api.admin.users.printPin(pinModalUser.id, normalizePin(pinDisplay));
+    } catch (e) {
+      pinError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      pinPrinting = false;
+    }
+  }
 
   function toggleRegister(id: string) {
     if (formRegisterIds.includes(id)) {
@@ -271,8 +289,8 @@
   <div class="pin-box">
     <p class="muted">
       Diese PIN identifiziert und authentifiziert den Benutzer beim Anmelden —
-      kein zusätzlicher Benutzername nötig. Vorschlag kann übernommen oder
-      hier direkt geändert werden.
+      kein zusätzlicher Benutzername nötig. Selbst eingeben oder über
+      „Neu erzeugen" vorschlagen lassen.
     </p>
     <input
       class="pin-input"
@@ -287,10 +305,19 @@
       disabled={pinSaving}
     />
     {#if pinError}<p class="error-text small">{pinError}</p>{/if}
-    <div class="modal-actions">
+    <!-- Utility actions on their own row — five buttons in one un-wrapped
+         .modal-actions row overflowed the dialog on narrower screens
+         (found live, 2026-08-29). Kept separate from the primary
+         Abbrechen/Speichern row rather than just wrapping, so a wrapped
+         "Speichern" doesn't end up looking like it belongs with these. -->
+    <div class="pin-utility-actions">
       <button class="btn-ghost" onclick={regeneratePin} disabled={pinSaving}>Neu erzeugen</button>
       <button class="btn-ghost" onclick={copyPin} disabled={!pinDisplay}>Kopieren</button>
-      <div class="spacer"></div>
+      <button class="btn-ghost" onclick={printPin} disabled={pinPrinting || normalizePin(pinDisplay).length !== 9}>
+        {pinPrinting ? 'Drucke…' : 'PIN drucken'}
+      </button>
+    </div>
+    <div class="modal-actions">
       <button class="btn-ghost" onclick={() => (pinModal = false)} disabled={pinSaving}>Abbrechen</button>
       <button class="btn-primary" onclick={savePin} disabled={pinSaving || normalizePin(pinDisplay).length !== 9}>
         {pinSaving ? 'Speichern…' : 'Speichern'}
@@ -306,6 +333,7 @@
     border-radius: 4px; margin-left: 0.35rem; vertical-align: middle;
   }
   .pin-box { display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
+  .pin-utility-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .pin-input {
     padding: 0.75rem 1rem;
     background: var(--color-surface-2); border: 1px solid var(--color-border);

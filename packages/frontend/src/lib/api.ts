@@ -57,13 +57,15 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   const res = await fetch(`/api${path}`, init);
 
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    const error = new Error((data as { error?: string }).error ?? 'Unbekannter Fehler');
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    const error = new Error((data['error'] as string | undefined) ?? 'Unbekannter Fehler');
     // Attaches any other structured fields from the error body (e.g. the
     // admin step-up's `needs_admin_verification`) so callers that need more
-    // than the message can inspect them, without changing behaviour for
-    // callers that only read `.message`.
-    Object.assign(error, data);
+    // than the message can inspect them — `error`/`message` are excluded so a
+    // same-named field in the response body can never clobber the Error's
+    // own `.message` we just built above.
+    const { error: _error, message: _message, ...extra } = data;
+    Object.assign(error, extra);
     throw error;
   }
 
@@ -134,6 +136,9 @@ export const api = {
       /** Saves a PIN (generated or manually typed/edited), with or without the `XXX-XXX-XXX` hyphens. */
       setPin: (id: string, pin: string): Promise<void> =>
         request('PUT', `/admin/users/${id}/pin`, { pin }),
+      /** Prints a PIN slip (user name + PIN) on the default printer — works on any well-formed PIN, saved or not yet. */
+      printPin: (id: string, pin: string): Promise<{ print_job_id: string }> =>
+        request('POST', `/admin/users/${id}/pin/print`, { pin }),
     },
 
     sessions: {

@@ -42,7 +42,7 @@
 
 <div class="shell">
   <header class="topbar">
-    <div class="brand"><span class="brand-icon">⊕</span> FairPOS</div>
+    <div class="brand"><img class="brand-icon" src="/fairpos-icon.svg" alt="" width="18" height="18" /> FairPOS</div>
     <div class="spacer"></div>
     {#if $registerUser}
       <span class="user-name">{$registerUser.name}</span>
@@ -67,7 +67,7 @@
     border-bottom: 1px solid var(--color-border);
   }
   .brand { display: flex; align-items: center; gap: 0.35rem; font-weight: 700; font-size: 0.95rem; }
-  .brand-icon { font-size: 1.1rem; color: var(--color-primary); line-height: 1; }
+  .brand-icon { width: 18px; height: 18px; flex-shrink: 0; }
   .spacer { flex: 1; }
   .user-name { font-size: 0.85rem; color: var(--color-text-muted); }
   .icon-btn {

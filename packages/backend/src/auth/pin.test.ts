@@ -31,11 +31,15 @@ describe('isValidPinFormat', () => {
     expect(isValidPinFormat('ABCDEFGHJK')).toBe(false);
   });
 
-  it('rejects excluded ambiguous characters (0, O, 1, I)', () => {
-    expect(isValidPinFormat('ABCDEFGH0')).toBe(false);
-    expect(isValidPinFormat('ABCDEFGHO')).toBe(false);
-    expect(isValidPinFormat('ABCDEFGH1')).toBe(false);
-    expect(isValidPinFormat('ABCDEFGHI')).toBe(false);
+  it('accepts ambiguous characters (0, O, 1, I) — only the generator avoids them, manual entry may use any of A-Z+0-9', () => {
+    expect(isValidPinFormat('ABCDEFGH0')).toBe(true);
+    expect(isValidPinFormat('ABCDEFGHO')).toBe(true);
+    expect(isValidPinFormat('ABCDEFGH1')).toBe(true);
+    expect(isValidPinFormat('ABCDEFGHI')).toBe(true);
+  });
+
+  it('rejects non-alphanumeric characters', () => {
+    expect(isValidPinFormat('ABCDEFG-H')).toBe(false);
   });
 
   it('rejects lowercase (normalizePin should be applied first)', () => {
@@ -73,5 +77,12 @@ describe('generateRandomPin', () => {
   it('does not repeat across many generations (collision would be astronomically unlikely)', () => {
     const pins = new Set(Array.from({ length: 200 }, () => generateRandomPin()));
     expect(pins.size).toBe(200);
+  });
+
+  it('never produces the visually-ambiguous characters (0, O, 1, I), unlike manual entry', () => {
+    for (let i = 0; i < 100; i++) {
+      const pin = generateRandomPin();
+      expect(pin).not.toMatch(/[01OI]/);
+    }
   });
 });
