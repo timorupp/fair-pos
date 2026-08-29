@@ -394,15 +394,15 @@ describe('Admin layouts', () => {
     expect(slots.rowCount).toBe(0);
   });
 
-  it('duplicates a layout including all slots', async () => {
+  it('duplicates a layout including all slots, label and hidden included', async () => {
     const app = await getTestApp();
     const layout = await pool.query<{ id: string }>(
       `INSERT INTO register_layout (name, grid_cols, grid_rows) VALUES ('Src', 3, 3) RETURNING id`,
     );
     const article = await createTestArticle();
     await pool.query(
-      `INSERT INTO register_layout_slot (register_layout_id, article_id, grid_row, grid_col, color)
-       VALUES ($1, $2, 0, 0, '#000000'), ($1, $2, 1, 1, '#ffffff')`,
+      `INSERT INTO register_layout_slot (register_layout_id, article_id, grid_row, grid_col, color, label, hidden)
+       VALUES ($1, $2, 0, 0, '#000000', 'Custom', true), ($1, $2, 1, 1, '#ffffff', null, false)`,
       [layout.rows[0]!.id, article.id],
     );
     const dup = await app.inject({
@@ -410,11 +410,32 @@ describe('Admin layouts', () => {
       headers: { cookie: adminCookie },
     });
     expect(dup.statusCode).toBe(201);
-    const slots = await pool.query(
-      `SELECT * FROM register_layout_slot WHERE register_layout_id = $1`,
+    const slots = await pool.query<{ label: string | null; hidden: boolean }>(
+      `SELECT label, hidden FROM register_layout_slot WHERE register_layout_id = $1 ORDER BY grid_row`,
       [dup.json().id],
     );
     expect(slots.rowCount).toBe(2);
+    expect(slots.rows[0]).toEqual({ label: 'Custom', hidden: true });
+    expect(slots.rows[1]).toEqual({ label: null, hidden: false });
+  });
+
+  it('saves label and hidden via PUT /:id/slots', async () => {
+    const app = await getTestApp();
+    const layout = await pool.query<{ id: string }>(
+      `INSERT INTO register_layout (name, grid_cols, grid_rows) VALUES ('L2', 2, 2) RETURNING id`,
+    );
+    const article = await createTestArticle();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/layouts/${layout.rows[0]!.id}/slots`,
+      headers: { cookie: adminCookie },
+      payload: { slots: [{ article_id: article.id, grid_row: 0, grid_col: 0, color: '#abcdef', label: 'Weizen\nHell', hidden: true }] },
+    });
+    expect(response.statusCode).toBe(204);
+    const slots = await pool.query<{ label: string | null; hidden: boolean }>(
+      `SELECT label, hidden FROM register_layout_slot WHERE register_layout_id = $1`,
+      [layout.rows[0]!.id],
+    );
+    expect(slots.rows[0]).toEqual({ label: 'Weizen\nHell', hidden: true });
   });
 });
 

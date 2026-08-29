@@ -9,7 +9,7 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
   /** GET /api/admin/articles — list all articles with their category name. */
   app.get('/', async (_req, reply) => {
     const result = await query(`
-      SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price, a.print_deposit_receipt,
+      SELECT a.id, a.name, a.price, a.deposit_price, a.print_deposit_receipt,
              a.is_active, a.created_at, a.category_id, ac.name AS category_name, ac.tax_rate,
              a.printer_id
       FROM article a
@@ -23,7 +23,6 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
   app.post('/', async (req, reply) => {
     const body = req.body as {
       name?: string;
-      receipt_text?: string | null;
       category_id?: string;
       price?: number;
       deposit_price?: number | null;
@@ -37,12 +36,11 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
     }
 
     const result = await query(
-      `INSERT INTO article (name, receipt_text, category_id, price, deposit_price, print_deposit_receipt, printer_id, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, name, receipt_text, category_id, price, deposit_price, print_deposit_receipt, printer_id, is_active, created_at`,
+      `INSERT INTO article (name, category_id, price, deposit_price, print_deposit_receipt, printer_id, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, printer_id, is_active, created_at`,
       [
         body.name,
-        body.receipt_text ?? null,
         body.category_id,
         body.price,
         body.deposit_price ?? null,
@@ -59,7 +57,6 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const body = req.body as {
       name?: string;
-      receipt_text?: string | null;
       category_id?: string;
       price?: number;
       deposit_price?: number | null;
@@ -71,18 +68,16 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
     const result = await query(
       `UPDATE article
        SET name                 = COALESCE($1, name),
-           receipt_text         = $2,
-           category_id          = COALESCE($3, category_id),
-           price                = COALESCE($4, price),
-           deposit_price        = $5,
-           print_deposit_receipt = COALESCE($6, print_deposit_receipt),
-           printer_id           = $7,
-           is_active            = COALESCE($8, is_active)
-       WHERE id = $9
-       RETURNING id, name, receipt_text, category_id, price, deposit_price, print_deposit_receipt, printer_id, is_active, created_at`,
+           category_id          = COALESCE($2, category_id),
+           price                = COALESCE($3, price),
+           deposit_price        = $4,
+           print_deposit_receipt = COALESCE($5, print_deposit_receipt),
+           printer_id           = $6,
+           is_active            = COALESCE($7, is_active)
+       WHERE id = $8
+       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, printer_id, is_active, created_at`,
       [
         body.name ?? null,
-        body.receipt_text !== undefined ? body.receipt_text : null,
         body.category_id ?? null,
         body.price ?? null,
         body.deposit_price !== undefined ? body.deposit_price : null,

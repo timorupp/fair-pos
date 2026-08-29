@@ -508,6 +508,9 @@ export const api = {
       tseOutages: (): Promise<{
         id: string; started_at: string; ended_at: string | null; reason: string;
       }[]> => request('GET', '/admin/reports/tse-outages'),
+
+      /** Total gross revenue booked today, across both payment methods — not event-scoped (Task #63 dashboard follow-up). */
+      todayRevenue: (): Promise<{ total: number }> => request('GET', '/admin/reports/today-revenue'),
     },
 
     tables: {
@@ -544,7 +547,10 @@ export const api = {
       delete: (id: string): Promise<void> => request('DELETE', `/admin/layouts/${id}`),
       duplicate: (id: string): Promise<RegisterLayout> =>
         request('POST', `/admin/layouts/${id}/duplicate`),
-      saveSlots: (id: string, slots: { article_id: string; grid_row: number; grid_col: number; color: string }[]): Promise<void> =>
+      saveSlots: (id: string, slots: {
+        article_id: string; grid_row: number; grid_col: number; color: string;
+        label: string | null; hidden: boolean;
+      }[]): Promise<void> =>
         request('PUT', `/admin/layouts/${id}/slots`, { slots }),
     },
   },
@@ -564,7 +570,7 @@ export const api = {
     /** Full operating context for one register: register, resolved layout, active articles, lock state. */
     register: (id: string): Promise<{
       register: { id: string; name: string; type: 'receipt_register' | 'service_register'; printer_id: string | null; layout_id: string | null };
-      layout: { id: string; name: string; grid_cols: number; grid_rows: number; slots: { article_id: string; grid_row: number; grid_col: number; color: string }[] } | null;
+      layout: { id: string; name: string; grid_cols: number; grid_rows: number; slots: { article_id: string; grid_row: number; grid_col: number; color: string; label: string | null }[] } | null;
       articles: (Article & { category_name: string; tax_rate: string })[];
       locked: boolean;
       pending_days: string[];

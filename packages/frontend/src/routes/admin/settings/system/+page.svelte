@@ -101,10 +101,15 @@
       `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
   }
 
-  /** Prefills the time-set field with the browser's own current time. */
-  function useBrowserTime() {
+  /**
+   * Takes over the browser's current time and saves it immediately — a
+   * separate "Speichern" click afterwards would let real time drift by
+   * however long the admin takes to notice and click it, defeating the
+   * point of "use right now" (found live, 2026-08-29).
+   */
+  async function useBrowserTime() {
     setTimeValue = toDatetimeLocal(new Date());
-    setTimeSuccess = false;
+    await submitSetTime();
   }
 
   async function submitSetTime() {
@@ -199,10 +204,10 @@
             disabled={settingTime}
           />
           <button class="btn-ghost" type="button" onclick={useBrowserTime} disabled={settingTime}>
-            Aktuelle Browserzeit übernehmen
+            {settingTime ? 'Speichere…' : 'Aktuelle Browserzeit übernehmen'}
           </button>
           <button class="btn-primary" type="button" onclick={submitSetTime} disabled={settingTime || !setTimeValue}>
-            {settingTime ? 'Setze…' : 'Setzen'}
+            {settingTime ? 'Speichere…' : 'Speichern'}
           </button>
         </div>
         {#if setTimeError}<p class="error-text">{setTimeError}</p>{/if}
@@ -218,7 +223,7 @@
             {/each}
           </select>
           <button class="btn-primary" type="button" onclick={submitSetTimezone} disabled={settingTimezone || !setTimezoneValue || setTimezoneValue === timezone}>
-            {settingTimezone ? 'Setze…' : 'Setzen'}
+            {settingTimezone ? 'Speichere…' : 'Speichern'}
           </button>
         </div>
         {#if setTimezoneError}<p class="error-text">{setTimezoneError}</p>{/if}

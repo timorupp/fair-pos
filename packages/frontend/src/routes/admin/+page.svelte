@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { adminUser } from '$lib/stores/user';
+  import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';
+
+  const REFRESH_INTERVAL_MS = 30_000;
 
   /** Drift in whole seconds between this browser's clock and the server's, or `null` before the first check / on error. */
   let driftSeconds: number | null = $state(null);
@@ -29,17 +30,32 @@
     registers: { register_id: string; register_name: string; pending_days: string[] }[];
   } | null = $state(null);
 
-  let failedPrintJobs = $state(0);
+  let erroringPrintJobs = $state(0);
   let queuedPrintJobs = $state(0);
 
   let activeSessions = $state(0);
 
+  let todayRevenue = $state(0);
+  let openPositionsTotal = $state(0);
+
   let loading = $state(true);
+  let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Loads (or silently re-loads) every tile's data in parallel. */
+  async function loadAll() {
+    await Promise.allSettled([
+      loadStatus(), loadPendingClosings(), loadTse(), loadPrintJobs(), loadSessions(), loadRevenue(),
+    ]);
+  }
 
   onMount(async () => {
-    await Promise.allSettled([loadStatus(), loadPendingClosings(), loadTse(), loadPrintJobs(), loadSessions()]);
+    await loadAll();
     loading = false;
+    // Silent background refresh — no loading flicker, just updated numbers.
+    refreshTimer = setInterval(loadAll, REFRESH_INTERVAL_MS);
   });
+
+  onDestroy(() => { if (refreshTimer) clearInterval(refreshTimer); });
 
   /**
    * Compares the browser's own clock against the server's (Task #60) — the
@@ -78,7 +94,14 @@
   async function loadPrintJobs() {
     try {
       const jobs = await api.admin.printJobs.list();
-      failedPrintJobs = jobs.filter((j) => j.status === 'failed').length;
+      // `failed` is the worker's terminal give-up state after MAX_ATTEMPTS
+      // (print-worker.ts) — by the time a job reaches it, it's typically old
+      // and no longer operationally relevant. The actual "something is wrong
+      // right now" signal is a job still retrying (`pending`) that already
+      // carries an error_message from its last attempt (found live,
+      // 2026-08-29: an old genuinely-failed job made this tile say "keine
+      // Fehler" while a currently-struggling job sat unflagged).
+      erroringPrintJobs = jobs.filter((j) => j.status === 'pending' && j.error_message !== null).length;
       queuedPrintJobs = jobs.filter((j) => j.status !== 'failed').length;
     } catch {
       // Silent — soft check, see loadStatus.
@@ -88,6 +111,16 @@
   async function loadSessions() {
     try { activeSessions = (await api.admin.sessions.list()).length; } catch { activeSessions = 0; }
   }
+
+  async function loadRevenue() {
+    try { todayRevenue = (await api.admin.reports.todayRevenue()).total; } catch { todayRevenue = 0; }
+    try {
+      const { tables } = await api.admin.reports.openPositions();
+      openPositionsTotal = tables.reduce((s, t) => s + t.total_gross, 0);
+    } catch { openPositionsTotal = 0; }
+  }
+
+  const fmtEuro = (n: number) => `${n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
   /** Clears every IP's PIN-login lockout (Task #90) — for a device that locked itself out by mistake. */
   async function resetIpLockouts() {
@@ -111,7 +144,7 @@
   </div>
 
   {#if !loading}
-    {@const showWarnings = (driftSeconds !== null && Math.abs(driftSeconds) > 30) || tseOutageOpen !== null || ipLockoutCount > 0}
+    {@const showWarnings = (driftSeconds !== null && Math.abs(driftSeconds) > 30) || tseOutageOpen !== null}
     {#if showWarnings}
       <div class="warnings">
         {#if driftSeconds !== null && Math.abs(driftSeconds) > 30}
@@ -128,19 +161,6 @@
             Seit {formatTime(tseOutageOpen.started_at)} — {tseOutageOpen.reason}. Signieren funktioniert weiterhin
             (KassenSichV-konform ohne TSE), aber die Ursache sollte geprüft werden.
           </a>
-        {/if}
-
-        {#if ipLockoutCount > 0}
-          <div class="warning-banner">
-            <strong>⚠ Aktive IP-Sperren beim PIN-Login</strong>
-            {ipLockoutCount} Gerät{ipLockoutCount === 1 ? '' : 'e'} aktuell gesperrt (3 Fehlversuche → 15 Minuten).
-            <div class="warning-action">
-              <button class="btn-ghost" onclick={resetIpLockouts} disabled={resettingLockouts}>
-                {resettingLockouts ? 'Setze zurück…' : 'Alle aktiven IP-Sperren zurücksetzen'}
-              </button>
-            </div>
-            {#if resetLockoutsError}<p class="error-text">{resetLockoutsError}</p>{/if}
-          </div>
         {/if}
       </div>
     {/if}
@@ -171,21 +191,43 @@
         {/if}
       </a>
 
-      <a class="tile" class:warn={failedPrintJobs > 0} href="/admin/settings/print-queue">
+      <a class="tile" class:warn={erroringPrintJobs > 0} href="/admin/settings/print-queue">
         <h2>Druckwarteschlange</h2>
-        <p class="tile-value">{failedPrintJobs > 0 ? `⚠ ${failedPrintJobs} fehlgeschlagen` : '✓ Keine Fehler'}</p>
+        <p class="tile-value">{erroringPrintJobs > 0 ? `⚠ ${erroringPrintJobs} mit Fehler` : '✓ Keine Fehler'}</p>
         <p class="tile-detail">{queuedPrintJobs} wartend/in Bearbeitung</p>
       </a>
 
       <a class="tile" href="/admin/settings/sessions">
         <h2>Aktive Sitzungen</h2>
         <p class="tile-value">{activeSessions}</p>
-        <p class="tile-detail">Angemeldete Geräte (Kasse + Verwaltung)</p>
+        <p class="tile-detail">Derzeit angemeldete Geräte</p>
+      </a>
+
+      <div class="tile" class:warn={ipLockoutCount > 0}>
+        <h2>PIN-Login: IP-Sperren</h2>
+        <p class="tile-value">{ipLockoutCount > 0 ? `⚠ ${ipLockoutCount} gesperrt` : '✓ Keine'}</p>
+        <p class="tile-detail">3 Fehlversuche → 15 Minuten Sperre je Gerät</p>
+        {#if ipLockoutCount > 0}
+          <button class="btn-ghost tile-action" onclick={resetIpLockouts} disabled={resettingLockouts}>
+            {resettingLockouts ? 'Setze zurück…' : 'Zurücksetzen'}
+          </button>
+        {/if}
+        {#if resetLockoutsError}<p class="error-text">{resetLockoutsError}</p>{/if}
+      </div>
+
+      <a class="tile" href="/admin/reports/cash-balance">
+        <h2>Tagesumsatz</h2>
+        <p class="tile-value">{fmtEuro(todayRevenue)}</p>
+        <p class="tile-detail">Alle heute gebuchten Einnahmen</p>
+      </a>
+
+      <a class="tile" href="/admin/reports/open-positions">
+        <h2>Offene Rechnungen</h2>
+        <p class="tile-value">{fmtEuro(openPositionsTotal)}</p>
+        <p class="tile-detail">Summe aller offenen Positionen an den Tischen</p>
       </a>
     </div>
   {/if}
-
-  <p class="muted welcome">Willkommen, {$adminUser?.name}.</p>
 </div>
 
 <style>
@@ -207,7 +249,6 @@
   }
   a.warning-banner:hover { background: #f59e0b33; }
   .warning-banner strong { display: block; color: #c87a00; margin-bottom: 0.15rem; }
-  .warning-action { margin-top: 0.5rem; }
 
   .tiles {
     display: grid;
@@ -236,6 +277,5 @@
   .tile-value { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem 0; }
   .tile-value.muted { color: var(--color-text-muted); font-weight: 500; }
   .tile-detail { font-size: 0.8rem; color: var(--color-text-muted); margin: 0; }
-
-  .welcome { margin-top: 0.5rem; }
+  .tile-action { margin-top: 0.6rem; }
 </style>

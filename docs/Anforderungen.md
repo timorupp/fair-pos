@@ -140,7 +140,7 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
 
   **Artikel — Attribute:**
   - Artikelgruppe (Pflichtfeld — da der Umsatzsteuersatz in der Gruppe hinterlegt ist)
-  - Name (Kurzname — wird als Beschriftung der Taste im Kassenlayout verwendet, da dort wenig Platz ist)
+  - Name — voller Artikelname; erscheint auf Kassenbon, Rechnung, DSFinV-K-Export und dient als Standard-Beschriftung der Kassentaste (pro Platzierung im Kassenlayout individuell überschreibbar, siehe unten)
   - Preis
   - Pfandbetrag — optionaler Zusatzbetrag; kann positiv oder negativ sein:
     - Positiv: Pfand wird auf die Rechnung aufgeschlagen (z.B. Ausgabe eines Glases)
@@ -154,7 +154,6 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
     - *aktiv* — im Kassenlayout bestellbar
     - *inaktiv* — im Kassenlayout sichtbar, aber nicht bestellbar
   - Ob ein Artikel im Kassenlayout erscheint, wird nicht über den Status gesteuert, sondern über die Kassenlayout-Konfiguration (Ablage vs. platziert)
-  - Bontext — vollständiger Artikelname für den Kassenbon (separat vom Kurznamen)
   - Bestelldrucker — Drucker, auf dem die Bestellung des Artikels ausgedruckt wird (z.B. Küchendrucker für Speisen, Thekendrucker für Getränke)
   - **Produktoptionen** — beliebig viele Optionen pro Artikel definierbar (z.B. „mit Ketchup", „mit Mayo"); gelten ausschließlich für Bestellungen der Bedienung, nicht an der Bonkasse
     - Kein Einfluss auf den Preis
@@ -222,8 +221,20 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
     - Einzelne Kassen können dieses Standard durch ein explizit zugewiesenes Layout überschreiben
   - **Ablage:** Alle noch nicht platzierten Artikel, alphabetisch sortiert; Artikel per Drag & Drop zwischen Ablage und Raster verschiebbar
   - **Tastenfarbe:** Wird pro Platzierung im Kassenlayout festgelegt (nicht am Artikel); dasselbe Produkt kann in verschiedenen Layouts unterschiedliche Farben haben
+  - **Tastenbeschriftung:** Wird pro Platzierung im Kassenlayout optional individuell festgelegt (nicht am Artikel), z.B. um einen manuellen Zeilenumbruch zu setzen, der auf jedem Bildschirm gleich aussieht; ohne eigene Beschriftung zeigt die Taste den Artikelnamen
+  - **Taste vorübergehend verstecken:** Pro Platzierung im Kassenlayout kann eine Taste vorübergehend ausgeblendet werden (z.B. Artikel temporär ausverkauft), ohne ihre Position/Farbe/Beschriftung zu verlieren — an der Kasse/Bedienung dann unsichtbar, im Kassenlayout-Editor gräulich dargestellt
   - Wird die Rastergröße verkleinert und Artikel befinden sich auf weggefallenen Positionen, rutschen diese automatisch in die Ablage zurück
   - Artikelgruppen haben keinen Einfluss auf das Kassenlayout
+
+- **Dashboard (Startseite):** Erste Seite nach dem Systemverwaltung-Login, gibt einen schnellen Überblick über Systemzustand und aktuelle Geschäftszahlen — jede Kachel verlinkt auf die zugehörige Detailseite, aktualisiert sich alle 30 Sekunden automatisch im Hintergrund:
+  - **Warnzeile** (nur sichtbar, wenn tatsächlich etwas ansteht): Uhrzeit-Abweichung Server/Browser, offener TSE-Ausfall
+  - **TSE-Zustand** — Ergebnis der letzten automatischen TSE-Prüfung
+  - **Ausstehende Tagesabschlüsse** — Anzahl Tage und betroffene Kassen
+  - **Druckwarteschlange** — Aufträge, die aktuell mit Fehler erneut versucht werden
+  - **Aktive Sitzungen** — Anzahl derzeit angemeldeter Geräte
+  - **PIN-Login: IP-Sperren** — Anzahl aktiver Sperren, mit Möglichkeit zum Zurücksetzen
+  - **Tagesumsatz** — alle heute gebuchten Einnahmen (unabhängig von der Veranstaltung)
+  - **Offene Rechnungen** — Summe aller aktuell offenen Positionen an den Tischen
 
 - **Auswertungen:** Der Administrator hat Einsicht in folgende Übersichten; alle Auswertungsfunktionen bieten eine Veranstaltungsauswahl:
   - **Standardauswahl:** die aktuell laufende Veranstaltung; läuft keine, wird die zuletzt stattgefundene vorausgewählt
@@ -258,7 +269,7 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
     - Tischnummer
     - Besteller (Name des Benutzers, der die Bestellung aufgenommen hat)
     - Kasse (Name der Kasse, über die die Bezahlung abgewickelt wurde)
-    - Artikelname (Bontext)
+    - Artikelname
     - Menge
     - Einzelpreis
     - Pfandbetrag

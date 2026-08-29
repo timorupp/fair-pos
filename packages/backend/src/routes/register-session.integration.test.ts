@@ -230,6 +230,34 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
   });
 });
 
+describe('GET /api/register-session/registers/:id — layout slots (Task #91 follow-up)', () => {
+  it('excludes hidden slots entirely and includes the custom label of visible ones', async () => {
+    const layout = await pool.query<{ id: string }>(
+      `INSERT INTO register_layout (name, grid_cols, grid_rows) VALUES ('L', 2, 2) RETURNING id`,
+    );
+    const layoutId = layout.rows[0]!.id;
+    const hiddenArticle = await createTestArticle({ name: 'Versteckt' });
+    await pool.query(
+      `INSERT INTO register_layout_slot (register_layout_id, article_id, grid_row, grid_col, color, label, hidden)
+       VALUES ($1, $2, 0, 0, '#111111', 'Meine Taste', false),
+              ($1, $3, 1, 1, '#222222', null, true)`,
+      [layoutId, articleId, hiddenArticle.id],
+    );
+    await pool.query(`UPDATE register SET layout_id = $1 WHERE id = $2`, [layoutId, registerId]);
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/registers/${registerId}`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const slots = response.json().layout.slots;
+    expect(slots).toHaveLength(1);
+    expect(slots[0].article_id).toBe(articleId);
+    expect(slots[0].label).toBe('Meine Taste');
+  });
+});
+
 describe('GET /api/register-session/invoices/:id/qr.png', () => {
   it('renders a PNG for a valid invoice', async () => {
     const app = await getTestApp();

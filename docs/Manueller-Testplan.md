@@ -73,6 +73,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] **Kassen (Register):** Bonkasse + Bedienungskasse anlegen, Typ nicht nachträglich änderbar (falls so vorgesehen), Drucker zuordnen
   - [ ] Kasse mit vorhandener Rechnung archivieren (Aktiv-Häkchen entfernen) — verschwindet aus dem Kassen-Login-Picker, bleibt in Auswertungen/DSFinV-K-Export sichtbar (Task #55)
 - [ ] **Kassenlayouts:** Raster anlegen, Artikel per Drag&Drop platzieren, Standardlayout je Kassentyp setzen
+- [ ] **Kassenlayout-Slot-Attribute (Task #91):** Farbe/Beschriftung/Versteckt bleiben beim Verschieben eines Artikels auf einen anderen Slot erhalten; individuelle Tastenbeschriftung erscheint an der Kasse, Bestellliste zeigt weiterhin den echten Artikelnamen; versteckte Taste ist an Bonkasse/Bedienung nicht sichtbar
 - [ ] **Saalplan:** Spalten/Zeilen hinzufügen/löschen, Tische anlegen, Tisch-Status ändern (aktiv/inaktiv/versteckt), Tisch umbenennen
 - [ ] **Stornogründe:** anlegen mit `booking_type` Storno bzw. Kostenfrei, deaktivieren
 - [ ] **Benutzer:** anlegen (Admin/Kassenpersonal), Passwort setzen (nur Admin), PIN generieren/manuell ändern, Selbstlöschung wird verhindert

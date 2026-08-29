@@ -138,7 +138,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const layoutId = await resolveLayoutId(register.layout_id, register.type);
     let layout: null | {
       id: string; name: string; grid_cols: number; grid_rows: number;
-      slots: { article_id: string; grid_row: number; grid_col: number; color: string }[];
+      slots: { article_id: string; grid_row: number; grid_col: number; color: string; label: string | null }[];
     } = null;
     if (layoutId) {
       const lay = await query<{ id: string; name: string; grid_cols: number; grid_rows: number }>(
@@ -146,10 +146,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         [layoutId],
       );
       if (lay.rows[0]) {
-        const slots = await query<{ article_id: string; grid_row: number; grid_col: number; color: string }>(
-          `SELECT article_id, grid_row, grid_col, color
+        // Hidden slots (Task #91 follow-up) are excluded entirely, not just
+        // flagged — a hidden tile must render exactly like an empty grid
+        // cell at the register, same as an inactive article/register is
+        // excluded from its own listing rather than sent-but-marked.
+        const slots = await query<{ article_id: string; grid_row: number; grid_col: number; color: string; label: string | null }>(
+          `SELECT article_id, grid_row, grid_col, color, label
              FROM register_layout_slot
-            WHERE register_layout_id = $1`,
+            WHERE register_layout_id = $1 AND hidden = false`,
           [layoutId],
         );
         layout = { ...lay.rows[0], slots: slots.rows };
@@ -157,7 +161,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     }
 
     const articles = await query<Article & { category_name: string; tax_rate: string }>(
-      `SELECT a.id, a.category_id, a.name, a.receipt_text, a.price, a.deposit_price,
+      `SELECT a.id, a.category_id, a.name, a.price, a.deposit_price,
               a.print_deposit_receipt, a.printer_id, a.is_active, a.created_at,
               c.name AS category_name, c.tax_rate
          FROM article a
@@ -234,12 +238,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // inserts inside the transaction below.
       const articleIds = [...new Set(positions.map((p) => p.article_id))];
       const articlesResult = await query<{
-        id: string; name: string; receipt_text: string | null; price: string;
+        id: string; name: string; price: string;
         deposit_price: string | null; print_deposit_receipt: boolean;
         printer_id: string | null;
         category_name: string; tax_rate: string;
       }>(
-        `SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price,
+        `SELECT a.id, a.name, a.price, a.deposit_price,
                 a.print_deposit_receipt, a.printer_id,
                 c.name AS category_name, c.tax_rate
            FROM article a
@@ -303,7 +307,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
         for (const pos of positions) {
           const article = articleById.get(pos.article_id)!;
-          const displayName = article.receipt_text ?? article.name;
+          const displayName = article.name;
           for (let i = 0; i < pos.quantity; i++) {
             await client.query(
               `INSERT INTO order_item (
@@ -619,11 +623,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     // Articles fetched once, up front — reused for the TSE snapshot and the order_item inserts.
     const articleIds = [...new Set(positions.map((p) => p.article_id))];
     const articlesResult = await query<{
-      id: string; name: string; receipt_text: string | null; price: string;
+      id: string; name: string; price: string;
       deposit_price: string | null; printer_id: string | null;
       category_name: string; tax_rate: string;
     }>(
-      `SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price, a.printer_id,
+      `SELECT a.id, a.name, a.price, a.deposit_price, a.printer_id,
               c.name AS category_name, c.tax_rate
          FROM article a
          JOIN article_category c ON c.id = a.category_id
@@ -643,7 +647,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       positions: positions.map((p) => {
         const article = articleById.get(p.article_id)!;
         return {
-          name: article.receipt_text ?? article.name,
+          name: article.name,
           quantity: p.quantity,
           unitPriceEuros: Number(article.price),
           depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
@@ -685,13 +689,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'open')`,
             [
               serviceOrderId, tableId, registerId, req.registerUser.id, article.id,
-              article.receipt_text ?? article.name, article.category_name,
+              article.name, article.category_name,
               article.tax_rate, article.price, article.deposit_price,
               options,
             ],
           );
           slipItems.push({
-            name: article.receipt_text ?? article.name,
+            name: article.name,
             options,
             printer_id: article.printer_id,
             category_name: article.category_name,

@@ -11,7 +11,7 @@
   import Modal from '$lib/components/Modal.svelte';
   import { longpress } from '$lib/longpress';
 
-  type Slot = { article_id: string; grid_row: number; grid_col: number; color: string };
+  type Slot = { article_id: string; grid_row: number; grid_col: number; color: string; label: string | null };
 
   /** A line in the new-order list. Carries optional `options` so the same article can appear multiple times. */
   type OrderLine = { article_id: string; options: string | null; quantity: number };
@@ -354,7 +354,7 @@
                 <button type="button" class="grid-btn" style="background:{slot.color}"
                         disabled={optionsLoading}
                         onclick={() => tapSlot(slot)}>
-                  {nameOf(slot.article_id)}
+                  {slot.label || nameOf(slot.article_id)}
                 </button>
               {:else}
                 <div class="grid-empty"></div>
@@ -635,6 +635,10 @@
     transition: filter 0.05s, transform 0.05s;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
     overflow-wrap: anywhere;
+    /* Manual line breaks in a custom slot label (Task #91 follow-up) render
+       as-authored instead of being collapsed — overflow-wrap above stays as
+       a safety net for a single word still too long for the tile. */
+    white-space: pre-line;
   }
   .grid-btn:hover { filter: brightness(1.1); }
   .grid-btn:active { transform: scale(0.97); }

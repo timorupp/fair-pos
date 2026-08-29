@@ -392,7 +392,60 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   größer"):** neuer Hauptmenüpunkt „Monitoring" in `admin/+layout.svelte`,
   dahin verschoben: Aktive Sessions, Druckwarteschlange, Systemprotokoll
   (vorher alle drei unter „Einstellungen").
-- [ ] **#64** System-Health-Check (Sammlung technischer Prüfungen, automatisch beim Start)
+  **Nachbesserung (2026-08-29):** "Willkommen, {Name}."-Zeile wieder
+  entfernt (überflüssig neben den Kacheln). Außerdem eine echte Lücke
+  behoben: es gab keinen Weg zurück zur Kassenauswahl aus dem
+  Adminbereich heraus, nur "Abmelden" — neuer Button "Zur Kassenauswahl"
+  im `sidebar-footer` neben "Abmelden" (`goto('/register')`, keine
+  erneute Passwort-Eingabe nötig beim späteren Zurückwechseln, da
+  `admin_verified` an der Session hängt, nicht am Navigationsweg).
+  **Bug gefunden und behoben (Nutzerbericht: "IP-Sperren-Funktion
+  komplett aus der Admin-UI verschwunden"):** die IP-Sperren-Karte lebte
+  nur in der Warnzeile, die komplett ausgeblendet wird sobald keine
+  Sperre aktiv ist (Normalfall) — der Reset-Button war dadurch faktisch
+  unerreichbar, nicht nur unauffällig. Jetzt eigene, immer sichtbare
+  Kachel ("PIN-Login: IP-Sperren", ✓/⚠ + Reset-Button nur wenn nötig),
+  aus der Warnzeile entfernt, analog zu den anderen vier Kacheln.
+  **Bug gefunden und behoben (Nutzerbericht: "Druckwarteschlange zeigt
+  keine Fehler trotz fehlgeschlagenem Auftrag"):** `failed`-Status ist
+  laut `print-worker.ts` der *endgültige* Aufgabe-Zustand erst nach
+  MAX_ATTEMPTS — betrifft in der Praxis meist alte, nicht mehr relevante
+  Aufträge. Ein Auftrag, der gerade wirklich Probleme macht, steht
+  stattdessen weiterhin auf `pending` (wird noch automatisch erneut
+  versucht) mit gesetztem `error_message` aus dem letzten Versuch — genau
+  das ist jetzt das Kriterium (`status = 'pending' AND error_message IS
+  NOT NULL`) statt `status = 'failed'`. Variable umbenannt
+  (`failedPrintJobs` → `erroringPrintJobs`) und Kachel-Text angepasst
+  ("X mit Fehler" statt "X fehlgeschlagen"), um nicht weiter den Eindruck
+  zu erwecken, es ginge um den `failed`-Status.
+  **Nachbesserungen Systemeinstellungen (2026-08-29):** „Aktuelle
+  Browserzeit übernehmen" speichert jetzt direkt (statt nur das Feld zu
+  befüllen und ein zweites, zeitkritisches Klicken auf „Setzen" zu
+  verlangen — Nutzerbericht: "muss sehr schnell auf Setzen klicken, das
+  macht keinen Sinn"). Button-Beschriftung „Setzen"/„Setze…" bei
+  Systemzeit und Zeitzone zu „Speichern"/„Speichere…" vereinheitlicht.
+  **Erweiterung (2026-08-29, Nutzerwunsch):** zwei weitere Kacheln —
+  „Tagesumsatz" (alle heute gebuchten Einnahmen, beide Zahlungsarten,
+  Stornos/kostenfrei ausgeschlossen, neuer Endpoint
+  `GET /api/admin/reports/today-revenue` — kalendertäglich, bewusst nicht
+  veranstaltungsgebunden wie die übrigen Auswertungen, „heute" löst
+  Postgres selbst per `CURRENT_DATE` auf) und „Offene Rechnungen" (Summe
+  aller offenen Tisch-Positionen, wiederverwendet den bestehenden
+  `/open-positions`-Endpoint, keine Backend-Änderung nötig). Beide
+  verlinken auf die jeweils bestehende Auswertungsseite
+  (Soll-Kassenstand/Offene Positionen). Damit ist ein Teil von Task #93
+  bereits vorgezogen umgesetzt — dort verbleibt der Rest.
+  **Auto-Refresh (2026-08-29, Nutzerwunsch):** alle 30 Sekunden werden
+  sämtliche Kacheln im Hintergrund neu geladen (kein "Lade…"-Flackern,
+  nur die Werte aktualisieren sich still).
+  **Textkürzungen (2026-08-29, Nutzerwunsch):** `tse/healthJob.ts`s
+  Erfolgsmeldung „Automatischer Self-Test + Zeitsync erfolgreich." zu
+  „Selbsttest erfolgreich" gekürzt (wirkt sich auch auf den Log-Viewer
+  aus, da derselbe `system_log`-Eintrag beide Stellen speist) — die
+  Fehlermeldung mit der eingebetteten TSE-Fehlerursache blieb bewusst
+  unverändert. Kachel-Detailtext „Angemeldete Geräte (Kasse +
+  Verwaltung)" zu „Derzeit angemeldete Geräte" gekürzt.
+- [x] **#64** System-Health-Check (Sammlung technischer Prüfungen, automatisch beim Start)
   Eine Sammelstelle für technische Systemprüfungen, unabhängig von
   Business-Zuständen (die deckt eher Task #63 ab) — z.B. genug freier
   Festplattenspeicher auf allen Volumes, Datenbank fehlerfrei (keine
@@ -511,8 +564,12 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Zustandswechsel werden geloggt), das anfangs wie eine verzögerte erste
   Prüfung wirkte, war aber erwartetes Verhalten und keine Verzögerung.
 
-  **Weiterhin offen:** Anzeige fehlerhafter Checks im Dashboard (#63);
-  Festplatten-/DB-Integritätscheck als eigener Task.
+  **Erledigt (2026-08-29):** Anzeige fehlerhafter Checks im Dashboard —
+  die „TSE-Zustand"-Kachel auf `admin/+page.svelte` (Task #63) liest genau
+  den letzten `system_log`-Eintrag der Kategorie `tse_health`. Damit sind
+  alle drei ursprünglich offenen Punkte abgedeckt; der einzig verbleibende
+  Teil des ursprünglichen Umfangs (Festplatten-/DB-Integritätscheck) war
+  bereits vorher bewusst als eigener Task #87 abgetrennt.
 - [x] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
   **Erledigt (2026-08-24):** Neue Seite `admin/settings/tse/+page.svelte`
   mit den beiden Karten „TSE-Verbindung" und „TSE-Status" (inkl. eigenem
@@ -1155,7 +1212,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   weitere Unit-Tests (jetzt 10 insgesamt): kein Halte-Start bei bereits
   deaktiviertem Button, kein `onHold`-Aufruf, wenn der Button erst während
   des Haltens deaktiviert wird. **Live bestätigt (2026-08-26).**
-- [ ] **#86** Freitext pro Artikel in der Bedienungskasse (zusätzlich zu den vordefinierten Optionen)
+- [x] **#86** Freitext pro Artikel in der Bedienungskasse (zusätzlich zu den vordefinierten Optionen)
   Nutzerwunsch (2026-08-26): die Bedienung soll zu jedem bestellten Artikel
   einen Freitext eingeben können (z. B. Sonderwünsche, die keine der
   vordefinierten Optionen abdeckt). UI-Gestaltung bewusst noch offen — nur
@@ -1228,6 +1285,11 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Schrift) statt sich auf die (hier nicht greifende) globale Regel zu
   verlassen.
 
+  **Nachträglich gegen den Code verifiziert (2026-08-29):** alle oben
+  beschriebenen Bestandteile (`freetextOpen`/`freetextValue`,
+  `OPTIONS_MAX_LENGTH`, `optionsCombinedLabel`/`optionsTooLong`,
+  `.freetext-link`-Styling) existieren exakt wie dokumentiert.
+
   **Nachgebessert (2026-08-27, im Zuge von #88):** bisher war nur das
   Freitextfeld selbst auf 50 Zeichen begrenzt (`maxlength`), nicht die
   **Summe** aus ausgewählten Optionen + Freitext — bei mehreren/langen
@@ -1249,7 +1311,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `VACUUM`/`ANALYZE`-Fehlerstatus). Ergebnis vermutlich über dieselbe
   `system_log`-Tabelle protokollierbar, die #64 dafür bereits generisch
   angelegt hat.
-- [ ] **#88** Nachträglich Hinweis zu einer bereits platzierten Position hinzufügen (auch für Artikel ohne vordefinierte Optionen)
+- [x] **#88** Nachträglich Hinweis zu einer bereits platzierten Position hinzufügen (auch für Artikel ohne vordefinierte Optionen)
   Aus #86 ausgelagert (2026-08-27): dort wurde der Umfang bewusst auf
   Artikel mit bereits vorhandenen Optionen beschränkt (Dialog öffnet dort
   ohnehin schon). Dieser Task deckt den restlichen Fall ab — ein Artikel
@@ -1312,6 +1374,12 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `admin/users/+page.svelte` (Hintergrund + Rahmen + Hover), plus
   Chevron („›") am Zeilenende als zusätzlicher Hinweis auf den nächsten
   Schritt.
+
+  **Nachträglich gegen den Code verifiziert (2026-08-29):** alle oben
+  beschriebenen Bestandteile (`noteStep`, `openNoteDialog()`/
+  `selectNoteLine()`/`changeNoteQuantity()`/`applyNoteEdit()`,
+  `mergeOrInsertLine()`, `.note-select-item`-Kartenstil) existieren exakt
+  wie dokumentiert.
 - [ ] **#89** Fehlende PWA-Artefakte nachrüsten (iOS + Android)
   Aufgekommen bei der Diskussion um den QR-Login (2026-08-27): geprüft,
   aktuell existiert **keine** echte PWA-Infrastruktur — kein
@@ -1389,7 +1457,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `tmp-pwa-artifacts/` noch nicht gelöscht — enthält weiterhin beide SVG-
   Versionen (Original + neu eingefärbt) und den ursprünglichen
   `manifest-draft.json`, kann nach Bestätigung entfernt werden.
-- [ ] **#90** Login-Neukonzeption: PIN-Login statt QR-Einmaltoken, serverseitige Sessions, vereinheitlichtes Admin/Kassen-Login
+- [x] **#90** Login-Neukonzeption: PIN-Login statt QR-Einmaltoken, serverseitige Sessions, vereinheitlichtes Admin/Kassen-Login
 
   **Ausgangsproblem (2026-08-27):** Das heutige QR-Einmaltoken-Login
   (`register_access_token`, 10 Min. gültig, `POST /api/auth/register/token`)
@@ -1573,14 +1641,18 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     alle ~14 bestehenden Testdateien mit angepasst, ohne deren eigentliche
     Testlogik zu ändern. Volle Unit- (262 Tests) und Integrationssuite
     grün, Typecheck (Backend+Frontend) und Build sauber.
-  - **Noch nicht live durch den Nutzer bestätigt** (rein gegen die
-    Testsuiten verifiziert, noch nicht auf echter Hardware/im Browser).
+  - **Live bestätigt (durchgehend seit 2026-08-29):** produktiv im Einsatz,
+    mehrere Runden Live-Test-Feedback eingearbeitet (siehe
+    Nachbesserungen unten), zwei Produktions-Migrationsvorfälle (D-049
+    fehlender `PIN_HASH_SECRET`, D-050 Bestandsadmin ohne PIN) gefunden
+    und behoben.
 
-  **Weiterhin offen / noch nicht entschieden:** genaue PIN-Länge falls
-  von 3×3 abgewichen werden soll (bisher nicht in Frage gestellt, aktuell
-  beibehalten); ob ein Mindestabstand zwischen zwei PIN-Neuvergaben für
-  denselben Benutzer nötig ist (bisher nicht thematisiert, vermutlich
-  nicht nötig); Task #89 (PWA-Artefakte) weiterhin unabhängig offen.
+  **Weiterhin offen / noch nicht entschieden (nicht blockierend):** genaue
+  PIN-Länge falls von 3×3 abgewichen werden soll (bisher nicht in Frage
+  gestellt, aktuell beibehalten); ob ein Mindestabstand zwischen zwei
+  PIN-Neuvergaben für denselben Benutzer nötig ist (bisher nicht
+  thematisiert, vermutlich nicht nötig); Task #89 (PWA-Artefakte)
+  weiterhin unabhängig offen.
 
   **Nachbesserungen (2026-08-29):**
   - Manuelle PIN-Eingabe erlaubt jetzt auch verwechselbare Zeichen
@@ -1634,7 +1706,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     Passwort mitgeschickt wird noch bereits eines existiert. Analoge
     Prüfung im Frontend-Formular (`admin/users/+page.svelte`) für
     sofortiges Feedback ohne Round-Trip.
-- [ ] **#91** Artikel-Button-Beschriftung bricht je nach Bildschirmbreite unterschiedlich um
+- [x] **#91** Artikel-Button-Beschriftung bricht je nach Bildschirmbreite unterschiedlich um
   Aufgekommen beim Live-Test (2026-08-29): `.grid-btn` (Artikel-Kacheln in
   Bonkasse `register/[id]/+page.svelte` und Bedienungskasse
   `.../order/+page.svelte`) hat nur `min-height: 70px` und
@@ -1661,6 +1733,71 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
      `overflow: hidden` bei zu langem Text abschneiden statt umzubrechen.
   Beide Ansätze schließen sich nicht zwingend aus (feste Höhe + optionale
   manuelle Umbrüche) — Entscheidung/Kombination noch offen.
+
+  **Konzept korrigiert (2026-08-29):** Annahme oben ("dasselbe Feld, das
+  auch auf Rechnungen/DSFinV-K erscheint") war falsch — geprüft anhand
+  des Codes: `article.name` wurde schon vorher **ausschließlich** für die
+  Kassentaste verwendet (`nameOf()`), Rechnungen/DSFinV-K lasen
+  `article.receipt_text ?? article.name` (Bontext). Root Cause der
+  Inkonsistenz zusätzlich bestätigt: `grid-template-columns:
+  repeat(var(--cols), minmax(80px, 1fr))` — Spaltenbreite ist proportional
+  zur Bildschirmbreite, daher unterschiedliche Umbruchpunkte je Gerät.
+  Lösung 2 (feste Höhe + Abschneiden) hätte das eigentliche Problem nicht
+  behoben, nur verschoben (abgeschnittener Text statt anders umgebrochen
+  — Informationsverlust statt nur anderer Optik), daher **Lösung 1**
+  umgesetzt.
+
+  **Erledigt (2026-08-29):**
+  - Migration `0014_layout_slot_label_hidden.sql`: `register_layout_slot`
+    bekommt `label VARCHAR(200) NULL` (Fallback auf Artikelname) und
+    `hidden BOOLEAN NOT NULL DEFAULT false`.
+  - Migration `0015_article_name_only.sql`: da die Tastenbeschriftung jetzt
+    pro Slot lebt, braucht `article` kein separates Kurzname/Bontext-Paar
+    mehr — `name` auf VARCHAR(200) verbreitert (Bontext erlaubte bis zu
+    200 Zeichen, Kurzname nur 100 — sonst hätte die Migration bei langen
+    Bontexten mit einem Fehler abgebrochen, Postgres kürzt VARCHAR nicht
+    still), `receipt_text`-Werte wo gesetzt nach `name` übernommen, Spalte
+    danach gedroppt. Betroffen: `admin/articles.ts`, `register-session.ts`
+    (drei Stellen `article.receipt_text ?? article.name` → `article.name`),
+    `admin/cancellations.ts`, `shared/types.ts`, `admin/articles/+page.svelte`
+    (Bontext-Feld raus, Kurzname-Label → „Name"). Nebenbei entfernt: toter
+    Code `lib/order.ts`s `articleLabel()` — nie aufgerufen, Kommentar log
+    zudem veraltet (behauptete receipt_text-Fallback, Body machte nur
+    `return a.name`).
+  - Layout-Editor (`admin/settings/layouts/[id]/+page.svelte`): Popover pro
+    Slot um 3-zeiliges Textfeld ("Tastenbeschriftung", leer = Artikelname)
+    und Checkbox ("Vorübergehend verstecken") erweitert. "Entfernen"-Button
+    entfernt (redundant zu Zurückziehen in die Ablage per Drag&Drop).
+  - **Bug gefunden und behoben (Nutzerbericht: Farbe geht beim Verschieben
+    verloren):** `onDrop()` schlug die alte Farbe erst nach dem Entfernen
+    des Slots aus dem Array nach (`slotAt()` fand also immer nichts mehr,
+    Fallback auf `DEFAULT_COLOR` bei jedem Verschieben). Fix: die komplette
+    Slot-Instanz vor dem Entfernen greifen und als Ganzes an die neue
+    Position spreaden — nimmt automatisch auch `label`/`hidden` mit.
+  - "Verstecken" filtert serverseitig (`register-session.ts`s Slot-Query:
+    `AND hidden = false`), nicht clientseitig — ein versteckter Slot kommt
+    an der Kasse gar nicht erst an, sieht exakt wie eine leere Zelle aus,
+    genau wie beim bestehenden `is_active`-Muster für Artikel/Kassen.
+    Dadurch war an den beiden Kassen-Views selbst keine Änderung für das
+    "Unsichtbar"-Verhalten nötig.
+  - Beide Kassen-Views (`register/[id]/+page.svelte`,
+    `.../tables/[tableId]/order/+page.svelte`): Taste zeigt
+    `slot.label || nameOf(slot.article_id)`, zusätzlich `white-space:
+    pre-line` auf `.grid-btn` für manuelle Umbrüche. Bestellliste/
+    Notiz-Dialog-Titel zeigen weiterhin den echten Artikelnamen (nicht das
+    Slot-Label) — bewusste Nutzerentscheidung.
+  - Neue Tests: `admin-routes.integration.test.ts` (Label/Hidden werden
+    beim Speichern und Duplizieren übernommen),
+    `register-session.integration.test.ts` (versteckter Slot fehlt in der
+    Antwort komplett, sichtbarer Slot liefert sein Label). Backend-Unit
+    (269/269), Backend-Integration, Frontend-Unit (70/70) und Typecheck
+    grün.
+  - **Nebenbei gefunden:** `docs/Datenmodell.dbml` hat für
+    `register_layout`/`register_layout_slot` deutlich mehr Drift zum realen
+    Schema als hier korrigiert (z. B. `register_layout.register_id`/
+    `is_default` existieren im echten Schema gar nicht) — nur die für
+    diese Änderung direkt relevanten Felder (`label`, `hidden`) ergänzt,
+    größere Doku-Bereinigung als eigenständige Aufgabe noch offen.
 - [ ] **#92** DNS-Masquerading für Split-Horizon-DNS (aus Task #66 ausgelagert)
   Herausgelöst aus Task #66 (2026-08-29, Nutzerwunsch: eigener Task). Ziel:
   Bedienungen mit eigenen Geräten das Installieren eines eigenen
@@ -1735,3 +1872,13 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   eine Live-Aktualisierung (SSE, analog zu anderen Echtzeit-Ansichten) oder
   ein einfacher Reload beim Seitenaufruf reicht. Erst nach Abschluss von
   Task #63 angehen.
+
+  **Teilweise vorgezogen (2026-08-29, Nutzerwunsch, direkt in Task #63
+  umgesetzt):** „Tagesumsatz" (neuer Endpoint `/api/admin/reports/
+  today-revenue`) und „Offene Rechnungen" (bestehender `/open-positions`-
+  Endpoint) sind bereits da, inkl. 30-Sekunden-Auto-Refresh fürs ganze
+  Dashboard. **Weiterhin offen:** Anzahl offener/besetzter Tische,
+  Bestellungen der laufenden Veranstaltung, sowie die generelle Frage
+  Live-Aktualisierung (SSE) vs. Intervall-Reload — Intervall-Reload wurde
+  für die zwei bereits umgesetzten Kacheln gewählt, gilt vermutlich auch
+  für den Rest.

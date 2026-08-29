@@ -17,7 +17,6 @@
   let modalOpen = $state(false);
   let editing: ArticleRow | null = $state(null);
   let formName = $state('');
-  let formReceiptText = $state('');
   let formCategoryId = $state('');
   let formPrice = $state('');
   let formDepositPrice = $state('');
@@ -55,7 +54,7 @@
 
   function openCreate() {
     editing = null;
-    formName = ''; formReceiptText = ''; formCategoryId = categories[0]?.id ?? '';
+    formName = ''; formCategoryId = categories[0]?.id ?? '';
     formPrice = ''; formDepositPrice = ''; formPrintDepositReceipt = false;
     formPrinterId = ''; formActive = true; formError = '';
     options = []; newOptionName = '';
@@ -65,7 +64,6 @@
   async function openEdit(a: ArticleRow) {
     editing = a;
     formName = a.name;
-    formReceiptText = a.receipt_text ?? '';
     formCategoryId = a.category_id;
     formPrice = String(a.price).replace('.', ',');
     formDepositPrice = a.deposit_price !== null ? String(a.deposit_price).replace('.', ',') : '';
@@ -126,7 +124,6 @@
     try {
       const data = {
         name: formName,
-        receipt_text: formReceiptText || null,
         category_id: formCategoryId,
         price,
         deposit_price: depositPrice,
@@ -192,12 +189,8 @@
 <Modal bind:open={modalOpen} title={editing ? 'Artikel bearbeiten' : 'Neuer Artikel'}>
   <form onsubmit={preventDefault(save)}>
     <div class="field">
-      <label for="art-name">Kurzname (Kassentaste)</label>
+      <label for="art-name">Name</label>
       <input id="art-name" bind:value={formName} required disabled={saving || deleting} />
-    </div>
-    <div class="field">
-      <label for="art-receipt">Bontext (vollständiger Name für Kassenbon)</label>
-      <input id="art-receipt" bind:value={formReceiptText} placeholder="= Kurzname wenn leer" disabled={saving || deleting} />
     </div>
     <div class="field">
       <label for="art-cat">Artikelgruppe</label>

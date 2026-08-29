@@ -9,7 +9,10 @@
 
   // ── State ──────────────────────────────────────────────────────────────────
 
-  type Slot = { article_id: string; article_name: string; grid_row: number; grid_col: number; color: string };
+  type Slot = {
+    article_id: string; article_name: string; grid_row: number; grid_col: number; color: string;
+    label: string | null; hidden: boolean;
+  };
 
   let layoutId = $state('');
   let layoutName = $state('');
@@ -40,7 +43,10 @@
       layoutName = layout.name;
       gridCols = layout.grid_cols;
       gridRows = layout.grid_rows;
-      slots = layout.slots.map((s) => ({ article_id: s.article_id, article_name: s.article_name, grid_row: s.grid_row, grid_col: s.grid_col, color: s.color }));
+      slots = layout.slots.map((s) => ({
+        article_id: s.article_id, article_name: s.article_name, grid_row: s.grid_row, grid_col: s.grid_col,
+        color: s.color, label: s.label, hidden: s.hidden,
+      }));
       articles = arts.filter((a) => a.is_active);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
@@ -106,12 +112,22 @@
     const existing = slotAt(row, col);
 
     if (dragging.type === 'ablage') {
-      // Place from ablage; if cell occupied, bump existing back to ablage (just remove)
+      // Place from ablage; if cell occupied, bump existing back to ablage (just remove).
+      // A fresh placement always starts with defaults — only a move preserves attributes (see below).
       slots = slots.filter((s) => !(s.grid_row === row && s.grid_col === col));
-      slots = [...slots, { article_id: dragging.articleId, article_name: dragging.articleName, grid_row: row, grid_col: col, color: DEFAULT_COLOR }];
+      slots = [...slots, {
+        article_id: dragging.articleId, article_name: dragging.articleName,
+        grid_row: row, grid_col: col, color: DEFAULT_COLOR, label: null, hidden: false,
+      }];
     } else {
-      // Move from another cell
+      // Move from another cell — grab the full moved slot BEFORE removing it from
+      // its old position, so color/label/hidden carry over to the new position
+      // instead of resetting to defaults (found live: the previous code looked
+      // the old slot up again via slotAt() only after it had already been
+      // filtered out, so it always found nothing and silently fell back to
+      // DEFAULT_COLOR).
       const { fromRow, fromCol } = dragging;
+      const movedSlot = slotAt(fromRow!, fromCol!)!;
       // Remove from old position
       slots = slots.filter((s) => !(s.grid_row === fromRow && s.grid_col === fromCol));
       if (existing) {
@@ -121,8 +137,7 @@
       } else {
         slots = slots.filter((s) => !(s.grid_row === row && s.grid_col === col));
       }
-      const prevSlot = slotAt(fromRow!, fromCol!);
-      slots = [...slots, { article_id: dragging.articleId, article_name: dragging.articleName, grid_row: row, grid_col: col, color: prevSlot?.color ?? DEFAULT_COLOR }];
+      slots = [...slots, { ...movedSlot, grid_row: row, grid_col: col }];
     }
 
     dragging = null;
@@ -154,9 +169,15 @@
     dirty = true;
   }
 
-  function removeSlot(row: number, col: number) {
-    slots = slots.filter((s) => !(s.grid_row === row && s.grid_col === col));
-    pickerCell = null;
+  /** Updates the custom button text for one slot — empty clears it back to the article-name fallback. */
+  function setLabel(row: number, col: number, label: string) {
+    slots = slots.map((s) => s.grid_row === row && s.grid_col === col ? { ...s, label: label || null } : s);
+    dirty = true;
+  }
+
+  /** Toggles whether a slot is temporarily pulled off the Bonkasse/Bedienung grid, without losing its position/color/label. */
+  function toggleHidden(row: number, col: number) {
+    slots = slots.map((s) => s.grid_row === row && s.grid_col === col ? { ...s, hidden: !s.hidden } : s);
     dirty = true;
   }
 
@@ -184,7 +205,7 @@
     saving = true;
     try {
       await api.admin.layouts.update(layoutId, { name: layoutName, grid_cols: gridCols, grid_rows: gridRows });
-      await api.admin.layouts.saveSlots(layoutId, slots.map(({ article_id, grid_row, grid_col, color }) => ({ article_id, grid_row, grid_col, color })));
+      await api.admin.layouts.saveSlots(layoutId, slots.map(({ article_id, grid_row, grid_col, color, label, hidden }) => ({ article_id, grid_row, grid_col, color, label, hidden })));
       dirty = false;
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Fehler beim Speichern');
@@ -271,12 +292,13 @@
                 {#if slot}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div class="tile"
+                       class:hidden-slot={slot.hidden}
                        style="background:{slot.color}"
                        draggable="true"
                        ondragstart={(e) => dragStartSlot(e, slot)}
                        ondragend={onDragEnd}
                        onclick={(e) => openPicker(e, row, col)}>
-                    <span class="tile-name">{slot.article_name}</span>
+                    <span class="tile-name">{slot.label || slot.article_name}</span>
                   </div>
                   {#if isPicker}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -287,7 +309,16 @@
                                   onclick={() => setColor(row, col, c)} aria-label={c}></button>
                         {/each}
                       </div>
-                      <button class="picker-remove" onclick={() => removeSlot(row, col)}>Entfernen</button>
+                      <label class="picker-field">
+                        Tastenbeschriftung
+                        <textarea rows="3" placeholder={slot.article_name}
+                                  value={slot.label ?? ''}
+                                  oninput={(e) => setLabel(row, col, e.currentTarget.value)}></textarea>
+                      </label>
+                      <label class="picker-check">
+                        <input type="checkbox" checked={slot.hidden} onchange={() => toggleHidden(row, col)} />
+                        Vorübergehend verstecken
+                      </label>
                     </div>
                   {/if}
                 {:else}
@@ -377,6 +408,7 @@
     cursor: grab; user-select: none; position: relative;
   }
   .tile:active { cursor: grabbing; }
+  .tile.hidden-slot { filter: grayscale(0.85) brightness(0.7); }
   .tile-name {
     font-size: 0.75rem; font-weight: 600; color: #fff; text-align: center;
     line-height: 1.2; overflow: hidden; display: -webkit-box;
@@ -389,7 +421,7 @@
     position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
     background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: var(--radius); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.3); min-width: 160px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3); min-width: 200px;
   }
   .picker-colors { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
   .swatch {
@@ -398,12 +430,18 @@
   }
   .swatch:hover { transform: scale(1.2); }
   .swatch.active { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,0.4); }
-  .picker-remove {
-    font-size: 0.75rem; background: transparent; border: 1px solid var(--color-danger);
-    border-radius: var(--radius-sm); color: var(--color-danger); padding: 0.25rem;
-    cursor: pointer;
+  .picker-field {
+    display: flex; flex-direction: column; gap: 0.3rem;
+    font-size: 0.75rem; color: var(--color-text-muted);
   }
-  .picker-remove:hover { background: rgba(255,79,79,0.1); }
+  .picker-field textarea {
+    resize: none; font-size: 0.8rem; padding: 0.4rem 0.5rem;
+    font-family: inherit;
+  }
+  .picker-check {
+    display: flex; align-items: center; gap: 0.4rem;
+    font-size: 0.75rem; color: var(--color-text-muted); cursor: pointer;
+  }
 
   .cell-empty { width: 100%; height: 100%; }
 </style>

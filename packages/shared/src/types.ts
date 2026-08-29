@@ -62,7 +62,6 @@ export interface Article {
   id: string;
   category_id: string;
   name: string;
-  receipt_text: string | null;
   price: number;
   deposit_price: number | null;
   print_deposit_receipt: boolean;
@@ -186,6 +185,10 @@ export interface RegisterLayoutSlot {
   grid_row: number;
   grid_col: number;
   color: string;
+  /** Custom button text for this placement (Task #91 follow-up); falls back to `article_name` when unset. */
+  label: string | null;
+  /** Temporarily pulls the slot off the Bonkasse/Bedienung grid without losing its position/color/label. */
+  hidden: boolean;
 }
 
 /** An event used as a reporting period; does not affect live operations. */

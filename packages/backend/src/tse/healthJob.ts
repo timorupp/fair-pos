@@ -79,7 +79,7 @@ export async function tick(): Promise<void> {
 
   try {
     await maintainTse(timeAdminPin);
-    await logSystemEvent('info', LOG_CATEGORY, 'Automatischer Self-Test + Zeitsync erfolgreich.');
+    await logSystemEvent('info', LOG_CATEGORY, 'Selbsttest erfolgreich');
     wasHealthy = true;
   } catch (e) {
     await logSystemEvent('warning', LOG_CATEGORY, `Automatischer Self-Test + Zeitsync fehlgeschlagen: ${describeTseError(e)}`);

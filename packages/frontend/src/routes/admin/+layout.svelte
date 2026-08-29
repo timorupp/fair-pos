@@ -237,6 +237,7 @@
 
     <div class="sidebar-footer">
       <span class="user-name">{$adminUser?.name}</span>
+      <button class="btn-secondary" onclick={() => goto('/register')}>Zur Kassenauswahl</button>
       <button class="btn-logout" onclick={logout}>Abmelden</button>
     </div>
   </aside>
@@ -310,11 +311,12 @@
     display: flex; flex-direction: column; gap: 0.5rem;
   }
   .user-name { font-size: 0.8rem; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .btn-logout {
+  .btn-secondary, .btn-logout {
     padding: 0.4rem 0; background: transparent; border: 1px solid var(--color-border);
     border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: 0.8rem;
     transition: border-color 0.15s, color 0.15s;
   }
+  .btn-secondary:hover { border-color: var(--color-primary); color: var(--color-text); }
   .btn-logout:hover { border-color: var(--color-danger); color: var(--color-danger); }
 
   main { flex: 1; padding: 2rem; overflow: auto; }

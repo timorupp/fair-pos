@@ -28,7 +28,7 @@ export async function layoutsAdminRoute(app: FastifyInstance): Promise<void> {
 
     const slots = await query(`
       SELECT rls.id, rls.register_layout_id, rls.article_id, a.name AS article_name,
-             rls.grid_row, rls.grid_col, rls.color
+             rls.grid_row, rls.grid_col, rls.color, rls.label, rls.hidden
       FROM register_layout_slot rls
       JOIN article a ON a.id = rls.article_id
       WHERE rls.register_layout_id = $1
@@ -114,8 +114,8 @@ export async function layoutsAdminRoute(app: FastifyInstance): Promise<void> {
       );
       newId = (created.rows[0] as { id: string }).id;
       await client.query(
-        `INSERT INTO register_layout_slot (register_layout_id, article_id, grid_row, grid_col, color)
-         SELECT $1, article_id, grid_row, grid_col, color
+        `INSERT INTO register_layout_slot (register_layout_id, article_id, grid_row, grid_col, color, label, hidden)
+         SELECT $1, article_id, grid_row, grid_col, color, label, hidden
          FROM register_layout_slot WHERE register_layout_id = $2`,
         [newId, id],
       );
@@ -130,15 +130,20 @@ export async function layoutsAdminRoute(app: FastifyInstance): Promise<void> {
   /** PUT /api/admin/layouts/:id/slots — replace all slots with the submitted list. */
   app.put('/:id/slots', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = req.body as { slots: { article_id: string; grid_row: number; grid_col: number; color: string }[] };
+    const body = req.body as {
+      slots: {
+        article_id: string; grid_row: number; grid_col: number; color: string;
+        label?: string | null; hidden?: boolean;
+      }[];
+    };
 
     await withTransaction(async (client) => {
       await client.query('DELETE FROM register_layout_slot WHERE register_layout_id = $1', [id]);
       for (const s of body.slots ?? []) {
         await client.query(
-          `INSERT INTO register_layout_slot (register_layout_id, article_id, grid_row, grid_col, color)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [id, s.article_id, s.grid_row, s.grid_col, s.color],
+          `INSERT INTO register_layout_slot (register_layout_id, article_id, grid_row, grid_col, color, label, hidden)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [id, s.article_id, s.grid_row, s.grid_col, s.color, s.label ?? null, s.hidden ?? false],
         );
       }
     });

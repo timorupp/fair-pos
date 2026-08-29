@@ -111,6 +111,8 @@ Table register_layout_slot {
   grid_row           int       [not null]
   grid_col           int       [not null]
   color              varchar(7)[not null, note: 'Hex color code, e.g. #FF5733']
+  label              varchar(200) [null, note: 'Custom button text for this placement; falls back to the article name when unset']
+  hidden             boolean   [not null, default: false, note: 'true = temporarily pulled off the Bonkasse/Bedienung grid, position/color/label kept']
 
   indexes {
     (register_layout_id, grid_row, grid_col) [unique]

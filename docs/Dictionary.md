@@ -63,12 +63,14 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 | Storno | cancellation | Stornierung einer Position oder Rechnung |
 | Stornogrund | cancellation_reason | Konfigurierter Grund für Stornos |
 | Tagesabschluss | daily_closing | Synonym zu Kassenabschluss |
+| Tastenbeschriftung | label | Pro-Platzierung-Override auf `register_layout_slot`, fällt ohne gesetzten Wert auf den Artikelnamen zurück (Task #91) |
 | Tisch | dining_table | Tisch im Saalplan (`table` ist SQL-reserviert) |
 | PIN | pin | Dauerhafter, vom Admin vergebener Anmelde-Code (Task #90) |
 | Sitzung | session | Serverseitig verwaltete Login-Sitzung (Task #90) |
 | Transaktion | transaction | TSE-Transaktion |
 | Uhrzeit | time | — |
 | Veranstaltung | event | Auswertungszeitraum |
+| Versteckt (Flag) | hidden | Pro-Platzierung-Flag auf `register_layout_slot` — Taste vorübergehend von Bonkasse/Bedienung ausgeblendet, ohne Position/Farbe/Beschriftung zu verlieren (Task #91) |
 | Zahlung | payment | — |
 | Zahlungsart | payment_method | bar / EC-Karte |
 

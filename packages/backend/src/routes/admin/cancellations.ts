@@ -79,11 +79,11 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
     // Articles fetched once, up front — reused for the TSE snapshot and the order_item inserts.
     const articleIds = [...new Set(items.map((i) => i.article_id))];
     const articlesResult = await query<{
-      id: string; name: string; receipt_text: string | null; price: string;
+      id: string; name: string; price: string;
       deposit_price: string | null;
       category_name: string; tax_rate: string;
     }>(
-      `SELECT a.id, a.name, a.receipt_text, a.price, a.deposit_price,
+      `SELECT a.id, a.name, a.price, a.deposit_price,
               c.name AS category_name, c.tax_rate
          FROM article a
          JOIN article_category c ON c.id = a.category_id
@@ -141,7 +141,7 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       // is what gives the rows their negative effect in `computeClosingTotals`.
       for (const it of items) {
         const article = articleById.get(it.article_id)!;
-        const displayName = article.receipt_text ?? article.name;
+        const displayName = article.name;
         for (let i = 0; i < it.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (

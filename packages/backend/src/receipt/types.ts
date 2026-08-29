@@ -2,7 +2,7 @@
 
 /** One aggregated line on the receipt. Multiple identical order items are merged into one position with a quantity. */
 export interface ReceiptPosition {
-  /** Display name (article's receipt_text fallback to name). */
+  /** Display name (the article's name). */
   name: string;
   /** Quantity of identical units. */
   quantity: number;

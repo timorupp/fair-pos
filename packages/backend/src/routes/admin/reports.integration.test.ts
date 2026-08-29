@@ -143,6 +143,35 @@ describe('GET /api/admin/reports/cash-balance', () => {
   });
 });
 
+describe('GET /api/admin/reports/today-revenue', () => {
+  it('sums both cash and card takings, ignoring cancelled/free items', async () => {
+    const app = await getTestApp();
+    await insertPaidInvoice(1, 10, 19, 'cash', 'paid');
+    await insertPaidInvoice(2, 30, 19, 'card', 'paid');
+    await insertPaidInvoice(3, 100, 19, 'cash', 'cancelled');
+    await insertPaidInvoice(4, 50, 19, 'cash', 'free');
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/reports/today-revenue',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().total).toBe(40);
+  });
+
+  it('excludes invoices from before today', async () => {
+    const app = await getTestApp();
+    await insertPaidInvoice(1, 10, 19, 'cash', 'paid');
+    await pool.query(
+      `UPDATE invoice SET created_at = now() - interval '2 days' WHERE receipt_number = 1`,
+    );
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/reports/today-revenue',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().total).toBe(0);
+  });
+});
+
 describe('GET /api/admin/reports/cancellations', () => {
   it('lists cancelled and free items with a per-user summary', async () => {
     const app = await getTestApp();

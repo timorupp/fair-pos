@@ -8,7 +8,6 @@
 export interface ArticleLike {
   id: string;
   name: string;
-  receipt_text?: string | null;
   price: number | string;
   deposit_price: number | string | null;
 }
@@ -56,9 +55,4 @@ export function computeOrderTotal(lines: OrderLine[], articles: ArticleLike[]): 
     total += unit * line.quantity;
   }
   return Math.round(total * 100) / 100;
-}
-
-/** Returns the rendered button label for an article (uses `receipt_text` only when explicitly set, else `name`). */
-export function articleLabel(a: ArticleLike): string {
-  return a.name;
 }
