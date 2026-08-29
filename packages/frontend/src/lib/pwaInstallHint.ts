@@ -4,11 +4,10 @@
  * (Task #89 follow-up), since neither iOS nor Android exposes a way to
  * trigger the install step programmatically; the best we can do is detect
  * whether it's already done and, if not, point at the right platform-specific
- * instructions.
+ * instructions. Deliberately not dismissible — always shown while running in
+ * a plain browser tab (Nutzervorgabe, 2026-08-29), so it stays hidden only
+ * once the app is actually installed.
  */
-
-/** localStorage key for "don't show the install hint on this device again". */
-export const DISMISS_STORAGE_KEY = 'fairpos-install-hint-dismissed';
 
 /**
  * Whether the app is currently running installed/standalone — covers both
@@ -44,29 +43,13 @@ export function detectMobilePlatform(): 'ios' | 'android' | null {
 }
 
 /**
- * Whether the install hint should currently be shown: not already
- * installed, a recognized mobile platform, and not previously dismissed on
- * this device.
+ * Whether the install hint should currently be shown: not already installed,
+ * and a recognized mobile platform. Always re-evaluated on load — there is
+ * no dismissal state to check.
  *
  * @returns The platform to show instructions for, or `null` to hide the hint entirely.
  */
 export function shouldShowInstallHint(): 'ios' | 'android' | null {
   if (isRunningStandalone()) return null;
-  let dismissed = false;
-  try {
-    dismissed = localStorage.getItem(DISMISS_STORAGE_KEY) === '1';
-  } catch {
-    // Private-mode/storage-disabled browsers can throw on access — treat as not dismissed.
-  }
-  if (dismissed) return null;
   return detectMobilePlatform();
-}
-
-/** Persists "don't show the install hint again" for this device — best-effort, storage failures are silently ignored. */
-export function dismissInstallHint(): void {
-  try {
-    localStorage.setItem(DISMISS_STORAGE_KEY, '1');
-  } catch {
-    // Nothing more we can do — worst case the hint reappears next time.
-  }
 }

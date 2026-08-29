@@ -338,23 +338,60 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `docs/Installationsanleitung.md` (vor Abschnitt 1), damit das nicht erst
   nach vielen Installationsschritten auffällt (Abschnitt 8.1 braucht es
   zum Bauen von `tseCli`).
-- [ ] **#63** Admin-Startseite zu einem echten Dashboard ausbauen
+- [x] **#63** Admin-Startseite zu einem echten Dashboard ausbauen
   Aktuell (`admin/+page.svelte`) nur ein Platzhalter ("Willkommen, {Name}.
-  Wähle links einen Bereich aus."), keine echten Daten. Idee: Übersicht über
-  Fehler und Systemzustand direkt beim Einloggen — z.B. fehlgeschlagene
-  TSE-Signaturen der letzten Stunde, wartende/fehlgeschlagene Druckaufträge,
-  aber auch positive Statuswerte (z.B. aktueller TSE-Zustand). **Vor der
-  Umsetzung analysieren**, welche Fehler/Systemdaten tatsächlich sinnvoll
-  und verfügbar sind — noch nicht festgelegt, welche Datenquellen konkret
-  einfließen (Kandidaten: `tse_outage`-Tabelle für TSE-Ausfälle, `print_job`
-  für die Druckwarteschlange, `GET /api/admin/tse/status` für den aktuellen
-  TSE-Zustand, ggf. die bereits bestehende Tagesabschluss-Pending-Logik aus
-  dem globalen Banner in `admin/+layout.svelte`). Siehe auch Task #60 für die
-  geplante Server/Browser-Zeitabweichungs-Warnung, die konzeptionell
-  ähnlich/ergänzend auf derselben Seite sitzen könnte. **Ergänzt
-  (2026-08-27, aus #90):** ggf. auch Anzahl aktiver IP-Sperren des
-  PIN-Login-Rate-Limiters + Reset-Button hier integrieren, statt nur auf
-  der Systemseite.
+  Wähle links einen Bereich aus.") plus die schon umgesetzte Uhrzeit-
+  Abweichungs-Warnung aus Task #60. Idee: Übersicht über Fehler und
+  Systemzustand direkt beim Einloggen.
+
+  **Konzept geprüft und final (2026-08-29):** Fokus in diesem Schritt
+  bewusst nur auf Systemzustand/Fehler, keine Geschäftszahlen (Tagesumsatz
+  o.Ä.) — dafür eigene Folgeaufgabe, siehe Task #93. Datenquellen, alle
+  ohne neue Backend-Arbeit aus bestehenden Endpoints ableitbar:
+  - **TSE-Zustand** — letzter `system_log`-Eintrag der Kategorie
+    `tse_health` über `GET /api/admin/logs?category=tse_health`
+    (geschrieben von `tse/healthJob.ts`, dessen Kommentar ausdrücklich auf
+    dieses Dashboard verweist). **Bewusst nicht** `GET /api/admin/tse/status`
+    verwenden — der ruft laut eigenem Kommentar echte TSE-Hardware auf
+    ("deliberately not part of the cheap status endpoint") und darf nicht
+    bei jedem Dashboard-Aufruf laufen.
+  - **Offener TSE-Ausfall** — `GET /api/admin/reports/tse-outages`, oberste
+    Zeile mit `ended_at = null`.
+  - **Druckwarteschlange** — `GET /api/admin/print-jobs?status=failed`
+    (Anzahl), optional zusätzlich `pending`-Anzahl.
+  - **Ausstehende Tagesabschlüsse** — `GET /api/admin/closings/pending`
+    (bereits als globaler Banner in `admin/+layout.svelte` genutzt) — auf
+    dem Dashboard als eigene Karte mit mehr Detail (welche Kassen/Tage)
+    statt nur des knappen Banners, beide verlinken auf `/admin/registers`.
+  - **Aktive Sitzungen** — `GET /api/admin/sessions`, Anzahl.
+  - **Aktive IP-Sperren + Reset** (aus #90) — **Entscheidung (2026-08-29):**
+    zieht komplett von der Systemseite hierher um, inkl. Reset-Button
+    (`POST /api/admin/system/reset-ip-lockouts`) — nicht auf beiden Seiten,
+    nur noch auf dem Dashboard. `admin/settings/system/+page.svelte`
+    verliert diese Anzeige entsprechend.
+
+  **Layout-Idee:** oben eine Warnzeile (nur sichtbar, wenn tatsächlich etwas
+  ansteht: offener TSE-Ausfall, TSE laut letztem Health-Log ungesund,
+  fehlgeschlagene Druckaufträge, aktive IP-Sperren), darunter ruhige
+  Kennzahlen-Kacheln für den Rest. Jede Karte verlinkt auf die zugehörige
+  bestehende Seite statt Funktionalität zu duplizieren.
+
+  **Erledigt (2026-08-29):** `admin/+page.svelte` komplett neu — Warnzeile
+  (Zeitabweichung, offener TSE-Ausfall, aktive IP-Sperren inkl.
+  Reset-Button) plus vier Kennzahlen-Kacheln (TSE-Zustand aus dem letzten
+  `system_log`-Eintrag Kategorie `tse_health`, ausstehende Tagesabschlüsse
+  mit Registerliste, Druckwarteschlange fehlgeschlagen/wartend, aktive
+  Sitzungen). IP-Sperren-Anzeige + Reset-Button aus
+  `admin/settings/system/+page.svelte` entfernt (nur noch aufs Dashboard,
+  wie entschieden). Keine neuen Backend-Endpoints nötig — alles aus
+  bestehenden, günstigen Routen zusammengesetzt. Gegen die echte Dev-DB
+  verifiziert (offener TSE-Ausfall + mehrere ausstehende Tagesabschlüsse
+  lösten die Warnzustände korrekt aus). Geschäftszahlen bewusst nicht
+  enthalten, siehe Task #93.
+  **Nachbesserung (2026-08-29, Nutzerbericht "Einstellungen-Menü wird immer
+  größer"):** neuer Hauptmenüpunkt „Monitoring" in `admin/+layout.svelte`,
+  dahin verschoben: Aktive Sessions, Druckwarteschlange, Systemprotokoll
+  (vorher alle drei unter „Einstellungen").
 - [ ] **#64** System-Health-Check (Sammlung technischer Prüfungen, automatisch beim Start)
   Eine Sammelstelle für technische Systemprüfungen, unabhängig von
   Business-Zuständen (die deckt eher Task #63 ab) — z.B. genug freier
@@ -518,6 +555,34 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   (wäre sonst ein Sicherheitsloch). Muss bei der endgültigen Entscheidung
   berücksichtigt werden — evtl. bleibt der einfache Klick-weg-Selbstsignierte
   Weg für Geräte ohne Admin-Zugriff als Fallback nötig.
+
+  **Ergänzung/Architektur-Konzept (2026-08-29):** Nutzervorschlag — ein
+  Reverse-Proxy (z. B. Apache, nur als Beispiel genannt, kein fester
+  Produktentscheid) terminiert TLS, nicht Fastify selbst. Der App-Server
+  ist von außen **gar nicht** direkt erreichbar, ausschließlich über den
+  Reverse-Proxy. Upload-Funktion im Adminbereich (Systemeinstellungen) für
+  das Zertifikat; landet an der vom Reverse-Proxy referenzierten Stelle,
+  anschließend Neustart von dessen Webserver-Dienst — analog zum
+  bestehenden Muster bei anderen privilegierten Aktionen
+  (`system/time.ts`/`system/shutdown.ts`: sudoers-Regel + gezielter, eng
+  begrenzter Befehl statt allgemeiner Rechte).
+
+  **Eigentliches Ziel des Uploads, präzisiert:** nicht primär für
+  selbstsignierte/eigene-CA-Zertifikate gedacht (die dürfen weiterhin
+  hochgeladen werden, wer will) — Kernidee ist, den Bedienungen mit
+  eigenen Geräten das Installieren eines eigenen CA-Zertifikats komplett zu
+  **ersparen**. Weg dafür: **Split-Horizon-/Split-Brain-DNS mit einer
+  echten, öffentlich validierten Domain — siehe Task #92** (dort das
+  DNS-Masquerading-Konzept inkl. der dafür nötigen Backend-Einstellungen).
+  Die Upload-Funktion hier ist dabei nur der Verteilweg für das
+  (typischerweise alle ~90 Tage erneuerte) Zertifikat, unabhängig davon, ob
+  es über Task #92s DNS-01-Weg oder eine lokale CA entstand.
+
+  **Noch zu klären (dieser Task, unabhängig von #92):** welcher
+  Reverse-Proxy konkret (Apache/nginx/Caddy/…), Zertifikatsformat/
+  -validierung beim Upload (PEM? Kette inkl. Intermediate-Zertifikat
+  nötig?), fester Dateipfad, den der Upload überschreibt, vs. Config-Datei
+  anpassen, genaue sudoers-Regel für den Neustart.
 - [x] **#67** Produktbeschreibung + Haftungsausschluss (README/Repo-weit)
   **Erledigt (2026-08-24):** `README.md` um eine ausführlichere
   Produktbeschreibung (was FairPOS ist, für wen, welches Problem es löst,
@@ -1306,8 +1371,11 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   (inkl. iPadOS-13+-Sonderfall, meldet sich als „MacIntel" mit Touch-Punkten
   statt als iPad). Bewusst **nur** auf dem Login-Screen — nach dem Einloggen
   keine weitere Störung, auch nicht im normalen Browser-Tab (Nutzervorgabe).
-  Dauerhaft abschaltbar über „×" (localStorage). Neues Modul
-  `lib/pwaInstallHint.ts` mit 12 Unit-Tests (jsdom).
+  Bewusst **nicht** dauerhaft abschaltbar — kein „×", keine
+  localStorage-Merkstelle; wird immer angezeigt, solange die App nicht
+  standalone läuft (Nutzervorgabe, 2026-08-29, nachträgliche Korrektur:
+  ursprünglich mit „×"/localStorage-Dismiss umgesetzt, dann wieder entfernt).
+  Neues Modul `lib/pwaInstallHint.ts` mit Unit-Tests (jsdom).
 
   Kein automatischer Install-Prompt möglich — iOS bietet dafür grundsätzlich
   keine API, und Chromes automatischer Banner (`beforeinstallprompt`)
@@ -1553,6 +1621,19 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     falls die Fehlerantwort zufällig ein `message`-Feld enthielt — jetzt
     werden `error`/`message` beim Kopieren der Zusatzfelder ausgeschlossen.
     Von der bestehenden Testsuite aufgefangen, bevor es committet wurde.
+  - **Lücke gefunden und behoben (Nutzerbericht):** Setzen der
+    Administrator-Checkbox bei einem bestehenden Benutzer ohne Passwort
+    (`PUT /api/admin/users/:id`) wurde bisher nicht geprüft — der Benutzer
+    wäre Administrator geworden, ohne die Systemverwaltung je per
+    Passwort-Step-up erreichen zu können. `password_hash` ist jetzt
+    nullable (Migration `0013_admin_password_required.sql`, Non-Admins
+    hatten ohnehin nur einen zufälligen, nie herausgegebenen Platzhalter-
+    Hash — dieser wird für alle Bestandsbenutzer mit `is_admin = false`
+    auf `NULL` zurückgesetzt), `POST`/`PUT` in `admin/users.ts` verlangen
+    ein Passwort, sobald `is_admin: true` gesetzt wird und weder ein neues
+    Passwort mitgeschickt wird noch bereits eines existiert. Analoge
+    Prüfung im Frontend-Formular (`admin/users/+page.svelte`) für
+    sofortiges Feedback ohne Round-Trip.
 - [ ] **#91** Artikel-Button-Beschriftung bricht je nach Bildschirmbreite unterschiedlich um
   Aufgekommen beim Live-Test (2026-08-29): `.grid-btn` (Artikel-Kacheln in
   Bonkasse `register/[id]/+page.svelte` und Bedienungskasse
@@ -1580,3 +1661,77 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
      `overflow: hidden` bei zu langem Text abschneiden statt umzubrechen.
   Beide Ansätze schließen sich nicht zwingend aus (feste Höhe + optionale
   manuelle Umbrüche) — Entscheidung/Kombination noch offen.
+- [ ] **#92** DNS-Masquerading für Split-Horizon-DNS (aus Task #66 ausgelagert)
+  Herausgelöst aus Task #66 (2026-08-29, Nutzerwunsch: eigener Task). Ziel:
+  Bedienungen mit eigenen Geräten das Installieren eines eigenen
+  CA-Zertifikats ersparen, indem FairPOS ein öffentlich validiertes
+  Zertifikat (z. B. Let's Encrypt) für eine echte, dem Verein gehörende
+  Domain nutzt, deren Namensauflösung am Veranstaltungsort per lokalem DNS
+  auf die LAN-IP des FairPOS-Servers "umgebogen" wird — jeder
+  Standard-Browser vertraut der offiziellen CA ganz normal, kein manueller
+  Vertrauensschritt auf irgendeinem Gerät nötig. Details/Ablauf (DNS-01-
+  Challenge, DHCP-Verteilung am Vereins-Router, reale Einschränkungen ohne
+  eigene Domain/ohne Router-Zugriff): siehe Task #66s bisherige Notizen
+  (Versionsgeschichte dieser Datei) — hier nur noch das Backend-seitige
+  DNS-Masquerading selbst.
+
+  **Backend-Einstellungen (Nutzervorschlag + Ergänzungen, 2026-08-29):**
+  - **Eigene Domain** — die Domain, die am Veranstaltungsort auf die
+    lokale IP zeigen soll (z. B. `kasse.mein-verein.de`). Muss zum
+    Zertifikat aus Task #66 passen (gleicher Hostname).
+  - **Vorgelagerte/Upstream-DNS-Server** (primär + optional sekundär) —
+    wohin alle Anfragen weitergeleitet werden, die **nicht** die eigene
+    Domain betreffen. Ohne das würde jedes Gerät, das den FairPOS-Server
+    als DNS nutzt, für alles andere (normales Internet, andere Apps auf
+    demselben Gerät) die Namensauflösung verlieren — der Server muss also
+    für alles außer der eigenen Domain ein normaler Forwarder bleiben,
+    nicht nur ein Ein-Domain-Resolver.
+  - **Eigene IP** — die Ziel-IP, auf die die Domain zeigen soll (LAN-IP
+    des FairPOS-Servers selbst). Manuell änderbar (z. B. bei mehreren
+    Netzwerkschnittstellen, oder wenn Auto-Detect die falsche erwischt)
+    + Auto-Detect-Button (analog zum bestehenden Muster „TSE-Status prüfen"
+    o. Ä. — Button löst Server-seitige Erkennung aus, z. B. über die
+    Standard-Ausgangsroute, und trägt das Ergebnis ins Feld ein).
+  - **An/Aus-Schalter für die gesamte Funktion** — nicht jedes Deployment
+    will einen lokalen DNS-Server laufen haben; per Default aus.
+  - **TTL für den DNS-Eintrag** — wie lange Geräte die Auflösung cachen,
+    bevor sie erneut anfragen. Relevant falls sich die eigene IP mal
+    ändert (z. B. Server-Hardware-Wechsel zwischen Veranstaltungen) —
+    kurze TTL vermeidet, dass Geräte danach noch die alte IP aus dem Cache
+    verwenden.
+  - **„Auflösung testen"-Aktion** — schickt eine echte DNS-Anfrage gegen
+    den eigenen laufenden Resolver und zeigt, ob die konfigurierte Domain
+    tatsächlich auf die konfigurierte IP auflöst, statt dass der erste
+    echte Test ein Gerät am Einlass ist.
+
+  **Architekturfragen, noch offen:**
+  - Welche DNS-Server-Software läuft im Hintergrund. `dnsmasq` naheliegend
+    (leichtgewichtig, Standard-Ubuntu-Paket, kann Forwarder + einzelne
+    Host-Overrides gleichzeitig, passt zum bisherigen „native Ubuntu, kein
+    Docker"-Ansatz).
+  - DNS braucht Port 53 — Node/Fastify läuft nicht privilegiert. Vermutlich
+    dasselbe Muster wie `system/time.ts`/`system/shutdown.ts`: `dnsmasq`
+    als eigener systemd-Dienst, Backend schreibt nur dessen Konfigdatei und
+    stößt einen eng begrenzten Neustart per sudoers-Regel an, statt selbst
+    auf Port 53 zu lauschen.
+  - Geräte im WLAN müssen diesen DNS-Server tatsächlich **nutzen** —
+    braucht entweder eigenen Router/AP mit passender DHCP-Option 6, oder
+    manuelle Konfiguration pro Gerät. Kein FairPOS-seitiges Setting kann
+    das erzwingen, nur dokumentieren/Onboarding-Hinweis dafür.
+  - Verhältnis zu Task #66s Zertifikats-Upload: DNS-Masquerading allein
+    bringt nichts ohne ein zur Domain passendes Zertifikat — beide Tasks
+    hängen zusammen, aber technisch unabhängig umsetzbar (Zertifikat auch
+    ohne diesen DNS-Server per DNS-01-Challenge extern beziehbar und
+    manuell hochladbar).
+- [ ] **#93** Geschäftszahlen auf der Admin-Startseite (Folgeaufgabe aus #63)
+  Herausgelöst aus Task #63 (2026-08-29, Nutzerentscheidung: Fokus dort
+  zunächst nur auf Systemzustand/Fehler). Idee: zusätzliche Kennzahlen-
+  Kacheln auf dem Dashboard, die tatsächliche Geschäftszahlen statt
+  Systemgesundheit zeigen — z.B. Tagesumsatz, Anzahl offener/besetzter
+  Tische, Bestellungen der laufenden Veranstaltung. **Noch nicht
+  analysiert:** welche Kennzahlen wirklich aussagekräftig sind, welche
+  bestehenden Endpoints/Queries sie günstig liefern können (vermutlich
+  Overlap mit den bestehenden Berichten unter `admin/reports.ts`), und ob
+  eine Live-Aktualisierung (SSE, analog zu anderen Echtzeit-Ansichten) oder
+  ein einfacher Reload beim Seitenaufruf reicht. Erst nach Abschluss von
+  Task #63 angehen.

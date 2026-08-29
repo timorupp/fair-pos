@@ -74,6 +74,11 @@
     formError = ''; saving = true;
     try {
       if (editing) {
+        if (formIsAdmin && !formPassword && !editing.is_admin) {
+          formError = 'Passwort erforderlich für Administrator';
+          saving = false;
+          return;
+        }
         const data: { name?: string; password?: string; is_admin?: boolean; is_active?: boolean } =
           { name: formName, is_admin: formIsAdmin, is_active: formActive };
         if (formPassword) data.password = formPassword;

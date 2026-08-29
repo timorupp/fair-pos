@@ -17,7 +17,7 @@ Project FairPOS {
 Table user {
   id             uuid         [pk, default: `gen_random_uuid()`]
   name           varchar(100) [not null, unique]
-  password_hash  varchar(255) [not null]
+  password_hash  varchar(255) [null, note: 'null = no real password set — only required for administrators (Task #90 follow-up); PIN is the only login method for everyone']
   is_admin       boolean      [not null, default: false]
   is_active      boolean      [not null, default: true, note: 'false = deactivated: login blocked, hidden from register assignment, never anonymized/deleted (Task #56)']
   created_at     timestamptz  [not null, default: `now()`]

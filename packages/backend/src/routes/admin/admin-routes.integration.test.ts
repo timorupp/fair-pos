@@ -129,6 +129,37 @@ describe('Admin users', () => {
     expect(response.json().error).toBe('Passwort erforderlich für Administrator');
   });
 
+  it('refuses to promote a passwordless user to admin without also setting a password (400)', async () => {
+    const app = await getTestApp();
+    // createTestUser always sets a password_hash for fixture convenience — null
+    // it out to simulate the real post-migration state of a PIN-only operator
+    // who never had one (Task #90 follow-up).
+    const operator = await createTestUser({ isAdmin: false });
+    await pool.query('UPDATE "user" SET password_hash = NULL WHERE id = $1', [operator.id]);
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${operator.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_admin: true },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe('Passwort erforderlich für Administrator');
+
+    const stillNotAdmin = await pool.query('SELECT is_admin FROM "user" WHERE id = $1', [operator.id]);
+    expect(stillNotAdmin.rows[0]?.is_admin).toBe(false);
+  });
+
+  it('promotes a user to admin when a password is set in the same request', async () => {
+    const app = await getTestApp();
+    const operator = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${operator.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_admin: true, password: 'new-admin-pw' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().is_admin).toBe(true);
+  });
+
   it('deletes a user with no history references (hard delete, Task #56)', async () => {
     const app = await getTestApp();
     const unused = await createTestUser({ isAdmin: false });

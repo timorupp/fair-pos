@@ -13,7 +13,7 @@
   import { goto } from '$app/navigation';
   import { registerUser } from '$lib/stores/user';
   import { api } from '$lib/api';
-  import { dismissInstallHint, shouldShowInstallHint } from '$lib/pwaInstallHint';
+  import { shouldShowInstallHint } from '$lib/pwaInstallHint';
 
   /** Displayed, hyphen-formatted value, e.g. "ABC-DEF-GHJ" (partial while typing). */
   let pinDisplay = $state('');
@@ -30,11 +30,6 @@
   onMount(() => {
     installHintPlatform = shouldShowInstallHint();
   });
-
-  function closeInstallHint() {
-    installHintPlatform = null;
-    dismissInstallHint();
-  }
 
   const PIN_LENGTH = 9;
 
@@ -127,7 +122,6 @@
 
   {#if installHintPlatform}
     <div class="install-hint">
-      <button type="button" class="install-hint-close" onclick={closeInstallHint} aria-label="Hinweis schließen">✕</button>
       {#if installHintPlatform === 'ios'}
         <p>Für schnelleren Zugriff: Teilen-Symbol (⬆️) unten antippen, dann <strong>„Zum Home-Bildschirm"</strong> wählen.</p>
       {:else}
@@ -297,13 +291,12 @@
   }
 
   .install-hint {
-    position: relative;
     width: 100%;
     max-width: 380px;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
-    padding: 0.85rem 2.25rem 0.85rem 1rem;
+    padding: 0.85rem 1rem;
   }
 
   .install-hint p {
@@ -314,22 +307,6 @@
   }
 
   .install-hint p strong {
-    color: var(--color-text);
-  }
-
-  .install-hint-close {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    background: transparent;
-    border: none;
-    color: var(--color-text-muted);
-    font-size: 0.8rem;
-    padding: 0.25rem;
-    line-height: 1;
-  }
-
-  .install-hint-close:hover {
     color: var(--color-text);
   }
 </style>

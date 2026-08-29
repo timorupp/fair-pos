@@ -47,7 +47,7 @@
     {#if $registerUser}
       <span class="user-name">{$registerUser.name}</span>
       {#if !onRegisterPicker}
-        <button class="btn-ghost icon-btn" onclick={() => goto('/register')} aria-label="Kasse wechseln" title="Kasse wechseln">⌂</button>
+        <button class="btn-ghost icon-btn" onclick={() => goto('/register?stay=1')} aria-label="Kasse wechseln" title="Kasse wechseln">⌂</button>
       {/if}
     {/if}
   </header>

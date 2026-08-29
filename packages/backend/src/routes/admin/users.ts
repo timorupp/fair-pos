@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import { randomBytes } from 'node:crypto';
 import { query } from '../../db/client.js';
 import { hashPassword } from '../../auth/password.js';
 import { formatPinForDisplay, generateRandomPin, hashPin, isValidPinFormat, normalizePin } from '../../auth/pin.js';
@@ -41,10 +40,12 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    * (Task #90, `POST /api/auth/pin`), and the password is only ever checked
    * again for the admin "Systemverwaltung" step-up
    * (`POST /api/auth/admin/verify`), which non-admins never reach.
-   * `password_hash` is `NOT NULL` in the schema, so one not supplied is
-   * filled with a random, unguessable value the user is never given. The
-   * PIN itself is set separately via `POST .../:id/pin/generate` or
-   * `PUT .../:id/pin` — a brand-new user has none until an admin assigns one.
+   * `password_hash` is nullable — a non-admin has none (PIN-only login,
+   * Task #90) and `NULL` there is exactly how `PUT /:id` recognizes "never
+   * had a real password" when a later request tries to promote the user to
+   * admin without also setting one. The PIN itself is set separately via
+   * `POST .../:id/pin/generate` or `PUT .../:id/pin` — a brand-new user has
+   * none until an admin assigns one.
    */
   app.post('/', async (req, reply) => {
     const body = req.body as { name?: string; password?: string; is_admin?: boolean; is_active?: boolean };
@@ -55,7 +56,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'Passwort erforderlich für Administrator' });
     }
 
-    const hash = await hashPassword(body.password || randomBytes(32).toString('hex'));
+    const hash = body.password ? await hashPassword(body.password) : null;
     try {
       const result = await query<UserRow>(
         `INSERT INTO "user" (name, password_hash, is_admin, is_active)
@@ -83,6 +84,11 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    * Also refuses self-deactivation and self-demotion (`is_admin: false`) —
    * both would lock the caller out with no API-level way back in if they were
    * the last remaining admin.
+   *
+   * An admin must always have a real password (checked again for the
+   * "Systemverwaltung" step-up) — so promoting a user via `is_admin: true`
+   * is refused unless this same request also sets a password, or the user
+   * already has one (`password_hash IS NOT NULL`).
    */
   app.put('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -93,6 +99,19 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
     }
     if (id === req.adminUser.id && body.is_admin === false) {
       return reply.status(400).send({ error: 'Du kannst dir nicht selbst die Administratorrechte entziehen' });
+    }
+
+    if (body.is_admin && !body.password) {
+      const existing = await query<{ password_hash: string | null }>(
+        'SELECT password_hash FROM "user" WHERE id = $1',
+        [id],
+      );
+      if (existing.rows.length === 0) {
+        return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+      }
+      if (!existing.rows[0]!.password_hash) {
+        return reply.status(400).send({ error: 'Passwort erforderlich für Administrator' });
+      }
     }
 
     const setClauses: string[] = [];

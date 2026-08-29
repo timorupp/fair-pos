@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { api } from '$lib/api';
   import { adminUser, registerUser } from '$lib/stores/user';
   import Modal from '$lib/components/Modal.svelte';
@@ -32,9 +33,14 @@
       registers = me.registers;
       isAdmin = me.user.is_admin;
       // If exactly one register is assigned, skip the selection screen —
-      // but never for an admin, who needs the chance to reach
-      // Systemverwaltung instead of being routed straight past this screen.
-      if (!isAdmin && registers.length === 1) {
+      // but never for an admin (needs the chance to reach Systemverwaltung
+      // instead of being routed straight past this screen), and never when
+      // explicitly navigated here (the "⌂ Kasse wechseln" topbar button
+      // passes ?stay=1) — otherwise a single-register user could never
+      // reach this screen at all after logging in, since it's also the
+      // only place the "Abmelden" button lives (found live, 2026-08-29).
+      const stay = page.url.searchParams.get('stay') === '1';
+      if (!isAdmin && !stay && registers.length === 1) {
         goto(`/register/${registers[0]!.id}`, { replaceState: true });
         return;
       }
@@ -133,7 +139,8 @@
   <form onsubmit={(e) => { e.preventDefault(); confirmVerify(); }}>
     <label class="field-label">
       Passwort
-      <input type="password" bind:value={verifyPassword} autocomplete="current-password" disabled={verifying} required />
+      <!-- svelte-ignore a11y_autofocus -->
+      <input type="password" bind:value={verifyPassword} autocomplete="current-password" disabled={verifying} required autofocus />
     </label>
     {#if verifyError}<p class="error-text small">{verifyError}</p>{/if}
     <div class="modal-actions">

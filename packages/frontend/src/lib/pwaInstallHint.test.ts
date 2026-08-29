@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  detectMobilePlatform, dismissInstallHint, DISMISS_STORAGE_KEY, isRunningStandalone, shouldShowInstallHint,
+  detectMobilePlatform, isRunningStandalone, shouldShowInstallHint,
 } from './pwaInstallHint.js';
 
 /** Overrides `navigator.userAgent`/`navigator.platform`/`navigator.maxTouchPoints` for one test. */
@@ -70,7 +70,7 @@ describe('isRunningStandalone', () => {
 });
 
 describe('shouldShowInstallHint', () => {
-  it('returns the platform on a recognized mobile browser, not yet installed/dismissed', () => {
+  it('returns the platform on a recognized mobile browser, not yet installed', () => {
     setUserAgent(IPHONE_UA);
     expect(shouldShowInstallHint()).toBe('ios');
   });
@@ -81,14 +81,7 @@ describe('shouldShowInstallHint', () => {
     expect(shouldShowInstallHint()).toBeNull();
   });
 
-  it('returns null after dismissInstallHint() was called', () => {
-    setUserAgent(IPHONE_UA);
-    dismissInstallHint();
-    expect(shouldShowInstallHint()).toBeNull();
-    expect(localStorage.getItem(DISMISS_STORAGE_KEY)).toBe('1');
-  });
-
-  it('returns null on desktop regardless of dismissal state', () => {
+  it('returns null on desktop', () => {
     setUserAgent(DESKTOP_UA, 'Win32', 0);
     expect(shouldShowInstallHint()).toBeNull();
   });

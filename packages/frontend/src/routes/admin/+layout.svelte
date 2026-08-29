@@ -83,6 +83,7 @@
   let articlesOpen = $state(false);
   let registersOpen = $state(false);
   let settingsOpen = $state(false);
+  let monitoringOpen = $state(false);
 
   run(() => {
     reportsOpen = groupActive(['/admin/reports']);
@@ -110,12 +111,16 @@
   run(() => {
     settingsOpen = groupActive([
       '/admin/settings/company',
-      '/admin/settings/print-queue',
       '/admin/settings/printers',
       '/admin/settings/tse',
       '/admin/settings/system',
-      '/admin/settings/logs',
+    ]);
+  });
+  run(() => {
+    monitoringOpen = groupActive([
       '/admin/settings/sessions',
+      '/admin/settings/print-queue',
+      '/admin/settings/logs',
     ]);
   });
 
@@ -208,12 +213,23 @@
         {#if settingsOpen}
           <div class="nav-sub">
             <a href="/admin/settings/company" class:active={isActive('/admin/settings/company')}>Unternehmensdaten</a>
-            <a href="/admin/settings/print-queue" class:active={isActive('/admin/settings/print-queue')}>Druckwarteschlange</a>
             <a href="/admin/settings/printers" class:active={isActive('/admin/settings/printers')}>Drucker</a>
             <a href="/admin/settings/tse" class:active={isActive('/admin/settings/tse')}>TSE</a>
             <a href="/admin/settings/system" class:active={isActive('/admin/settings/system')}>System</a>
-            <a href="/admin/settings/logs" class:active={isActive('/admin/settings/logs')}>Systemprotokoll</a>
+          </div>
+        {/if}
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-group-btn" class:active={monitoringOpen} onclick={() => (monitoringOpen = !monitoringOpen)}>
+          <span>Monitoring</span>
+          <span class="chevron" class:open={monitoringOpen}>›</span>
+        </button>
+        {#if monitoringOpen}
+          <div class="nav-sub">
             <a href="/admin/settings/sessions" class:active={isActive('/admin/settings/sessions')}>Aktive Sessions</a>
+            <a href="/admin/settings/print-queue" class:active={isActive('/admin/settings/print-queue')}>Druckwarteschlange</a>
+            <a href="/admin/settings/logs" class:active={isActive('/admin/settings/logs')}>Systemprotokoll</a>
           </div>
         {/if}
       </div>
