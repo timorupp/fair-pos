@@ -169,9 +169,25 @@
     dirty = true;
   }
 
-  /** Updates the custom button text for one slot — empty clears it back to the article-name fallback. */
-  function setLabel(row: number, col: number, label: string) {
-    slots = slots.map((s) => s.grid_row === row && s.grid_col === col ? { ...s, label: label || null } : s);
+  /**
+   * Updates the custom button text for one slot. The textarea is pre-filled
+   * with the article name (so an admin edits instead of retyping from
+   * scratch) — clearing it, or typing it back to exactly the article name,
+   * collapses to `null` (the fallback) rather than storing a literal
+   * duplicate of the name.
+   */
+  function setLabel(row: number, col: number, value: string) {
+    slots = slots.map((s) => {
+      if (s.grid_row !== row || s.grid_col !== col) return s;
+      const isDefault = value.trim() === '' || value.trim() === s.article_name;
+      return { ...s, label: isDefault ? null : value };
+    });
+    dirty = true;
+  }
+
+  /** Explicitly clears a slot's custom label back to the article-name fallback. */
+  function resetLabel(row: number, col: number) {
+    slots = slots.map((s) => s.grid_row === row && s.grid_col === col ? { ...s, label: null } : s);
     dirty = true;
   }
 
@@ -311,10 +327,14 @@
                       </div>
                       <label class="picker-field">
                         Tastenbeschriftung
-                        <textarea rows="3" placeholder={slot.article_name}
-                                  value={slot.label ?? ''}
+                        <textarea rows="3"
+                                  value={slot.label ?? slot.article_name}
                                   oninput={(e) => setLabel(row, col, e.currentTarget.value)}></textarea>
                       </label>
+                      <button type="button" class="btn-ghost picker-reset"
+                              onclick={() => resetLabel(row, col)} disabled={slot.label === null}>
+                        Beschriftung zurücksetzen
+                      </button>
                       <label class="picker-check">
                         <input type="checkbox" checked={slot.hidden} onchange={() => toggleHidden(row, col)} />
                         Vorübergehend verstecken
@@ -414,6 +434,10 @@
     line-height: 1.2; overflow: hidden; display: -webkit-box;
     -webkit-line-clamp: 3; -webkit-box-orient: vertical; line-clamp: 3;
     text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    /* Manual line breaks in a custom slot label render as-authored here too,
+       matching the actual Bonkasse/Bedienung tile (found live, 2026-08-29:
+       the editor itself collapsed them while the real register UI didn't). */
+    white-space: pre-line;
   }
 
   /* Color picker popover */
@@ -438,6 +462,7 @@
     resize: none; font-size: 0.8rem; padding: 0.4rem 0.5rem;
     font-family: inherit;
   }
+  .picker-reset { font-size: 0.75rem; padding: 0.3rem 0.5rem; }
   .picker-check {
     display: flex; align-items: center; gap: 0.4rem;
     font-size: 0.75rem; color: var(--color-text-muted); cursor: pointer;
