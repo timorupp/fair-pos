@@ -351,7 +351,10 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   TSE-Zustand, ggf. die bereits bestehende Tagesabschluss-Pending-Logik aus
   dem globalen Banner in `admin/+layout.svelte`). Siehe auch Task #60 für die
   geplante Server/Browser-Zeitabweichungs-Warnung, die konzeptionell
-  ähnlich/ergänzend auf derselben Seite sitzen könnte.
+  ähnlich/ergänzend auf derselben Seite sitzen könnte. **Ergänzt
+  (2026-08-27, aus #90):** ggf. auch Anzahl aktiver IP-Sperren des
+  PIN-Login-Rate-Limiters + Reset-Button hier integrieren, statt nur auf
+  der Systemseite.
 - [ ] **#64** System-Health-Check (Sammlung technischer Prüfungen, automatisch beim Start)
   Eine Sammelstelle für technische Systemprüfungen, unabhängig von
   Business-Zuständen (die deckt eher Task #63 ab) — z.B. genug freier
@@ -1244,3 +1247,215 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `admin/users/+page.svelte` (Hintergrund + Rahmen + Hover), plus
   Chevron („›") am Zeilenende als zusätzlicher Hinweis auf den nächsten
   Schritt.
+- [ ] **#89** Fehlende PWA-Artefakte nachrüsten (iOS + Android)
+  Aufgekommen bei der Diskussion um den QR-Login (2026-08-27): geprüft,
+  aktuell existiert **keine** echte PWA-Infrastruktur — kein
+  `manifest.json`, kein Service Worker, keine Icons (selbst der in
+  `app.html` referenzierte `favicon.png` existiert nicht im Quellbaum),
+  keine `apple-touch-icon`/`apple-mobile-web-app-capable`-Meta-Tags. Was
+  auf den Geräten als „App" gespeichert wird, ist bisher nur reines
+  Browser-„Zum Home-Bildschirm hinzufügen" ohne echten Standalone-Modus.
+  **Umfang (grob, noch nicht im Detail geplant):** `manifest.json` +
+  Icon-Set in mehreren Auflösungen, `apple-touch-icon`/
+  `apple-mobile-web-app-capable`/`apple-mobile-web-app-status-bar-style`
+  in `app.html`, echten `favicon.png` anlegen. Service Worker nur falls
+  Offline-Fähigkeit gewünscht ist — noch zu klären, ob das für diesen
+  Anwendungsfall (Kassensystem braucht ohnehin Backend-Verbindung)
+  überhaupt sinnvoll ist oder nur unnötige Komplexität wäre.
+  **Bekanntes Risiko:** iOS Safaris „Intelligent Tracking Prevention" räumt
+  Storage/Cookies bei länger nicht besuchten Seiten unter Umständen
+  eigenständig auf — könnte auch mit korrekt gesetztem `maxAge`
+  (siehe #90) zu unvorhersehbaren Zwangs-Logouts auf iPads führen,
+  unabhängig von der PWA-Nachrüstung. Vorab nicht zuverlässig ausschließbar.
+- [ ] **#90** Login-Neukonzeption: PIN-Login statt QR-Einmaltoken, serverseitige Sessions, vereinheitlichtes Admin/Kassen-Login
+
+  **Ausgangsproblem (2026-08-27):** Das heutige QR-Einmaltoken-Login
+  (`register_access_token`, 10 Min. gültig, `POST /api/auth/register/token`)
+  ist unhandlich, sobald die App als PWA/Homescreen-Bookmark gespeichert
+  wird — das Icon zeigt immer auf eine feste URL, nicht auf den Einmallink
+  mit Token, und eine installierte PWA hat meist keine Adressleiste, um
+  einen neu erzeugten Link von Hand zu öffnen. Zusätzlich gefunden: das
+  Session-Cookie (`packages/backend/src/auth/session.ts`,
+  `COOKIE_OPTIONS`) hat gar kein `maxAge`/`expires` gesetzt — technisch ein
+  reines Browser-Session-Cookie, das beim Schließen verschwindet, obwohl
+  `docs/Anforderungen.md` „Sessions sind persistent" verlangt. Das ist ein
+  eigenständiger Bug, unabhängig vom Redesign.
+
+  **Konzept-Diskussion, Ergebnis:**
+  - **Ein einziges Login-Formular für alle** (kein separates Admin- vs.
+    Kassen-Login mehr) — passt zum Datenmodell, `user.is_admin` ist schon
+    heute nur ein Flag auf derselben Tabelle, keine getrennte Entität. Löst
+    nebenbei die Frage „was zeigt die Root-URL standardmäßig" komplett auf,
+    da es nur noch einen Login-Bildschirm gibt.
+  - **PIN identifiziert und autorisiert gleichzeitig** — kein
+    Benutzernamen-Dropdown (ursprünglich vorgeschlagen, dann verworfen: ein
+    sichtbarer Benutzername hätte gezieltes Sperren einer bekannten Person
+    durch absichtliche Falscheingaben ermöglicht). Format: `XXX-XXX-XXX`,
+    Zeichen A–Z + 0–9 abzüglich verwechselbarer Zeichen (`0`/`O`, `1`/`I`/`l`
+    ausschließen), maskiertes Eingabefeld, Paste mit und ohne Bindestriche
+    unterstützt. Landet nach Erfolg auf der Kassenauswahl (bestehende
+    Weiterleitungslogik in `register/+page.svelte` weitgehend
+    wiederverwendbar, im Detail bei Umsetzung zu prüfen).
+  - **Admin-Zugriff über Stufenauthentifizierung, nicht eigenes Login:**
+    Admin-Benutzer melden sich genau wie alle anderen per PIN an und landen
+    auf derselben Kassenauswahl. Zwischen Kassenliste und Logout-Button
+    erscheint zusätzlich ein „Systemverwaltung"-Button (nur bei
+    `is_admin = true`). Klick darauf fragt einmalig pro Session das
+    bestehende Passwort ab (Flag `admin_verified` auf der Session, kein
+    erneutes Abfragen bei jedem weiteren Klick). Vorteil: die PIN selbst
+    muss für Admin-Konten nicht stärker sein als für alle anderen — der
+    eigentliche Schutz für den sensiblen Adminbereich bleibt das Passwort.
+  - **PIN-Verwaltung im Adminbereich:** `admin/users/+page.svelte`
+    bekommt statt des heutigen QR-Generieren-Buttons ein PIN-Feld
+    („PIN generieren" erzeugt eine Zufalls-PIN, manuelle Eingabe ebenfalls
+    möglich). Eindeutigkeit wird beim Speichern serverseitig geprüft.
+  - **Rate-Limiting statt Pro-Konto-Sperre:** die ursprünglich angedachte
+    „3 Fehlversuche sperren dieses Konto" + Benutzerliste-Spalte
+    „PIN-Fehler" passt nicht mehr zum PIN-only-Modell — eine falsche
+    Eingabe lässt sich keinem Konto zuordnen, wenn der PIN selbst schon die
+    Identifikation ist. Ersetzt durch ein klassisches IP-basiertes
+    Rate-Limit auf den Login-Endpunkt: 3 Fehlversuche → 15 Minuten Sperre
+    dieser IP. Rechnerisch mehr als ausreichend (s.u.), eher Serverlast-/
+    Spam-Schutz als sicherheitsentscheidend, da der PIN-Raum selbst (siehe
+    unten) schon praktisch nicht durchprobierbar ist.
+    **Admin braucht eine Möglichkeit, aktive IP-Sperren manuell
+    zurückzusetzen** (falls ein Gerät sich versehentlich selbst aussperrt
+    und der Betrieb dadurch blockiert wäre) — einfacher Button „Alle
+    aktiven IP-Sperren zurücksetzen" genügt, keine Liste einzelner
+    Sperren nötig. Siehe auch Ergänzung bei Task #63 (Dashboard könnte die
+    Anzahl aktiver Sperren + denselben Reset-Button zusätzlich zeigen).
+
+  **Sicherheitsbetrachtung:**
+  - PIN-Raum: 9 Zeichen aus A–Z+0–9 abzüglich verwechselbarer Zeichen ≈
+    3–3,5×10¹³ Kombinationen. Bei 3 Versuchen/15 Min. pro IP käme ein
+    Angreifer auf ca. 10⁵ Versuche/Jahr — selbst mit 10.000 parallelen
+    IP-Adressen wären das rechnerisch tausende Jahre bis zum Durchprobieren
+    des gesamten Raums. Die Sperre ist hier eher Serverlast-Schutz, der
+    Raum selbst macht Online-Raten praktisch aussichtslos.
+  - Realistische Bedrohung ist stattdessen **Diebstahl eines DB-Backups**
+    und anschließendes **Offline-Cracken** der PIN-Hashes. Ein Hash ohne
+    Salt oder mit konstantem Salt (z. B. Kassen-Seriennummer, die ohnehin
+    in derselben DB steht) ließe sich einmalig offline für den gesamten
+    Zeichenraum vorberechnen (auf aktueller GPU-Hardware im Bereich von
+    Minuten bis einer Stunde) — eine wiederverwendbare Tabelle gegen jede
+    gestohlene DB-Kopie.
+  - **Wichtige technische Korrektur während der Konzeption:** ein
+    zeilen-gesalzener, langsamer Hash wie bcrypt (wie bei Passwörtern
+    verwendet) verhindert zwar Offline-Vorberechnung, macht aber die
+    **Login-Suche selbst unpraktikabel** — ohne bekannten Benutzernamen
+    müsste bei jedem Login-Versuch gegen **jeden** Benutzer einzeln
+    geprüft werden (bcrypt ist absichtlich langsam, ~100ms/Vergleich),
+    im Fehlerfall (keine Übereinstimmung) sogar gegen alle. Bei
+    realistischen Nutzerzahlen spürbar langsam.
+    **Lösung:** `pin_hash` = `HMAC-SHA256(SERVER_SECRET, normalisierte PIN)`
+    — deterministisch (gleiche PIN → gleicher Hash), erlaubt eine normale
+    indizierte SQL-Abfrage (`WHERE pin_hash = $1`) sowohl beim Login als
+    auch bei der Eindeutigkeitsprüfung, bleibt aber offline-resistent,
+    **solange** `SERVER_SECRET` getrennt von der Datenbank aufbewahrt wird
+    (eigene Env-Variable, nicht Teil des DB-Backups — analog zum
+    bestehenden `SESSION_SECRET`-Muster in `config.ts`). Passwörter
+    (Admin-Stufenauth) bleiben unverändert bei bcrypt — dort ist die
+    Zeilen-Salt-Eigenschaft kein Problem, da immer gegen einen schon
+    bekannten Benutzer geprüft wird.
+
+  **Technischer Umfang (grob, Detailplanung folgt bei Umsetzung):**
+  - **DB:** `user` bekommt `pin_hash` (nullable, bis Admin eine PIN
+    vergibt); `register_access_token`-Tabelle + zugehöriger Code entfällt
+    komplett (obsolet). Neue `session`-Tabelle (`id`, `user_id`, `token`,
+    `admin_verified`, `created_at`, `last_activity_at`, optional
+    `user_agent`) ersetzt die bisherigen zwei getrennten, zustandslosen
+    signierten Cookies (`adminUser`/`registerUser`) durch ein einziges,
+    serverseitig nachverfolgtes Modell — Voraussetzung für
+    Session-Liste + gezieltes Beenden im Adminbereich.
+  - **Backend:** neuer Endpunkt `POST /api/auth/pin`; neuer
+    Stufenauth-Endpunkt (Passwortprüfung, setzt `admin_verified` auf der
+    bestehenden Session statt eine neue zu erzeugen); `POST
+    /api/admin/users/:id/token` und `POST /api/auth/register/token`
+    entfallen; `authenticateAdmin`/`authenticateRegister`-Middlewares
+    verschmelzen zu einer gemeinsamen Session-Prüfung (+ zusätzlicher
+    `admin_verified`-Check für admin-only-Routen); In-Memory-Rate-Limiter
+    pro IP auf `POST /api/auth/pin`; Reset-Endpunkt für alle aktiven
+    IP-Sperren; `last_activity_at` wird bei jedem authentifizierten
+    Request aktualisiert (gleitende Verlängerung), Session gilt nach 4h
+    Inaktivität als abgelaufen.
+  - **Frontend:** `login/+page.svelte` komplett neu (maskiertes
+    PIN-Eingabefeld statt Formular-Umschaltung); `adminUser`/`registerUser`-
+    Stores verschmelzen zu einem gemeinsamen Nutzer-Store +
+    `isAdminVerified`-Flag; „Systemverwaltung"-Button + Passwort-Stufenauth-
+    Dialog auf der Kassenauswahl; `admin/users/+page.svelte`: QR-Generieren
+    durch PIN-Verwaltung (Anzeige/Generieren/manuell ändern) ersetzen; neue
+    Admin-Seite „Aktive Sessions" (Liste + Beenden-Button pro Zeile).
+
+  **Größter struktureller Aufwand — umgangen durch kompatibilitätswahrenden
+  Zuschnitt:** `authenticateAdmin`/`authenticateRegister` und die Felder
+  `request.adminUser`/`request.registerUser` (in praktisch jeder
+  admin-/registerseitigen Route verwendet) bleiben namentlich unverändert —
+  beide lesen jetzt intern dieselbe `session`-Tabelle über **ein** Cookie,
+  statt zwei komplett getrennte Cookies zu pflegen. `authenticateRegister`
+  akzeptiert jede gültige Session; `authenticateAdmin` verlangt zusätzlich
+  `is_admin` **und** `admin_verified`. Dadurch musste kein einziger
+  bestehender Routen-Handler inhaltlich angefasst werden — die
+  Vereinheitlichung passierte ausschließlich in der Session-/Login-Schicht.
+  Dasselbe Muster auf der Frontend-Seite: `adminUser`/`registerUser`
+  bleiben zwei Stores, beide werden nur noch von einem gemeinsamen
+  Login-Fluss befüllt.
+
+  **Erledigt (2026-08-27):**
+  - Migration `0011_pin_login_sessions.sql`: `user.pin_hash`, neue
+    `session`-Tabelle (`user_id`, `token`, `admin_verified`, `created_at`,
+    `last_activity_at`, `user_agent`), `register_access_token` entfernt.
+  - `config.pinHashSecret` (`PIN_HASH_SECRET`-Env-Var, getrennt von
+    `SESSION_SECRET`) — `.env.example`, `docs/SETUP.md`,
+    `docs/Installationsanleitung.md` aktualisiert, inkl. Warnung, dass
+    dieser Schlüssel nicht ins DB-Backup gehört.
+  - `auth/pin.ts`: Normalisieren/Formatieren/Hashen (`HMAC-SHA256`,
+    deterministisch für schnelle Lookup-Abfrage statt bcrypt-Schleife über
+    alle Benutzer — Korrektur eines eigenen Fehlvorschlags während der
+    Konzeption, siehe Diskussion oben)/Zufalls-PIN ohne `0`/`O`/`1`/`I`.
+  - `auth/rateLimit.ts`: In-Memory-IP-Sperre (3 Versuche/15 Min.),
+    `countActiveLockouts()`/`resetAllLockouts()`.
+  - `auth/session.ts` komplett umgebaut auf die `session`-Tabelle (ein
+    Cookie, gleitende 4h-Inaktivitätsgrenze, `admin_verified`-Flag).
+  - `middleware/authenticate.ts` wie oben beschrieben umgebaut, ohne
+    Signatur-/Feldnamenänderung nach außen.
+  - `routes/auth.ts`: `POST /api/auth/pin`, `POST /api/auth/admin/verify`
+    (Stufenauth, setzt `admin_verified` auf der bestehenden Session), ein
+    gemeinsames `POST /api/auth/logout`; altes Login/Token entfernt.
+  - `admin/users.ts`: PIN-Generieren (`POST .../pin/generate`, liefert nur
+    einen Vorschlag, noch nicht gespeichert) + Speichern
+    (`PUT .../pin`, Eindeutigkeitsprüfung), `has_pin` in der Benutzerliste
+    statt des Hash selbst.
+  - Neue `admin/sessions.ts` (Liste + gezieltes Beenden) und
+    IP-Sperren-Reset-Endpunkt in `admin/system.ts` (+ `ip_lockout_count`
+    in `/status`).
+  - Frontend: neue Login-Seite (maskiertes PIN-Feld, Paste mit/ohne
+    Bindestriche), Kassenauswahl mit „Systemverwaltung"-Button + Passwort-
+    Stufenauth-Dialog (unterdrückt außerdem den Single-Register-Autoskip
+    für Admins, damit sie den Button überhaupt sehen), PIN-Verwaltung in
+    `admin/users/+page.svelte` statt QR-Code, neue Seite „Aktive Sessions",
+    IP-Sperren-Anzeige+Reset in den Systemeinstellungen.
+  - `db/seed.ts` vergibt jetzt ebenfalls eine PIN (sonst könnte sich der
+    erste Admin nach frischer Installation gar nicht anmelden) und gibt
+    sie einmalig auf der Konsole aus.
+  - E2E-Suite (`full-flow.e2e.test.ts`) und ihr README auf
+    `E2E_ADMIN_PIN` + PIN-Vergabe für den Testkassierer umgestellt.
+  - `docs/Anforderungen.md` (Authentifizierungs-Entscheidung),
+    `docs/Manueller-Testplan.md` (Abschnitt 1 + Benutzerverwaltung),
+    `docs/Dictionary.md` (PIN/Sitzung statt Zugangscode) aktualisiert.
+  - Neue Unit-Tests (`auth/pin.test.ts`, `auth/rateLimit.test.ts`) und
+    Integrationstests (`auth.integration.test.ts` neu geschrieben,
+    `admin/sessions.integration.test.ts` neu, PIN-Verwaltung +
+    IP-Sperren-Tests in `admin-routes.integration.test.ts` ergänzt);
+    bestehende Login-Hilfsfunktionen (`loginAsAdmin`/`loginAsRegisterUser`
+    in `test/app-helpers.ts`) auf PIN umgestellt — dadurch automatisch
+    alle ~14 bestehenden Testdateien mit angepasst, ohne deren eigentliche
+    Testlogik zu ändern. Volle Unit- (262 Tests) und Integrationssuite
+    grün, Typecheck (Backend+Frontend) und Build sauber.
+  - **Noch nicht live durch den Nutzer bestätigt** (rein gegen die
+    Testsuiten verifiziert, noch nicht auf echter Hardware/im Browser).
+
+  **Weiterhin offen / noch nicht entschieden:** genaue PIN-Länge falls
+  von 3×3 abgewichen werden soll (bisher nicht in Frage gestellt, aktuell
+  beibehalten); ob ein Mindestabstand zwischen zwei PIN-Neuvergaben für
+  denselben Benutzer nötig ist (bisher nicht thematisiert, vermutlich
+  nicht nötig); Task #89 (PWA-Artefakte) weiterhin unabhängig offen.

@@ -15,19 +15,20 @@ einem größeren Update.
 ## Voraussetzungen
 
 1. Eine laufende FairPOS-Instanz (siehe `docs/Installationsanleitung.md`).
-2. Ein Admin-Benutzer (`npm run db:seed -- <name> <passwort>`).
+2. Ein Admin-Benutzer (`npm run db:seed -- <name> <passwort>` — die dabei
+   ausgegebene PIN notieren, siehe Schritt 3).
 3. Umgebungsvariablen:
 
    | Variable | Pflicht | Beschreibung |
    |---|---|---|
    | `E2E_BASE_URL` | nein (Standard: `http://localhost:3000`) | Basis-URL der Instanz |
-   | `E2E_ADMIN_NAME` | ja | Name des Admin-Benutzers aus Schritt 2 |
-   | `E2E_ADMIN_PASSWORD` | ja | Sein Passwort |
+   | `E2E_ADMIN_PIN` | ja | PIN des Admin-Benutzers aus Schritt 2 (Task #90 — Login läuft für alle nur noch per PIN) |
+   | `E2E_ADMIN_PASSWORD` | ja | Sein Passwort (für die Systemverwaltung-Stufenauth) |
 
 ## Ausführen
 
 ```bash
-E2E_ADMIN_NAME=admin E2E_ADMIN_PASSWORD=... npm run test:e2e
+E2E_ADMIN_PIN=ABC-DEF-GHJ E2E_ADMIN_PASSWORD=... npm run test:e2e
 ```
 
 ## Was wird geprüft

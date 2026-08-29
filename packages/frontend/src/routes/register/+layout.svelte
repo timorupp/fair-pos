@@ -1,8 +1,7 @@
 <script lang="ts">
   /**
-   * Layout for the cash-register UIs. Reads the register-session cookie and
-   * redirects to `/login` if absent. Independent of the admin session — both
-   * can be active simultaneously.
+   * Layout for the cash-register UIs. Checks the current session (Task #90:
+   * a single session for everyone) and redirects to `/login` if absent.
    */
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
@@ -29,7 +28,7 @@
       const user = await api.auth.register.me();
       registerUser.set(user);
     } catch {
-      // No register session → back to the login page; the token URL handles re-entry.
+      // No valid session → back to the login page.
       goto('/login');
       return;
     } finally {

@@ -8,7 +8,9 @@
   import type { User, Register } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
-  let users: User[] = $state([]);
+  type UserRow = User & { has_pin: boolean };
+
+  let users: UserRow[] = $state([]);
   let registers: Register[] = $state([]);
   let loading = $state(true);
   let error = $state('');
@@ -24,8 +26,13 @@
   let saving = $state(false);
   let deleting = $state(false);
 
-  let tokenModal = $state(false);
-  let tokenUrl = $state('');
+  // PIN management (Task #90) — replaces the old QR-login-link modal.
+  let pinModal = $state(false);
+  let pinModalUser: UserRow | null = $state(null);
+  /** Hyphen-formatted, editable candidate/current PIN shown in the modal. */
+  let pinDisplay = $state('');
+  let pinSaving = $state(false);
+  let pinError = $state('');
 
   onMount(load);
 
@@ -94,16 +101,64 @@
     finally { deleting = false; }
   }
 
-  async function generateToken(u: User) {
-    try {
-      const { token } = await api.admin.users.generateToken(u.id);
-      tokenUrl = `${location.origin}/login?token=${token}`;
-      tokenModal = true;
-    } catch (e) { alert(e instanceof Error ? e.message : 'Fehler'); }
+  /** Strips separators/whitespace and uppercases — same normalization as the PIN login field. */
+  function normalizePin(raw: string): string {
+    return raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 9);
   }
 
-  function copyToken() { copyToClipboard(tokenUrl); }
-  function openTokenInTab() { window.open(tokenUrl, '_blank'); }
+  /** Re-inserts the `XXX-XXX-XXX` hyphens for display. */
+  function formatPin(normalized: string): string {
+    const groups: string[] = [];
+    for (let i = 0; i < normalized.length; i += 3) groups.push(normalized.slice(i, i + 3));
+    return groups.join('-');
+  }
+
+  function onPinInput(e: Event) {
+    const target = e.currentTarget as HTMLInputElement;
+    pinDisplay = formatPin(normalizePin(target.value));
+  }
+
+  /** Opens the PIN modal with a freshly generated candidate — not saved until "Speichern". */
+  async function openPinModal(u: UserRow) {
+    pinModalUser = u;
+    pinError = '';
+    pinDisplay = '';
+    pinModal = true;
+    try {
+      const { pin } = await api.admin.users.generatePin(u.id);
+      pinDisplay = pin;
+    } catch (e) {
+      pinError = e instanceof Error ? e.message : 'Fehler';
+    }
+  }
+
+  /** Fetches another random candidate, discarding the current one (not yet saved). */
+  async function regeneratePin() {
+    if (!pinModalUser) return;
+    pinError = '';
+    try {
+      const { pin } = await api.admin.users.generatePin(pinModalUser.id);
+      pinDisplay = pin;
+    } catch (e) {
+      pinError = e instanceof Error ? e.message : 'Fehler';
+    }
+  }
+
+  async function savePin() {
+    if (!pinModalUser) return;
+    pinSaving = true; pinError = '';
+    try {
+      await api.admin.users.setPin(pinModalUser.id, normalizePin(pinDisplay));
+      pinModal = false;
+      await load();
+    } catch (e) {
+      pinError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      pinSaving = false;
+    }
+  }
+
+  function copyPin() { copyToClipboard(pinDisplay); }
 
   function toggleRegister(id: string) {
     if (formRegisterIds.includes(id)) {
@@ -141,7 +196,9 @@
             <td>{#if !u.is_active}<span class="archived-badge">Deaktiviert</span>{:else}<span class="muted small">aktiv</span>{/if}</td>
             <td class="num">{new Date(u.created_at).toLocaleDateString('de-DE')}</td>
             <td class="actions">
-              <button class="btn-primary login-btn" onclick={() => generateToken(u)} disabled={!u.is_active}>Login</button>
+              <button class="btn-primary login-btn" onclick={() => openPinModal(u)} disabled={!u.is_active}>
+                {u.has_pin ? 'PIN ändern' : 'PIN vergeben'}
+              </button>
               <button class="btn-ghost" onclick={() => openEdit(u)}>Bearbeiten</button>
             </td>
           </tr>
@@ -175,7 +232,7 @@
         <label for="u-active">Aktiv</label>
       </div>
       {#if !formActive}
-        <p class="hint">Deaktivierte Benutzer können sich nicht mehr anmelden (auch nicht per QR-Login) und werden aus der Kassenzuweisung ausgeblendet, bleiben aber vollständig in der Datenbank erhalten.</p>
+        <p class="hint">Deaktivierte Benutzer können sich nicht mehr anmelden (auch nicht per PIN) und werden aus der Kassenzuweisung ausgeblendet, bleiben aber vollständig in der Datenbank erhalten.</p>
       {/if}
     {/if}
     {#if assignableRegisters.length > 0}
@@ -210,19 +267,34 @@
   </form>
 </Modal>
 
-<Modal bind:open={tokenModal} title="QR-Login-Link">
-  <div class="token-box">
-    <p class="muted">Dieser Link ist 10 Minuten gültig und kann nur einmal verwendet werden.</p>
-    {#if tokenUrl}
-      <img class="token-qr" src="/api/admin/qr.png?data={encodeURIComponent(tokenUrl)}&size=320" alt="QR-Code für den Login-Link" />
-    {/if}
-    <code class="token-url">{tokenUrl}</code>
+<Modal bind:open={pinModal} title={pinModalUser ? `PIN — ${pinModalUser.name}` : 'PIN'}>
+  <div class="pin-box">
+    <p class="muted">
+      Diese PIN identifiziert und authentifiziert den Benutzer beim Anmelden —
+      kein zusätzlicher Benutzername nötig. Vorschlag kann übernommen oder
+      hier direkt geändert werden.
+    </p>
+    <input
+      class="pin-input"
+      type="text"
+      value={pinDisplay}
+      oninput={onPinInput}
+      placeholder="XXX-XXX-XXX"
+      autocomplete="off"
+      autocorrect="off"
+      autocapitalize="characters"
+      spellcheck="false"
+      disabled={pinSaving}
+    />
+    {#if pinError}<p class="error-text small">{pinError}</p>{/if}
     <div class="modal-actions">
-      <button class="btn-ghost" onclick={() => (tokenModal = false)}>Schließen</button>
-      {#if $adminUser && tokenUrl.includes(`token=`)}
-        <button class="btn-ghost" onclick={openTokenInTab}>In neuem Tab öffnen</button>
-      {/if}
-      <button class="btn-primary" onclick={copyToken}>Link kopieren</button>
+      <button class="btn-ghost" onclick={regeneratePin} disabled={pinSaving}>Neu erzeugen</button>
+      <button class="btn-ghost" onclick={copyPin} disabled={!pinDisplay}>Kopieren</button>
+      <div class="spacer"></div>
+      <button class="btn-ghost" onclick={() => (pinModal = false)} disabled={pinSaving}>Abbrechen</button>
+      <button class="btn-primary" onclick={savePin} disabled={pinSaving || normalizePin(pinDisplay).length !== 9}>
+        {pinSaving ? 'Speichern…' : 'Speichern'}
+      </button>
     </div>
   </div>
 </Modal>
@@ -233,16 +305,13 @@
     background: rgba(79,124,255,0.12); color: var(--color-primary);
     border-radius: 4px; margin-left: 0.35rem; vertical-align: middle;
   }
-  .token-box { display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
-  .token-qr {
-    align-self: center; width: 220px; height: 220px;
-    background: white; padding: 0.5rem; border-radius: var(--radius-sm);
-  }
-  .token-url {
-    display: block; padding: 0.75rem;
+  .pin-box { display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
+  .pin-input {
+    padding: 0.75rem 1rem;
     background: var(--color-surface-2); border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm); font-size: 0.8rem;
-    word-break: break-all; color: var(--color-text);
+    border-radius: var(--radius-sm); color: var(--color-text);
+    font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+    font-size: 1.3rem; letter-spacing: 0.15em; text-align: center;
   }
   .spacer { flex: 1; }
   .small { font-size: 0.85rem; }

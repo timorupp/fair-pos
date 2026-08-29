@@ -24,6 +24,7 @@ export default defineConfig({
     // config.tseMountPoint/tseClientId directly).
     env: {
       SESSION_SECRET: 'unit-test-secret-not-used',
+      PIN_HASH_SECRET: 'unit-test-pin-secret-not-used',
       DATABASE_URL: 'postgres://unit-test/unused',
     },
   },

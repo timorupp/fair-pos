@@ -319,10 +319,16 @@ Backend-Start fehlen, führen zu einem sofortigen Fehler.
 | `POSTGRES_DB`        | ja      | —                         | DB-Name (dito)                       |
 | `DATABASE_URL`       | ja      | —                         | PostgreSQL-Connection-String         |
 | `SESSION_SECRET`     | ja      | —                         | Signierungsschlüssel für Cookies     |
+| `PIN_HASH_SECRET`    | ja      | —                         | Schlüssel für das PIN-Login (Task #90) — MUSS getrennt von DB-Backups aufbewahrt werden, siehe unten |
 | `PORT`               | nein    | `3000`                    | HTTP-Port des Backends               |
 | `NODE_ENV`           | nein    | `development`             | `development` oder `production`      |
 
-`SESSION_SECRET` sollte mindestens 32 zufällige Zeichen enthalten.
+`SESSION_SECRET`/`PIN_HASH_SECRET` sollten je mindestens 32 zufällige Zeichen
+enthalten und **unterschiedliche** Werte sein. `PIN_HASH_SECRET` ist der
+Schlüssel für den deterministischen HMAC-SHA256-Hash der Bedienungs-PINs
+(`auth/pin.ts`) — wer nur eine gestohlene DB-Sicherung hat, aber nicht auch
+diesen Schlüssel, kann die PINs nicht offline durchprobieren. Deshalb gehört
+er **nicht** in dieselbe Sicherung wie die Datenbank.
 
 TSE-Mount-Pfad und Client-ID sind **keine** Umgebungsvariablen — sie werden
 ausschließlich über Systemeinstellungen → System in der Admin-UI konfiguriert

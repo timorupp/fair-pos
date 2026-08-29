@@ -58,7 +58,13 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error((data as { error?: string }).error ?? 'Unbekannter Fehler');
+    const error = new Error((data as { error?: string }).error ?? 'Unbekannter Fehler');
+    // Attaches any other structured fields from the error body (e.g. the
+    // admin step-up's `needs_admin_verification`) so callers that need more
+    // than the message can inspect them, without changing behaviour for
+    // callers that only read `.message`.
+    Object.assign(error, data);
+    throw error;
   }
 
   if (res.status === 204) return undefined as T;
@@ -68,44 +74,50 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 /** All available API calls, grouped by domain. */
 export const api = {
   /**
-   * Authentication endpoints. Two namespaces matching the backend's separate
-   * session cookies — `auth.admin.*` for username/password login (admin UI) and
-   * `auth.register.*` for QR-token login (cash-register UI). Each namespace
-   * only touches its own cookie.
+   * Authentication endpoints (Task #90). Everyone logs in the same way, via
+   * `auth.pin()` — there's a single session, not two separate cookies.
+   * `auth.admin.*` is the additional "Systemverwaltung" step-up (password)
+   * that marks that same session as admin-verified; `auth.register.*` works
+   * for any logged-in user regardless of that step-up.
    */
   auth: {
+    /**
+     * PIN login (Task #90) — the only way in, admin or not. Identifies and
+     * authenticates in one step (no separate username). Sets the session
+     * cookie; lands everyone on the Kassenauswahl.
+     */
+    pin: (pin: string): Promise<User> => request('POST', '/auth/pin', { pin }),
+
     admin: {
-      /** Username/password login. Sets the admin_session cookie. */
-      login: (name: string, password: string): Promise<User> =>
-        request('POST', '/auth/admin/login', { name, password }),
+      /**
+       * The "Systemverwaltung" step-up — checks the admin's password and
+       * marks the *current* session (from the PIN login above) as
+       * verified, once per session. Throws (401) on a wrong password, or
+       * (403) if the current session's user isn't `is_admin`.
+       */
+      verify: (password: string): Promise<{ ok: boolean }> =>
+        request('POST', '/auth/admin/verify', { password }),
 
-      /** Clears the admin_session cookie. Does not affect the register_session. */
-      logout: (): Promise<{ ok: boolean }> =>
-        request('POST', '/auth/admin/logout'),
-
-      /** Returns the current admin user, or throws when no admin session exists. */
+      /** Returns the current admin user, or throws when the session hasn't passed the step-up yet. */
       me: (): Promise<User> =>
         request('GET', '/auth/admin/me'),
     },
 
     register: {
-      /** Exchanges a one-time QR token for a register_session cookie. */
-      token: (token: string): Promise<User> =>
-        request('POST', '/auth/register/token', { token }),
-
-      /** Clears the register_session cookie. Does not affect the admin_session. */
-      logout: (): Promise<{ ok: boolean }> =>
-        request('POST', '/auth/register/logout'),
-
-      /** Returns the current operator, or throws when no register session exists. */
+      /** Returns the current user, or throws when no session exists. Works for any logged-in user, admin or not. */
       me: (): Promise<User> =>
         request('GET', '/auth/register/me'),
     },
+
+    /** Ends the current session (whatever it's being used for — Kassenauswahl or Systemverwaltung). */
+    logout: (): Promise<{ ok: boolean }> =>
+      request('POST', '/auth/logout'),
   },
 
   admin: {
     users: {
-      list: (): Promise<User[]> => request('GET', '/admin/users'),
+      /** `has_pin` (Task #90) tells the UI whether a PIN is already assigned, without ever exposing the hash. */
+      list: (): Promise<(User & { has_pin: boolean })[]> => request('GET', '/admin/users'),
       create: (data: { name: string; password: string; is_admin: boolean; is_active?: boolean }): Promise<User> =>
         request('POST', '/admin/users', data),
       update: (id: string, data: { name?: string; password?: string; is_admin?: boolean; is_active?: boolean }): Promise<User> =>
@@ -115,8 +127,23 @@ export const api = {
         request('GET', `/admin/users/${id}/registers`),
       setRegisters: (id: string, register_ids: string[]): Promise<void> =>
         request('PUT', `/admin/users/${id}/registers`, { register_ids }),
-      generateToken: (id: string): Promise<{ token: string; valid_until: string }> =>
-        request('POST', `/admin/users/${id}/token`),
+
+      /** Generates a random candidate PIN — NOT saved yet, see `setPin`. */
+      generatePin: (id: string): Promise<{ pin: string }> =>
+        request('POST', `/admin/users/${id}/pin/generate`),
+      /** Saves a PIN (generated or manually typed/edited), with or without the `XXX-XXX-XXX` hyphens. */
+      setPin: (id: string, pin: string): Promise<void> =>
+        request('PUT', `/admin/users/${id}/pin`, { pin }),
+    },
+
+    sessions: {
+      /** Every currently active session (Task #90), newest activity first. */
+      list: (): Promise<{
+        id: string; user_name: string; is_admin: boolean; admin_verified: boolean;
+        created_at: string; last_activity_at: string; user_agent: string | null;
+      }[]> => request('GET', '/admin/sessions'),
+      /** Forcibly ends one session — that device is logged out on its next request. */
+      terminate: (id: string): Promise<void> => request('DELETE', `/admin/sessions/${id}`),
     },
 
     categories: {
@@ -233,7 +260,7 @@ export const api = {
     },
 
     system: {
-      status: (): Promise<{ system_serial: string; timezone: string; server_time: string }> =>
+      status: (): Promise<{ system_serial: string; timezone: string; server_time: string; ip_lockout_count: number }> =>
         request('GET', '/admin/system/status'),
       /**
        * Manually sets the server's system clock (Task #60) — `time` in
@@ -252,6 +279,8 @@ export const api = {
        * error otherwise. Executes immediately — confirm in the UI first.
        */
       shutdown: (): Promise<void> => request('POST', '/admin/system/shutdown'),
+      /** Clears every IP's PIN-login lockout (Task #90) — for a device that locked itself out by mistake. */
+      resetIpLockouts: (): Promise<void> => request('POST', '/admin/system/reset-ip-lockouts'),
     },
 
     backup: {

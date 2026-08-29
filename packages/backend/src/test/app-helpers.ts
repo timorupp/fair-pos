@@ -5,6 +5,7 @@
 
 import { buildApp } from '../app.js';
 import type { FastifyInstance } from 'fastify';
+import { resetAllLockouts } from '../auth/rateLimit.js';
 
 /** Cached app instance — building Fastify takes a few hundred ms, so reuse across tests. */
 let cachedApp: FastifyInstance | null = null;
@@ -36,50 +37,51 @@ export async function closeTestApp(): Promise<void> {
 }
 
 /**
- * Performs the admin login flow against the test app and returns the
- * `Cookie` header value to send on subsequent admin-only requests.
+ * Logs in as an admin user (Task #90: PIN login, then the "Systemverwaltung"
+ * password step-up on the same session) and returns the `Cookie` header
+ * value to send on subsequent admin-only requests.
  *
  * @param app - The test Fastify instance.
- * @param name - Admin user name.
- * @param password - Admin user plaintext password.
+ * @param pin - The user's plaintext PIN (from `createTestUser`).
+ * @param password - The user's plaintext password (from `createTestUser`).
  * @returns The cookie header value (multiple `set-cookie` lines joined with `; `).
- * @throws When the credentials are rejected.
+ * @throws When the PIN or password is rejected.
  */
-export async function loginAsAdmin(app: FastifyInstance, name: string, password: string): Promise<string> {
-  const response = await app.inject({
-    method: 'POST',
-    url: '/api/auth/admin/login',
-    payload: { name, password },
-  });
-  if (response.statusCode !== 200) {
-    throw new Error(`Admin login failed: ${response.statusCode} ${response.body}`);
+export async function loginAsAdmin(app: FastifyInstance, pin: string, password: string): Promise<string> {
+  // A legitimate test login should never be blocked by lockout state left
+  // over from an earlier test in the same file exercising failed attempts.
+  resetAllLockouts();
+  const pinResponse = await app.inject({ method: 'POST', url: '/api/auth/pin', payload: { pin } });
+  if (pinResponse.statusCode !== 200) {
+    throw new Error(`PIN login failed: ${pinResponse.statusCode} ${pinResponse.body}`);
   }
-  return extractSessionCookie(response.headers['set-cookie']);
+  const cookie = extractSessionCookie(pinResponse.headers['set-cookie']);
+
+  const verifyResponse = await app.inject({
+    method: 'POST', url: '/api/auth/admin/verify',
+    headers: { cookie }, payload: { password },
+  });
+  if (verifyResponse.statusCode !== 200) {
+    throw new Error(`Admin step-up failed: ${verifyResponse.statusCode} ${verifyResponse.body}`);
+  }
+  return cookie;
 }
 
 /**
- * Issues a one-time QR token to the given user and exchanges it for a
- * register-session cookie via the public token-login endpoint.
+ * Logs in via PIN (Task #90) and returns the register-session cookie value
+ * for subsequent requests. Works for any active user, admin or not — the
+ * admin step-up (see {@link loginAsAdmin}) is a separate, additional step
+ * only needed to reach admin-only routes.
  *
  * @param app - The test Fastify instance.
- * @param userId - The user the token belongs to.
+ * @param pin - The user's plaintext PIN (from `createTestUser`).
  * @returns The cookie header value for subsequent register-session requests.
  */
-export async function loginAsRegisterUser(app: FastifyInstance, userId: string): Promise<string> {
-  const { pool } = await import('../db/client.js');
-  const token = `tok-${Math.random().toString(36).slice(2, 16)}`;
-  await pool.query(
-    `INSERT INTO register_access_token (user_id, token, valid_until)
-     VALUES ($1, $2, now() + interval '10 minutes')`,
-    [userId, token],
-  );
-  const response = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register/token',
-    payload: { token },
-  });
+export async function loginAsRegisterUser(app: FastifyInstance, pin: string): Promise<string> {
+  resetAllLockouts();
+  const response = await app.inject({ method: 'POST', url: '/api/auth/pin', payload: { pin } });
   if (response.statusCode !== 200) {
-    throw new Error(`Register-token login failed: ${response.statusCode} ${response.body}`);
+    throw new Error(`PIN login failed: ${response.statusCode} ${response.body}`);
   }
   return extractSessionCookie(response.headers['set-cookie']);
 }

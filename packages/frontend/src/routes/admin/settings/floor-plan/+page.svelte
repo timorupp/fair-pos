@@ -383,7 +383,12 @@
 
 <!-- Context menu -->
 {#if menuTable}
+  <!-- onclick here only stops the click from bubbling to the page-level
+       closeMenu() handler (line 225) — it's not itself an interactive
+       action, so there's no keyboard equivalent to add; the real actions
+       are the <button>s inside. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="context-menu"
     style="left:{menuX}px; top:{menuY}px"

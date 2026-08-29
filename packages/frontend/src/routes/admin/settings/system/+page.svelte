@@ -8,9 +8,14 @@
   let systemSerial = $state('');
   let timezone = $state('');
   let serverTime: Date | null = $state(null);
+  let ipLockoutCount = $state(0);
   let statusLoading = $state(true);
   let statusError = $state('');
   let tick = $state(0); // re-renders the clock every second by changing a reactive dependency
+
+  // ── PIN-login IP-Sperren (Task #90) ──
+  let resettingLockouts = $state(false);
+  let resetLockoutsError = $state('');
 
   // ── Editable settings (server_address) ──
   let settings: Record<string, string> = $state({});
@@ -65,9 +70,23 @@
       timezone = status.timezone;
       setTimezoneValue = status.timezone;
       serverTime = new Date(status.server_time);
+      ipLockoutCount = status.ip_lockout_count;
     } catch (e) {
       statusError = e instanceof Error ? e.message : 'Fehler';
     } finally { statusLoading = false; }
+  }
+
+  /** Clears every IP's PIN-login lockout (Task #90) — for a device that locked itself out by mistake. */
+  async function resetIpLockouts() {
+    resettingLockouts = true; resetLockoutsError = '';
+    try {
+      await api.admin.system.resetIpLockouts();
+      await loadStatus();
+    } catch (e) {
+      resetLockoutsError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      resettingLockouts = false;
+    }
   }
 
   async function loadSettings() {
@@ -169,6 +188,29 @@
         <code class="serial">{systemSerial}</code>
         <button class="btn-ghost" onclick={copySerial} title="In Zwischenablage kopieren">Kopieren</button>
       </div>
+    {/if}
+  </section>
+
+  <!-- PIN-Login IP-Sperren (Task #90) ────────────────────────────────────────── -->
+  <section class="card">
+    <h2>PIN-Login: IP-Sperren</h2>
+    <p class="hint">
+      Nach 3 Fehlversuchen wird eine IP-Adresse für 15 Minuten gesperrt. Falls
+      sich ein Gerät versehentlich selbst aussperrt, kann hier sofort für alle
+      Geräte zurückgesetzt werden, statt die Sperrzeit abzuwarten.
+    </p>
+    {#if statusLoading}
+      <p class="muted">Lade…</p>
+    {:else}
+      <div class="serial-row">
+        <span class="lockout-count" class:active={ipLockoutCount > 0}>
+          {ipLockoutCount} aktive Sperre{ipLockoutCount === 1 ? '' : 'n'}
+        </span>
+        <button class="btn-ghost" onclick={resetIpLockouts} disabled={resettingLockouts || ipLockoutCount === 0}>
+          {resettingLockouts ? 'Setze zurück…' : 'Alle aktiven IP-Sperren zurücksetzen'}
+        </button>
+      </div>
+      {#if resetLockoutsError}<p class="error-text">{resetLockoutsError}</p>{/if}
     {/if}
   </section>
 
@@ -324,6 +366,9 @@
     background: var(--color-bg); border: 1px solid var(--color-border);
     border-radius: var(--radius-sm); user-select: all;
   }
+
+  .lockout-count { font-size: 0.9rem; color: var(--color-text-muted); }
+  .lockout-count.active { color: var(--color-danger); font-weight: 600; }
 
   .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.4rem 1.25rem; margin: 0; font-size: 0.9rem; }
   .kv dt { color: var(--color-text-muted); }

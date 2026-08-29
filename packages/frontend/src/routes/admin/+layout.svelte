@@ -4,7 +4,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { adminUser } from '$lib/stores/user';
+  import { adminUser, registerUser } from '$lib/stores/user';
   import { api } from '$lib/api';
   interface Props {
     children?: import('svelte').Snippet;
@@ -35,9 +35,12 @@
     try {
       const user = await api.auth.admin.me();
       adminUser.set(user);
-    } catch {
+    } catch (e) {
       adminUser.set(null);
-      goto('/login');
+      // Logged in but hasn't passed the Systemverwaltung step-up yet (Task
+      // #90) → back to the Kassenauswahl, where that prompt lives; no
+      // session at all → the PIN login page.
+      goto(e && typeof e === 'object' && 'needs_admin_verification' in e ? '/register' : '/login');
       return;
     } finally {
       checking = false;
@@ -112,13 +115,15 @@
       '/admin/settings/tse',
       '/admin/settings/system',
       '/admin/settings/logs',
+      '/admin/settings/sessions',
     ]);
   });
 
-  /** Clears only the admin session cookie; a parallel register session remains intact. */
+  /** Ends the current session entirely (Task #90: one session for everyone, not a separate admin-only cookie). */
   async function logout() {
-    await api.auth.admin.logout();
+    await api.auth.logout();
     adminUser.set(null);
+    registerUser.set(null);
     goto('/login');
   }
 </script>
@@ -208,6 +213,7 @@
             <a href="/admin/settings/tse" class:active={isActive('/admin/settings/tse')}>TSE</a>
             <a href="/admin/settings/system" class:active={isActive('/admin/settings/system')}>System</a>
             <a href="/admin/settings/logs" class:active={isActive('/admin/settings/logs')}>Systemprotokoll</a>
+            <a href="/admin/settings/sessions" class:active={isActive('/admin/settings/sessions')}>Aktive Sessions</a>
           </div>
         {/if}
       </div>

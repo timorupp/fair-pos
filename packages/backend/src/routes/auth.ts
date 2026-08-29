@@ -1,47 +1,32 @@
 /**
- * Authentication endpoints — two strictly separate paths:
+ * Authentication endpoints (Task #90).
  *
- *   /api/auth/admin/login     (POST) — username + password → admin_session cookie
- *   /api/auth/admin/logout    (POST) — clear admin_session
- *   /api/auth/admin/me        (GET)  — current admin user (401 if no session)
+ *   POST /api/auth/pin         — PIN → session cookie (everyone, admin or not)
+ *   POST /api/auth/admin/verify — password step-up → marks the current session admin_verified
+ *   POST /api/auth/logout       — ends the current session
+ *   GET  /api/auth/admin/me     — current user, only once admin_verified (401/403 otherwise)
+ *   GET  /api/auth/register/me  — current user, any valid session
  *
- *   /api/auth/register/token  (POST) — one-time QR token → register_session cookie
- *   /api/auth/register/logout (POST) — clear register_session
- *   /api/auth/register/me     (GET)  — current operator (401 if no session)
- *
- * The two namespaces never read or write each other's cookie. An admin who
- * scans a QR token sees BOTH cookies set in the same browser, but the admin
- * UI still uses the admin cookie and the cash-register UI uses the register one.
+ * There is only one session type now — `authenticateAdmin` additionally
+ * requires `is_admin` + the step-up check, `authenticateRegister` just
+ * requires a valid session. See `middleware/authenticate.ts`.
  */
 import type { FastifyInstance } from 'fastify';
 import { query } from '../db/client.js';
 import { verifyPassword } from '../auth/password.js';
+import { hashPin, isValidPinFormat, normalizePin } from '../auth/pin.js';
 import {
-  setAdminSession, clearAdminSession,
-  setRegisterSession, clearRegisterSession,
+  createSession, clearSessionCookie, getSessionToken, deleteSessionByToken, setAdminVerified,
 } from '../auth/session.js';
+import { isLockedOut, recordFailedAttempt, recordSuccessfulAttempt } from '../auth/rateLimit.js';
 import { authenticateAdmin, authenticateRegister } from '../middleware/authenticate.js';
 
-/** User row returned by the password-login query. Includes the hash for verification. */
-interface LoginUserRow {
+/** User row looked up by PIN hash. */
+interface PinUserRow {
   id: string;
   name: string;
   is_admin: boolean;
   is_active: boolean;
-  password_hash: string;
-}
-
-/** User row returned after a QR token is exchanged. No hash exposed. */
-interface BasicUserRow {
-  id: string;
-  name: string;
-  is_admin: boolean;
-  is_active: boolean;
-}
-
-/** Row returned by the token DELETE…RETURNING query. */
-interface TokenRow {
-  user_id: string;
 }
 
 /** Public user payload returned by login / me endpoints. */
@@ -52,51 +37,87 @@ interface UserResponse {
 }
 
 /**
- * Registers the two authentication namespaces under `/api/auth/admin/*` and
- * `/api/auth/register/*`.
+ * Registers the `/api/auth/*` routes.
  *
  * @param app - The Fastify scope under which to register the routes.
  */
 export async function authRoutes(app: FastifyInstance): Promise<void> {
-
-  // ── Admin session (username + password) ───────────────────────────────────
-
   /**
-   * POST /api/auth/admin/login — authenticate with username and password.
-   * Refuses non-admin users with a uniform 401 to avoid leaking whether the
-   * account exists. Also refuses deactivated users (Task #56, `is_active`) —
-   * same uniform 401, so a deactivated admin can't distinguish that state
-   * from a wrong password.
+   * POST /api/auth/pin — the only login endpoint. The PIN identifies and
+   * authenticates in one step (Task #90) — there is no separate username, so
+   * a failed attempt can't be attributed to a specific account; rate
+   * limiting is per source IP instead (`auth/rateLimit.ts`).
    */
-  app.post('/admin/login', async (request, reply) => {
-    const body = request.body as { name?: string; password?: string };
-    if (!body.name || !body.password) {
-      return reply.status(400).send({ error: 'Name und Passwort erforderlich' });
+  app.post('/pin', async (request, reply) => {
+    const ip = request.ip;
+    if (isLockedOut(ip)) {
+      return reply.status(429).send({ error: 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.' });
     }
 
-    const result = await query<LoginUserRow>(
-      'SELECT id, name, is_admin, is_active, password_hash FROM "user" WHERE name = $1',
-      [body.name],
+    const body = request.body as { pin?: string };
+    const normalized = normalizePin(body.pin ?? '');
+    if (!isValidPinFormat(normalized)) {
+      recordFailedAttempt(ip);
+      return reply.status(401).send({ error: 'PIN ungültig' });
+    }
+
+    const result = await query<PinUserRow>(
+      'SELECT id, name, is_admin, is_active FROM "user" WHERE pin_hash = $1',
+      [hashPin(normalized)],
     );
-
     const user = result.rows[0];
-    if (!user || !user.is_admin || !user.is_active || !(await verifyPassword(body.password, user.password_hash))) {
-      // Uniform message: missing user, wrong password, non-admin, or deactivated all → 401.
-      return reply.status(401).send({ error: 'Ungültige Anmeldedaten' });
+    if (!user || !user.is_active) {
+      recordFailedAttempt(ip);
+      return reply.status(401).send({ error: 'PIN ungültig' });
     }
 
-    setAdminSession(reply, user.id);
+    recordSuccessfulAttempt(ip);
+    await createSession(reply, user.id, request.headers['user-agent']);
     const response: UserResponse = { id: user.id, name: user.name, is_admin: user.is_admin };
     return reply.send(response);
   });
 
-  /** POST /api/auth/admin/logout — clears the admin session cookie. */
-  app.post('/admin/logout', async (_request, reply) => {
-    clearAdminSession(reply);
+  /**
+   * POST /api/auth/admin/verify — the "Systemverwaltung" step-up: checks the
+   * admin's password and, on success, marks the *current* session as
+   * `admin_verified` (no new session/cookie — same one from the PIN login).
+   * Once per session: the frontend only shows this prompt when
+   * `admin_verified` isn't set yet.
+   */
+  app.post('/admin/verify', { preHandler: authenticateRegister }, async (request, reply) => {
+    if (!request.registerUser.is_admin) {
+      return reply.status(403).send({ error: 'Keine Berechtigung' });
+    }
+    const body = request.body as { password?: string };
+    if (!body.password) {
+      return reply.status(400).send({ error: 'Passwort erforderlich' });
+    }
+
+    const result = await query<{ password_hash: string }>(
+      'SELECT password_hash FROM "user" WHERE id = $1',
+      [request.registerUser.id],
+    );
+    const hash = result.rows[0]?.password_hash;
+    if (!hash || !(await verifyPassword(body.password, hash))) {
+      return reply.status(401).send({ error: 'Falsches Passwort' });
+    }
+
+    await setAdminVerified(request.sessionId);
     return reply.send({ ok: true });
   });
 
-  /** GET /api/auth/admin/me — returns the currently authenticated admin user. */
+  /** POST /api/auth/logout — ends the current session (whatever it's being used for). */
+  app.post('/logout', async (request, reply) => {
+    const token = getSessionToken(request);
+    if (token) await deleteSessionByToken(token);
+    clearSessionCookie(reply);
+    return reply.send({ ok: true });
+  });
+
+  /**
+   * GET /api/auth/admin/me — current user, only once the session has passed
+   * the admin step-up (see `authenticateAdmin`).
+   */
   app.get('/admin/me', { preHandler: authenticateAdmin }, async (request, reply) => {
     const response: UserResponse = {
       id: request.adminUser.id,
@@ -106,52 +127,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(response);
   });
 
-  // ── Register session (QR-token only) ──────────────────────────────────────
-
-  /**
-   * POST /api/auth/register/token — exchange a one-time QR token for a register session.
-   * The token is deleted atomically with RETURNING so it cannot be reused.
-   */
-  app.post('/register/token', async (request, reply) => {
-    const body = request.body as { token?: string };
-    if (!body.token) {
-      return reply.status(400).send({ error: 'Token erforderlich' });
-    }
-
-    const tokenResult = await query<TokenRow>(
-      `DELETE FROM register_access_token
-       WHERE token = $1 AND valid_until > now()
-       RETURNING user_id`,
-      [body.token],
-    );
-
-    const tokenRow = tokenResult.rows[0];
-    if (!tokenRow) {
-      return reply.status(401).send({ error: 'Token ungültig oder abgelaufen' });
-    }
-
-    const userResult = await query<BasicUserRow>(
-      'SELECT id, name, is_admin, is_active FROM "user" WHERE id = $1',
-      [tokenRow.user_id],
-    );
-
-    const user = userResult.rows[0];
-    if (!user || !user.is_active) {
-      return reply.status(401).send({ error: 'Benutzer nicht gefunden' });
-    }
-
-    setRegisterSession(reply, user.id);
-    const response: UserResponse = { id: user.id, name: user.name, is_admin: user.is_admin };
-    return reply.send(response);
-  });
-
-  /** POST /api/auth/register/logout — clears the register session cookie. */
-  app.post('/register/logout', async (_request, reply) => {
-    clearRegisterSession(reply);
-    return reply.send({ ok: true });
-  });
-
-  /** GET /api/auth/register/me — returns the currently authenticated operator. */
+  /** GET /api/auth/register/me — current user, any valid session. */
   app.get('/register/me', { preHandler: authenticateRegister }, async (request, reply) => {
     const response: UserResponse = {
       id: request.registerUser.id,

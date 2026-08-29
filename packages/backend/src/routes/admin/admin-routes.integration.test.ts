@@ -18,6 +18,7 @@ import {
 } from '../../test/fixtures.js';
 import { ensureSystemSerial, initReceiptCounter } from '../../system/bootstrap.js';
 import { isValidSystemSerial } from '../../system/serial.js';
+import { countActiveLockouts, recordFailedAttempt } from '../../auth/rateLimit.js';
 
 const SUDO_STUB_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -32,7 +33,7 @@ let adminCookie: string;
 beforeEach(async () => {
   await truncateAllTables();
   const admin = await createTestUser({ isAdmin: true, password: 'pw' });
-  adminCookie = await loginAsAdmin(await getTestApp(), admin.name, 'pw');
+  adminCookie = await loginAsAdmin(await getTestApp(), admin.pin, admin.password);
 });
 
 describe('Admin categories', () => {
@@ -106,7 +107,7 @@ describe('Admin users', () => {
     expect(dup.statusCode).toBe(409);
   });
 
-  it('creates a non-admin user without a password (register users authenticate via QR token, not password)', async () => {
+  it('creates a non-admin user without a password (register users authenticate via PIN, not password)', async () => {
     const app = await getTestApp();
     const response = await app.inject({
       method: 'POST', url: '/api/admin/users',
@@ -202,6 +203,85 @@ describe('Admin users', () => {
 
     const stillThere = await pool.query('SELECT is_active FROM "user" WHERE id = $1', [cashier.id]);
     expect(stillThere.rows[0]?.is_active).toBe(false);
+  });
+});
+
+describe('Admin users: PIN management (Task #90)', () => {
+  it('GET /api/admin/users reports has_pin without ever exposing the hash', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/users',
+      headers: { cookie: adminCookie },
+    });
+    const row = response.json().find((u: { id: string }) => u.id === user.id);
+    expect(row.has_pin).toBe(true);
+    expect(row.pin_hash).toBeUndefined();
+  });
+
+  it('POST /:id/pin/generate returns a well-formed candidate without saving it', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const before = await pool.query('SELECT pin_hash FROM "user" WHERE id = $1', [user.id]);
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/users/${user.id}/pin/generate`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().pin).toMatch(/^[A-Z2-9]{3}-[A-Z2-9]{3}-[A-Z2-9]{3}$/);
+
+    const after = await pool.query('SELECT pin_hash FROM "user" WHERE id = $1', [user.id]);
+    expect(after.rows[0]?.pin_hash).toBe(before.rows[0]?.pin_hash); // unchanged — not saved yet
+  });
+
+  it('PUT /:id/pin saves a manually entered PIN (with or without hyphens)', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${user.id}/pin`,
+      headers: { cookie: adminCookie },
+      payload: { pin: 'abc-defgh-j' },
+    });
+    expect(response.statusCode).toBe(204);
+
+    const login = await app.inject({ method: 'POST', url: '/api/auth/pin', payload: { pin: 'ABCDEFGHJ' } });
+    expect(login.statusCode).toBe(200);
+    expect(login.json().id).toBe(user.id);
+  });
+
+  it('PUT /:id/pin rejects a malformed PIN with 400', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${user.id}/pin`,
+      headers: { cookie: adminCookie },
+      payload: { pin: 'too-short' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('PUT /:id/pin rejects a PIN already assigned to a different user with 409', async () => {
+    const app = await getTestApp();
+    const existing = await createTestUser({ isAdmin: false });
+    const other = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${other.id}/pin`,
+      headers: { cookie: adminCookie },
+      payload: { pin: existing.pin },
+    });
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('PUT /:id/pin allows re-saving a user\'s own unchanged PIN (no false self-collision)', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${user.id}/pin`,
+      headers: { cookie: adminCookie },
+      payload: { pin: user.pin },
+    });
+    expect(response.statusCode).toBe(204);
   });
 });
 
@@ -521,5 +601,36 @@ describe('POST /api/admin/system/shutdown', () => {
     delete process.env['SUDO_STUB_FAIL'];
     expect(response.statusCode).toBe(500);
     expect(response.json().error).toMatch(/Server konnte nicht heruntergefahren werden/);
+  });
+});
+
+describe('IP-Sperren des PIN-Logins (Task #90)', () => {
+  it('GET /api/admin/system/status reports the number of active lockouts', async () => {
+    const app = await getTestApp();
+    recordFailedAttempt('9.9.9.1');
+    recordFailedAttempt('9.9.9.1');
+    recordFailedAttempt('9.9.9.1'); // locked
+    recordFailedAttempt('9.9.9.2'); // not locked (only 1 failure)
+
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/system/status',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().ip_lockout_count).toBe(1);
+  });
+
+  it('POST /api/admin/system/reset-ip-lockouts clears every active lockout', async () => {
+    const app = await getTestApp();
+    recordFailedAttempt('9.9.9.3');
+    recordFailedAttempt('9.9.9.3');
+    recordFailedAttempt('9.9.9.3');
+    expect(countActiveLockouts()).toBe(1);
+
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/system/reset-ip-lockouts',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(204);
+    expect(countActiveLockouts()).toBe(0);
   });
 });

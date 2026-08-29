@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { randomBytes } from 'node:crypto';
-import { query, withTransaction } from '../../db/client.js';
+import { query } from '../../db/client.js';
 import { hashPassword } from '../../auth/password.js';
+import { formatPinForDisplay, generateRandomPin, hashPin, isValidPinFormat, normalizePin } from '../../auth/pin.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 
-/** User row returned to the client — never includes password_hash. */
+/** User row returned to the client — never includes password_hash/pin_hash. */
 interface UserRow {
   id: string;
   name: string;
@@ -13,14 +14,20 @@ interface UserRow {
   created_at: string;
 }
 
+/** List row — adds `has_pin` so the admin UI can show PIN status without ever seeing the hash itself. */
+interface UserListRow extends UserRow {
+  has_pin: boolean;
+}
+
 /** Admin routes for user management. All routes require admin privileges. */
 export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
   /** GET /api/admin/users — list all users ordered by name. */
   app.get('/', async (_req, reply) => {
-    const result = await query<UserRow>(
-      'SELECT id, name, is_admin, is_active, created_at FROM "user" ORDER BY name',
+    const result = await query<UserListRow>(
+      `SELECT id, name, is_admin, is_active, created_at, (pin_hash IS NOT NULL) AS has_pin
+         FROM "user" ORDER BY name`,
     );
     return reply.send(result.rows);
   });
@@ -28,14 +35,14 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
   /**
    * POST /api/admin/users — create a new user.
    *
-   * A password is only required for admins — they authenticate via
-   * `/api/auth/admin/login` (username + password). Non-admin (register)
-   * users authenticate exclusively via QR-token exchange
-   * (`/api/auth/register/token`, see `auth.ts`) and never enter a password;
-   * `/admin/login` also refuses non-admins outright, so a non-admin's
-   * password is never actually checked anywhere. `password_hash` is
-   * `NOT NULL` in the schema, so one not supplied is filled with a random,
-   * unguessable value the user is never given.
+   * A password is only required for admins — everyone logs in via PIN
+   * (Task #90, `POST /api/auth/pin`), and the password is only ever checked
+   * again for the admin "Systemverwaltung" step-up
+   * (`POST /api/auth/admin/verify`), which non-admins never reach.
+   * `password_hash` is `NOT NULL` in the schema, so one not supplied is
+   * filled with a random, unguessable value the user is never given. The
+   * PIN itself is set separately via `POST .../:id/pin/generate` or
+   * `PUT .../:id/pin` — a brand-new user has none until an admin assigns one.
    */
   app.post('/', async (req, reply) => {
     const body = req.body as { name?: string; password?: string; is_admin?: boolean; is_active?: boolean };
@@ -67,7 +74,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    * PUT /api/admin/users/:id — update name, admin flag, active flag, or password.
    *
    * `is_active` (Task #56) is the archive/deactivate alternative to deletion:
-   * a deactivated user can no longer log in (password or QR-token, see
+   * a deactivated user can no longer log in (PIN or admin step-up, see
    * `auth.ts`) and disappears from register assignment pickers, but stays
    * fully in the database — no anonymization, only access is blocked.
    *
@@ -124,12 +131,13 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    * DELETE /api/admin/users/:id — delete a user. Prevents self-deletion.
    *
    * Succeeds (hard delete) only if the user has no fiscal/history references
-   * (`user_register`, `register_access_token`, `daily_closing.created_by`,
+   * (`user_register`, `session`, `daily_closing.created_by`,
    * `order_item.user_id`/`cancelled_by`, `cash_transaction.user_id`,
    * `service_order.user_id`, `order_cancellation.cancelled_by`) — those are
    * FK-RESTRICT by design (Task #56). Once any exist, Postgres blocks the
    * delete with 23503; deactivate the user via `PUT .../:id { is_active: false }`
-   * instead.
+   * instead. A currently logged-in user (open `session` row) therefore can't
+   * be deleted until they log out or the session expires.
    */
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -179,25 +187,63 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
     return reply.status(204).send();
   });
 
-  /** POST /api/admin/users/:id/token — generate a one-time QR login token (valid 10 min). */
-  app.post('/:id/token', async (req, reply) => {
-    const { id } = req.params as { id: string };
+  /**
+   * Checks whether `hash` already belongs to some other user's PIN. Can't be
+   * a plain unique DB constraint since `pin_hash` is a keyed HMAC, not a
+   * secret salted value — see `auth/pin.ts` for why a direct equality lookup
+   * is exactly the point of that choice.
+   *
+   * @param hash - The candidate PIN's hash.
+   * @param excludeUserId - The user being assigned this PIN — excluded so
+   *   re-saving a user's own unchanged PIN doesn't falsely collide with itself.
+   * @returns Whether the hash is already assigned to a different user.
+   */
+  async function pinHashInUse(hash: string, excludeUserId: string): Promise<boolean> {
+    const result = await query(
+      'SELECT id FROM "user" WHERE pin_hash = $1 AND id != $2',
+      [hash, excludeUserId],
+    );
+    return result.rows.length > 0;
+  }
 
+  /**
+   * POST /api/admin/users/:id/pin/generate — generates a random candidate PIN
+   * (not yet saved — the admin UI shows it pre-filled in an editable field,
+   * `PUT .../:id/pin` actually persists it). Retries on the astronomically
+   * unlikely chance of a collision with an existing user's PIN.
+   */
+  app.post('/:id/pin/generate', async (req, reply) => {
+    const { id } = req.params as { id: string };
     const userCheck = await query('SELECT id FROM "user" WHERE id = $1', [id]);
     if (userCheck.rows.length === 0) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
 
-    const token = randomBytes(32).toString('hex');
-    const validUntil = new Date(Date.now() + 10 * 60 * 1000);
+    let candidate = generateRandomPin();
+    for (let attempt = 0; attempt < 5 && (await pinHashInUse(hashPin(candidate), id)); attempt++) {
+      candidate = generateRandomPin();
+    }
+    return reply.send({ pin: formatPinForDisplay(candidate) });
+  });
 
-    await withTransaction(async (client) => {
-      // Invalidate any existing tokens for this user before creating a new one.
-      await client.query('DELETE FROM register_access_token WHERE user_id = $1', [id]);
-      await client.query(
-        'INSERT INTO register_access_token (user_id, token, valid_until) VALUES ($1, $2, $3)',
-        [id, token, validUntil],
-      );
-    });
+  /**
+   * PUT /api/admin/users/:id/pin — sets (or replaces) a user's PIN, accepting
+   * either the generated candidate as-is or a manually typed/edited value
+   * (with or without the `XXX-XXX-XXX` hyphens).
+   */
+  app.put('/:id/pin', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as { pin?: string };
+    const normalized = normalizePin(body.pin ?? '');
+    if (!isValidPinFormat(normalized)) {
+      return reply.status(400).send({ error: 'PIN muss aus 9 Zeichen (A-Z, 2-9, ohne 0/O/1/I) bestehen' });
+    }
 
-    return reply.send({ token, valid_until: validUntil.toISOString() });
+    const hash = hashPin(normalized);
+    if (await pinHashInUse(hash, id)) {
+      return reply.status(409).send({ error: 'Diese PIN ist bereits einem anderen Benutzer zugewiesen' });
+    }
+
+    const result = await query('UPDATE "user" SET pin_hash = $1 WHERE id = $2 RETURNING id', [hash, id]);
+    if (result.rows.length === 0) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+    return reply.status(204).send();
   });
 }

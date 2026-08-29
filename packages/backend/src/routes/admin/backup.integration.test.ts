@@ -39,7 +39,7 @@ beforeEach(async () => {
   delete process.env['PG_DUMP_STUB_LOG_FILE'];
   logFile = null;
   const admin = await createTestUser({ isAdmin: true, password: 'pw' });
-  adminCookie = await loginAsAdmin(await getTestApp(), admin.name, 'pw');
+  adminCookie = await loginAsAdmin(await getTestApp(), admin.pin, admin.password);
 });
 
 afterEach(() => {

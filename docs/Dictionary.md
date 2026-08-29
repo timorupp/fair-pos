@@ -64,13 +64,13 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 | Stornogrund | cancellation_reason | Konfigurierter Grund für Stornos |
 | Tagesabschluss | daily_closing | Synonym zu Kassenabschluss |
 | Tisch | dining_table | Tisch im Saalplan (`table` ist SQL-reserviert) |
-| Token / Zugangscode | access_token | Einmal-QR-Code für Kassen-Login |
+| PIN | pin | Dauerhafter, vom Admin vergebener Anmelde-Code (Task #90) |
+| Sitzung | session | Serverseitig verwaltete Login-Sitzung (Task #90) |
 | Transaktion | transaction | TSE-Transaktion |
 | Uhrzeit | time | — |
 | Veranstaltung | event | Auswertungszeitraum |
 | Zahlung | payment | — |
 | Zahlungsart | payment_method | bar / EC-Karte |
-| Zugangscode | access_token | Einmal-Login-Token für Kassenpersonal |
 
 ---
 
@@ -84,7 +84,6 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 | Benutzer-Kassen-Zuordnung | user_register |
 | Drucker | printer |
 | Kasse | register |
-| Kassen-Zugangscode | register_access_token |
 | Kassenlayout | register_layout |
 | Kassenlayout-Platzierung | register_layout_slot |
 | Kassenabschluss | daily_closing |
@@ -93,6 +92,7 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 | Bestellposition | order_item |
 | Druckauftrag | print_job |
 | Saalplan-Tisch | dining_table |
+| Sitzung | session |
 | Stornogrund | cancellation_reason |
 | Systemeinstellung | system_setting |
 

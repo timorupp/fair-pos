@@ -8,27 +8,32 @@
 
 import { pool } from '../db/client.js';
 import { hashPassword } from '../auth/password.js';
+import { generateRandomPin, hashPin } from '../auth/pin.js';
 
 /**
- * Inserts a `"user"` row.
+ * Inserts a `"user"` row. Every user gets a PIN (Task #90 — PIN login is the
+ * only way in, admin or not), plus a password for admin users (only ever
+ * checked again by the "Systemverwaltung" step-up, `POST /api/auth/admin/verify`).
  *
- * @param overrides - Optional overrides for `name`, `isAdmin`, `password` (plaintext, hashed before insert), `isActive`.
- * @returns The new user id and the supplied/default name.
+ * @param overrides - Optional overrides for `name`, `isAdmin`, `password` (plaintext, hashed before insert), `pin` (plaintext, hashed before insert), `isActive`.
+ * @returns The new user id and the supplied/default name/password/PIN (all plaintext, for use with the test login helpers).
  */
 export async function createTestUser(overrides: {
   name?: string;
   isAdmin?: boolean;
   password?: string;
+  pin?: string;
   isActive?: boolean;
-} = {}): Promise<{ id: string; name: string; password: string }> {
+} = {}): Promise<{ id: string; name: string; password: string; pin: string }> {
   const name = overrides.name ?? `user-${Math.random().toString(36).slice(2, 8)}`;
   const password = overrides.password ?? 'test-password';
+  const pin = overrides.pin ?? generateRandomPin();
   const hash = await hashPassword(password);
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO "user" (name, password_hash, is_admin, is_active) VALUES ($1, $2, $3, $4) RETURNING id`,
-    [name, hash, overrides.isAdmin ?? false, overrides.isActive ?? true],
+    `INSERT INTO "user" (name, password_hash, pin_hash, is_admin, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [name, hash, hashPin(pin), overrides.isAdmin ?? false, overrides.isActive ?? true],
   );
-  return { id: result.rows[0]!.id, name, password };
+  return { id: result.rows[0]!.id, name, password, pin };
 }
 
 /**

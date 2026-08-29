@@ -51,7 +51,7 @@ export class E2EClient {
    * Sends a JSON request and parses a JSON response (if any).
    *
    * @param method - HTTP method.
-   * @param path - Path relative to the API root, e.g. `/api/auth/admin/login`.
+   * @param path - Path relative to the API root, e.g. `/api/auth/pin`.
    * @param body - Request body, JSON-encoded if present.
    * @returns The status code and parsed JSON body (`undefined` if the response wasn't JSON).
    */

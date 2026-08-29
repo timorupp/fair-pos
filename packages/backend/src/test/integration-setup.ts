@@ -14,3 +14,4 @@ import { inject } from 'vitest';
 
 process.env['DATABASE_URL'] = inject('databaseUrl');
 process.env['SESSION_SECRET'] = process.env['SESSION_SECRET'] ?? 'test-secret-not-used-by-integration-tests';
+process.env['PIN_HASH_SECRET'] = process.env['PIN_HASH_SECRET'] ?? 'test-pin-secret-not-used-by-integration-tests';

@@ -772,7 +772,7 @@ Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — una
 
 2. ~~**QR-Code auf dem Kassierungsdialog**~~ — **Entschieden:** URL zum lokalen FairPOS-Server. Format: `http://{server-adresse}/receipt/{token}` — der Token ist ein zufälliger, einmaliger Wert pro Rechnung (schwer zu erraten, kein separater Login nötig). Der Endpunkt liefert die Rechnung als PDF. Voraussetzung: Kundengerät ist im selben WLAN wie der Server. Server-Adresse wird manuell in den Systemeinstellungen konfiguriert.
 
-3. ~~**Authentifizierung**~~ — **Entschieden:** Login für Kassenpersonal und Bedienung erfolgt ausschließlich per QR-Code-Token (Einmaltoken, 10 min gültig), erzeugt vom Administrator. Sessions sind persistent. Kein Passwort für diese Rollen.
+3. ~~**Authentifizierung**~~ — **Entschieden (2026-08-27, Task #90 — löst die ursprüngliche QR-Token-Entscheidung ab):** Ein gemeinsames Login für alle (Admin wie Bedienung) über eine dauerhafte, vom Administrator vergebene PIN (`XXX-XXX-XXX`, A–Z+0–9 ohne verwechselbare Zeichen) — identifiziert und authentifiziert in einem Schritt, kein Benutzername nötig. Landet immer auf der Kassenauswahl; ein Administrator sieht dort zusätzlich einen „Systemverwaltung"-Button, der einmalig pro Sitzung das bestehende Passwort abfragt (Stufenauth). Grund für die Ablösung des QR-Tokens: unhandlich, sobald die App als PWA/Homescreen-Bookmark läuft (feste URL statt Einmallink). Sessions sind serverseitig verwaltet (Tabelle `session`), laufen nach 4h Inaktivität ab, verlängern sich bei Nutzung. IP-Sperre nach 3 Fehlversuchen (15 Min.) statt Kontosperre, da die PIN allein keinen Benutzernamen preisgibt.
 
 
 ---

@@ -5,6 +5,7 @@ import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { setSystemTime, setSystemTimezone } from '../../system/time.js';
 import { shutdownServer } from '../../system/shutdown.js';
+import { countActiveLockouts, resetAllLockouts } from '../../auth/rateLimit.js';
 
 /** Shape returned by `GET /api/admin/system/status`. */
 interface SystemStatus {
@@ -14,6 +15,8 @@ interface SystemStatus {
   timezone: string;
   /** ISO-8601 timestamp of the current server time at the moment of the request. */
   server_time: string;
+  /** Number of IPs currently locked out of PIN login (Task #90) — 0 in the common case. */
+  ip_lockout_count: number;
 }
 
 /** Registers /api/admin/system routes. */
@@ -30,8 +33,20 @@ export async function systemAdminRoute(app: FastifyInstance): Promise<void> {
       system_serial: result.rows[0]?.value ?? '(noch nicht initialisiert)',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       server_time: new Date().toISOString(),
+      ip_lockout_count: countActiveLockouts(),
     };
     return reply.send(status);
+  });
+
+  /**
+   * POST /api/admin/system/reset-ip-lockouts — clears every IP's PIN-login
+   * lockout (Task #90). Exists so a genuinely locked-out device (e.g. a
+   * shared kiosk tablet where several people mistyped a PIN) isn't stuck
+   * waiting out the full 15 minutes with no admin recourse.
+   */
+  app.post('/reset-ip-lockouts', async (_req, reply) => {
+    resetAllLockouts();
+    return reply.status(204).send();
   });
 
   /**

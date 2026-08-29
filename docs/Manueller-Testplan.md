@@ -28,14 +28,17 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 ---
 
-## 1. Authentifizierung
+## 1. Authentifizierung (Task #90)
 
-- [ ] Admin-Login mit Benutzername/Passwort funktioniert
-- [ ] Admin-Login mit falschem Passwort wird abgelehnt
-- [ ] Admin-Logout funktioniert, danach kein Zugriff auf `/admin/*` mehr
-- [ ] QR-Code-Token-Login für eine Kasse funktioniert (Token aus Admin-Benutzerverwaltung erzeugen, scannen/eingeben)
-- [ ] Abgelaufener/bereits benutzter Token wird abgelehnt
-- [ ] Admin-Session und Kassen-Session sind getrennt: Admin-Login gewährt keinen Zugriff auf Kassenrouten und umgekehrt
+- [ ] PIN-Login funktioniert (PIN aus Admin-Benutzerverwaltung vergeben, auf der Login-Seite eingeben — mit und ohne Bindestriche, Groß-/Kleinschreibung egal)
+- [ ] Falsche/unbekannte PIN wird mit generischer Meldung abgelehnt
+- [ ] Nach 3 Fehlversuchen wird die eigene IP für 15 Minuten gesperrt; „Alle aktiven IP-Sperren zurücksetzen" (Systemeinstellungen → System) hebt die Sperre sofort auf
+- [ ] Deaktivierter Benutzer kann sich nicht mehr per PIN anmelden, eine bereits offene Session wird beim nächsten Request sofort beendet (Task #56)
+- [ ] „Systemverwaltung"-Button erscheint auf der Kassenauswahl nur bei einem Administrator-Konto, zwischen Kassenliste und „Abmelden"
+- [ ] Passwort-Abfrage bei „Systemverwaltung" wird nur beim ersten Klick pro Sitzung gestellt, nicht erneut bei weiteren Wechseln zwischen Kasse und Verwaltung
+- [ ] Falsches Passwort bei der Systemverwaltung-Abfrage wird abgelehnt, Zugriff auf `/admin/*` bleibt verwehrt
+- [ ] Logout beendet die Sitzung vollständig — sowohl Kassenauswahl als auch Systemverwaltung sind danach ohne erneuten Login nicht mehr erreichbar
+- [ ] Admin-Bereich → „Aktive Sessions" zeigt die eigene und andere offene Sitzungen; „Beenden" einer fremden Sitzung meldet dieses Gerät beim nächsten Request ab
 
 ---
 
@@ -72,8 +75,9 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] **Kassenlayouts:** Raster anlegen, Artikel per Drag&Drop platzieren, Standardlayout je Kassentyp setzen
 - [ ] **Saalplan:** Spalten/Zeilen hinzufügen/löschen, Tische anlegen, Tisch-Status ändern (aktiv/inaktiv/versteckt), Tisch umbenennen
 - [ ] **Stornogründe:** anlegen mit `booking_type` Storno bzw. Kostenfrei, deaktivieren
-- [ ] **Benutzer:** anlegen (Admin/Kassenpersonal), Passwort setzen, QR-Token für Kassenpersonal erzeugen, Selbstlöschung wird verhindert
-  - [ ] Benutzer mit vorhandener Buchung deaktivieren — Passwort- und QR-Login werden abgelehnt, eine bereits offene Kassen-Session dieses Benutzers wird sofort beendet, Selbstdeaktivierung wird verhindert (Task #56)
+- [ ] **Benutzer:** anlegen (Admin/Kassenpersonal), Passwort setzen (nur Admin), PIN generieren/manuell ändern, Selbstlöschung wird verhindert
+  - [ ] PIN-Duplikat wird beim Speichern abgelehnt (409), eigene unveränderte PIN erneut speichern funktioniert
+  - [ ] Benutzer mit vorhandener Buchung deaktivieren — PIN-Login und Passwort-Stufenauth werden abgelehnt, eine bereits offene Session dieses Benutzers wird sofort beendet, Selbstdeaktivierung wird verhindert (Task #56)
 - [ ] **Veranstaltungen:** anlegen mit Zeitraum, wird als Standard in Auswertungen/Excel-Export vorausgewählt
 
 ---

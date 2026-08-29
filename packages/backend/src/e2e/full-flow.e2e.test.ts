@@ -18,7 +18,7 @@ let articleId: string;
 let registerId: string;
 let cashierUserId: string;
 let cashierName: string;
-let cashierPassword: string;
+let cashierPin: string;
 
 let receiptNumberFormatted: string;
 let tseWarning: string | null;
@@ -38,11 +38,13 @@ describe('End-to-End: Login -> Bestellung/Kassieren -> Tagesabschluss -> DSFinV-
     expect(res.body?.status).toBe('ok');
   });
 
-  it('logs in as admin', async () => {
-    const name = requireE2EEnv('E2E_ADMIN_NAME');
+  it('logs in as admin (PIN login, then the Systemverwaltung password step-up)', async () => {
+    const pin = requireE2EEnv('E2E_ADMIN_PIN');
     const password = requireE2EEnv('E2E_ADMIN_PASSWORD');
-    const res = await adminClient.request('POST', '/api/auth/admin/login', { name, password });
-    expect(res.status, 'Admin-Login fehlgeschlagen — E2E_ADMIN_NAME/E2E_ADMIN_PASSWORD prüfen (siehe README.md)').toBe(200);
+    const login = await adminClient.request('POST', '/api/auth/pin', { pin });
+    expect(login.status, 'PIN-Login fehlgeschlagen — E2E_ADMIN_PIN prüfen (siehe README.md)').toBe(200);
+    const verify = await adminClient.request('POST', '/api/auth/admin/verify', { password });
+    expect(verify.status, 'Admin-Verifizierung fehlgeschlagen — E2E_ADMIN_PASSWORD prüfen (siehe README.md)').toBe(200);
   });
 
   it('checks whether a TSE is configured and reachable (informational, not a hard requirement)', async () => {
@@ -71,11 +73,10 @@ describe('End-to-End: Login -> Bestellung/Kassieren -> Tagesabschluss -> DSFinV-
     registerId = register.body!.id;
   });
 
-  it('creates a cashier, grants register access, and logs in via QR token', async () => {
+  it('creates a cashier, grants register access, assigns a PIN, and logs in with it', async () => {
     cashierName = `${RUN_ID}-kassierer`;
-    cashierPassword = 'e2e-test-not-a-real-password';
     const user = await adminClient.request<{ id: string }>('POST', '/api/admin/users', {
-      name: cashierName, password: cashierPassword, is_admin: false,
+      name: cashierName, is_admin: false,
     });
     expect(user.status).toBe(201);
     cashierUserId = user.body!.id;
@@ -85,11 +86,14 @@ describe('End-to-End: Login -> Bestellung/Kassieren -> Tagesabschluss -> DSFinV-
     });
     expect(grant.status).toBe(204);
 
-    const tokenRes = await adminClient.request<{ token: string }>('POST', `/api/admin/users/${cashierUserId}/token`);
-    expect(tokenRes.status).toBe(200);
+    const generated = await adminClient.request<{ pin: string }>('POST', `/api/admin/users/${cashierUserId}/pin/generate`);
+    expect(generated.status).toBe(200);
+    cashierPin = generated.body!.pin;
+    const setPin = await adminClient.request('PUT', `/api/admin/users/${cashierUserId}/pin`, { pin: cashierPin });
+    expect(setPin.status).toBe(204);
 
-    const redeem = await registerClient.request('POST', '/api/auth/register/token', { token: tokenRes.body!.token });
-    expect(redeem.status, 'Token-Login fehlgeschlagen').toBe(200);
+    const login = await registerClient.request('POST', '/api/auth/pin', { pin: cashierPin });
+    expect(login.status, 'PIN-Login fehlgeschlagen').toBe(200);
 
     const me = await registerClient.request<{ name: string }>('GET', '/api/auth/register/me');
     expect(me.status).toBe(200);
@@ -154,11 +158,11 @@ describe('End-to-End: Login -> Bestellung/Kassieren -> Tagesabschluss -> DSFinV-
 });
 
 describe('Weitere Low-Hanging-Fruit-Checks', () => {
-  it('rejects a wrong admin password with 401', async () => {
+  it('rejects a wrong password at the admin Systemverwaltung step-up with 401', async () => {
     const freshClient = new E2EClient(BASE_URL);
-    const res = await freshClient.request('POST', '/api/auth/admin/login', {
-      name: requireE2EEnv('E2E_ADMIN_NAME'), password: 'definitely-wrong-password',
-    });
+    const login = await freshClient.request('POST', '/api/auth/pin', { pin: requireE2EEnv('E2E_ADMIN_PIN') });
+    expect(login.status).toBe(200);
+    const res = await freshClient.request('POST', '/api/auth/admin/verify', { password: 'definitely-wrong-password' });
     expect(res.status).toBe(401);
   });
 

@@ -24,7 +24,7 @@ beforeEach(async () => {
   await truncateAllTables();
   const app = await getTestApp();
   const admin = await createTestUser({ isAdmin: true, password: 'pw' });
-  adminCookie = await loginAsAdmin(app, admin.name, 'pw');
+  adminCookie = await loginAsAdmin(app, admin.pin, admin.password);
   const printer = await createTestPrinter();
   printerId = printer.id;
   const reg = await createTestRegister({ type: 'receipt_register', printerId });

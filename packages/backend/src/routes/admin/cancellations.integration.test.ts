@@ -44,7 +44,7 @@ beforeEach(async () => {
   delete process.env['TSE_STUB_STDOUT'];
   delete process.env['TSE_STUB_EXIT_CODE'];
   const admin = await createTestUser({ isAdmin: true, password: 'pw' });
-  adminCookie = await loginAsAdmin(await getTestApp(), admin.name, 'pw');
+  adminCookie = await loginAsAdmin(await getTestApp(), admin.pin, admin.password);
 
   const printer = await createTestPrinter();
   const reg = await createTestRegister({ type: 'receipt_register', printerId: printer.id });

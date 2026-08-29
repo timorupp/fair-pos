@@ -160,16 +160,23 @@ DATABASE_URL=postgresql://fairpos:changeme@localhost:5432/fairpos
 NODE_ENV=production
 PORT=3000
 SESSION_SECRET=<mit dem Befehl unten generieren>
+PIN_HASH_SECRET=<mit demselben Befehl generieren — ANDERER Wert als SESSION_SECRET>
 ```
 
 Die Swissbit-TSE (Mount-Pfad, Client-ID) gehört **nicht** in die `.env` —
 ausschließlich über die Admin-UI konfigurierbar, siehe Abschnitt 8.
 
-`SESSION_SECRET` generieren (in der `fairpos`-Shell, Node ist schon installiert):
+`SESSION_SECRET`/`PIN_HASH_SECRET` generieren (in der `fairpos`-Shell, Node
+ist schon installiert — für jeden der beiden Werte einmal ausführen):
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+**Wichtig:** `PIN_HASH_SECRET` sichert die Bedienungs-PINs (Task #90) gegen
+Offline-Angriffe im Falle eines gestohlenen DB-Backups — dieser Wert darf
+deshalb **nicht** zusammen mit dem Datenbank-Backup gesichert/exportiert
+werden, sondern gehört ausschließlich in die `.env` auf diesem Server.
 
 ---
 
@@ -205,7 +212,11 @@ frischen Installation also alle.
 `db:seed` legt den ersten Admin-Benutzer an, ohne den sich niemand in der
 Admin-UI anmelden kann — ohne diesen Schritt ist die frische Installation
 nicht benutzbar. Gefahrlos mehrfach ausführbar (macht nichts, wenn der Name
-schon existiert).
+schon existiert). Erzeugt dabei auch eine zufällige PIN (Task #90 — Login
+läuft für alle, auch Admins, ausschließlich über PIN; `<sicheres-passwort>`
+wird nur noch für die Systemverwaltung-Stufenauth im Adminbereich gebraucht)
+und gibt sie einmalig auf der Konsole aus — notieren, sie wird danach nicht
+erneut angezeigt (bei Bedarf über die Benutzerverwaltung neu vergeben).
 
 ---
 

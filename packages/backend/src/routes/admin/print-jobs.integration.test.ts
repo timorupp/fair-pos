@@ -20,7 +20,7 @@ let printerId: string;
 beforeEach(async () => {
   await truncateAllTables();
   const admin = await createTestUser({ isAdmin: true, password: 'pw' });
-  adminCookie = await loginAsAdmin(await getTestApp(), admin.name, 'pw');
+  adminCookie = await loginAsAdmin(await getTestApp(), admin.pin, admin.password);
   printerId = (await createTestPrinter()).id;
 });
 

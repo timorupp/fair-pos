@@ -25,6 +25,14 @@ export const config = {
   nodeEnv: process.env['NODE_ENV'] ?? 'development',
   port: parseInt(process.env['PORT'] ?? '3000', 10),
   sessionSecret: requireEnv('SESSION_SECRET'),
+  // Keyed-hash secret for PIN login (Task #90) — deterministic
+  // HMAC-SHA256(pinHashSecret, normalizedPin) so a PIN can be looked up
+  // directly by its hash (unlike bcrypt's per-row salt, which would force a
+  // slow linear scan over every user on every login attempt). Kept separate
+  // from sessionSecret (distinct purposes) and MUST be kept out of DB
+  // backups — an attacker with only a stolen DB dump and no access to this
+  // secret cannot precompute a rainbow table for the PIN keyspace.
+  pinHashSecret: requireEnv('PIN_HASH_SECRET'),
   databaseUrl: requireEnv('DATABASE_URL'),
   // Set exclusively via tse/settings.ts (system_setting / admin UI) — null
   // until configured. packages/backend/src/tse throws a clear error only if

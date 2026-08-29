@@ -2,56 +2,60 @@
   import { preventDefault } from 'svelte/legacy';
 
   /**
-   * Combined login page. Two flows:
-   *  - `?token=…` query → exchanges the QR token via `auth.register.token` and
-   *    redirects to `/register` (cash-register UI).
-   *  - Username + password form → admin login via `auth.admin.login` and
-   *    redirect to `/admin` (admin UI).
-   *
-   * Each flow only writes to its own session cookie; the other (if any) is
-   * untouched.
+   * PIN login (Task #90) — the only way in, admin or not. The PIN identifies
+   * and authenticates in one step (no username field) — see
+   * `packages/backend/src/auth/pin.ts` for the format and rationale. Always
+   * lands on `/register` (Kassenauswahl); an admin-flagged user sees an
+   * additional "Systemverwaltung" button there, gated by its own password
+   * step-up (`admin/verify`) — this page never touches that.
    */
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
-  import { adminUser, registerUser } from '$lib/stores/user';
+  import { registerUser } from '$lib/stores/user';
   import { api } from '$lib/api';
 
-  let name = $state('');
-  let password = $state('');
+  /** Displayed, hyphen-formatted value, e.g. "ABC-DEF-GHJ" (partial while typing). */
+  let pinDisplay = $state('');
   let error = $state('');
   let loading = $state(false);
-  /** Hides the password form while we're exchanging a token from the URL. */
-  let exchangingToken = $state(false);
 
-  onMount(async () => {
-    const token = page.url.searchParams.get('token');
-    if (!token) return;
-
-    exchangingToken = true;
-    try {
-      const user = await api.auth.register.token(token);
-      registerUser.set(user);
-      // QR-token logins land in the cash-register UI, not the admin area.
-      goto('/register', { replaceState: true });
-    } catch (e) {
-      error = e instanceof Error ? e.message : 'Token ungültig oder abgelaufen';
-    } finally {
-      exchangingToken = false;
-    }
-  });
+  const PIN_LENGTH = 9;
 
   /**
-   * Submits the admin login form. On success, stores the admin user and routes
-   * to `/admin`.
+   * Strips separators/whitespace and uppercases — accepts typed or pasted
+   * input with or without hyphens, in any letter case.
+   *
+   * @param raw - Raw input value.
+   * @returns Normalized, separator-free, uppercase PIN (may be short while typing).
    */
+  function normalize(raw: string): string {
+    return raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, PIN_LENGTH);
+  }
+
+  /**
+   * Re-inserts the `XXX-XXX-XXX` hyphens for display.
+   *
+   * @param normalized - Separator-free, uppercase PIN.
+   * @returns The hyphen-grouped display form.
+   */
+  function format(normalized: string): string {
+    const groups: string[] = [];
+    for (let i = 0; i < normalized.length; i += 3) groups.push(normalized.slice(i, i + 3));
+    return groups.join('-');
+  }
+
+  /** Reformats the field as the user types or pastes — handles both `ABC123XYZ` and `ABC-123-XYZ` paste input. */
+  function onPinInput(e: Event) {
+    const target = e.currentTarget as HTMLInputElement;
+    pinDisplay = format(normalize(target.value));
+  }
+
   async function handleLogin() {
     error = '';
     loading = true;
     try {
-      const user = await api.auth.admin.login(name, password);
-      adminUser.set(user);
-      goto('/admin');
+      const user = await api.auth.pin(normalize(pinDisplay));
+      registerUser.set(user);
+      goto('/register');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Anmeldung fehlgeschlagen';
     } finally {
@@ -68,35 +72,21 @@
       <p class="brand-sub">Kassensystem</p>
     </div>
 
-    {#if exchangingToken}
-      <div class="exchanging">
-        <span class="btn-spinner"></span>
-        <span>Token wird geprüft…</span>
-      </div>
-    {:else}
     <form onsubmit={preventDefault(handleLogin)}>
       <div class="field">
-        <label for="name">Benutzername</label>
+        <label for="pin">PIN</label>
         <input
-          id="name"
+          id="pin"
+          class="pin-input"
           type="text"
-          bind:value={name}
-          autocomplete="username"
+          inputmode="text"
+          value={pinDisplay}
+          oninput={onPinInput}
+          placeholder="XXX-XXX-XXX"
+          autocomplete="off"
           autocorrect="off"
-          autocapitalize="off"
+          autocapitalize="characters"
           spellcheck="false"
-          disabled={loading}
-          required
-        />
-      </div>
-
-      <div class="field">
-        <label for="password">Passwort</label>
-        <input
-          id="password"
-          type="password"
-          bind:value={password}
-          autocomplete="current-password"
           disabled={loading}
           required
         />
@@ -106,7 +96,7 @@
         <div class="error">{error}</div>
       {/if}
 
-      <button type="submit" class="btn-primary" disabled={loading}>
+      <button type="submit" class="btn-primary" disabled={loading || normalize(pinDisplay).length !== PIN_LENGTH}>
         {#if loading}
           <span class="btn-spinner"></span>
           Anmelden…
@@ -115,7 +105,6 @@
         {/if}
       </button>
     </form>
-    {/if}
   </div>
 </main>
 
@@ -204,6 +193,16 @@
     width: 100%;
   }
 
+  /* Wide letter-spacing + monospace makes the XXX-XXX-XXX groups easy to
+     read/verify at a glance — matters here since a mistyped character fails
+     silently (no separate username to cross-check against). */
+  .pin-input {
+    font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+    font-size: 1.3rem;
+    letter-spacing: 0.15em;
+    text-align: center;
+  }
+
   input:focus {
     border-color: var(--color-primary);
   }
@@ -265,10 +264,4 @@
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
-
-  .exchanging {
-    display: flex; align-items: center; justify-content: center;
-    gap: 0.6rem; padding: 1rem; color: var(--color-text-muted);
-  }
-  .exchanging .btn-spinner { border-top-color: var(--color-primary); }
 </style>

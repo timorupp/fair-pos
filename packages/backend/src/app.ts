@@ -34,6 +34,7 @@ import { printJobsAdminRoute } from './routes/admin/print-jobs.js';
 import { tseAdminRoute } from './routes/admin/tse.js';
 import { backupAdminRoute } from './routes/admin/backup.js';
 import { logsAdminRoute } from './routes/admin/logs.js';
+import { sessionsAdminRoute } from './routes/admin/sessions.js';
 import { receiptRoutes } from './routes/receipt.js';
 import { registerSessionRoutes } from './routes/register-session.js';
 
@@ -107,6 +108,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         await admin.register(tseAdminRoute, { prefix: '/tse' });
         await admin.register(backupAdminRoute, { prefix: '/backup' });
         await admin.register(logsAdminRoute, { prefix: '/logs' });
+        await admin.register(sessionsAdminRoute, { prefix: '/sessions' });
       }, { prefix: '/admin' });
     },
     { prefix: '/api' },

@@ -49,7 +49,7 @@ beforeEach(async () => {
 
   const u = await createTestUser({ isAdmin: false });
   userId = u.id;
-  userCookie = await loginAsRegisterUser(app, userId);
+  userCookie = await loginAsRegisterUser(app, u.pin);
 
   const p = await createTestPrinter({ isDefault: true });
   printerId = p.id;
@@ -258,7 +258,7 @@ describe('GET /api/register-session/invoices/:id/qr.png', () => {
     const invoiceId = checkout.json().invoice_id;
 
     const otherUser = await createTestUser({ isAdmin: false });
-    const otherCookie = await loginAsRegisterUser(app, otherUser.id);
+    const otherCookie = await loginAsRegisterUser(app, otherUser.pin);
     const response = await app.inject({
       method: 'GET', url: `/api/register-session/invoices/${invoiceId}/qr.png`,
       headers: { cookie: otherCookie },

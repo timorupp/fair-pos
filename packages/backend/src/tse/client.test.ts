@@ -33,6 +33,7 @@ function setBaselineEnv(): void {
   // config.ts validates these eagerly at import time even though this test
   // never touches the DB or sessions — dummy values are enough.
   process.env['SESSION_SECRET'] = 'test-secret';
+  process.env['PIN_HASH_SECRET'] = 'test-pin-secret';
   process.env['DATABASE_URL'] = 'postgres://test/unused';
   process.env['TSE_CLI_PATH'] = STUB_PATH;
   delete process.env['TSE_STUB_STDOUT'];
