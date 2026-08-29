@@ -4,7 +4,7 @@
  * whole point, see `auth/pin.ts`), so there's no per-account counter to
  * attach a failure to. In-memory (not DB-backed) is a deliberate choice: this
  * backend already runs as a single Node process (no horizontal scaling, see
- * CLAUDE.md architecture notes), so there's no multi-instance state to
+ * AGENTS.md architecture notes), so there's no multi-instance state to
  * coordinate, and losing the counters on a restart is harmless — an
  * attacker restarting the server to reset their own lockout isn't a
  * realistic threat model for this deployment.

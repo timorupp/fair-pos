@@ -24,6 +24,12 @@ function requireEnv(name: string): string {
 export const config = {
   nodeEnv: process.env['NODE_ENV'] ?? 'development',
   port: parseInt(process.env['PORT'] ?? '3000', 10),
+  // Default '0.0.0.0' preserves existing no-proxy LAN deployments. Once an
+  // nginx reverse proxy (Task #66) terminates TLS in front of this process,
+  // the Installationsanleitung recommends setting this to '127.0.0.1' so the
+  // backend is only reachable through the proxy, never directly on its own
+  // plain-HTTP port.
+  host: process.env['HOST'] ?? '0.0.0.0',
   sessionSecret: requireEnv('SESSION_SECRET'),
   // Keyed-hash secret for PIN login (Task #90) — deterministic
   // HMAC-SHA256(pinHashSecret, normalizedPin) so a PIN can be looked up
@@ -54,5 +60,15 @@ export const config = {
   // clock (no `CAP_SYS_TIME`), by design (see Abschnitt 4 der
   // Installationsanleitung).
   sudoPath: process.env['SUDO_PATH'] ?? null,
+  // Where an uploaded TLS cert/key pair (Task #66) is staged before the
+  // privileged install script copies it into nginx's real config location —
+  // this directory must be writable by the unprivileged `fairpos` user
+  // (see docs/Installationsanleitung.md, "Reverse-Proxy / TLS"). Overridable
+  // for tests, which use a throwaway temp directory instead.
+  tlsStagingDir: process.env['TLS_STAGING_DIR'] ?? '/var/lib/fairpos/ssl-staging',
+  // Where nginx's currently-installed certificate lives — world-readable
+  // (0644), so the unprivileged backend can read it directly (no sudo) just
+  // to show its expiry/subject in the admin UI. Overridable for tests.
+  tlsCertPath: process.env['TLS_CERT_PATH'] ?? '/etc/nginx/ssl/fairpos.crt',
   isDev: (process.env['NODE_ENV'] ?? 'development') === 'development',
 };

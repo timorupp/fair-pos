@@ -523,3 +523,183 @@ nötig wäre — dann stimmt etwas an der Regel/Dateiberechtigung nicht).
   und `date`/`timedatectl` auf dem Server sich tatsächlich geändert haben.
 - Shutdown: **fährt den Server wirklich herunter** — bewusst am Ende einer
   Session testen, nicht nebenbei.
+
+---
+
+## 14. Reverse-Proxy / TLS (nginx)
+
+**Optional, aber empfohlen** — genau wie Abschnitt 13. Ohne diesen Abschnitt
+läuft FairPOS unverändert per HTTP auf Port 3000 weiter. Empfehlenswert,
+weil ein reiner HTTP-Betrieb bereits einen echten Bug live hervorgebracht
+hat (D-030: `navigator.clipboard` verlangt einen Secure Context, sonst
+funktionieren die Kopieren-Buttons in der Admin-UI nicht).
+
+**Architektur:** nginx terminiert TLS auf Port 443 und reicht alles an den
+weiterhin unverändert auf Port 3000 laufenden Node-Prozess weiter
+(`proxy_pass` auf `127.0.0.1`). Zertifikate (selbstsigniert, eigene CA, oder
+später über Task #92s Split-Horizon-DNS-Weg bezogen) werden über die
+Admin-UI hochgeladen — siehe Abschnitt 14.4. Es gibt bewusst nur einen
+einzigen vHost (`server_name _;`, Catch-all) — es existiert (noch) keine
+echte Domain, und selbst mit einer über Task #92 wäre eine zweite
+Server-Konfiguration nicht nötig.
+
+### 14.1 nginx installieren
+
+```bash
+sudo apt install -y nginx
+```
+
+### 14.2 Platzhalter-Zertifikat erzeugen
+
+nginx braucht beim Start ein Zertifikat, sonst startet der 443-Server-Block
+gar nicht. Ein selbstsigniertes Platzhalter-Zertifikat überbrückt das, bis
+über die Admin-UI ein echtes hochgeladen wird (Browser zeigen bis dahin
+eine Vertrauenswarnung — normal und erwartet):
+
+```bash
+sudo mkdir -p /etc/nginx/ssl
+sudo openssl req -x509 -nodes -newkey rsa:2048 \
+  -keyout /etc/nginx/ssl/fairpos.key -out /etc/nginx/ssl/fairpos.crt \
+  -days 3650 -subj "/CN=fairpos.local"
+sudo chown root:root /etc/nginx/ssl/fairpos.crt
+sudo chmod 644 /etc/nginx/ssl/fairpos.crt
+sudo chown root:www-data /etc/nginx/ssl/fairpos.key
+sudo chmod 640 /etc/nginx/ssl/fairpos.key
+```
+
+Das Zertifikat ist bewusst world-readable (`644`) — der unprivilegierte
+`fairpos`-Prozess liest es direkt (ohne `sudo`), nur um Gültigkeitsdatum/
+Aussteller in der Admin-UI anzuzeigen. Der private Schlüssel bleibt enger
+gefasst (`640`, Gruppe `www-data` — nginx' Standard-Ausführungsuser auf
+Ubuntu).
+
+### 14.3 nginx-Konfiguration anlegen
+
+```bash
+cat <<'EOF' | sudo tee /etc/nginx/sites-available/fairpos > /dev/null
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/ssl/fairpos.crt;
+    ssl_certificate_key /etc/nginx/ssl/fairpos.key;
+
+    # Etwas Luft über dem Logo-Upload-Limit (2 MB) hinaus.
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOF
+sudo ln -sf /etc/nginx/sites-available/fairpos /etc/nginx/sites-enabled/fairpos
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**Port 80** leitet ausschließlich auf 443 um — es gibt (noch) keinen Inhalt,
+der bewusst unverschlüsselt erreichbar sein müsste (anders als beim
+ursprünglich angedachten CA-Verteilweg; der entfällt aber voraussichtlich,
+siehe Task #92 — Split-Horizon-DNS mit einer echten, offiziell validierten
+Domain braucht keine eigene CA-Verteilseite).
+
+**Backend nur noch über den Proxy erreichbar machen** (empfohlen, sonst
+bleibt Port 3000 parallel unverschlüsselt offen und die ganze
+TLS-Terminierung wäre umgehbar):
+
+```bash
+sudo -u fairpos bash
+cd /opt/fairpos
+echo "HOST=127.0.0.1" >> .env
+exit
+sudo systemctl restart fairpos
+```
+
+### 14.4 Sudoers-Regel für den Zertifikat-Upload
+
+Das Hochladen eines neuen Zertifikats über die Admin-UI
+(Einstellungen → SSL-Zertifikat) validiert Format und Schlüssel-Passung
+vollständig im unprivilegierten Backend-Prozess (Abschnitt "Node-Crypto"
+in `system/tlsCert.ts`) — **bevor** überhaupt etwas privilegiertes passiert.
+Erst danach kommt folgendes Skript zum Einsatz, das die neuen Dateien an
+die echte nginx-Stelle kopiert, mit `nginx -t` prüft, bei einem Fehler
+automatisch zurückrollt (der laufende Proxy bleibt so in jedem Fall
+erreichbar) und sonst neu lädt:
+
+```bash
+sudo mkdir -p /opt/fairpos/scripts
+cat <<'EOF' | sudo tee /opt/fairpos/scripts/install-cert.sh > /dev/null
+#!/bin/bash
+set -euo pipefail
+
+STAGING_DIR="/var/lib/fairpos/ssl-staging"
+CERT_DEST="/etc/nginx/ssl/fairpos.crt"
+KEY_DEST="/etc/nginx/ssl/fairpos.key"
+
+[ -f "$CERT_DEST" ] && cp "$CERT_DEST" "$CERT_DEST.bak"
+[ -f "$KEY_DEST" ] && cp "$KEY_DEST" "$KEY_DEST.bak"
+
+install -m 0644 -o root -g root "$STAGING_DIR/fairpos.crt" "$CERT_DEST"
+install -m 0640 -o root -g www-data "$STAGING_DIR/fairpos.key" "$KEY_DEST"
+
+if ! nginx -t; then
+  echo "nginx -t fehlgeschlagen, rolle zurück" >&2
+  [ -f "$CERT_DEST.bak" ] && mv "$CERT_DEST.bak" "$CERT_DEST"
+  [ -f "$KEY_DEST.bak" ] && mv "$KEY_DEST.bak" "$KEY_DEST"
+  exit 1
+fi
+
+systemctl reload nginx
+EOF
+sudo chmod 0755 /opt/fairpos/scripts/install-cert.sh
+```
+
+Staging-Verzeichnis, für `fairpos` beschreibbar (das Backend schreibt hier
+die validierten, aber noch nicht installierten Dateien hinein):
+
+```bash
+sudo mkdir -p /var/lib/fairpos/ssl-staging
+sudo chown fairpos:fairpos /var/lib/fairpos/ssl-staging
+sudo chmod 700 /var/lib/fairpos/ssl-staging
+```
+
+**Bewusst keine Parameter** in der Sudoers-Regel — strenger als das
+Muster aus Abschnitt 13 (`timedatectl set-time *`), da das Skript immer von
+diesem festen Verzeichnis liest, also keinerlei Wildcard nötig ist:
+
+```bash
+cat <<'EOF' | sudo tee /tmp/fairpos-nginx-control > /dev/null
+fairpos ALL=(root) NOPASSWD: /opt/fairpos/scripts/install-cert.sh
+EOF
+sudo visudo -c -f /tmp/fairpos-nginx-control && \
+  sudo install -m 0440 -o root -g root /tmp/fairpos-nginx-control /etc/sudoers.d/fairpos-nginx-control && \
+  rm /tmp/fairpos-nginx-control
+```
+
+**Verifizieren, ohne den Server tatsächlich zu beeinflussen:**
+
+```bash
+sudo -u fairpos sudo -n -l
+```
+
+Sollte genau die eine Zeile aus der Regel oben zeigen, ohne nach einem
+Passwort zu fragen.
+
+**Echter Funktionstest:** über die Admin-UI (Einstellungen →
+SSL-Zertifikat) ein Zertifikat hochladen (z. B. eines von
+`mkcert` erzeugt) und prüfen, dass die Erfolgsmeldung erscheint, das
+Gültigkeitsdatum in der Karte "Aktuelles Zertifikat" korrekt angezeigt wird
+und der Browser beim Aufruf über `https://<server-ip>` das neue Zertifikat
+zeigt.

@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   await initReceiptCounter();
 
   const app = await buildApp();
-  await app.listen({ port: config.port, host: '0.0.0.0' });
+  await app.listen({ port: config.port, host: config.host });
 
   startPrintWorker();
   startTseHealthJob();

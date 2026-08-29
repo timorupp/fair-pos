@@ -579,7 +579,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   bereinigt (nur noch Seriennummer/Zeitzone/Server-Adresse/Backup, eigener
   Speichern-Button nur für `server_address`). Neuer Nav-Punkt „TSE" in
   `admin/+layout.svelte`. Der CSS-Fix aus Task #59 ist mit umgezogen.
-- [ ] **#66** SSL/HTTPS-Einrichtung dokumentieren
+- [x] **#66** SSL/HTTPS-Einrichtung dokumentieren
   Die Installationsanleitung deckt aktuell nur reines HTTP ab
   (`http://<server-ip>:3000`) — genau das hat D-030 (kaputte
   Kopieren-Buttons, weil `navigator.clipboard` einen Secure Context
@@ -640,6 +640,86 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   -validierung beim Upload (PEM? Kette inkl. Intermediate-Zertifikat
   nötig?), fester Dateipfad, den der Upload überschreibt, vs. Config-Datei
   anpassen, genaue sudoers-Regel für den Neustart.
+
+  **Konzept im Detail besprochen und entschieden (2026-08-29):** nginx
+  (Standard-Ubuntu-Paket, gegen Caddy/Apache abgewogen — Caddys
+  automatisches ACME-HTTPS bringt hier nichts, da FairPOS für den
+  lokalen-CA-Weg bewusst kein Let's Encrypt nutzt). Umfang dieses Tasks:
+  Proxy-Infrastruktur **inklusive** Zertifikat-Upload + Neustart-Button
+  (nicht getrennt). Zwei Dateifelder (Zertifikat, privater Schlüssel),
+  keine separate Kettendatei nötig (eine bereits verkettete Fullchain-PEM
+  funktioniert als "Zertifikat"-Feld genauso). `server_name` bleibt
+  dauerhaft Catch-all (`_`) — nur ein einziger vHost, eine Einschränkung
+  brächte nichts. Bei der Gelegenheit einen echten, bisher unbemerkten
+  Fund korrigiert: `AGENTS.md` (vormals `CLAUDE.md`, siehe unten)
+  behauptete SSE als Architekturentscheidung — im Code gibt es dafür
+  **keine einzige Verwendung**, alle Echtzeit-Updates laufen über simples
+  Client-Polling. Korrigiert, kein SSE-Timeout-Tuning in der
+  nginx-Config nötig.
+
+  **Erledigt (2026-08-29):**
+  - **Netzwerk:** neue `HOST`-Env-Variable (`config.ts`, Default
+    `0.0.0.0` — bestehende Installationen ohne Proxy unverändert
+    funktionsfähig), `index.ts` nutzt sie statt des bisher fest
+    codierten `'0.0.0.0'`. Installationsanleitung empfiehlt
+    `HOST=127.0.0.1`, sobald nginx davor läuft, damit der App-Server
+    nicht mehr parallel unverschlüsselt erreichbar ist.
+  - **Validierung (`system/tlsCert.ts`, `validateCertKeyPair`):** rein
+    in-memory, vor jeder privilegierten Aktion — Node-`crypto`
+    (`X509Certificate`, `createPrivateKey`, `checkPrivateKey()`) prüft
+    Format, dass Schlüssel zum Zertifikat passt, und dass es noch nicht
+    abgelaufen ist. Klare deutsche Fehlermeldungen statt roher
+    OpenSSL-Fehler.
+  - **Installation (`installCert`):** schreibt validiertes Paar in ein
+    für `fairpos` beschreibbares Staging-Verzeichnis
+    (`config.tlsStagingDir`), ruft dann ein **parameterloses**
+    Sudo-Skript auf (strenger als das `timedatectl set-time *`-Muster
+    aus Abschnitt 13 — kein Wildcard nötig, da immer derselbe feste
+    Pfad). Das Skript (Inhalt in
+    `docs/Installationsanleitung.md` Abschnitt 14.4, nicht als
+    Repo-Datei — analog zum bestehenden Sudoers-Muster) sichert das
+    alte Zertifikat, installiert das neue, prüft mit `nginx -t`, rollt
+    bei Fehler automatisch zurück (Proxy bleibt so immer erreichbar),
+    lädt sonst neu.
+  - **Anzeige (`readInstalledCertInfo`):** liest das aktuell installierte
+    (world-readable, `0644`) Zertifikat direkt von der Festplatte,
+    keine separate DB-Speicherung — keine Drift-Gefahr zwischen
+    Anzeige und Realität.
+  - **Backend-Route** `GET`/`POST /api/admin/tls-cert`
+    (`routes/admin/tlsCert.ts`), reines JSON (kein Multipart — PEM ist
+    Text, kein Binärformat, spart eine Anpassung des globalen
+    `@fastify/multipart`-`files: 1`-Limits).
+  - **Neue eigenständige Admin-Seite** „SSL-Zertifikat" unter
+    Einstellungen (`admin/settings/tls-cert/+page.svelte`) — bewusst
+    nicht in „System"/„TSE" integriert (Nutzervorgabe: bestehende Seiten
+    sollen nicht zu umfangreich werden). Zeigt aktuelles Zertifikat
+    (Aussteller, gültig von/bis) + Upload-Formular mit
+    Sicherheitsabfrage vor dem Ersetzen.
+  - **Doku:** `docs/Installationsanleitung.md` Abschnitt 14
+    (nginx-Installation, Platzhalter-Zertifikat, Config, Sudoers-Regel)
+    — als "optional, aber empfohlen" eingestuft wie Abschnitt 13, mit
+    Copy-Paste-Heredocs statt einem neuen nummerierten Skript unter
+    `scripts/install/`.
+  - Unit-Tests (`system/tlsCert.test.ts`, 5 Tests, Fixtures in
+    `test/fixtures/testCert.ts`: gültiges Paar, kaputtes
+    Zertifikat/Schlüssel, nicht-passender Schlüssel, abgelaufen via
+    `vi.setSystemTime`) und Integrationstests
+    (`routes/admin/tlsCert.integration.test.ts`, 7 Tests, Sudo-Stub-Muster
+    wie bei Task #60/#61). Backend-Unit (274/274), Backend-Integration,
+    Frontend-Unit (70/70), Typecheck grün.
+
+  **Nebenbei erledigt (im Zuge der Konzept-Diskussion):** `CLAUDE.md` zu
+  `AGENTS.md` umbenannt (Toolneutralität, Nutzerwunsch) — `git mv` erhält
+  die Historie. `CLAUDE.md` existiert weiterhin als winzige Datei mit
+  Claude Codes eigenem, dokumentiert bestätigtem `@AGENTS.md`-Import
+  (kein Symlink — wäre auf dem WSL/Windows-Setup fragil gewesen).
+  Aktive Code-Referenz in `auth/rateLimit.ts` mitaktualisiert; historische
+  Verweise in `TASKS.md`/`DANGER.md` bewusst unverändert (datierte
+  Journal-Einträge, kein aktueller Zustand).
+
+  **Weiterhin offen (siehe Task #92):** lokale CA + Onboarding-Seite mit
+  QR-Code, Split-Horizon-DNS. Der Upload hier akzeptiert schon jetzt jedes
+  beliebige Zertifikat, unabhängig davon, wie es entstanden ist.
 - [x] **#67** Produktbeschreibung + Haftungsausschluss (README/Repo-weit)
   **Erledigt (2026-08-24):** `README.md` um eine ausführlichere
   Produktbeschreibung (was FairPOS ist, für wen, welches Problem es löst,

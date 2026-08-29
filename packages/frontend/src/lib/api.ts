@@ -297,6 +297,15 @@ export const api = {
       downloadUrl: (): string => '/api/admin/backup',
     },
 
+    tlsCert: {
+      /** Currently installed nginx reverse-proxy certificate (Task #66), or `null` if none. */
+      get: (): Promise<{ installed: { subject: string; validFrom: string; validTo: string } | null }> =>
+        request('GET', '/admin/tls-cert'),
+      /** Validates and installs a new certificate/key pair (both PEM text). */
+      upload: (cert: string, key: string): Promise<{ installed: { subject: string; validFrom: string; validTo: string } }> =>
+        request('POST', '/admin/tls-cert', { cert, key }),
+    },
+
     tse: {
       /**
        * On-demand connection test — actually calls into the TSE hardware, so
