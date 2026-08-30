@@ -115,6 +115,7 @@
       '/admin/settings/tse',
       '/admin/settings/system',
       '/admin/settings/tls-cert',
+      '/admin/settings/dns-config',
     ]);
   });
   run(() => {
@@ -219,6 +220,7 @@
             <a href="/admin/settings/tse" class:active={isActive('/admin/settings/tse')}>TSE</a>
             <a href="/admin/settings/system" class:active={isActive('/admin/settings/system')}>System</a>
             <a href="/admin/settings/tls-cert" class:active={isActive('/admin/settings/tls-cert')}>SSL-Zertifikat</a>
+            <a href="/admin/settings/dns-config" class:active={isActive('/admin/settings/dns-config')}>DNS-Masquerading</a>
           </div>
         {/if}
       </div>

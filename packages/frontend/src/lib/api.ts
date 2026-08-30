@@ -47,6 +47,16 @@ export interface TseMountCandidate {
   device: string;
 }
 
+/** Split-Horizon-DNS settings (Task #92). `configured` is presence-based — true once a domain is saved, no separate on/off toggle. */
+export interface DnsConfigSettings {
+  domain: string;
+  upstreamPrimary: string;
+  upstreamSecondary: string;
+  targetIp: string;
+  ttl: number;
+  configured: boolean;
+}
+
 /** Sends a JSON request to the backend and returns the parsed response. Exported for testing. */
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, credentials: 'include' };
@@ -311,6 +321,22 @@ export const api = {
       run: (): Promise<{
         checks: { id: string; name: string; status: 'ok' | 'warning' | 'error'; message: string }[];
       }> => request('GET', '/admin/health-checks'),
+    },
+
+    dnsConfig: {
+      /** Currently saved Split-Horizon-DNS settings (Task #92) — `configured: false` when nothing is saved yet (presence-based, no separate on/off toggle). */
+      get: (): Promise<DnsConfigSettings> => request('GET', '/admin/dns-config'),
+      /** Validates, stages, and installs the given settings via the privileged dnsmasq script; only persists once the install actually succeeds. */
+      save: (settings: {
+        domain: string; upstreamPrimary: string; upstreamSecondary: string; targetIp: string; ttl: number;
+      }): Promise<DnsConfigSettings> => request('POST', '/admin/dns-config', settings),
+      /** Removes the installed dnsmasq config and the saved settings. */
+      disable: (): Promise<void> => request('DELETE', '/admin/dns-config'),
+      /** Auto-detects this server's own LAN IP via its default route, for the "Auto-erkennen" button. */
+      detectIp: (): Promise<{ ip: string }> => request('POST', '/admin/dns-config/detect-ip'),
+      /** Queries the server's own dnsmasq resolver directly and checks the configured domain resolves to the configured IP. */
+      test: (): Promise<{ success: boolean; resolvedIp: string | null; message: string }> =>
+        request('POST', '/admin/dns-config/test'),
     },
 
     tse: {

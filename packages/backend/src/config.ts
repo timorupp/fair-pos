@@ -70,5 +70,9 @@ export const config = {
   // (0644), so the unprivileged backend can read it directly (no sudo) just
   // to show its expiry/subject in the admin UI. Overridable for tests.
   tlsCertPath: process.env['TLS_CERT_PATH'] ?? '/etc/nginx/ssl/fairpos.crt',
+  // Where a Split-Horizon-DNS config (Task #92) is staged before the
+  // privileged install script copies it into dnsmasq's real config
+  // location — same reasoning as tlsStagingDir. Overridable for tests.
+  dnsStagingDir: process.env['DNS_STAGING_DIR'] ?? '/var/lib/fairpos/dns-staging',
   isDev: (process.env['NODE_ENV'] ?? 'development') === 'development',
 };

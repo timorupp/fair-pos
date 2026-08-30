@@ -802,3 +802,122 @@ SSDs mit einem der bekannten Hersteller-Attribute (siehe
 Anteil der Nennlebensdauer je Datenträger — bei einer reinen HDD oder
 einem nicht gelisteten Hersteller-Attribut stattdessen einen neutralen
 "keine Daten verfügbar"-Hinweis (kein Fehler).
+
+---
+
+## 16. DNS-Masquerading (Split-Horizon-DNS)
+
+**Optional, aber sinnvoll in Kombination mit Abschnitt 14** — löst das
+Zertifikatsproblem des dortigen Platzhalter-Zertifikats: Geräte am
+Veranstaltungsort erhalten diesen Server per DHCP als DNS-Resolver und
+lösen eine echte, dem Verein gehörende Domain (z. B.
+`kasse.mein-verein.de`) direkt auf die eigene LAN-IP-Adresse dieses
+Servers auf. Zusammen mit einem über DNS-01-Challenge bezogenen, offiziell
+validierten Zertifikat (Einstellungen → SSL-Zertifikat) entfällt so jede
+Vertrauenswarnung im Browser — ohne dass auf einem einzigen Gerät manuell
+eine eigene Zertifizierungsstelle installiert werden müsste.
+
+**Voraussetzung:** ein DHCP-Server am Veranstaltungsort (i. d. R. der
+Router), der als DNS-Server die eigene IP-Adresse dieses Servers
+weitergibt, statt der Provider-Standard-DNS-Server. Das gehört nicht zu
+diesem Abschnitt — es ist eine Konfiguration am Router/DHCP-Server des
+jeweiligen Vereins und je nach Gerät unterschiedlich.
+
+### 16.1 dnsmasq installieren
+
+```bash
+sudo apt install -y dnsmasq
+```
+
+**Achtung Port-Konflikt:** Ubuntu bindet standardmäßig bereits
+`systemd-resolved` auf `127.0.0.53:53`. Die Konfiguration unten bindet
+`dnsmasq` explizit nur an die eigene, konfigurierte IP-Adresse
+(`listen-address` + `bind-interfaces`), sodass kein Konflikt entsteht —
+`systemd-resolved` bleibt für den Server selbst unangetastet.
+
+### 16.2 Konfigurations-Skript und Sudoers-Regel
+
+Wie bei Zertifikat-Upload (Abschnitt 14.4): das Backend validiert alle
+Einstellungen vollständig im unprivilegierten Prozess (`system/dnsConfig.ts`)
+und schreibt sie erst dann in ein Staging-Verzeichnis. Folgendes Skript
+übernimmt das eigentliche Anwenden — es prüft mit `dnsmasq --test` und
+rollt bei einem Fehler automatisch zurück, der Server bleibt also in jedem
+Fall auflösungsfähig. **Bewusst parameterlos**, aus demselben Grund wie in
+Abschnitt 15.2: `visudo` lehnt Geräte-/Pfad-Wildcards in
+Sudoers-Kommandoargumenten auf diesem Ubuntu-Stand ab.
+
+Ein und dasselbe Skript deckt sowohl Installieren (Staging-Datei
+vorhanden → kopieren) als auch Deaktivieren (keine Staging-Datei →
+entfernen) ab:
+
+```bash
+sudo mkdir -p /opt/fairpos/scripts
+cat <<'EOF' | sudo tee /opt/fairpos/scripts/dns-config.sh > /dev/null
+#!/bin/bash
+set -euo pipefail
+
+STAGING_FILE="/var/lib/fairpos/dns-staging/fairpos.conf"
+DEST_FILE="/etc/dnsmasq.d/fairpos.conf"
+
+[ -f "$DEST_FILE" ] && cp "$DEST_FILE" "$DEST_FILE.bak"
+
+if [ -f "$STAGING_FILE" ]; then
+  install -m 0644 -o root -g root "$STAGING_FILE" "$DEST_FILE"
+else
+  rm -f "$DEST_FILE"
+fi
+
+if ! dnsmasq --test; then
+  echo "dnsmasq --test fehlgeschlagen, rolle zurück" >&2
+  if [ -f "$DEST_FILE.bak" ]; then
+    mv "$DEST_FILE.bak" "$DEST_FILE"
+  else
+    rm -f "$DEST_FILE"
+  fi
+  exit 1
+fi
+
+systemctl restart dnsmasq
+EOF
+sudo chmod 0755 /opt/fairpos/scripts/dns-config.sh
+```
+
+Staging-Verzeichnis, für `fairpos` beschreibbar:
+
+```bash
+sudo mkdir -p /var/lib/fairpos/dns-staging
+sudo chown fairpos:fairpos /var/lib/fairpos/dns-staging
+sudo chmod 700 /var/lib/fairpos/dns-staging
+```
+
+```bash
+cat <<'EOF' | sudo tee /tmp/fairpos-dns-control > /dev/null
+fairpos ALL=(root) NOPASSWD: /opt/fairpos/scripts/dns-config.sh
+EOF
+sudo visudo -c -f /tmp/fairpos-dns-control && \
+  sudo install -m 0440 -o root -g root /tmp/fairpos-dns-control /etc/sudoers.d/fairpos-dns-control && \
+  rm /tmp/fairpos-dns-control
+```
+
+**Verifizieren, ohne den Server tatsächlich zu beeinflussen:**
+
+```bash
+sudo -u fairpos sudo -n -l
+```
+
+Sollte genau die eine Zeile aus der Regel oben zeigen, ohne nach einem
+Passwort zu fragen.
+
+### 16.3 Echter Funktionstest
+
+Über die Admin-UI (Einstellungen → DNS-Masquerading): Domain, eigene
+IP-Adresse (per "Auto-erkennen" oder manuell) und mindestens einen
+Upstream-DNS-Server eintragen, speichern. Danach über den Button
+"Auflösung testen" prüfen, dass die konfigurierte Domain direkt beim
+lokalen `dnsmasq` auf die eingetragene IP-Adresse auflöst.
+
+Der eigentliche Praxistest braucht ein zweites Gerät im selben Netz, das
+diesen Server tatsächlich als DNS-Resolver zugewiesen bekommt (siehe
+Voraussetzung oben) — dort sollte die konfigurierte Domain auf die eigene
+IP-Adresse auflösen, während alle anderen Domains normal über die
+eingetragenen Upstream-DNS-Server funktionieren.

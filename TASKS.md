@@ -2066,6 +2066,31 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     hängen zusammen, aber technisch unabhängig umsetzbar (Zertifikat auch
     ohne diesen DNS-Server per DNS-01-Challenge extern beziehbar und
     manuell hochladbar).
+
+  **Implementiert (2026-08-30):** `dnsmasq` als Hintergrunddienst, exakt
+  nach dem oben skizzierten Muster. Backend: `system/dnsConfig.ts`
+  (Validierung, Konfig-Rendering, Staging + privilegiertes
+  `dns-config.sh`-Skript mit `dnsmasq --test`-Validierung und
+  automatischem Rollback, IP-Auto-Erkennung über `ip route get`,
+  Auflösungstest per direkter Abfrage an `127.0.0.1`), Route
+  `routes/admin/dnsConfig.ts` (`GET`/`POST`/`DELETE` +
+  `/detect-ip`/`/test`), Einstellungen in `system_setting`
+  (`dns_domain`/`dns_upstream_primary`/`dns_upstream_secondary`/
+  `dns_target_ip`/`dns_ttl`) — kein neues Migrations-File nötig.
+  **Kein An/Aus-Schalter** (Nutzerentscheidung, 2026-08-30, siehe oben
+  „An/Aus-Schalter" — verworfen zugunsten reiner Präsenz-basierter
+  Aktivierung, analog zum SSL-Zertifikat: „konfiguriert" = eine Domain ist
+  gespeichert; „Deaktivieren"-Button entfernt die Konfiguration
+  vollständig). Frontend: eigene Seite Einstellungen → DNS-Masquerading
+  (`admin/settings/dns-config`), Upstream-DNS-Server dort mit
+  konfigurierbar. Doku: Installationsanleitung Abschnitt 16. Unit- +
+  Integrationstests vorhanden (`system/dnsConfig.test.ts`,
+  `routes/admin/dnsConfig.integration.test.ts`).
+
+  **Noch offen:** finaler Live-Test — der Nutzer hat noch keinen neuen
+  Router, der DHCP-Option 6 (DNS-Server) auf die eigene IP dieses Servers
+  umstellen kann; bis dahin bleibt dieser Task offen, auch wenn die
+  Implementierung vollständig ist.
 - [x] **#93** Geschäftszahlen auf der Admin-Startseite (Folgeaufgabe aus #63)
   Herausgelöst aus Task #63 (2026-08-29, Nutzerentscheidung: Fokus dort
   zunächst nur auf Systemzustand/Fehler). Idee: zusätzliche Kennzahlen-
