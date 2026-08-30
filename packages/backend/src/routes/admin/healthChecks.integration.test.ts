@@ -26,7 +26,7 @@ describe('GET /api/admin/health-checks', () => {
     expect(response.statusCode).toBe(200);
     const { checks } = response.json();
     const ids = checks.map((c: { id: string }) => c.id);
-    expect(ids).toEqual(['disk-space', 'database-integrity', 'smart-health']);
+    expect(ids).toEqual(['disk-space', 'database-integrity', 'smart-health', 'ssd-wear']);
     for (const check of checks) {
       expect(['ok', 'warning', 'error']).toContain(check.status);
       expect(typeof check.message).toBe('string');

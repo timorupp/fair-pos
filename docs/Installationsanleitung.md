@@ -722,13 +722,13 @@ zeigt.
 
 ---
 
-## 15. Health-Check: SMART-Datenträgerprüfung
+## 15. Health-Check: SMART-Datenträgerprüfung + SSD-Abnutzung
 
 **Optional, aber empfohlen** — genau wie Abschnitte 13 und 14. Der
 Health-Check (Admin-UI → Monitoring → Health-Check, Task #87) läuft auch
 ohne diesen Abschnitt — Festplattenspeicher- und Datenbank-Prüfung
-funktionieren immer, die SMART-Prüfung meldet dann lediglich "nicht
-verfügbar" (Warnung, kein Fehler) statt eines echten Ergebnisses.
+funktionieren immer, SMART-Status und SSD-Abnutzung melden dann lediglich
+"nicht verfügbar" (Warnung, kein Fehler) statt eines echten Ergebnisses.
 
 ### 15.1 smartmontools installieren
 
@@ -738,7 +738,7 @@ sudo apt install -y smartmontools
 
 ### 15.2 Prüf-Skript und Sudoers-Regel
 
-`smartctl -H` braucht Root-Rechte für den rohen Festplattenzugriff. **Kein
+`smartctl` braucht Root-Rechte für den rohen Festplattenzugriff. **Kein
 Geräte-Wildcard in der Sudoers-Regel** — auf diesem Ubuntu-Stand lehnt
 `visudo` das mit `syntax error: wildcards are not allowed in command
 arguments` ab (live gefunden, 2026-08-30, beim ersten Versuch mit
@@ -754,9 +754,17 @@ cat <<'EOF' | sudo tee /opt/fairpos/scripts/smart-check.sh > /dev/null
 #!/bin/bash
 set -euo pipefail
 
-for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
+# USB-angebundene Datenträger (externe Platten, manche Gehäuse/Bridge-Chips)
+# übersetzen SMART-Befehle oft nicht zuverlässig durch — bewusst
+# ausgeschlossen (TRAN != usb), statt mit wechselnden -d-Typen zu tricksen.
+#
+# -a statt nur -H: liefert zusätzlich zum Gesundheitsstatus auch die volle
+# SMART-Attributtabelle in derselben Ausgabe — die SSD-Abnutzungsprüfung
+# liest daraus dasselbe Ergebnis dieses einen Aufrufs, statt smartctl ein
+# zweites Mal pro Datenträger aufzurufen.
+for disk in $(lsblk -d -n -o NAME,TYPE,TRAN | awk '$2=="disk" && $3!="usb"{print $1}'); do
   echo "=== /dev/$disk ==="
-  smartctl -H "/dev/$disk" || true
+  smartctl -a "/dev/$disk" || true
 done
 EOF
 sudo chmod 0755 /opt/fairpos/scripts/smart-check.sh
@@ -788,4 +796,9 @@ neben den bereits bestehenden Regeln zeigen.
 **Echter Funktionstest:** über die Admin-UI (Monitoring → Health-Check)
 "Jetzt prüfen" klicken — die Zeile "SMART-Festplattenstatus" sollte jetzt
 "✓ OK" mit einer Auflistung aller gefundenen Datenträger zeigen, statt der
-Warnung "smartctl nicht verfügbar".
+Warnung "smartctl nicht verfügbar". Die Zeile "SSD-Abnutzung" zeigt bei
+SSDs mit einem der bekannten Hersteller-Attribute (siehe
+`WEAR_ATTRIBUTE_NAMES` in `system/healthChecks.ts`) den verbleibenden
+Anteil der Nennlebensdauer je Datenträger — bei einer reinen HDD oder
+einem nicht gelisteten Hersteller-Attribut stattdessen einen neutralen
+"keine Daten verfügbar"-Hinweis (kein Fehler).

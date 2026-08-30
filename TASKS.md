@@ -1475,6 +1475,37 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   innerhalb des Skripts) wieder entfernt. Doku Abschnitt 15.2
   entsprechend aktualisiert. 2 zusätzliche Unit-Tests für
   `parseSmartCheckOutput`, alle Suiten weiterhin grün.
+
+  **Live gefunden und behoben (2026-08-30, zweite Runde):** ein
+  Datenträger hinter einer USB-Bridge meldete sich `smartctl` gegenüber
+  mit "Unknown USB bridge ... Please specify device type" statt
+  PASSED/FAILED/OK — korrekt als "unklar" klassifiziert (keine
+  Erkennungslücke), aber wenig hilfreich. **Nutzerentscheidung:**
+  USB-Datenträger werden künftig einfach übersprungen statt mit
+  wechselnden `-d`-Typen durchprobiert — `smart-check.sh` filtert jetzt
+  per `lsblk -o NAME,TYPE,TRAN` gezielt `TRAN != usb`. Reine
+  Skript-Änderung (nur in der Doku als Heredoc, kein Repo-Code) — betrifft
+  keine der Node-seitigen Unit-Tests, da das Ausgabeformat
+  (`=== /dev/X ===` + smartctl-Text) unverändert bleibt.
+
+  **Erweiterung (2026-08-30, Nutzervorschlag):** vierter Check
+  "SSD-Abnutzung" — Nutzer hat live `smartctl -a` gegen eine echte ADATA
+  SU800NS38 laufen lassen: `ID 177 Wear_Leveling_Count`, VALUE 100 (per
+  SMART-Konvention = Lebensdauer verbleibend, nicht die vom Hersteller
+  abweichend befüllte RAW_VALUE). SATA/ATA-Hersteller sind dabei nicht
+  einheitlich (anders als NVMe mit dem standardisierten Feld
+  "Percentage Used") — `parseSsdWearPercent()` probiert deshalb eine
+  Liste bekannter Attributnamen (`Wear_Leveling_Count`,
+  `Media_Wearout_Indicator`, `SSD_Life_Left`, `Percent_Lifetime_Remain`)
+  und zusätzlich das NVMe-Feld (invertiert: "Percentage Used" → "Prozent
+  verbleibend"). `smart-check.sh` läuft jetzt mit `-a` statt nur `-H` —
+  liefert damit sowohl den Gesundheitsstatus als auch die volle
+  Attributtabelle in einem einzigen `smartctl`-Aufruf pro Datenträger,
+  den beide Checks unabhängig voneinander auswerten (dieselbe
+  Sudoers-Regel/dasselbe Skript, keine weitere Berechtigung nötig).
+  Kein bekanntes Attribut gefunden (reine HDD, oder Hersteller nicht in
+  der Liste) → `ok` mit neutralem Hinweis, kein Fehler. 3 neue
+  Unit-Tests, davon einer direkt gegen die echte ADATA-Ausgabe.
 - [x] **#88** Nachträglich Hinweis zu einer bereits platzierten Position hinzufügen (auch für Artikel ohne vordefinierte Optionen)
   Aus #86 ausgelagert (2026-08-27): dort wurde der Umfang bewusst auf
   Artikel mit bereits vorhandenen Optionen beschränkt (Dialog öffnet dort

@@ -101,7 +101,8 @@ async function checkDatabaseIntegrity(): Promise<HealthCheckResult> {
  * test result: PASSED" for ATA, "SMART Health Status: OK" for SCSI/NVMe),
  * so this matches loosely rather than one exact string.
  *
- * @param output - Raw stdout from `smartctl -H`.
+ * @param output - Raw stdout from `smartctl -H` or `smartctl -a` (the
+ *   health-assessment line is present in both).
  * @returns `'ok'`/`'error'` when a recognized healthy/failing phrase is
  *   found, `'unknown'` when neither is (unsupported disk, unexpected
  *   output format).
@@ -120,26 +121,74 @@ export function classifySmartOutput(output: string): 'ok' | 'error' | 'unknown' 
  * arguments", found live, 2026-08-30, trying `smartctl -H /dev/*"`
  * as the rule instead of wrapping it in a script) — a fixed script path
  * needs no wildcard at all, since the script itself enumerates disks
- * internally. See docs/Installationsanleitung.md, "Health-Check:
- * SMART-Datenträgerprüfung", for its exact content and sudoers rule.
+ * (excluding USB-attached ones) internally. Runs `smartctl -a` per disk
+ * (not just `-H`) so the same output serves both the health check below
+ * and the wear check further down. See docs/Installationsanleitung.md,
+ * "Health-Check: SMART-Datenträgerprüfung", for its exact content and
+ * sudoers rule.
  */
 const SMART_CHECK_SCRIPT_PATH = '/opt/fairpos/scripts/smart-check.sh';
 
 /**
- * Parses `smart-check.sh`'s output — one `=== /dev/<name> ===` marker line
- * per disk, followed by that disk's raw `smartctl -H` output. Exported
+ * Splits `smart-check.sh`'s combined output into one block of raw
+ * `smartctl -a` text per disk, keyed by device name — the shared building
+ * block behind both {@link parseSmartCheckOutput} (health) and
+ * {@link parseSsdWearPercent} (wear), since both read from the same script
+ * invocation's output.
+ */
+function splitSmartCheckBlocks(output: string): { disk: string; text: string }[] {
+  const parts = output.split(/^=== \/dev\/(\S+) ===$/m);
+  const result: { disk: string; text: string }[] = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    result.push({ disk: parts[i]!, text: parts[i + 1] ?? '' });
+  }
+  return result;
+}
+
+/**
+ * Parses `smart-check.sh`'s output into a health verdict per disk. Exported
  * separately so this is unit-testable without a real subprocess.
  *
  * @param output - Combined stdout from `smart-check.sh`.
  * @returns One verdict per disk found, in the order they appeared.
  */
 export function parseSmartCheckOutput(output: string): { disk: string; verdict: ReturnType<typeof classifySmartOutput> }[] {
-  const parts = output.split(/^=== \/dev\/(\S+) ===$/m);
-  const result: { disk: string; verdict: ReturnType<typeof classifySmartOutput> }[] = [];
-  for (let i = 1; i < parts.length; i += 2) {
-    result.push({ disk: parts[i]!, verdict: classifySmartOutput(parts[i + 1] ?? '') });
+  return splitSmartCheckBlocks(output).map(({ disk, text }) => ({ disk, verdict: classifySmartOutput(text) }));
+}
+
+/**
+ * SATA/ATA SMART attribute names used by different SSD vendors for
+ * remaining-life/wear-leveling — not standardized across manufacturers
+ * (unlike NVMe's "Percentage Used"), so this tries each known name in
+ * turn. Verified live (2026-08-30) against an ADATA SU800NS38, which uses
+ * ID 177 `Wear_Leveling_Count`.
+ */
+const WEAR_ATTRIBUTE_NAMES = ['Wear_Leveling_Count', 'Media_Wearout_Indicator', 'SSD_Life_Left', 'Percent_Lifetime_Remain'];
+
+/**
+ * Extracts "percent of rated life remaining" from one disk's `smartctl -a`
+ * text, or `null` if no known wear indicator is present (plain HDD, or an
+ * SSD using an attribute name not in {@link WEAR_ATTRIBUTE_NAMES}).
+ *
+ * @param output - Raw `smartctl -a` text for one disk.
+ * @returns 0–100 (100 = fully fresh), or `null` if not determinable.
+ */
+export function parseSsdWearPercent(output: string): number | null {
+  // NVMe: standardized "Percentage Used: X%" — 0% = new, 100% = end of
+  // rated life, so invert it to match the SATA "remaining" convention below.
+  const nvme = output.match(/Percentage Used:\s*(\d+)%/i);
+  if (nvme) return 100 - Number(nvme[1]);
+
+  // SATA/ATA attribute table row: "ID# ATTRIBUTE_NAME FLAG VALUE WORST THRESH ...".
+  // VALUE already reads as "life remaining" by SMART convention (100 = new,
+  // decreasing toward THRESH = end of rated life) for these wear attributes.
+  for (const line of output.split('\n')) {
+    const match = line.match(/^\s*\d+\s+(\S+)\s+0x[0-9A-Fa-f]+\s+(\d+)\s+\d+\s+\d+/);
+    if (match && WEAR_ATTRIBUTE_NAMES.some((n) => n.toLowerCase() === match[1]!.toLowerCase())) {
+      return Number(match[2]);
+    }
   }
-  return result;
+  return null;
 }
 
 /**
@@ -182,11 +231,56 @@ async function checkSmartHealth(): Promise<HealthCheckResult> {
   return { id, name, status: 'ok', message: summary };
 }
 
+/** Below this much rated life remaining, the wear check reports `error`. */
+const WEAR_ERROR_THRESHOLD_PERCENT = 10;
+/** Below this much rated life remaining (but above the error threshold), the wear check reports `warning`. */
+const WEAR_WARNING_THRESHOLD_PERCENT = 20;
+
+/**
+ * Checks SSD wear/remaining-life across every physical disk that exposes a
+ * recognized wear indicator (see {@link parseSsdWearPercent}) — reuses the
+ * same privileged `smart-check.sh` script and sudoers rule as
+ * {@link checkSmartHealth} (the script runs `smartctl -a`, which includes
+ * both the health self-assessment and the full attribute table). A plain
+ * HDD, or an SSD using an attribute name outside the known list, simply
+ * has nothing to report here — `ok`, not a failure — since wear tracking
+ * is inherently SSD-specific, opt-in infrastructure.
+ */
+async function checkSsdWear(): Promise<HealthCheckResult> {
+  const id = 'ssd-wear';
+  const name = 'SSD-Abnutzung';
+
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync(config.sudoPath ?? 'sudo', [SMART_CHECK_SCRIPT_PATH]));
+  } catch (e) {
+    return {
+      id, name, status: 'warning',
+      message: `SMART-Prüfung nicht verfügbar: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+
+  const wear = splitSmartCheckBlocks(stdout)
+    .map(({ disk, text }) => ({ disk, percent: parseSsdWearPercent(text) }))
+    .filter((r): r is { disk: string; percent: number } => r.percent !== null);
+
+  if (wear.length === 0) {
+    return { id, name, status: 'ok', message: 'Keine SSD-Abnutzungsdaten verfügbar (keine SSD erkannt, oder Hersteller-Attribut nicht in der bekannten Liste).' };
+  }
+
+  const summary = wear.map((r) => `${r.disk}: ${r.percent}% verbleibend`).join(', ');
+  const worst = Math.min(...wear.map((r) => r.percent));
+  if (worst < WEAR_ERROR_THRESHOLD_PERCENT) return { id, name, status: 'error', message: `Kritisch wenig Lebensdauer verbleibend — ${summary}` };
+  if (worst < WEAR_WARNING_THRESHOLD_PERCENT) return { id, name, status: 'warning', message: `Lebensdauer wird knapp — ${summary}` };
+  return { id, name, status: 'ok', message: summary };
+}
+
 /** Registered checks, run in this order by {@link runHealthChecks}. */
 const HEALTH_CHECKS: HealthCheckDefinition[] = [
   { id: 'disk-space', name: 'Freier Festplattenspeicher', run: checkDiskSpace },
   { id: 'database-integrity', name: 'Datenbank-Integrität', run: checkDatabaseIntegrity },
   { id: 'smart-health', name: 'SMART-Festplattenstatus', run: checkSmartHealth },
+  { id: 'ssd-wear', name: 'SSD-Abnutzung', run: checkSsdWear },
 ];
 
 /**
