@@ -26,16 +26,7 @@
   let selected: Map<string, number> = $state(new Map());
   let loading = $state(true);
   let error = $state('');
-
-  // Confirmation / result modal — reuses the same QR-dialog pattern as the Bonkasse.
-  let confirmationOpen = $state(false);
   let busy = $state(false);
-  let lastInvoiceId: string | null = $state(null);
-  let lastReceiptNumber: string | null = $state(null);
-  let printDone = $state(false);
-  let printing = $state(false);
-  /** Set when a configured TSE failed to sign the sale — the sale still went through, see docs/TSE-Integration.md. */
-  let tseWarning: string | null = $state(null);
 
   // Cancel dialog
   let cancelOpen = $state(false);
@@ -105,44 +96,31 @@
       .map(([group_key, count]) => ({ group_key, count }));
   }
 
+  /**
+   * Charges the selected quantities and navigates to the dedicated receipt
+   * page (own route rather than a modal — Nutzervorgabe, 2026-08-30, so the
+   * QR/print screen isn't squeezed into an in-page dialog on a phone).
+   * Everything the receipt page needs travels as query params — it's a
+   * one-shot handoff of data already in hand, not worth a new endpoint.
+   */
   async function charge() {
     if (selectedCount === 0) return;
     busy = true; error = '';
     try {
       const result = await api.registerSession.chargeTable(registerId, tableId, selectedQuantities());
-      lastInvoiceId = result.invoice_id;
-      lastReceiptNumber = result.receipt_number_formatted;
-      tseWarning = result.tse_warning;
-      confirmationOpen = true;
+      const params = new URLSearchParams({
+        invoiceId: result.invoice_id,
+        receiptNumber: result.receipt_number_formatted,
+        total: String(selectedTotal),
+        count: String(selectedCount),
+      });
+      if (result.tse_warning) params.set('tseWarning', result.tse_warning);
+      goto(`/register/${registerId}/tables/${tableId}/checkout/receipt?${params}`);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally {
       busy = false;
     }
-  }
-
-  async function printReceipt() {
-    if (!lastInvoiceId) return;
-    printing = true; error = '';
-    try {
-      await api.registerSession.print(lastInvoiceId);
-      printDone = true;
-      setTimeout(finishConfirmation, 1200);
-    } catch (e) {
-      error = e instanceof Error ? e.message : 'Fehler';
-    } finally {
-      printing = false;
-    }
-  }
-
-  function finishConfirmation() {
-    confirmationOpen = false;
-    lastInvoiceId = null;
-    lastReceiptNumber = null;
-    printDone = false;
-    tseWarning = null;
-    // Refresh open items and return to the table action chooser if everything was paid.
-    goto(`/register/${registerId}/tables/${tableId}`);
   }
 
   function openCancelDialog() {
@@ -184,7 +162,7 @@
 
   {#if loading}
     <p class="muted center">Lade…</p>
-  {:else if error && !confirmationOpen}
+  {:else if error}
     <p class="error-text">{error}</p>
   {:else if groups.length === 0}
     <p class="muted">Keine offenen Positionen am Tisch.</p>
@@ -194,23 +172,20 @@
     <table class="checkout-table">
       <thead>
         <tr>
-          <th>Position</th>
           <th class="num">Offen</th>
+          <th>Position</th>
           <th class="num">Auswahl</th>
-          <th class="num">Einzeln</th>
-          <th class="num">Summe</th>
         </tr>
       </thead>
       <tbody>
         {#each groups as g}
           {@const sel = selected.get(g.group_key) ?? 0}
-          {@const unit = g.unit_price + (g.unit_deposit ?? 0)}
           <tr>
+            <td class="num">{g.quantity}</td>
             <td>
               <span class="g-name">{g.name}</span>
               {#if g.options}<span class="g-opts">{g.options}</span>{/if}
             </td>
-            <td class="num">{g.quantity}</td>
             <td class="num">
               <div class="stepper">
                 <button class="step-btn" onclick={() => changeQty(g, -1)} disabled={sel <= 0}>−</button>
@@ -218,20 +193,17 @@
                 <button class="step-btn" onclick={() => changeQty(g, +1)} disabled={sel >= g.quantity}>+</button>
               </div>
             </td>
-            <td class="num">{fmt(unit)} €</td>
-            <td class="num">{fmt(unit * sel)} €</td>
           </tr>
         {/each}
       </tbody>
-      <tfoot>
-        <tr>
-          <td colspan="2"><button class="btn-ghost" onclick={resetAll}>Zurücksetzen</button></td>
-          <td class="num"><strong>{selectedCount}</strong></td>
-          <td class="num muted">Summe</td>
-          <td class="num total"><strong>{fmt(selectedTotal)} €</strong></td>
-        </tr>
-      </tfoot>
     </table>
+
+    <div class="summary-row">
+      <button class="btn-ghost" onclick={resetAll}>Zurücksetzen</button>
+      <div class="spacer"></div>
+      <span class="summary-label muted">Summe</span>
+      <span class="summary-total">{fmt(selectedTotal)} €</span>
+    </div>
 
     <div class="actions">
       <button class="btn-ghost danger" onclick={openCancelDialog} disabled={selectedCount === 0 || busy}>
@@ -248,35 +220,6 @@
     </div>
   {/if}
 </div>
-
-<!-- Receipt confirmation dialog (mirrors the Bonkasse). Listens for the
-     Modal's `close` event (X / backdrop / Escape) in addition to the two
-     explicit buttons below — closing any other way used to leave the open-
-     items list stale, since only the buttons refreshed it (D-047). -->
-<Modal bind:open={confirmationOpen} title="Rechnung {lastReceiptNumber ?? ''}" on:close={finishConfirmation}>
-  {#if lastInvoiceId}
-    <div class="checkout-body">
-      <div class="qr-wrap">
-        <img class="qr" src={api.registerSession.qrUrl(lastInvoiceId)} alt="QR-Code zur Rechnung" />
-        <p class="qr-hint">Vom Kunden mit dem Smartphone scannen</p>
-      </div>
-      <div class="totals">
-        <div class="total-final">{fmt(selectedTotal)} €</div>
-        <div class="muted small">{selectedCount} Artikel</div>
-      </div>
-    </div>
-    {#if tseWarning}<p class="warning-text">⚠ {tseWarning}</p>{/if}
-    {#if printDone}<p class="success-text">✓ Bon wird gedruckt</p>{/if}
-
-    <div class="modal-actions">
-      <button class="btn-ghost" onclick={finishConfirmation} disabled={printing}>Rechnung per QR Code gescannt</button>
-      <div class="spacer"></div>
-      <button class="btn-primary" onclick={printReceipt} disabled={printing || printDone}>
-        {printing ? 'Drucke…' : 'Rechnung drucken'}
-      </button>
-    </div>
-  {/if}
-</Modal>
 
 <!-- Cancel / free-of-charge dialog -->
 <Modal bind:open={cancelOpen} title="Stornieren / Kostenfrei">
@@ -315,19 +258,18 @@
   .center { text-align: center; padding: 1rem; }
   .hint { font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1rem; }
 
-  /* table-layout: fixed + explicit widths on the numeric columns keeps them
-     visible at all times; the unconstrained first column (Position) takes
-     whatever space is left and truncates with an ellipsis instead of
-     pushing the later columns off-screen. On a wider viewport (e.g.
-     landscape) the table itself is wider, so the name column gets more
-     room automatically — no separate breakpoint needed. */
+  /* table-layout: fixed + an explicit width on "Offen" (narrow, numeric)
+     and "Auswahl" (needs room for the stepper) keeps both visible at all
+     times; the unconstrained middle column (Position) takes whatever
+     space is left and truncates with an ellipsis instead of pushing the
+     other two off-screen. Down to 3 columns (Einzeln/Summe removed, total
+     moved below the table) specifically so this fits on a phone screen
+     (Nutzerbericht, 2026-08-30: "Spalten sehr schmal"). */
   .checkout-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; table-layout: fixed; }
   .checkout-table th, .checkout-table td { padding: 0.5rem; text-align: left; border-bottom: 1px solid var(--color-border); }
   .checkout-table th.num, .checkout-table td.num { text-align: right; }
-  .checkout-table th:nth-child(2), .checkout-table td:nth-child(2) { width: 3.5em; }
+  .checkout-table th:nth-child(1), .checkout-table td:nth-child(1) { width: 3.5em; }
   .checkout-table th:nth-child(3), .checkout-table td:nth-child(3) { width: 7.5em; }
-  .checkout-table th:nth-child(4), .checkout-table td:nth-child(4) { width: 4.5em; }
-  .checkout-table th:nth-child(5), .checkout-table td:nth-child(5) { width: 4.5em; }
   /* Ellipsis lives on .g-name specifically (not the whole <td>) so .g-opts
      can sit on its own line below instead of being squeezed onto the same
      truncated line — narrow column, too little room for both side by side. */
@@ -343,8 +285,16 @@
   }
   .step-btn:disabled { opacity: 0.3; cursor: not-allowed; }
   .step-val { min-width: 1.5em; text-align: center; font-weight: 700; }
-  tfoot td { border-top: 2px solid var(--color-border); padding-top: 0.75rem; }
-  tfoot .total { font-size: 1.15rem; }
+
+  /* Sum lives below the table now, not as a column (Nutzervorgabe) —
+     no item-count number here anymore, just the price total. */
+  .summary-row {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding-top: 0.75rem; margin-top: 0.25rem; border-top: 2px solid var(--color-border);
+  }
+  .summary-row .spacer { flex: 1; }
+  .summary-label { font-size: 0.9rem; }
+  .summary-total { font-size: 1.15rem; font-weight: 700; }
 
   .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
   .actions .spacer { flex: 1; }
@@ -362,16 +312,6 @@
   .hold-btn:global(.holding) .hold-fill { width: 100%; transition: width 600ms linear; }
   .hold-label { position: relative; }
 
-  /* Receipt confirmation reuses Bonkasse styles */
-  .checkout-body { display: flex; gap: 1.5rem; align-items: center; padding: 0.5rem 0; }
-  .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
-  .qr { width: 200px; height: 200px; background: white; padding: 0.5rem; border-radius: var(--radius-sm); }
-  .qr-hint { font-size: 0.8rem; color: var(--color-text-muted); margin: 0; text-align: center; }
-  .totals { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
-  .total-final { font-size: 2rem; font-weight: 700; }
-  .small { font-size: 0.85rem; }
   .modal-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
   .modal-actions .spacer { flex: 1; }
-  .success-text { color: #4caf7d; font-size: 0.9rem; margin-top: 0.5rem; }
-  .warning-text { color: #f59e0b; font-size: 0.9rem; margin-top: 0.5rem; font-weight: 600; }
 </style>

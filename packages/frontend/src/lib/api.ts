@@ -306,6 +306,13 @@ export const api = {
         request('POST', '/admin/tls-cert', { cert, key }),
     },
 
+    healthChecks: {
+      /** Runs every registered system health check (Task #87) and returns each result. Manually triggered — never runs automatically. */
+      run: (): Promise<{
+        checks: { id: string; name: string; status: 'ok' | 'warning' | 'error'; message: string }[];
+      }> => request('GET', '/admin/health-checks'),
+    },
+
     tse: {
       /**
        * On-demand connection test — actually calls into the TSE hardware, so

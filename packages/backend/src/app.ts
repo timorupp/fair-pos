@@ -36,6 +36,7 @@ import { backupAdminRoute } from './routes/admin/backup.js';
 import { logsAdminRoute } from './routes/admin/logs.js';
 import { sessionsAdminRoute } from './routes/admin/sessions.js';
 import { tlsCertAdminRoute } from './routes/admin/tlsCert.js';
+import { healthChecksAdminRoute } from './routes/admin/healthChecks.js';
 import { receiptRoutes } from './routes/receipt.js';
 import { registerSessionRoutes } from './routes/register-session.js';
 
@@ -111,6 +112,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         await admin.register(logsAdminRoute, { prefix: '/logs' });
         await admin.register(sessionsAdminRoute, { prefix: '/sessions' });
         await admin.register(tlsCertAdminRoute, { prefix: '/tls-cert' });
+        await admin.register(healthChecksAdminRoute, { prefix: '/health-checks' });
       }, { prefix: '/admin' });
     },
     { prefix: '/api' },

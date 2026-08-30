@@ -122,6 +122,7 @@
       '/admin/settings/sessions',
       '/admin/settings/print-queue',
       '/admin/settings/logs',
+      '/admin/settings/health-checks',
     ]);
   });
 
@@ -232,6 +233,7 @@
             <a href="/admin/settings/sessions" class:active={isActive('/admin/settings/sessions')}>Aktive Sessions</a>
             <a href="/admin/settings/print-queue" class:active={isActive('/admin/settings/print-queue')}>Druckwarteschlange</a>
             <a href="/admin/settings/logs" class:active={isActive('/admin/settings/logs')}>Systemprotokoll</a>
+            <a href="/admin/settings/health-checks" class:active={isActive('/admin/settings/health-checks')}>Health-Check</a>
           </div>
         {/if}
       </div>

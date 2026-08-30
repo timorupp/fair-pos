@@ -617,13 +617,29 @@ Domain braucht keine eigene CA-Verteilseite).
 
 **Backend nur noch über den Proxy erreichbar machen** (empfohlen, sonst
 bleibt Port 3000 parallel unverschlüsselt offen und die ganze
-TLS-Terminierung wäre umgehbar):
+TLS-Terminierung wäre umgehbar). **Voraussetzung:** der Code muss bereits
+die `HOST`-Unterstützung enthalten — bei einer bestehenden Installation
+vorher einmal Abschnitt 12 (Updates) durchlaufen, sonst ignoriert der noch
+laufende alte Build die neue Variable stillschweigend und bindet weiterhin
+auf `0.0.0.0`.
+
+**Achtung beim Copy-Paste:** die folgenden drei Blöcke wechseln zweimal die
+Shell (`fairpos` hinein, wieder heraus) — als **drei getrennte Blöcke**
+einfügen, nicht als einen zusammenhängenden. In einem Rutsch eingefügt,
+geht die Ausführung nach dem Shell-Wechsel nicht zuverlässig weiter, und
+der Rest landet in der falschen Shell oder wird gar nicht ausgeführt.
 
 ```bash
 sudo -u fairpos bash
+```
+
+```bash
 cd /opt/fairpos
 echo "HOST=127.0.0.1" >> .env
 exit
+```
+
+```bash
 sudo systemctl restart fairpos
 ```
 
@@ -703,3 +719,49 @@ SSL-Zertifikat) ein Zertifikat hochladen (z. B. eines von
 Gültigkeitsdatum in der Karte "Aktuelles Zertifikat" korrekt angezeigt wird
 und der Browser beim Aufruf über `https://<server-ip>` das neue Zertifikat
 zeigt.
+
+---
+
+## 15. Health-Check: SMART-Datenträgerprüfung
+
+**Optional, aber empfohlen** — genau wie Abschnitte 13 und 14. Der
+Health-Check (Admin-UI → Monitoring → Health-Check, Task #87) läuft auch
+ohne diesen Abschnitt — Festplattenspeicher- und Datenbank-Prüfung
+funktionieren immer, die SMART-Prüfung meldet dann lediglich "nicht
+verfügbar" (Warnung, kein Fehler) statt eines echten Ergebnisses.
+
+### 15.1 smartmontools installieren
+
+```bash
+sudo apt install -y smartmontools
+```
+
+### 15.2 Sudoers-Regel
+
+`smartctl -H` braucht Root-Rechte für den rohen Festplattenzugriff — die
+Regel erlaubt bewusst nur genau diesen einen, lesenden Befehl mit
+Geräte-Wildcard (Festplattenname variiert je Server), keinen allgemeinen
+Zugriff auf `smartctl`:
+
+```bash
+cat <<'EOF' | sudo tee /tmp/fairpos-smart-control > /dev/null
+fairpos ALL=(root) NOPASSWD: /usr/sbin/smartctl -H /dev/*
+EOF
+sudo visudo -c -f /tmp/fairpos-smart-control && \
+  sudo install -m 0440 -o root -g root /tmp/fairpos-smart-control /etc/sudoers.d/fairpos-smart-control && \
+  rm /tmp/fairpos-smart-control
+```
+
+**Verifizieren:**
+
+```bash
+sudo -u fairpos sudo -n -l
+```
+
+Sollte jetzt eine weitere Zeile (`smartctl -H /dev/*`) neben den bereits
+bestehenden Regeln zeigen.
+
+**Echter Funktionstest:** über die Admin-UI (Monitoring → Health-Check)
+"Jetzt prüfen" klicken — die Zeile "SMART-Festplattenstatus" sollte jetzt
+"✓ OK" mit einer Auflistung aller gefundenen Datenträger zeigen, statt der
+Warnung "smartctl nicht verfügbar".

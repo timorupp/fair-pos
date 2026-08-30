@@ -720,6 +720,25 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   **Weiterhin offen (siehe Task #92):** lokale CA + Onboarding-Seite mit
   QR-Code, Split-Horizon-DNS. Der Upload hier akzeptiert schon jetzt jedes
   beliebige Zertifikat, unabhängig davon, wie es entstanden ist.
+
+  **Live bestätigt (2026-08-30):** kompletter Abschnitt 14 auf dem echten
+  Produktionsserver durchgeführt — nginx installiert, Platzhalter-Zertifikat
+  erzeugt, Proxy funktionsfähig (`https://<server-ip>` erreichbar), `HOST=
+  127.0.0.1` gesetzt (Port 3000 danach nicht mehr direkt erreichbar),
+  Sudoers-Regel + Staging-Verzeichnis angelegt, echtes Zertifikat über die
+  Admin-UI hochgeladen und installiert.
+  **Dabei gefunden und behoben:** der neue `HOST`-Umgebungsvariable-Schritt
+  wirkte zunächst nicht — Ursache war ein vergessener `git push` vor dem
+  Server-seitigen `update.sh` (Server zog dadurch keine neuen Commits,
+  lief weiter mit dem alten, `HOST` nicht unterstützenden Build). Kein
+  FairPOS-Bug, aber als Lehre für die Doku aufgenommen: Abschnitt 14
+  weist jetzt explizit darauf hin, vor dem `HOST`-Schritt Abschnitt 12
+  (Updates) durchlaufen zu haben.
+  **Nutzerbericht behoben:** copy-paste-anfälliger Codeblock in Abschnitt
+  14.3 (`sudo -u fairpos bash` … `exit` … `sudo systemctl restart
+  fairpos` in einem zusammenhängenden Block) — bei Shell-Wechsel mitten im
+  Block funktioniert Copy-Paste nicht zuverlässig. In drei sichtbar
+  getrennte Blöcke aufgeteilt, mit explizitem Hinweis im Text.
 - [x] **#67** Produktbeschreibung + Haftungsausschluss (README/Repo-weit)
   **Erledigt (2026-08-24):** `README.md` um eine ausführlichere
   Produktbeschreibung (was FairPOS ist, für wen, welches Problem es löst,
@@ -1380,7 +1399,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `FREETEXT_MAX_LENGTH`) wird jetzt von beiden Dialogen (#86 und #88)
   gemeinsam genutzt — Klarstellung: 50 Zeichen ist eine reine UI-Konvention,
   `order_item.options` selbst ist eine unbegrenzte `TEXT`-Spalte.
-- [ ] **#87** Festplatten-/DB-Integritätscheck (manuell auslösbar)
+- [x] **#87** Festplatten-/DB-Integritätscheck (manuell auslösbar)
   Bei der Konzeption des TSE-Health-Checks (#64) bewusst abgetrennt —
   Nutzerentscheidung (2026-08-26): eigener Task, **nicht** automatisch im
   Hintergrund-Job, sondern manuell getriggert (z. B. Button in der
@@ -1391,6 +1410,50 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `VACUUM`/`ANALYZE`-Fehlerstatus). Ergebnis vermutlich über dieselbe
   `system_log`-Tabelle protokollierbar, die #64 dafür bereits generisch
   angelegt hat.
+
+  **Nutzerentscheidungen (2026-08-30):** neuer Menüpunkt "Health-Check"
+  unter "Monitoring" (nicht in eine bestehende Seite integriert). Bewusst
+  **live-only** — keine Protokollierung in `system_log` (anders als
+  ursprünglich angedacht), da ein manuell getriggerter Check ohne
+  Hintergrund-Job keine Historie braucht. Architektur bewusst erweiterbar:
+  eine Registry-Liste in `system/healthChecks.ts`
+  (`HEALTH_CHECKS: HealthCheckDefinition[]`), die der Runner und die
+  Admin-UI generisch durchlaufen — ein neuer Check ist nur ein neuer
+  Eintrag, keine sonstige Verdrahtung nötig.
+
+  **Erledigt (2026-08-30):**
+  - **Festplattenspeicher** (`checkDiskSpace`): `fs.statfs('/')` (Node-Bordmittel,
+    kein `df`-Subprozess nötig). Absolute GB-Schwellwerte statt Prozent
+    (Nutzervorgabe — ein Prozentwert liest sich auf einer 32-GB- und einer
+    2-TB-Platte völlig unterschiedlich): Warnung <10 GB, Fehler <2 GB
+    (zweiter Wert von mir sinnvoll ergänzt, erste Zahl war explizit
+    vorgegeben).
+  - **Datenbank-Integrität** (`checkDatabaseIntegrity`): Erreichbarkeit
+    (`SELECT 1`) + Suche nach als `invalid` markierten Indizes
+    (`pg_index.indisvalid = false` — passiert z. B. bei einem
+    abgebrochenen `CREATE INDEX CONCURRENTLY`; die Abfrage läuft dann
+    lautlos ohne den Index weiter, statt laut zu scheitern).
+  - **SMART-Festplattenstatus** (`checkSmartHealth`, Nutzervorschlag,
+    gleich mit umgesetzt statt nur vorgemerkt): `lsblk -d` listet
+    physische Datenträger (Partitionen/LVM-Mapper-Geräte ausgeschlossen,
+    da `smartctl` die nicht direkt abfragen kann), `smartctl -H` je
+    Datenträger. Text-Erkennung (`classifySmartOutput`, eigens
+    unit-testbar) statt Exit-Code, da ATA ("... PASSED") und SCSI/NVMe
+    ("... OK") unterschiedlich formulieren. Braucht `smartmontools` +
+    eigene Sudoers-Regel (`smartctl -H /dev/*`, Geräte-Wildcard nötig, da
+    der Festplattenname je Server variiert) — fehlt beides, meldet der
+    Check **Warnung**, nicht Fehler (optionale Infrastruktur, kein Zeichen
+    einer wirklich kaputten Platte).
+  - Neue Route `GET /api/admin/health-checks`, neue eigenständige
+    Admin-Seite unter Monitoring (Button "Jetzt prüfen", läuft nicht
+    automatisch beim Seitenaufruf).
+  - Doku: `docs/Installationsanleitung.md` Abschnitt 15 (smartmontools +
+    Sudoers-Regel) — optional/empfohlen wie Abschnitt 13/14.
+  - Tests: 4 Unit-Tests für `classifySmartOutput`, 2 Integrationstests für
+    die Route (im Sandbox-Testlauf bestätigt: `smartctl` fehlt dort
+    absichtlich nicht installiert — Check meldet korrekt "Warnung", genau
+    der vorgesehene Graceful-Degradation-Pfad). Backend-Unit (278/278),
+    Frontend-Unit (70/70), Typecheck grün.
 - [x] **#88** Nachträglich Hinweis zu einer bereits platzierten Position hinzufügen (auch für Artikel ohne vordefinierte Optionen)
   Aus #86 ausgelagert (2026-08-27): dort wurde der Umfang bewusst auf
   Artikel mit bereits vorhandenen Optionen beschränkt (Dialog öffnet dort
@@ -1940,7 +2003,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     hängen zusammen, aber technisch unabhängig umsetzbar (Zertifikat auch
     ohne diesen DNS-Server per DNS-01-Challenge extern beziehbar und
     manuell hochladbar).
-- [ ] **#93** Geschäftszahlen auf der Admin-Startseite (Folgeaufgabe aus #63)
+- [x] **#93** Geschäftszahlen auf der Admin-Startseite (Folgeaufgabe aus #63)
   Herausgelöst aus Task #63 (2026-08-29, Nutzerentscheidung: Fokus dort
   zunächst nur auf Systemzustand/Fehler). Idee: zusätzliche Kennzahlen-
   Kacheln auf dem Dashboard, die tatsächliche Geschäftszahlen statt
@@ -1957,8 +2020,11 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   umgesetzt):** „Tagesumsatz" (neuer Endpoint `/api/admin/reports/
   today-revenue`) und „Offene Rechnungen" (bestehender `/open-positions`-
   Endpoint) sind bereits da, inkl. 30-Sekunden-Auto-Refresh fürs ganze
-  Dashboard. **Weiterhin offen:** Anzahl offener/besetzter Tische,
-  Bestellungen der laufenden Veranstaltung, sowie die generelle Frage
-  Live-Aktualisierung (SSE) vs. Intervall-Reload — Intervall-Reload wurde
-  für die zwei bereits umgesetzten Kacheln gewählt, gilt vermutlich auch
-  für den Rest.
+  Dashboard (Intervall-Reload statt SSE — passt zum bereits bestehenden
+  Client-Polling-Muster der Anwendung, siehe `AGENTS.md`).
+
+  **Bewusst nicht umgesetzt (2026-08-30, Nutzerentscheidung):** „Anzahl
+  offener/besetzter Tische" und „Bestellungen der laufenden Veranstaltung"
+  — aktuell nicht wichtig genug, kein aktiver Bedarf. Task damit
+  abgeschlossen; bei Bedarf später als neuer Task wieder aufgreifen statt
+  hier weiter offen zu halten.
