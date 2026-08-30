@@ -62,6 +62,11 @@ UI-Texte, Kommentare und Dokumentation dürfen deutsch sein.
 Zeile) — Body mit den wesentlichen Änderungen. Kein Warum/Begründung, das
 macht die Message unnötig lang — reicht, um zu sehen was sich geändert hat.
 
+**Keine KI-Session-IDs oder -Links in Commit-Messages** (z. B. keine
+`Claude-Session: https://...`-Zeile) — die gesamte bisherige Historie wurde
+deswegen bereits per `git filter-repo` bereinigt (2026-08-30). Ein
+`Co-Authored-By: <KI-Tool>`-Trailer ist dagegen ausdrücklich in Ordnung.
+
 ### Inline-Dokumentation (JSDoc, Englisch)
 
 Über jeder exportierten Funktion, Methode und jedem benannten Objekt
@@ -146,6 +151,31 @@ existierenden DBs.
 Bei strukturellen Refactors (Spalten umbenennen, Tabellen umbauen): drei
 Schritte in einer Migration — neue Struktur anlegen, Daten migrieren, alte
 Struktur entfernen. So bleiben bestehende Daten erhalten.
+
+### Git-Workflow (Branches)
+
+**`develop`** ist der Arbeits-Branch — alle laufende Entwicklung passiert
+hier, mit voller, granularer Commit-Historie (seit 2026-08-30, vorher
+wurde direkt auf `master` gearbeitet).
+
+**`master`** ist der Release-Branch — bekommt Inhalte **ausschließlich**
+per `git merge --squash` von `develop`, nie per normalem Merge:
+
+```bash
+git checkout master
+git merge --squash develop
+git commit -m "Release: ..."
+```
+
+Ein Squash-Merge verändert `develop` nicht — die volle Detail-Historie
+bleibt dort für immer erhalten, `master` zeigt dauerhaft nur einen Commit
+pro Release. Der Produktivserver ist auf `master` ausgecheckt und bekommt
+damit nur fertige Release-Stände, nie Zwischenschritte aus `develop`.
+
+`master` wurde am 2026-08-30 bewusst als Orphan-Branch neu gestartet (ein
+einziger Commit mit dem damaligen Codestand, keine Elternhistorie) — die
+komplette bisherige Entwicklungsgeschichte bis dahin liegt vollständig in
+`develop`.
 
 ---
 
