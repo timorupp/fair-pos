@@ -188,17 +188,22 @@ export interface DnsTestResult {
 }
 
 /**
- * Queries the server's own `dnsmasq` instance directly (via `127.0.0.1`,
- * not whatever resolver this process would normally use) for the
- * configured domain, and checks whether it resolves to the expected IP —
- * so the first real test isn't a device at the door.
+ * Queries the server's own `dnsmasq` instance directly (via the configured
+ * target IP, not whatever resolver this process would normally use — and
+ * not `127.0.0.1`, since dnsmasq is intentionally bound only to the
+ * target IP via `listen-address`/`bind-interfaces`, see
+ * `buildDnsmasqConfig()`) for the configured domain, and checks whether it
+ * resolves to the expected IP — so the first real test isn't a device at
+ * the door. Querying the target IP also mirrors exactly what a real
+ * device at the venue would do, since that's the address DHCP would hand
+ * out as the DNS server.
  *
  * @param domain - The configured Split-Horizon domain.
- * @param expectedIp - The configured target IP it should resolve to.
+ * @param expectedIp - The configured target IP it should resolve to — also the address dnsmasq is queried on.
  */
 export async function testDnsResolution(domain: string, expectedIp: string): Promise<DnsTestResult> {
   const resolver = new Resolver();
-  resolver.setServers(['127.0.0.1']);
+  resolver.setServers([expectedIp]);
   try {
     const addresses = await resolver.resolve4(domain);
     const resolvedIp = addresses[0] ?? null;

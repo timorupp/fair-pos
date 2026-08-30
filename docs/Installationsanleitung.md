@@ -858,8 +858,14 @@ set -euo pipefail
 
 STAGING_FILE="/var/lib/fairpos/dns-staging/fairpos.conf"
 DEST_FILE="/etc/dnsmasq.d/fairpos.conf"
+# Bewusst NICHT unter /etc/dnsmasq.d/ — Ubuntus Standard-conf-dir-Regel
+# schließt nur .dpkg-dist/.dpkg-old/.dpkg-new aus, nicht .bak. Ein Backup
+# direkt daneben würde beim nächsten Neustart als zweite, echte
+# Konfigurationsdatei eingelesen ("illegal repeated keyword", live
+# gefunden, 2026-08-30, bei jedem zweiten Speichervorgang reproduzierbar).
+BACKUP_FILE="/var/lib/fairpos/dns-staging/fairpos.conf.bak"
 
-[ -f "$DEST_FILE" ] && cp "$DEST_FILE" "$DEST_FILE.bak"
+[ -f "$DEST_FILE" ] && cp "$DEST_FILE" "$BACKUP_FILE"
 
 if [ -f "$STAGING_FILE" ]; then
   install -m 0644 -o root -g root "$STAGING_FILE" "$DEST_FILE"
@@ -867,17 +873,28 @@ else
   rm -f "$DEST_FILE"
 fi
 
-if ! dnsmasq --test; then
-  echo "dnsmasq --test fehlgeschlagen, rolle zurück" >&2
-  if [ -f "$DEST_FILE.bak" ]; then
-    mv "$DEST_FILE.bak" "$DEST_FILE"
+rollback() {
+  if [ -f "$BACKUP_FILE" ]; then
+    mv "$BACKUP_FILE" "$DEST_FILE"
   else
     rm -f "$DEST_FILE"
   fi
+}
+
+if ! dnsmasq --test; then
+  echo "dnsmasq --test fehlgeschlagen, rolle zurück" >&2
+  rollback
   exit 1
 fi
 
-systemctl restart dnsmasq
+if ! systemctl restart dnsmasq; then
+  echo "dnsmasq-Neustart fehlgeschlagen, rolle zurück" >&2
+  rollback
+  systemctl restart dnsmasq || true
+  exit 1
+fi
+
+rm -f "$BACKUP_FILE"
 EOF
 sudo chmod 0755 /opt/fairpos/scripts/dns-config.sh
 ```

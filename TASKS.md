@@ -2087,6 +2087,29 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Integrationstests vorhanden (`system/dnsConfig.test.ts`,
   `routes/admin/dnsConfig.integration.test.ts`).
 
+  **Live gefunden und behoben (2026-08-30):** "Auflösung testen" fragte
+  hartcodiert `127.0.0.1` ab — dnsmasq lauscht dort aber bewusst nicht
+  (`listen-address=<eigene IP>` + `bind-interfaces`, s. o.), daher
+  `ECONNREFUSED`. Fix: die Testfunktion fragt jetzt die konfigurierte
+  eigene IP ab statt `127.0.0.1` — bildet damit auch genauer nach, was ein
+  echtes Gerät am Veranstaltungsort tut (dieselbe IP, die per DHCP verteilt
+  würde).
+
+  **Live gefunden und behoben (2026-08-30):** zweiter Speichervorgang
+  schlug beim `systemctl restart dnsmasq` fehl
+  (`illegal repeated keyword at line 5 of /etc/dnsmasq.d/fairpos.conf.bak`).
+  Ursache: `dns-config.sh`s eigenes Rollback-Backup lag als
+  `fairpos.conf.bak` direkt in `/etc/dnsmasq.d/` — Ubuntus Standard-
+  `conf-dir`-Regel schließt aber nur `.dpkg-dist`/`.dpkg-old`/`.dpkg-new`
+  aus, nicht `.bak`, sodass dnsmasq das eigene Backup beim Neustart als
+  zweite, echte Konfigurationsdatei mit denselben Direktiven einliest.
+  Fix: Backup liegt jetzt außerhalb von `/etc/dnsmasq.d/`
+  (`/var/lib/fairpos/dns-staging/fairpos.conf.bak`); zusätzlich rollt das
+  Skript jetzt auch zurück, wenn `systemctl restart` selbst fehlschlägt
+  (vorher nur bei fehlgeschlagenem `dnsmasq --test`) — sonst hätte ein
+  Neustart-Fehler dnsmasq mit der neuen, kaputten Config stehen lassen
+  statt beim alten funktionierenden Zustand zu bleiben.
+
   **Noch offen:** finaler Live-Test — der Nutzer hat noch keinen neuen
   Router, der DHCP-Option 6 (DNS-Server) auf die eigene IP dieses Servers
   umstellen kann; bis dahin bleibt dieser Task offen, auch wenn die
