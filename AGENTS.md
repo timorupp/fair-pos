@@ -169,8 +169,13 @@ git commit -m "Release: ..."
 
 Ein Squash-Merge verändert `develop` nicht — die volle Detail-Historie
 bleibt dort für immer erhalten, `master` zeigt dauerhaft nur einen Commit
-pro Release. Der Produktivserver ist auf `master` ausgecheckt und bekommt
-damit nur fertige Release-Stände, nie Zwischenschritte aus `develop`.
+pro Release.
+
+**Der Produktivserver ist bewusst auf `develop` ausgecheckt, nicht auf
+`master`** — er dient laufend als Testumgebung für Zwischenstände direkt
+während der Entwicklung (nicht nur für fertige Releases). `master` ist
+aktuell rein die aufgeräumte, öffentlich sichtbare Historie ohne
+Zwischenschritte.
 
 `master` wurde am 2026-08-30 bewusst als Orphan-Branch neu gestartet (ein
 einziger Commit mit dem damaligen Codestand, keine Elternhistorie) — die

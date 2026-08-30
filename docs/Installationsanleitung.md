@@ -122,8 +122,14 @@ Shell-Skeleton-Dateien (`.bashrc` etc.) abgelegt. Deshalb: als `tru` (mit dem
 eigenen Git-Zugang) in ein Temp-Verzeichnis klonen, dann nach `/opt/fairpos`
 kopieren und umbesitzen:
 
+**Bewusst `develop`, nicht `master`** — der Produktivserver dient laufend
+als Testumgebung für Zwischenstände direkt während der Entwicklung, nicht
+nur für fertige Releases (siehe AGENTS.md, „Git-Workflow (Branches)").
+`master` enthält nur die aufgeräumte, öffentlich sichtbare Historie ohne
+Zwischenschritte.
+
 ```bash
-git clone <repository-url> /tmp/fairpos-checkout
+git clone -b develop <repository-url> /tmp/fairpos-checkout
 sudo cp -a /tmp/fairpos-checkout/. /opt/fairpos/
 sudo chown -R fairpos:fairpos /opt/fairpos
 rm -rf /tmp/fairpos-checkout
