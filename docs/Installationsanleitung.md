@@ -736,16 +736,40 @@ verfügbar" (Warnung, kein Fehler) statt eines echten Ergebnisses.
 sudo apt install -y smartmontools
 ```
 
-### 15.2 Sudoers-Regel
+### 15.2 Prüf-Skript und Sudoers-Regel
 
-`smartctl -H` braucht Root-Rechte für den rohen Festplattenzugriff — die
-Regel erlaubt bewusst nur genau diesen einen, lesenden Befehl mit
-Geräte-Wildcard (Festplattenname variiert je Server), keinen allgemeinen
-Zugriff auf `smartctl`:
+`smartctl -H` braucht Root-Rechte für den rohen Festplattenzugriff. **Kein
+Geräte-Wildcard in der Sudoers-Regel** — auf diesem Ubuntu-Stand lehnt
+`visudo` das mit `syntax error: wildcards are not allowed in command
+arguments` ab (live gefunden, 2026-08-30, beim ersten Versuch mit
+`smartctl -H /dev/*` direkt als Regel: die Prüfung durch `visudo -c -f`
+hat genau das verhindert, wofür sie da ist — die kaputte Regel wurde nie
+installiert). Stattdessen dasselbe Muster wie beim nginx-Zertifikat
+(Abschnitt 14.4): ein festes, **parameterloses** Skript, das Geräte
+selbst aufzählt, statt eine Wildcard im Sudoers-Argument zu brauchen.
+
+```bash
+sudo mkdir -p /opt/fairpos/scripts
+cat <<'EOF' | sudo tee /opt/fairpos/scripts/smart-check.sh > /dev/null
+#!/bin/bash
+set -euo pipefail
+
+for disk in $(lsblk -d -n -o NAME,TYPE | awk '$2=="disk"{print $1}'); do
+  echo "=== /dev/$disk ==="
+  smartctl -H "/dev/$disk" || true
+done
+EOF
+sudo chmod 0755 /opt/fairpos/scripts/smart-check.sh
+```
+
+`|| true` hinter dem `smartctl`-Aufruf ist wichtig: ein tatsächlich
+fehlerhafter Datenträger lässt `smartctl` mit einem Fehlercode enden —
+ohne `|| true` würde `set -e` die Schleife dort sofort abbrechen und
+weitere Datenträger nie geprüft werden.
 
 ```bash
 cat <<'EOF' | sudo tee /tmp/fairpos-smart-control > /dev/null
-fairpos ALL=(root) NOPASSWD: /usr/sbin/smartctl -H /dev/*
+fairpos ALL=(root) NOPASSWD: /opt/fairpos/scripts/smart-check.sh
 EOF
 sudo visudo -c -f /tmp/fairpos-smart-control && \
   sudo install -m 0440 -o root -g root /tmp/fairpos-smart-control /etc/sudoers.d/fairpos-smart-control && \
@@ -758,8 +782,8 @@ sudo visudo -c -f /tmp/fairpos-smart-control && \
 sudo -u fairpos sudo -n -l
 ```
 
-Sollte jetzt eine weitere Zeile (`smartctl -H /dev/*`) neben den bereits
-bestehenden Regeln zeigen.
+Sollte jetzt eine weitere Zeile (`/opt/fairpos/scripts/smart-check.sh`)
+neben den bereits bestehenden Regeln zeigen.
 
 **Echter Funktionstest:** über die Admin-UI (Monitoring → Health-Check)
 "Jetzt prüfen" klicken — die Zeile "SMART-Festplattenstatus" sollte jetzt

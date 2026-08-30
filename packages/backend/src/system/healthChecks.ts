@@ -112,59 +112,66 @@ export function classifySmartOutput(output: string): 'ok' | 'error' | 'unknown' 
   return 'unknown';
 }
 
-/** Lists physical disk device names (e.g. `sda`, `nvme0n1`) — excludes partitions and LVM/mapper devices, which `smartctl` can't query directly. */
-async function listPhysicalDisks(): Promise<string[]> {
-  const { stdout } = await execFileAsync(config.lsblkPath, ['-d', '-n', '-o', 'NAME,TYPE']);
-  return stdout
-    .split('\n')
-    .map((line) => line.trim().split(/\s+/))
-    .filter(([, type]) => type === 'disk')
-    .map(([diskName]) => diskName!);
+/**
+ * Fixed, no-argument path of the privileged SMART-check script — same
+ * reasoning as `system/tlsCert.ts`'s install script: `sudo` on this
+ * project's target Ubuntu versions rejects a wildcard directly in a
+ * sudoers command argument ("wildcards are not allowed in command
+ * arguments", found live, 2026-08-30, trying `smartctl -H /dev/*"`
+ * as the rule instead of wrapping it in a script) — a fixed script path
+ * needs no wildcard at all, since the script itself enumerates disks
+ * internally. See docs/Installationsanleitung.md, "Health-Check:
+ * SMART-Datenträgerprüfung", for its exact content and sudoers rule.
+ */
+const SMART_CHECK_SCRIPT_PATH = '/opt/fairpos/scripts/smart-check.sh';
+
+/**
+ * Parses `smart-check.sh`'s output — one `=== /dev/<name> ===` marker line
+ * per disk, followed by that disk's raw `smartctl -H` output. Exported
+ * separately so this is unit-testable without a real subprocess.
+ *
+ * @param output - Combined stdout from `smart-check.sh`.
+ * @returns One verdict per disk found, in the order they appeared.
+ */
+export function parseSmartCheckOutput(output: string): { disk: string; verdict: ReturnType<typeof classifySmartOutput> }[] {
+  const parts = output.split(/^=== \/dev\/(\S+) ===$/m);
+  const result: { disk: string; verdict: ReturnType<typeof classifySmartOutput> }[] = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    result.push({ disk: parts[i]!, verdict: classifySmartOutput(parts[i + 1] ?? '') });
+  }
+  return result;
 }
 
 /**
- * Checks the SMART self-assessment health of every physical disk via
- * `smartctl -H` (smartmontools). Requires the `smartmontools` package and a
- * sudoers rule allowing the `fairpos` service user to run `smartctl -H
- * /dev/*` without a password (raw disk access needs root) — see
- * docs/Installationsanleitung.md, "Health-Check: SMART-Datenträgerprüfung".
- * Without either, this reports `warning` (not `error`) — the check is
- * optional infrastructure, not a sign of an actually failing disk.
+ * Checks the SMART self-assessment health of every physical disk, via the
+ * privileged `smart-check.sh` script (smartmontools). Requires the
+ * `smartmontools` package and a sudoers rule allowing the `fairpos`
+ * service user to run that one fixed script without a password (raw disk
+ * access needs root) — see docs/Installationsanleitung.md, "Health-Check:
+ * SMART-Datenträgerprüfung". Without either, this reports `warning` (not
+ * `error`) — the check is optional infrastructure, not a sign of an
+ * actually failing disk.
  */
 async function checkSmartHealth(): Promise<HealthCheckResult> {
   const id = 'smart-health';
   const name = 'SMART-Festplattenstatus';
 
-  let disks: string[];
+  let stdout: string;
   try {
-    disks = await listPhysicalDisks();
+    ({ stdout } = await execFileAsync(config.sudoPath ?? 'sudo', [SMART_CHECK_SCRIPT_PATH]));
   } catch (e) {
-    return { id, name, status: 'warning', message: `lsblk nicht verfügbar: ${e instanceof Error ? e.message : String(e)}` };
-  }
-  if (disks.length === 0) {
-    return { id, name, status: 'warning', message: 'Keine physischen Datenträger gefunden.' };
+    // The script uses `|| true` per disk internally, so a genuinely failing
+    // disk still exits 0 with output — a caught error here means the
+    // script/sudoers rule itself isn't set up, not a failing disk.
+    return {
+      id, name, status: 'warning',
+      message: `SMART-Prüfung nicht verfügbar: ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
 
-  const perDisk: { disk: string; verdict: ReturnType<typeof classifySmartOutput> }[] = [];
-  for (const disk of disks) {
-    try {
-      const { stdout } = await execFileAsync(config.sudoPath ?? 'sudo', ['smartctl', '-H', `/dev/${disk}`]);
-      perDisk.push({ disk, verdict: classifySmartOutput(stdout) });
-    } catch (e) {
-      // smartctl exits non-zero for a FAILING disk too, not just when it can't run at
-      // all — Node still attaches stdout to the rejection in that case, so a genuine
-      // failure is distinguished from "smartctl/sudoers not set up" by whether any
-      // output came back.
-      const stdout = (e as { stdout?: string }).stdout;
-      if (stdout) {
-        perDisk.push({ disk, verdict: classifySmartOutput(stdout) });
-      } else {
-        return {
-          id, name, status: 'warning',
-          message: `smartctl nicht verfügbar (${disk}): ${e instanceof Error ? e.message : String(e)}`,
-        };
-      }
-    }
+  const perDisk = parseSmartCheckOutput(stdout);
+  if (perDisk.length === 0) {
+    return { id, name, status: 'warning', message: 'Keine physischen Datenträger gefunden.' };
   }
 
   const summary = perDisk

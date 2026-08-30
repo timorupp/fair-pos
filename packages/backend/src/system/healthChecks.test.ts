@@ -4,7 +4,7 @@
  * needs a real filesystem/subprocess and isn't unit-tested here.
  */
 import { describe, expect, it } from 'vitest';
-import { classifySmartOutput } from './healthChecks.js';
+import { classifySmartOutput, parseSmartCheckOutput } from './healthChecks.js';
 
 describe('classifySmartOutput', () => {
   it('recognizes a healthy ATA disk', () => {
@@ -21,5 +21,24 @@ describe('classifySmartOutput', () => {
 
   it('treats unrecognized output as unknown', () => {
     expect(classifySmartOutput('Some unexpected smartctl output')).toBe('unknown');
+  });
+});
+
+describe('parseSmartCheckOutput', () => {
+  it('parses multiple disks, one per marker block', () => {
+    const output = [
+      '=== /dev/sda ===',
+      'SMART overall-health self-assessment test result: PASSED',
+      '=== /dev/sdb ===',
+      'SMART overall-health self-assessment test result: FAILED!',
+    ].join('\n');
+    expect(parseSmartCheckOutput(output)).toEqual([
+      { disk: 'sda', verdict: 'ok' },
+      { disk: 'sdb', verdict: 'error' },
+    ]);
+  });
+
+  it('returns an empty array for output with no markers', () => {
+    expect(parseSmartCheckOutput('')).toEqual([]);
   });
 });

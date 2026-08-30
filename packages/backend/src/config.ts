@@ -60,12 +60,6 @@ export const config = {
   // clock (no `CAP_SYS_TIME`), by design (see Abschnitt 4 der
   // Installationsanleitung).
   sudoPath: process.env['SUDO_PATH'] ?? null,
-  // Override point for tests (points at a stub script) — production relies
-  // on `lsblk` being on PATH (util-linux, present on every Ubuntu install
-  // by default). Used by the SMART health check (Task #87) to enumerate
-  // physical disks; unlike the actual SMART query, `lsblk` needs no
-  // elevated privileges, so it's invoked directly rather than via `sudo`.
-  lsblkPath: process.env['LSBLK_PATH'] ?? 'lsblk',
   // Where an uploaded TLS cert/key pair (Task #66) is staged before the
   // privileged install script copies it into nginx's real config location —
   // this directory must be writable by the unprivileged `fairpos` user

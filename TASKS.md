@@ -1454,6 +1454,27 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     absichtlich nicht installiert — Check meldet korrekt "Warnung", genau
     der vorgesehene Graceful-Degradation-Pfad). Backend-Unit (278/278),
     Frontend-Unit (70/70), Typecheck grün.
+
+  **Live gefunden und behoben (2026-08-30):** die ursprüngliche
+  Sudoers-Regel `smartctl -H /dev/*` (Geräte-Wildcard direkt im Argument)
+  scheiterte live an `visudo -c -f` mit "syntax error: wildcards are not
+  allowed in command arguments" — auf dem Ubuntu-Stand des Servers sind
+  Wildcards in Sudoers-Befehlsargumenten strenger reglementiert als
+  angenommen. Der eingebaute `visudo -c -f`-Sicherheitscheck hat genau
+  das verhindert, wofür er da ist: die kaputte Regel wurde nie
+  installiert. Umgebaut auf dasselbe parameterlose-Skript-Muster wie
+  beim nginx-Zertifikat (Task #66, Abschnitt 14.4) — neues
+  `/opt/fairpos/scripts/smart-check.sh` (zählt Datenträger selbst per
+  `lsblk` auf, `smartctl -H` je Datenträger mit `|| true` gegen
+  vorzeitigen Abbruch durch `set -e` bei einem echt fehlerhaften
+  Datenträger), Sudoers-Regel jetzt ohne jede Wildcard
+  (`.../smart-check.sh`, keine Argumente). `system/healthChecks.ts`s
+  `checkSmartHealth()` ruft nur noch dieses eine Skript auf und parst
+  dessen kombinierte Ausgabe (`parseSmartCheckOutput`, neu unit-testbar).
+  `config.lsblkPath` (nicht mehr gebraucht, `lsblk` läuft jetzt nur noch
+  innerhalb des Skripts) wieder entfernt. Doku Abschnitt 15.2
+  entsprechend aktualisiert. 2 zusätzliche Unit-Tests für
+  `parseSmartCheckOutput`, alle Suiten weiterhin grün.
 - [x] **#88** Nachträglich Hinweis zu einer bereits platzierten Position hinzufügen (auch für Artikel ohne vordefinierte Optionen)
   Aus #86 ausgelagert (2026-08-27): dort wurde der Umfang bewusst auf
   Artikel mit bereits vorhandenen Optionen beschränkt (Dialog öffnet dort
