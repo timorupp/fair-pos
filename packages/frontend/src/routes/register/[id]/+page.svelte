@@ -8,7 +8,6 @@
   import type { Article } from '@fairpos/shared';
   import { adjustQuantity, computeOrderTotal, num, type OrderLine } from '$lib/order';
   import { currentRegisterName } from '$lib/stores/page-title';
-  import Modal from '$lib/components/Modal.svelte';
   import { longpress } from '$lib/longpress';
 
   type Slot = { article_id: string; grid_row: number; grid_col: number; color: string; label: string | null };
@@ -31,28 +30,13 @@
 
   let order: OrderLine[] = $state([]);
 
-  // Checkout dialog
-  let checkoutOpen = $state(false);
   let checkoutBusy = $state(false);
   let checkoutError = $state('');
-  let lastInvoiceId: string | null = $state(null);
-  let lastReceiptNumber: string | null = $state(null);
-  let printing = $state(false);
-  let printDone = $state(false);
-  /** Set when a configured TSE failed to sign the sale — the sale still went through, see docs/TSE-Integration.md. */
-  let tseWarning: string | null = $state(null);
 
   run(() => {
     registerId = ($page.params['id'] ?? '') as string;
   });
   let total = $derived(computeOrderTotal(order, articles));
-  // Reset the order any time the receipt dialog closes — regardless of how
-  // (X button, backdrop click, Escape). Listening for the Modal's explicit
-  // `close` event is more reliable than the previous reactive cascade
-  // (`$: if (!checkoutOpen && lastInvoiceId) reset();`), which had Svelte
-  // update-ordering quirks that left the total stale while the order list
-  // was already cleared.
-  function onCheckoutClosed(): void { reset(); }
 
   // Lookup helpers
   run(() => {
@@ -114,16 +98,16 @@
     return num(a.price) + num(a.deposit_price);
   }
 
-  function reset() {
-    order = [];
-    lastInvoiceId = null;
-    lastReceiptNumber = null;
-    printDone = false;
-    printing = false;
-    checkoutError = '';
-    tseWarning = null;
-  }
-
+  /**
+   * Charges the order and navigates to the dedicated receipt page (own
+   * route rather than a modal — Nutzervorgabe, 2026-08-30, für einheitliche
+   * UX mit der Bedienungskasse, siehe deren `checkout/receipt`). Everything
+   * the receipt page needs travels as query params — a one-shot handoff of
+   * data already in hand, not worth a new endpoint. No manual reset of
+   * `order` needed here: navigating away unmounts this page, and coming
+   * back later (via the receipt page's "fertig"-Aktionen) remounts it
+   * fresh with `order` back at its initial empty state.
+   */
   async function startCheckout() {
     if (order.length === 0) return;
     checkoutBusy = true; checkoutError = '';
@@ -132,39 +116,19 @@
         registerId,
         order.map((l) => ({ article_id: l.article_id, quantity: l.quantity })),
       );
-      lastInvoiceId = result.invoice_id;
-      lastReceiptNumber = result.receipt_number_formatted;
-      tseWarning = result.tse_warning;
-      checkoutOpen = true;
+      const params = new URLSearchParams({
+        invoiceId: result.invoice_id,
+        receiptNumber: result.receipt_number_formatted,
+        total: String(total),
+        count: String(order.reduce((s, l) => s + l.quantity, 0)),
+      });
+      if (result.tse_warning) params.set('tseWarning', result.tse_warning);
+      goto(`/register/${registerId}/receipt?${params}`);
     } catch (e) {
       checkoutError = e instanceof Error ? e.message : 'Fehler';
     } finally {
       checkoutBusy = false;
     }
-  }
-
-  async function printReceipt() {
-    if (!lastInvoiceId) return;
-    printing = true; checkoutError = '';
-    try {
-      await api.registerSession.print(lastInvoiceId);
-      printDone = true;
-      // Close the dialog after a short success indication and reset for the next customer.
-      setTimeout(finish, 1200);
-    } catch (e) {
-      checkoutError = e instanceof Error ? e.message : 'Fehler';
-    } finally {
-      printing = false;
-    }
-  }
-
-  function scannedConfirmed() {
-    finish();
-  }
-
-  function finish() {
-    checkoutOpen = false;
-    reset();
   }
 
   const fmt = (n: number) => n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -264,38 +228,11 @@
             <span class="hold-label">⏱ {checkoutBusy ? 'Kassiere…' : 'Kassieren (halten)'}</span>
           </button>
         </div>
-        {#if checkoutError && !checkoutOpen}<p class="error-text">{checkoutError}</p>{/if}
+        {#if checkoutError}<p class="error-text">{checkoutError}</p>{/if}
       </section>
     </div>
   {/if}
 </div>
-
-<!-- Checkout dialog ─────────────────────────────────────────────────────── -->
-<Modal bind:open={checkoutOpen} title="Rechnung {lastReceiptNumber ?? ''}" on:close={onCheckoutClosed}>
-  {#if lastInvoiceId}
-    <div class="checkout-body">
-      <div class="qr-wrap">
-        <img class="qr" src={api.registerSession.qrUrl(lastInvoiceId)} alt="QR-Code zur Rechnung" />
-        <p class="qr-hint">Vom Kunden mit dem Smartphone scannen</p>
-      </div>
-      <div class="totals">
-        <div class="total-final" class:negative={total < 0}>{fmt(total)} €</div>
-        <div class="muted small">{order.reduce((s, l) => s + l.quantity, 0)} Artikel</div>
-      </div>
-    </div>
-    {#if tseWarning}<p class="warning-text">⚠ {tseWarning}</p>{/if}
-    {#if checkoutError}<p class="error-text">{checkoutError}</p>{/if}
-    {#if printDone}<p class="success-text">✓ Bon wird gedruckt</p>{/if}
-
-    <div class="modal-actions">
-      <button class="btn-ghost" onclick={scannedConfirmed} disabled={printing}>Rechnung per QR Code gescannt</button>
-      <div class="spacer"></div>
-      <button class="btn-primary" onclick={printReceipt} disabled={printing || printDone}>
-        {printing ? 'Drucke…' : 'Rechnung drucken'}
-      </button>
-    </div>
-  {/if}
-</Modal>
 
 <style>
   .register-shell { flex: 1; display: flex; flex-direction: column; padding: 1rem; gap: 1rem; max-width: 100%; }
@@ -421,18 +358,5 @@
   .grid-btn:active { transform: scale(0.97); }
   .grid-empty { background: transparent; }
 
-  /* ── Checkout dialog ────────────────────────────────────────────────── */
-  .checkout-body { display: flex; gap: 1.5rem; align-items: center; padding: 0.5rem 0; }
-  .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
-  .qr { width: 200px; height: 200px; background: white; padding: 0.5rem; border-radius: var(--radius-sm); }
-  .qr-hint { font-size: 0.8rem; color: var(--color-text-muted); margin: 0; text-align: center; }
-  .totals { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
-  .total-final { font-size: 2rem; font-weight: 700; }
-  .total-final.negative { color: var(--color-danger); }
-  .small { font-size: 0.85rem; }
-  .modal-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
-  .modal-actions .spacer { flex: 1; }
-  .success-text { color: #4caf7d; font-size: 0.9rem; margin-top: 0.5rem; }
   .error-text { color: var(--color-danger); font-size: 0.9rem; margin-top: 0.5rem; }
-  .warning-text { color: #f59e0b; font-size: 0.9rem; margin-top: 0.5rem; font-weight: 600; }
 </style>
