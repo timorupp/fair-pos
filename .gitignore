@@ -8,6 +8,11 @@ dist/
 .svelte-kit/
 packages/frontend/build/
 
+# Vite writes these transient bundled-config files when loading vite.config.ts
+# and normally deletes them right after — a couple survived (interrupted dev
+# server?) and got accidentally committed. See git history for context.
+vite.config.*.timestamp-*.mjs
+
 # Docker
 .docker-data/
 
