@@ -1159,7 +1159,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Job wurde bewusst **nicht** live getestet (Zeitfenster zu knapp, seltener
   Fall) — Nutzerentscheidung, auf die bestehende automatisierte Testabdeckung
   zu vertrauen.
-- [ ] **#80** Server-Adresse-Testfunktion (Task #73) prüft die falsche Sache — Konzept überarbeiten
+- [ ] **#80** (Low Prio) Server-Adresse-Testfunktion (Task #73) prüft die falsche Sache — Konzept überarbeiten
   Beim Nutzer-Review von Task #73 aufgefallen (2026-08-26): der neue
   „Testen"-Button in den Systemeinstellungen zeigt einen QR-Code + Link zu
   `<server_address>/` — das ist die Login-Seite des Backends. Die
@@ -1248,7 +1248,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   unverändert — dort steht „Summe" als Tabellen-Zellwert unter einer
   gleichnamigen Spaltenüberschrift, ein anderer, nicht vom Nutzer
   angesprochener Kontext. **Noch nicht live durch den Nutzer bestätigt.**
-- [ ] **#84** Artikel löschen, das bereits verkauft wurde → „Internal Server Error" statt klarer Fehlermeldung
+- [ ] **#84** (Low Prio) Artikel löschen, das bereits verkauft wurde → „Internal Server Error" statt klarer Fehlermeldung
   Aufgekommen beim Hardware-Test (2026-08-26). Bestätigt: `DELETE
   /api/admin/articles/:id` (`routes/admin/articles.ts`) fängt anders als die
   Endpunkte für Kassen/Benutzer/Drucker (Task #54/#56/#57) keine
@@ -1663,6 +1663,14 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `tmp-pwa-artifacts/` noch nicht gelöscht — enthält weiterhin beide SVG-
   Versionen (Original + neu eingefärbt) und den ursprünglichen
   `manifest-draft.json`, kann nach Bestätigung entfernt werden.
+
+  **Stand 2026-08-30:** Implementierung vollständig, es fehlt nur noch
+  der reale Gerätetest. Der hängt an Task #92 — ohne zertifikatsfreies
+  HTTPS (Split-Horizon-DNS + offiziell validiertes Zertifikat) zeigen iOS/
+  Android beim „Zum Home-Bildschirm hinzufügen" sonst weiterhin
+  Zertifikatswarnungen bzw. verweigern den Standalone-Modus. Wartet auf
+  #92s finalen Live-Test (dieser wiederum auf neue Router-Hardware beim
+  Nutzer, siehe dort).
 - [x] **#90** Login-Neukonzeption: PIN-Login statt QR-Einmaltoken, serverseitige Sessions, vereinheitlichtes Admin/Kassen-Login
 
   **Ausgangsproblem (2026-08-27):** Das heutige QR-Einmaltoken-Login
