@@ -1,0 +1,204 @@
+# FairPOS — Projektkontext für KI-Coding-Agenten
+
+Diese Datei (Konvention: `AGENTS.md`) wird von KI-Coding-Werkzeugen, die diese
+Konvention unterstützen, automatisch geladen. Sie ersetzt flüchtiges,
+werkzeug-internes Sitzungsgedächtnis und bleibt unabhängig vom verwendeten
+Tool oder Host erhalten.
+**Bitte aktualisieren, wenn sich Konventionen oder Projektkontext ändern.**
+
+---
+
+## Projekt
+
+**Name:** FairPOS (Arbeitstitel; "Fair" = Volksfest, "POS" = Point of Sale)
+
+**Zweck:** KassenSichV-konformes Kassensystem für Vereine, eingesetzt bei
+Veranstaltungen und Festen.
+
+**Lizenz:** AGPL-3.0-or-later (siehe `LICENSE`), © FairPOS Contributors.
+Bewusst Copyleft mit Netzwerk-Klausel gewählt, wegen des geplanten
+Server-Verleih-Szenarios zwischen Vereinen (siehe `docs/Anforderungen.md`).
+Das proprietäre Swissbit-TSE-SDK ist davon unberührt — eigene, separate
+Lizenz, nicht Teil des Repos (`docs/TSE-Integration.md` Abschnitt 3).
+
+**Wichtig bei neuen Abhängigkeiten:** Bei jeder neuen `npm`-Abhängigkeit
+die Lizenz auf Kompatibilität mit AGPL-3.0-or-later prüfen, bevor sie
+hinzugefügt wird — insbesondere bei Copyleft-Lizenzen, die mit AGPL
+kollidieren können (z.B. manche CDDL/EPL-Varianten), und bei jeglicher
+`UNLICENSED`/proprietären Abhängigkeit.
+
+**Kerndokumente** (alle unter `docs/`):
+- `docs/Anforderungen.md` — fachliche Anforderungen (maßgeblich)
+- `docs/Datenmodell.dbml` — Datenbankschema (dbdiagram.io)
+- `docs/Dictionary.md` — Deutsch ↔ Englisch Übersetzungsreferenz (verbindlich)
+- `docs/SETUP.md` — Technisches Setup, Architektur, Deployment
+- `docs/Installationsanleitung.md` — Schritt-für-Schritt-Produktionsinstallation (native Ubuntu, kein Docker); Automatisierungsskripte in `scripts/install/`
+- `docs/TSE-Integration.md` — TSE-Architekturkonzept (CLI-Subprozess, Vendoring, Lifecycle, aktueller Umsetzungsstand)
+- `docs/Rechtliche-Anforderungen.md` / `docs/Organisatorische-Anleitung.md` — KassenSichV-/GoBD-Vorgaben und Betriebsabläufe
+- `docs/Manueller-Testplan.md` — Checkliste für den manuellen Regressionstest (UI, TSE-Ausfallverhalten, DSFinV-K-Export)
+
+**Projekt-Metadateien** (Repo-Root, nicht unter `docs/`):
+- `TASKS.md` — maßgebliche, versionierte Aufgabenliste (ersetzt eine
+  werkzeug-interne, nicht persistente Task-Verwaltung; `Task #<N>`-Verweise
+  im Code lösen hier auf)
+- `DANGER.md` — gefundene Risiken, fragwürdige Designs, Refactoring-Bedarf
+
+---
+
+## Coding Conventions
+
+### Sprache der Bezeichner
+
+Alle Bezeichner im Code und in der Datenbank sind **englisch**:
+- Variablen, Funktionen, Klassen, Typen, Interfaces
+- Tabellennamen, Spaltennamen, Enum-Werte
+- Dateinamen für Quellcode
+
+UI-Texte, Kommentare und Dokumentation dürfen deutsch sein.
+
+Übersetzungen immer aus `Dictionary.md` entnehmen, um Konsistenz zu gewährleisten.
+
+**Git-Commit-Messages sind immer englisch** und ausführlich (nicht nur eine
+Zeile) — Body mit den wesentlichen Änderungen. Kein Warum/Begründung, das
+macht die Message unnötig lang — reicht, um zu sehen was sich geändert hat.
+
+**Keine KI-Session-IDs oder -Links in Commit-Messages** (z. B. keine
+`Claude-Session: https://...`-Zeile) — die gesamte bisherige Historie wurde
+deswegen bereits per `git filter-repo` bereinigt (2026-08-30). Ein
+`Co-Authored-By: <KI-Tool>`-Trailer ist dagegen ausdrücklich in Ordnung.
+
+### Inline-Dokumentation (JSDoc, Englisch)
+
+Über jeder exportierten Funktion, Methode und jedem benannten Objekt
+(Klasse, Interface, Type) steht ein **JSDoc-Block auf Englisch** mit:
+
+1. Beschreibung dessen, was die Funktion tut.
+2. Pro Eingangsparameter eine `@param`-Zeile.
+3. Eine `@returns`-Zeile (entfällt nur bei `void`).
+4. Für Types/Interfaces reicht eine Beschreibung; einzelne Felder erhalten
+   inline JSDoc, wenn ihr Zweck nicht aus dem Namen ersichtlich ist.
+
+```typescript
+/**
+ * Computes the next receipt number from the existing maximum
+ * and the configured starting counter.
+ *
+ * @param existingMax - Current max receipt_number in the database, or
+ *   `null` if no invoices exist yet.
+ * @param configuredStart - Counter start value from system settings.
+ * @returns The next sequential receipt number to assign.
+ */
+export function computeNextReceiptNumber(
+  existingMax: number | null,
+  configuredStart: number,
+): number { ... }
+
+/** Shared PostgreSQL connection pool. Reused across the application lifetime. */
+export const pool = new pg.Pool(...);
+```
+
+**Pflicht bei Signaturänderung:** Wird eine Funktion umbenannt, ein
+Parameter hinzugefügt/entfernt/umtypisiert oder der Rückgabewert
+geändert, **muss** der JSDoc-Block in derselben Änderung mitgepflegt
+werden. Veraltete `@param`-Zeilen für nicht mehr existierende Parameter
+sind ein Defekt.
+
+**Ausnahmen** (kein JSDoc erforderlich):
+- Triviale Pfeilfunktionen innerhalb größerer Funktionen
+- Offensichtliche Getter ohne Parameter
+
+**Warum:** Zukünftige Administratoren haben möglicherweise keinen
+deutschsprachigen Programmier-Hintergrund; vollständige Parameter-Docs
+erscheinen als IDE-Hover-Tooltips und machen Signaturen selbst-
+dokumentierend; explizite Return-Doku fängt stille Vertragsbrüche bei
+Refactorings ab.
+
+### Tests (Pflicht parallel zur Implementierung)
+
+Drei Test-Kategorien laufen nebeneinander:
+
+- **Unit-Tests** (`*.test.ts`) für reine Funktionen — `npm test`.
+- **Integration-Tests** (`*.integration.test.ts`) für DB-getriebene Pfade —
+  `npm run test:integration`. Startet einen Postgres-Container über
+  `testcontainers` (siehe `src/test/global-setup.ts`); pro Test wird mit
+  `truncateAllTables()` aufgeräumt.
+- **End-to-End-Tests** (`*.e2e.test.ts`, `packages/backend/src/e2e/`) — per
+  echtem HTTP gegen eine bereits laufende, echte Instanz (nicht gemockt,
+  keine testcontainers) — `npm run test:e2e` im Backend-Paket. Siehe
+  `packages/backend/src/e2e/README.md`. Kein Pflichtbestandteil jeder
+  Änderung wie die beiden anderen Kategorien — sinnvoll nach größeren
+  Deployment-relevanten Änderungen, nicht bei jedem Commit.
+
+**Beim Schreiben eines neuen Features gehören Unit- und Integrationstests zur
+selben Änderung:**
+
+- Reine Helfer/Aggregations-/Format-Funktionen → Unit-Test.
+- Route-Handler, DB-Helpers, Bootstrap-Hooks → Integration-Test.
+
+Beide Suiten müssen vor jedem Commit grün sein.
+
+### Datenbank-Migrationen
+
+Schema-Änderungen werden **immer** als neue, nummerierte SQL-Datei in
+`packages/backend/src/db/migrations/` angelegt (z.B. `0008_add_xyz.sql`).
+Die Nummer ist `max+1` der existierenden Dateien.
+
+**Niemals** rückwirkend an einer bereits ausgelieferten Migration schrauben —
+der Runner trackt angewendete Dateien per Dateiname in `schema_migrations`,
+nachträgliche Änderungen werden ignoriert und führen zu Schema-Drift in
+existierenden DBs.
+
+Bei strukturellen Refactors (Spalten umbenennen, Tabellen umbauen): drei
+Schritte in einer Migration — neue Struktur anlegen, Daten migrieren, alte
+Struktur entfernen. So bleiben bestehende Daten erhalten.
+
+### Git-Workflow (Branches)
+
+**`develop`** ist der Arbeits-Branch — alle laufende Entwicklung passiert
+hier, mit voller, granularer Commit-Historie (seit 2026-08-30, vorher
+wurde direkt auf `master` gearbeitet).
+
+**`master`** ist der Release-Branch — bekommt Inhalte **ausschließlich**
+per `git merge --squash` von `develop`, nie per normalem Merge:
+
+```bash
+git checkout master
+git merge --squash develop
+git commit -m "Release: ..."
+```
+
+Ein Squash-Merge verändert `develop` nicht — die volle Detail-Historie
+bleibt dort für immer erhalten, `master` zeigt dauerhaft nur einen Commit
+pro Release. Der Produktivserver ist auf `master` ausgecheckt und bekommt
+damit nur fertige Release-Stände, nie Zwischenschritte aus `develop`.
+
+`master` wurde am 2026-08-30 bewusst als Orphan-Branch neu gestartet (ein
+einziger Commit mit dem damaligen Codestand, keine Elternhistorie) — die
+komplette bisherige Entwicklungsgeschichte bis dahin liegt vollständig in
+`develop`.
+
+---
+
+## Technologie-Stack
+
+| Schicht    | Technologie                                    |
+|------------|------------------------------------------------|
+| Frontend   | SvelteKit + TypeScript, `adapter-static` (SPA) |
+| Backend    | Node.js + Fastify v5                           |
+| Datenbank  | PostgreSQL (Ubuntu-Standardpaket, keine Major-Version gepinnt; Dev/Test aktuell 18.x), rohes SQL (kein ORM) |
+| Drucken    | ESC/POS über TCP, Print Worker im Backend      |
+| TSE        | Swissbit USB-TSE, eigener CLI-Subprozess (`native/tse-cli`) — siehe `docs/TSE-Integration.md` |
+| Packaging  | npm Workspaces (shared / backend / frontend)   |
+| Deployment | Native Ubuntu-Installation, **kein Docker in Produktion** — siehe `docs/Installationsanleitung.md`. Docker nur für lokale Entwicklung (PostgreSQL, `docker-compose.yml`). |
+
+---
+
+## Wichtige Architekturentscheidungen
+
+- **Keine ORM** — direkte SQL-Queries via `node-postgres` (`pg`)
+- **SPA-Modus** — SvelteKit mit `adapter-static`; Fastify liefert `index.html` als Fallback
+- **Print Worker** läuft im selben Node.js-Prozess wie die API (kein separater Service)
+- **Client-seitiges Polling** für Echtzeit-Updates (Server → Client) — kein SSE/WebSocket-Mechanismus vorhanden oder geplant; Ansichten mit Aktualisierungsbedarf pollen selbst per `setInterval` (z. B. Admin-Dashboard alle 30s, Systemprotokoll alle 10s)
+- **Migrationen** — nummerierte `.sql`-Dateien, eigener Runner, kein Migrationstool
+- **Einmal Bestellung, einmal Rechnung** — `order_item` (eine Zeile pro Artikel-Einheit) + `invoice` (Snapshot mit TSE-Daten)
+- **TSE via CLI-Subprozess** — Swissbit USB-TSE, eigener minimaler C++-Wrapper (`packages/backend/native/tse-cli`), vom Backend per `child_process.execFile` aufgerufen. fiskaltrust-Middleware wurde verworfen (zu teuer, August 2026). Details, Umsetzungsstand und offene Punkte: `docs/TSE-Integration.md`.

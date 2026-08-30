@@ -1,0 +1,45 @@
+{
+  "name": "@fairpos/backend",
+  "version": "0.0.1",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../.env --import tsx/esm --watch src/index.ts",
+    "build": "tsc && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
+    "start": "node dist/index.js",
+    "db:migrate": "node --env-file=../../.env --import tsx/esm src/db/migrate.ts",
+    "db:seed": "node --env-file=../../.env --import tsx/esm src/db/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+  },
+  "dependencies": {
+    "@fairpos/shared": "*",
+    "@fastify/cookie": "^10.0.0",
+    "@fastify/multipart": "^10.0.0",
+    "@fastify/static": "^10.1.3",
+    "archiver": "^8.0.0",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.0.0",
+    "pdfkit": "^0.19.1",
+    "pg": "^8.13.0",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.35.2"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^12.0.4",
+    "@types/archiver": "^8.0.0",
+    "@types/pdfkit": "^0.17.6",
+    "@types/pg": "^8.11.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/unzipper": "^0.10.11",
+    "testcontainers": "^12.0.4",
+    "tsx": "^4.19.0",
+    "typescript": "*",
+    "unzipper": "^0.12.5",
+    "vitest": "^4.1.9"
+  }
+}

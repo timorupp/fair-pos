@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FairPOS — Navigationsprototyp</title>
+<style>
+:root {
+  --blue: #2563eb;
+  --blue-dark: #1d4ed8;
+  --sidebar-bg: #1e293b;
+  --sidebar-hover: #334155;
+  --sidebar-text: #94a3b8;
+  --sidebar-active-bg: #2563eb;
+  --sidebar-active-text: #fff;
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --green: #16a34a;
+  --green-bg: #dcfce7;
+  --red: #dc2626;
+  --red-bg: #fee2e2;
+  --amber: #d97706;
+  --amber-bg: #fef3c7;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,.1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: var(--text); background: var(--bg); }
+.hidden { display: none !important; }
+button { cursor: pointer; font-family: inherit; font-size: inherit; }
+
+/* ── START SCREEN ─────────────────────────────────────────────────────────── */
+#screen-start {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 48px;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+}
+.start-logo { color: #fff; text-align: center; }
+.start-logo h1 { font-size: 36px; font-weight: 700; letter-spacing: -1px; }
+.start-logo p { color: #94a3b8; margin-top: 4px; }
+.start-cards { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
+.start-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+  min-width: 180px;
+  border: 2px solid transparent;
+}
+.start-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,.2); }
+.start-card .icon { font-size: 40px; margin-bottom: 12px; }
+.start-card h2 { font-size: 16px; font-weight: 600; }
+.start-card p { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.start-hint { color: #475569; font-size: 12px; }
+
+/* ── ADMIN LAYOUT ─────────────────────────────────────────────────────────── */
+#screen-admin { display: flex; height: 100vh; }
+
+#sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.sidebar-header {
+  padding: 20px 16px 12px;
+  border-bottom: 1px solid #334155;
+}
+.sidebar-logo { color: #fff; font-size: 18px; font-weight: 700; }
+.sidebar-sub { color: #64748b; font-size: 11px; margin-top: 2px; }
+
+.sidebar-nav { flex: 1; padding: 8px 0; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-size: 13.5px;
+  transition: background .1s, color .1s;
+  border-radius: 0;
+}
+.nav-item:hover { background: var(--sidebar-hover); color: #e2e8f0; }
+.nav-item.active { background: var(--sidebar-active-bg); color: var(--sidebar-active-text); }
+.nav-item .icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+.nav-section { padding: 16px 16px 4px; font-size: 10px; font-weight: 600; color: #475569; letter-spacing: .08em; text-transform: uppercase; }
+.nav-indent { padding-left: 46px; }
+
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #334155;
+}
+.sidebar-user { color: #94a3b8; font-size: 12px; }
+.sidebar-logout {
+  color: #64748b;
+  font-size: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  margin-top: 4px;
+  padding: 0;
+}
+.sidebar-logout:hover { color: #94a3b8; }
+
+#admin-content {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.page { display: none; padding: 32px; }
+.page.active { display: block; }
+
+.page-header { margin-bottom: 24px; }
+.page-header h1 { font-size: 22px; font-weight: 700; }
+.page-header p { color: var(--text-muted); margin-top: 4px; }
+
+/* ── CARDS & TABLES ──────────────────────────────────────────────────────── */
+.card { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.card-body { padding: 20px; }
+.card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.card-header h2 { font-size: 15px; font-weight: 600; }
+
+.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+.stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); }
+th.num { text-align: right; }
+td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--bg); }
+
+/* ── BUTTONS ─────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 6px; font-size: 13.5px; font-weight: 500;
+  border: 1px solid transparent; cursor: pointer; transition: background .1s, opacity .1s;
+}
+.btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+.btn-primary:hover { background: var(--blue-dark); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
+.btn-secondary:hover { background: var(--bg); }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-danger:hover { opacity: .88; }
+.btn-ghost { background: none; border: none; color: var(--blue); padding: 4px 8px; }
+.btn-ghost:hover { background: #eff6ff; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-lg { padding: 14px 28px; font-size: 16px; font-weight: 600; }
+
+.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+.badge-green { background: var(--green-bg); color: var(--green); }
+.badge-red { background: var(--red-bg); color: var(--red); }
+.badge-amber { background: var(--amber-bg); color: var(--amber); }
+.badge-gray { background: #f1f5f9; color: #64748b; }
+
+/* ── FORMS ───────────────────────────────────────────────────────────────── */
+.form-group { margin-bottom: 16px; }
+label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+input, select, textarea {
+  width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 14px; font-family: inherit;
+  background: var(--surface); color: var(--text);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* ── TABS ────────────────────────────────────────────────────────────────── */
+.tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--border); margin-bottom: 24px; }
+.tab { padding: 10px 16px; font-size: 13.5px; font-weight: 500; color: var(--text-muted); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color .1s; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── MODALS ──────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center; z-index: 200;
+}
+.modal {
+  background: var(--surface); border-radius: 12px; padding: 28px;
+  width: 100%; max-width: 440px; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+.modal-lg { max-width: 600px; }
+.modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+/* ── BONKASSE ────────────────────────────────────────────────────────────── */
+#screen-bonkasse {
+  display: flex; flex-direction: column; height: 100vh;
+  background: var(--bg);
+}
+.bonkasse-header {
+  background: var(--sidebar-bg); color: #fff;
+  padding: 12px 20px; display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.bonkasse-header h1 { font-size: 16px; font-weight: 600; }
+.bonkasse-header button { background: none; border: 1px solid #475569; color: #94a3b8; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.bonkasse-header button:hover { background: #334155; }
+
+.bonkasse-body { flex: 1; display: flex; overflow: hidden; }
+
+.order-panel {
+  width: 300px; min-width: 300px;
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+.order-panel-header { padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; color: var(--text-muted); }
+.order-list { flex: 1; overflow-y: auto; padding: 8px; }
+.order-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px; border-radius: 6px;
+  margin-bottom: 4px;
+}
+.order-item:hover { background: var(--bg); }
+.order-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.order-name { flex: 1; font-size: 13.5px; }
+.order-price { font-size: 13.5px; font-weight: 600; margin-right: 4px; }
+.qty-control { display: flex; align-items: center; gap: 4px; }
+.qty-btn { width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1; cursor: pointer; }
+.qty-btn:hover { background: var(--bg); }
+.qty-val { width: 24px; text-align: center; font-size: 13.5px; font-weight: 600; }
+.order-empty { padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+.order-footer { padding: 16px; border-top: 1px solid var(--border); }
+.order-total { display: flex; justify-content: space-between; margin-bottom: 12px; }
+.order-total .label { font-size: 14px; color: var(--text-muted); }
+.order-total .amount { font-size: 22px; font-weight: 700; }
+.btn-kassieren {
+  width: 100%; padding: 14px; background: var(--green); color: #fff;
+  border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer;
+}
+.btn-kassieren:hover { opacity: .9; }
+.btn-kassieren:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+
+.artikel-panel { flex: 1; padding: 16px; overflow-y: auto; }
+.artikel-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.artikel-btn {
+  padding: 16px 8px; border: none; border-radius: 8px;
+  color: #fff; font-size: 13px; font-weight: 600;
+  cursor: pointer; text-align: center; line-height: 1.3;
+  transition: opacity .1s, transform .1s;
+  min-height: 64px;
+}
+.artikel-btn:hover { opacity: .88; transform: scale(.97); }
+.artikel-btn .preis { font-size: 11px; font-weight: 400; margin-top: 3px; opacity: .9; }
+
+/* ── BEDIENUNG ───────────────────────────────────────────────────────────── */
+#screen-bedienung {
+  min-height: 100vh;
+  background: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.phone-frame {
+  width: 390px;
+  min-height: 844px;
+  background: var(--surface);
+  border-radius: 40px;
+  overflow: hidden;
+  box-shadow: 0 0 0 8px #1e293b, 0 20px 60px rgba(0,0,0,.6);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.phone-statusbar {
+  background: var(--sidebar-bg); color: #fff;
+  padding: 12px 20px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.phone-statusbar h1 { font-size: 15px; font-weight: 600; }
+.phone-statusbar span { font-size: 12px; color: #94a3b8; }
+.phone-back { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 13px; padding: 0; }
+.phone-back:hover { color: #fff; }
+
+.phone-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+
+.bedienung-step { flex: 1; display: none; flex-direction: column; }
+.bedienung-step.active { display: flex; }
+
+/* Saalplan */
+.saalplan { padding: 16px; flex: 1; }
+.saalplan h2 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-muted); }
+.tisch-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.tisch-btn {
+  aspect-ratio: 1; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 2px;
+  transition: opacity .1s;
+}
+.tisch-btn:hover { opacity: .85; }
+.tisch-frei { background: #e2e8f0; color: #334155; }
+.tisch-besetzt { background: var(--amber); color: #fff; }
+.tisch-inaktiv { background: #f1f5f9; color: #cbd5e1; cursor: not-allowed; }
+.tisch-btn .sub { font-size: 9px; font-weight: 400; }
+
+/* Schritt 2b: Tischaktionsauswahl */
+.tisch-aktion {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px; padding: 32px 24px;
+}
+.tisch-aktion h2 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.tisch-aktion p { font-size: 13px; color: var(--text-muted); margin-top: -8px; }
+.aktion-btn {
+  width: 100%; padding: 18px; border-radius: 12px; border: none;
+  font-size: 16px; font-weight: 700; cursor: pointer; transition: opacity .1s;
+}
+.aktion-btn:hover { opacity: .88; }
+.aktion-bestellen { background: var(--blue); color: #fff; }
+.aktion-kassieren { background: var(--green); color: #fff; }
+.aktion-back { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* Bestellansicht (Bedienung) */
+.phone-order-list { padding: 8px 12px; border-bottom: 1px solid var(--border); height: 160px; overflow-y: auto; background: var(--bg); flex-shrink: 0; }
+.phone-total { padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+.phone-total .label { font-size: 13px; color: var(--text-muted); }
+.phone-total .amount { font-size: 18px; font-weight: 700; }
+.phone-artikel-grid { padding: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex: 1; }
+.phone-artikel-btn {
+  padding: 14px 6px; border: none; border-radius: 8px;
+  color: #fff; font-size: 12px; font-weight: 600;
+  cursor: pointer; text-align: center; line-height: 1.3;
+  min-height: 60px;
+}
+.phone-footer { padding: 12px 16px; border-top: 1px solid var(--border); }
+
+/* Kassieren (Bedienung Schritt 3) */
+.kassieren-step { flex: 1; display: flex; flex-direction: column; }
+.kassieren-positionen { flex: 1; overflow-y: auto; }
+.kassier-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.kassier-checkbox { width: 20px; height: 20px; cursor: pointer; flex-shrink: 0; }
+.kassier-name { flex: 1; font-size: 14px; }
+.kassier-options { font-size: 11px; color: var(--text-muted); }
+.kassier-price { font-weight: 600; font-size: 14px; }
+.kassieren-footer { padding: 12px 16px; border-top: 2px solid var(--border); background: var(--surface); }
+.kassieren-summe { display: flex; justify-content: space-between; font-weight: 700; font-size: 16px; margin-bottom: 12px; }
+.kassieren-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kassieren-actions button { padding: 14px 8px; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-do-kassieren { background: var(--green); color: #fff; }
+.btn-do-storno { background: var(--amber-bg); color: var(--amber); border: 1px solid #fbbf24 !important; }
+
+/* QR Code Placeholder */
+.qr-placeholder {
+  width: 160px; height: 160px; background: #f8f8f8;
+  border: 2px dashed var(--border); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 48px; margin: 0 auto 16px;
+}
+.receipt-url { font-size: 11px; color: var(--text-muted); text-align: center; word-break: break-all; margin-bottom: 16px; }
+
+/* ── KASSEN DETAIL ───────────────────────────────────────────────────────── */
+.kasse-detail-header { margin-bottom: 20px; }
+.kasse-detail-header h1 { font-size: 20px; font-weight: 700; }
+.kasse-detail-header .kasse-type { display: inline-block; margin-top: 4px; font-size: 12px; }
+
+/* ── SAALPLAN ADMIN ──────────────────────────────────────────────────────── */
+.admin-tisch-grid { display: grid; grid-template-columns: repeat(6, 80px); gap: 10px; }
+.admin-tisch {
+  width: 80px; height: 80px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  border: 2px solid var(--border); background: var(--surface);
+  position: relative;
+}
+.admin-tisch:hover { border-color: var(--blue); }
+.admin-tisch.inaktiv { background: var(--bg); color: var(--text-muted); border-style: dashed; }
+
+/* ── KASSENLAYOUT ────────────────────────────────────────────────────────── */
+.layout-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-width: 500px; }
+.layout-cell {
+  aspect-ratio: 2; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; color: #fff;
+  cursor: pointer; position: relative;
+}
+.layout-cell.empty { background: var(--bg); border: 2px dashed var(--border); color: var(--text-muted); }
+.layout-cell.empty:hover { border-color: var(--blue); }
+
+/* ── DRUCKER STATUS ──────────────────────────────────────────────────────── */
+.drucker-status { display: flex; align-items: center; gap: 6px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; }
+.status-dot.online { background: var(--green); }
+.status-dot.offline { background: var(--red); }
+
+/* ── VERANSTALTUNGS FILTER ───────────────────────────────────────────────── */
+.filter-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+.filter-bar select { width: auto; }
+.filter-bar label { white-space: nowrap; margin: 0; font-weight: 400; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- START SCREEN                                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-start">
+  <div class="start-logo">
+    <h1>⚖️ FairPOS</h1>
+    <p>Kassensystem für Vereine — Navigationsprototyp</p>
+  </div>
+  <div class="start-cards">
+    <div class="start-card" onclick="showScreen('admin')">
+      <div class="icon">🖥️</div>
+      <h2>Administrator</h2>
+      <p>Verwaltung & Auswertungen</p>
+    </div>
+    <div class="start-card" onclick="showScreen('bonkasse')">
+      <div class="icon">🖨️</div>
+      <h2>Bonkasse</h2>
+      <p>Tablet · Selbstabholer</p>
+    </div>
+    <div class="start-card" onclick="showScreen('bedienung')">
+      <div class="icon">📱</div>
+      <h2>Bedienung</h2>
+      <p>Smartphone · Tischservice</p>
+    </div>
+  </div>
+  <div class="start-hint">Kein echtes Login — direkt zur Navigation</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- ADMIN SCREEN                                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-admin" class="hidden">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">FairPOS</div>
+      <div class="sidebar-sub">Administrator</div>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-page="dashboard"><span class="icon">📊</span> Dashboard</button>
+
+      <div class="nav-section">Auswertungen</div>
+      <button class="nav-item nav-indent" data-page="auswertung-offene"><span class="icon">📋</span> Offene Positionen</button>
+      <button class="nav-item nav-indent" data-page="auswertung-rechnungen"><span class="icon">🧾</span> Erstellte Rechnungen</button>
+      <button class="nav-item nav-indent" data-page="auswertung-kassenstand"><span class="icon">💵</span> Soll-Kassenstand</button>
+      <button class="nav-item nav-indent" data-page="auswertung-stornos"><span class="icon">🔄</span> Stornos & Abgaben</button>
+
+      <div class="nav-section">Exporte</div>
+      <button class="nav-item nav-indent" data-page="export-excel"><span class="icon">📥</span> Excel-Export</button>
+      <button class="nav-item nav-indent" data-page="export-dsfinvk"><span class="icon">🏛️</span> DSFinV-K-Export</button>
+
+      <div class="nav-section">Kassen</div>
+      <button class="nav-item nav-indent" data-page="kassen"><span class="icon">🗂️</span> Kassenübersicht</button>
+      <button class="nav-item nav-indent" data-page="bonstorno"><span class="icon">❌</span> Bonstorno</button>
+
+      <div class="nav-section">Stammdaten</div>
+      <button class="nav-item" data-page="artikel"><span class="icon">🏷️</span> Artikel</button>
+      <button class="nav-item" data-page="veranstaltungen"><span class="icon">📅</span> Veranstaltungen</button>
+      <button class="nav-item" data-page="benutzer"><span class="icon">👤</span> Benutzer</button>
+
+      <div class="nav-section">Einstellungen</div>
+      <button class="nav-item nav-indent" data-page="einst-artikelgruppen"><span class="icon">📁</span> Artikelgruppen</button>
+      <button class="nav-item nav-indent" data-page="einst-kassenlayouts"><span class="icon">⌨️</span> Kassenlayouts</button>
+      <button class="nav-item nav-indent" data-page="einst-drucker"><span class="icon">🖨️</span> Drucker</button>
+      <button class="nav-item nav-indent" data-page="einst-saalplan"><span class="icon">🗺️</span> Saalplan</button>
+      <button class="nav-item nav-indent" data-page="einst-stornogründe"><span class="icon">📝</span> Stornogründe</button>
+      <button class="nav-item nav-indent" data-page="einst-unternehmen"><span class="icon">🏢</span> Unternehmensdaten</button>
+      <button class="nav-item nav-indent" data-page="einst-system"><span class="icon">⚙️</span> System</button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">Max Mustermann</div>
+      <button class="sidebar-logout" onclick="showScreen('start')">← Abmelden</button>
+    </div>
+  </div>
+
+  <!-- CONTENT AREA -->
+  <div id="admin-content">
+
+    <!-- DASHBOARD -->
+    <div id="page-dashboard" class="page active">
+      <div class="page-header"><h1>Dashboard</h1><p>Laufende Veranstaltung: Sommerfest 2026</p></div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Umsatz heute</div><div class="stat-value">1.240 €</div><div class="stat-sub">47 Rechnungen</div></div>
+        <div class="stat-card"><div class="stat-label">Offene Tische</div><div class="stat-value">8</div><div class="stat-sub">von 15 gesamt</div></div>
+        <div class="stat-card"><div class="stat-label">Aktive Kassen</div><div class="stat-value">3</div><div class="stat-sub">1 Bonkasse, 2 Bedienung</div></div>
+        <div class="stat-card"><div class="stat-label">Druckerfehler</div><div class="stat-value" style="color:var(--red)">2</div><div class="stat-sub">ausstehende Jobs</div></div>
+      </div>
+      <div class="card"><div class="card-header"><h2>Letzte Rechnungen</h2></div><div class="card-body">
+        <table><thead><tr><th>Nr.</th><th>Uhrzeit</th><th>Kasse</th><th class="num">Betrag</th><th>Zahlungsart</th></tr></thead>
+        <tbody>
+          <tr><td>#1047</td><td>18:42</td><td>Bonkasse 1</td><td class="num">12,50 €</td><td>Bar</td></tr>
+          <tr><td>#1046</td><td>18:39</td><td>Bedienungskasse 1</td><td class="num">34,00 €</td><td>Bar</td></tr>
+          <tr><td>#1045</td><td>18:35</td><td>Bedienungskasse 2</td><td class="num">8,50 €</td><td>Bar</td></tr>
+        </tbody></table>
+      </div></div>
+    </div>
+
+    <!-- AUSWERTUNG: OFFENE POSITIONEN -->
+    <div id="page-auswertung-offene" class="page">
+      <div class="page-header"><h1>Offene Positionen je Tisch</h1></div>
+      <div class="filter-bar"><label>Veranstaltung:</label><select><option>Sommerfest 2026 (laufend)</option><option>Frühjahrsturnier 2026</option></select></div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Tisch</th><th>Artikel</th><th>Optionen</th><th class="num">Menge</th><th class="num">Einzelpreis</th><th class="num">Gesamt</th></tr></thead>
+        <tbody>
+          <tr><td><strong>A1</strong></td><td>Bier</td><td>—</td><td class="num">3</td><td class="num">3,50 €</td><td class="num">10,50 €</td></tr>
+          <tr><td><strong>A1</strong></td><td>Pommes</td><td>mit Ketchup</td><td class="num">2</td><td class="num">4,00 €</td><td class="num">8,00 €</td></tr>
+          <tr><td><strong>B3</strong></td><td>Wein</td><td>—</td><td class="num">1</td><td class="num">5,00 €</td><td class="num">5,00 €</td></tr>
+          <tr><td><strong>C2</strong></td><td>Cola</td><td>—</td><td class="num">4</td><td class="num">2,50 €</td><td class="num">10,00 €</td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- AUSWERTUNG: RECHNUNGEN -->
+    <div id="page-auswertung-rechnungen" class="page">
+      <div class="page-header"><h1>Erstellte Rechnungen</h1></div>
+      <div class="filter-bar"><label>Veranstaltung:</label><select><option>Sommerfest 2026 (laufend)</option></select></div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Nr.</th><th>Zeitpunkt</th><th>Kasse</th><th>Tisch</th><th class="num">Betrag</th><th>Typ</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>#1047</td><td>18:42</td><td>Bonkasse 1</td><td>—</td><td class="num">12,50 €</td><td><span class="badge badge-green">Kassenbeleg</span></td><td style="display:flex;gap:6px"><button class="btn btn-sm btn-secondary" onclick="alert('PDF Download')">PDF</button><button class="btn btn-sm btn-danger">Storno</button></td></tr>
+          <tr><td>#1046</td><td>18:39</td><td>Bedienung 1</td><td>A2</td><td class="num">34,00 €</td><td><span class="badge badge-green">Kassenbeleg</span></td><td style="display:flex;gap:6px"><button class="btn btn-sm btn-secondary" onclick="alert('PDF Download')">PDF</button><button class="btn btn-sm btn-danger">Storno</button></td></tr>
+          <tr><td>#1040</td><td>17:55</td><td>Bonkasse 1</td><td>—</td><td class="num">−2,00 €</td><td><span class="badge badge-red">AVBelegstorno</span></td><td><button class="btn btn-sm btn-secondary" onclick="alert('PDF Download')">PDF</button></td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- AUSWERTUNG: SOLL-KASSENSTAND -->
+    <div id="page-auswertung-kassenstand" class="page">
+      <div class="page-header"><h1>Soll-Kassenstand</h1><p>Rechnerischer Kasseninhalt je Kasse</p></div>
+      <div class="filter-bar"><label>Veranstaltung:</label><select><option>Sommerfest 2026 (laufend)</option></select></div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Kasse</th><th>Startgeld</th><th>Einnahmen</th><th>Entnahmen</th><th>Soll-Stand</th></tr></thead>
+        <tbody>
+          <tr><td>Bonkasse 1</td><td>50,00 €</td><td>420,00 €</td><td>200,00 €</td><td><strong>270,00 €</strong></td></tr>
+          <tr><td>Bedienungskasse 1</td><td>100,00 €</td><td>680,00 €</td><td>300,00 €</td><td><strong>480,00 €</strong></td></tr>
+          <tr><td>Bedienungskasse 2</td><td>100,00 €</td><td>140,00 €</td><td>0,00 €</td><td><strong>240,00 €</strong></td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- AUSWERTUNG: STORNOS -->
+    <div id="page-auswertung-stornos" class="page">
+      <div class="page-header"><h1>Stornos & kostenfreie Abgaben</h1></div>
+      <div class="filter-bar">
+        <label>Veranstaltung:</label><select><option>Sommerfest 2026 (laufend)</option></select>
+        <label>Bedienung:</label><select><option>Alle</option><option>Anna Schmidt</option><option>Tom Weber</option></select>
+      </div>
+      <div class="card" style="margin-bottom:20px"><div class="card-header"><h2>Zusammenfassung je Bedienung</h2></div><div class="card-body">
+        <table><thead><tr><th>Bedienung</th><th class="num">Anzahl Artikel</th><th class="num">Gesamtbetrag</th></tr></thead>
+        <tbody>
+          <tr><td>Anna Schmidt</td><td class="num">3</td><td class="num">12,00 €</td></tr>
+          <tr><td>Tom Weber</td><td class="num">1</td><td class="num">3,50 €</td></tr>
+          <tr style="font-weight:700;border-top:2px solid var(--border)"><td>Gesamt</td><td class="num">4</td><td class="num">15,50 €</td></tr>
+        </tbody></table>
+      </div></div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Datum/Uhrzeit</th><th>Bedienung</th><th>Tisch</th><th>Artikel</th><th class="num">Menge</th><th class="num">Normalpreis</th><th>Stornogrund</th><th>Buchungsart</th></tr></thead>
+        <tbody>
+          <tr><td>18:10</td><td>Anna S.</td><td>B2</td><td>Pommes</td><td class="num">1</td><td class="num">4,00 €</td><td>Nicht geliefert</td><td><span class="badge badge-red">Storno</span></td></tr>
+          <tr><td>18:05</td><td>Anna S.</td><td>B2</td><td>Bier</td><td class="num">2</td><td class="num">7,00 €</td><td>Nicht geliefert</td><td><span class="badge badge-red">Storno</span></td></tr>
+          <tr><td>17:45</td><td>Tom W.</td><td>A3</td><td>Bier</td><td class="num">1</td><td class="num">3,50 €</td><td>Ehrengast</td><td><span class="badge badge-amber">100% Rabatt</span></td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- EXPORT: EXCEL -->
+    <div id="page-export-excel" class="page">
+      <div class="page-header"><h1>Excel-Export</h1></div>
+      <div class="card" style="max-width:500px"><div class="card-body">
+        <div class="form-group"><label>Veranstaltung</label><select><option>Sommerfest 2026 (laufend)</option><option>Frühjahrsturnier 2026</option></select></div>
+        <div class="form-group"><label>Exporttyp</label><select><option>Tagesexport</option><option>Veranstaltungsexport</option></select></div>
+        <button class="btn btn-primary" onclick="alert('Export würde hier gestartet')">📥 Excel herunterladen</button>
+      </div></div>
+    </div>
+
+    <!-- EXPORT: DSFinV-K -->
+    <div id="page-export-dsfinvk" class="page">
+      <div class="page-header"><h1>DSFinV-K-Export</h1><p>Digitale Schnittstelle der Finanzverwaltung v2.4</p></div>
+      <div class="card" style="max-width:500px"><div class="card-body">
+        <div class="form-group"><label>Veranstaltung</label><select><option>Sommerfest 2026 (laufend)</option><option>Frühjahrsturnier 2026</option></select></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Exportiert alle Transaktionen, Stammdaten und Kassenabschlüsse des gewählten Zeitraums als ZIP-Archiv (CSV-Dateien gemäß DSFinV-K v2.4).</p>
+        <button class="btn btn-primary" onclick="alert('DSFinV-K-Export würde hier gestartet')">🏛️ ZIP herunterladen</button>
+      </div></div>
+    </div>
+
+    <!-- KASSEN ÜBERSICHT -->
+    <div id="page-kassen" class="page">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div><h1>Kassen</h1></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="alert('Alle Kassen abschließen?')">Alle Kassen abschließen</button>
+          <button class="btn btn-primary">+ Neue Kasse</button>
+        </div>
+      </div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Name</th><th>Typ</th><th>Drucker</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><strong>Bonkasse 1</strong></td><td>Bonkasse</td><td>Thekendrucker</td><td><span class="badge badge-green">Aktiv</span></td><td><button class="btn btn-sm btn-secondary" onclick="showAdminPage('kassen-detail')">Detail →</button></td></tr>
+          <tr><td><strong>Bedienungskasse 1</strong></td><td>Bedienungskasse</td><td>—</td><td><span class="badge badge-green">Aktiv</span></td><td><button class="btn btn-sm btn-secondary" onclick="showAdminPage('kassen-detail')">Detail →</button></td></tr>
+          <tr><td><strong>Bedienungskasse 2</strong></td><td>Bedienungskasse</td><td>—</td><td><span class="badge badge-amber">Leerlauf</span></td><td><button class="btn btn-sm btn-secondary" onclick="showAdminPage('kassen-detail')">Detail →</button></td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- KASSEN DETAIL -->
+    <div id="page-kassen-detail" class="page">
+      <div class="page-header">
+        <button class="btn-ghost" style="padding:0;margin-bottom:8px" onclick="showAdminPage('kassen')">← Zurück zur Übersicht</button>
+        <h1>Bonkasse 1</h1>
+        <span class="badge badge-gray kasse-type">Bonkasse · Drucker: Thekendrucker</span>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="kd-kassenstand">Kassenstand</button>
+        <button class="tab" data-tab="kd-einlage">Wechselgeldeinlage</button>
+        <button class="tab" data-tab="kd-entnahme">Entnahme</button>
+        <button class="tab" data-tab="kd-historie">Transaktionshistorie</button>
+        <button class="tab" data-tab="kd-abschluss">Kassenabschluss</button>
+        <button class="tab" data-tab="kd-tagesabschluss">Tagesabschluss</button>
+      </div>
+      <div id="kd-kassenstand" class="tab-panel active">
+        <div class="stats-row" style="max-width:600px">
+          <div class="stat-card"><div class="stat-label">Soll-Kassenstand</div><div class="stat-value">270,00 €</div><div class="stat-sub">rechnerisch</div></div>
+          <div class="stat-card"><div class="stat-label">Einnahmen heute</div><div class="stat-value">420,00 €</div></div>
+          <div class="stat-card"><div class="stat-label">Entnahmen heute</div><div class="stat-value">200,00 €</div></div>
+        </div>
+      </div>
+      <div id="kd-einlage" class="tab-panel">
+        <div class="card" style="max-width:400px"><div class="card-body">
+          <div class="form-group"><label>Betrag (€)</label><input type="number" value="50" min="0" step="0.01"></div>
+          <div class="form-group"><label>Bemerkung (optional)</label><input type="text" placeholder="z.B. Startgeld"></div>
+          <button class="btn btn-primary" onclick="alert('Einlage gebucht')">Einlage buchen</button>
+        </div></div>
+      </div>
+      <div id="kd-entnahme" class="tab-panel">
+        <div class="card" style="max-width:400px"><div class="card-body">
+          <div class="form-group"><label>Betrag (€)</label><input type="number" value="100" min="0" step="0.01"></div>
+          <div class="form-group"><label>Bemerkung (optional)</label><input type="text" placeholder="z.B. Zwischenzählung"></div>
+          <button class="btn btn-primary" onclick="alert('Entnahme gebucht')">Entnahme buchen</button>
+        </div></div>
+      </div>
+      <div id="kd-historie" class="tab-panel">
+        <div class="card"><div class="card-body"><table><thead><tr><th>Uhrzeit</th><th>Nr.</th><th>Typ</th><th>Betrag</th></tr></thead>
+          <tbody>
+            <tr><td>18:42</td><td>#1047</td><td>Kassenbeleg</td><td>12,50 €</td></tr>
+            <tr><td>18:10</td><td>—</td><td>Entnahme</td><td>−50,00 €</td></tr>
+            <tr><td>17:00</td><td>—</td><td>Wechselgeldeinlage</td><td>50,00 €</td></tr>
+          </tbody>
+        </table></div></div>
+      </div>
+      <div id="kd-abschluss" class="tab-panel">
+        <div class="card" style="max-width:500px"><div class="card-body">
+          <p style="margin-bottom:16px;color:var(--text-muted)">Schließt die Kasse für den aktuellen Zeitraum ab. Alle offenen Transaktionen werden dem Abschluss zugeordnet.</p>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span>Einnahmen (brutto)</span><strong>420,00 €</strong></div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span>davon 19 % MwSt.</span><span>67,06 €</span></div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span>davon 7 % MwSt.</span><span>12,33 €</span></div>
+            <div style="display:flex;justify-content:space-between"><span>Stornos</span><span>−4,00 €</span></div>
+          </div>
+          <button class="btn btn-primary" onclick="alert('Kassenabschluss würde hier durchgeführt')">Kassenabschluss durchführen</button>
+        </div></div>
+      </div>
+      <div id="kd-tagesabschluss" class="tab-panel">
+        <div class="card" style="max-width:500px"><div class="card-body">
+          <p style="margin-bottom:16px;color:var(--text-muted)">Tagesabschluss (Z-Bon) für diese Kasse. Wird automatisch als Nullabschluss durchgeführt, wenn keine Transaktionen vorliegen.</p>
+          <button class="btn btn-primary" onclick="alert('Tagesabschluss würde hier gedruckt')">🖨️ Tagesabschluss drucken</button>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- BONSTORNO -->
+    <div id="page-bonstorno" class="page">
+      <div class="page-header"><h1>Bonstorno</h1><p>Storno von Selbstabholer-Bons (Ebene 2)</p></div>
+      <div class="card" style="max-width:560px"><div class="card-body">
+        <div class="form-group"><label>Kasse (Pflichtfeld)</label><select><option>Bonkasse 1</option><option>Bedienungskasse 1</option></select></div>
+        <div class="form-group"><label>Artikel</label>
+          <table style="margin-top:8px"><thead><tr><th>Artikel</th><th>Menge</th></tr></thead>
+          <tbody>
+            <tr><td>Bier</td><td><div class="qty-control"><button class="qty-btn">−</button><span class="qty-val">2</span><button class="qty-btn">+</button></div></td></tr>
+            <tr><td>Wasser</td><td><div class="qty-control"><button class="qty-btn">−</button><span class="qty-val">0</span><button class="qty-btn">+</button></div></td></tr>
+          </tbody></table>
+        </div>
+        <div class="form-group"><label>Stornogrund</label><input type="text" placeholder="Freitext"></div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-secondary" onclick="showAdminPage('kassen')">Abbrechen</button>
+          <button class="btn btn-danger" onclick="alert('Storno würde hier gebucht')">Storno buchen</button>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- ARTIKEL -->
+    <div id="page-artikel" class="page">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <h1>Artikel</h1><button class="btn btn-primary">+ Neuer Artikel</button>
+      </div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Name</th><th>Gruppe</th><th>Preis</th><th>Pfand</th><th>MwSt.</th><th>Drucker</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Bier</td><td>Getränke</td><td>3,50 €</td><td>—</td><td>19 %</td><td>Thekendrucker</td><td><span class="badge badge-green">Aktiv</span></td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+          <tr><td>Wasser</td><td>Getränke</td><td>2,00 €</td><td>—</td><td>19 %</td><td>Thekendrucker</td><td><span class="badge badge-green">Aktiv</span></td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+          <tr><td>Pommes</td><td>Speisen</td><td>4,00 €</td><td>—</td><td>7 %</td><td>Küchendrucker</td><td><span class="badge badge-green">Aktiv</span></td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+          <tr><td>Pfandflasche</td><td>Pfand</td><td>1,00 €</td><td>−1,00 €</td><td>19 %</td><td>—</td><td><span class="badge badge-green">Aktiv</span></td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- VERANSTALTUNGEN -->
+    <div id="page-veranstaltungen" class="page">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div><h1>Veranstaltungen</h1><p>Dienen ausschließlich als Auswertungszeiträume</p></div>
+        <button class="btn btn-primary">+ Neue Veranstaltung</button>
+      </div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Name</th><th>Von</th><th>Bis</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><strong>Sommerfest 2026</strong></td><td>06.05.2026 15:00</td><td>06.05.2026 23:00</td><td><span class="badge badge-green">Laufend</span></td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+          <tr><td>Frühjahrsturnier 2026</td><td>15.03.2026 10:00</td><td>15.03.2026 18:00</td><td><span class="badge badge-gray">Abgeschlossen</span></td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- BENUTZER -->
+    <div id="page-benutzer" class="page">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <h1>Benutzer</h1><button class="btn btn-primary">+ Neuer Benutzer</button>
+      </div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Name</th><th>Administrator</th><th>Zugewiesene Kassen</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Max Mustermann</td><td>✅ Ja</td><td>—</td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+          <tr><td>Anna Schmidt</td><td>—</td><td>Bedienungskasse 1</td><td>
+            <button class="btn btn-ghost btn-sm" onclick="showModal('modal-zugangscode')">QR-Code erzeugen</button>
+            <button class="btn btn-ghost btn-sm">Bearbeiten</button>
+          </td></tr>
+          <tr><td>Tom Weber</td><td>—</td><td>Bedienungskasse 2</td><td>
+            <button class="btn btn-ghost btn-sm" onclick="showModal('modal-zugangscode')">QR-Code erzeugen</button>
+            <button class="btn btn-ghost btn-sm">Bearbeiten</button>
+          </td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- EINSTELLUNGEN: ARTIKELGRUPPEN -->
+    <div id="page-einst-artikelgruppen" class="page">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <h1>Artikelgruppen</h1><button class="btn btn-primary">+ Neue Gruppe</button>
+      </div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Name</th><th>MwSt.-Satz</th><th>Artikel</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Getränke</td><td>19 %</td><td>12</td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+          <tr><td>Speisen</td><td>7 %</td><td>5</td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+          <tr><td>Pfand</td><td>19 %</td><td>2</td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- EINSTELLUNGEN: KASSENLAYOUTS -->
+    <div id="page-einst-kassenlayouts" class="page">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div><h1>Kassenlayouts</h1></div><button class="btn btn-primary">+ Neues Layout</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:900px">
+        <div class="card"><div class="card-header"><h2>Standardlayout Bonkasse <span class="badge badge-green" style="margin-left:8px">Standard</span></h2></div><div class="card-body">
+          <div class="layout-grid">
+            <div class="layout-cell" style="background:#d97706">Bier<div style="font-size:10px">3,50 €</div></div>
+            <div class="layout-cell" style="background:#3b82f6">Wasser<div style="font-size:10px">2,00 €</div></div>
+            <div class="layout-cell" style="background:#7c3aed">Wein<div style="font-size:10px">5,00 €</div></div>
+            <div class="layout-cell" style="background:#dc2626">Cola<div style="font-size:10px">2,50 €</div></div>
+            <div class="layout-cell" style="background:#eab308;color:#000">Pommes<div style="font-size:10px">4,00 €</div></div>
+            <div class="layout-cell" style="background:#166534">Kaffee<div style="font-size:10px">2,50 €</div></div>
+            <div class="layout-cell empty">+ Platz</div>
+            <div class="layout-cell empty">+ Platz</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:12px">Layout bearbeiten</button>
+        </div></div>
+        <div class="card"><div class="card-header"><h2>Standard Bedienungskasse <span class="badge badge-green" style="margin-left:8px">Standard</span></h2></div><div class="card-body">
+          <div class="layout-grid">
+            <div class="layout-cell" style="background:#d97706">Bier</div>
+            <div class="layout-cell" style="background:#3b82f6">Wasser</div>
+            <div class="layout-cell" style="background:#7c3aed">Wein</div>
+            <div class="layout-cell" style="background:#eab308;color:#000">Pommes</div>
+            <div class="layout-cell empty">+ Platz</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:12px">Layout bearbeiten</button>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- EINSTELLUNGEN: DRUCKER -->
+    <div id="page-einst-drucker" class="page">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <h1>Drucker</h1><button class="btn btn-primary">+ Neuer Drucker</button>
+      </div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Name</th><th>IP-Adresse</th><th>Port</th><th>Status</th><th>Standard</th><th>Warteschlange</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Thekendrucker</strong></td><td>192.168.1.20</td><td>9100</td>
+            <td><div class="drucker-status"><div class="status-dot online"></div> Online</div></td>
+            <td>✅</td><td>0 Jobs</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="alert('Testseite drucken')">Testseite</button> <button class="btn btn-ghost btn-sm">Bearbeiten</button></td>
+          </tr>
+          <tr>
+            <td><strong>Küchendrucker</strong></td><td>192.168.1.21</td><td>9100</td>
+            <td><div class="drucker-status"><div class="status-dot offline"></div> Offline</div></td>
+            <td>—</td><td style="color:var(--red)">2 Jobs</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="alert('Testseite drucken')">Testseite</button> <button class="btn btn-ghost btn-sm">Bearbeiten</button></td>
+          </tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- EINSTELLUNGEN: SAALPLAN -->
+    <div id="page-einst-saalplan" class="page">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div><h1>Saalplan</h1><p>Tische konfigurieren und anordnen</p></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-secondary" onclick="showModal('modal-tische-generieren')">Tische generieren</button><button class="btn btn-primary">+ Tisch hinzufügen</button></div>
+      </div>
+      <div class="card"><div class="card-body">
+        <div class="admin-tisch-grid">
+          <div class="admin-tisch">A1</div><div class="admin-tisch">A2</div><div class="admin-tisch">A3</div><div class="admin-tisch">A4</div><div class="admin-tisch">A5</div><div style="width:80px"></div>
+          <div class="admin-tisch">B1</div><div class="admin-tisch">B2</div><div class="admin-tisch">B3</div><div class="admin-tisch inaktiv">B4</div><div class="admin-tisch">B5</div><div style="width:80px"></div>
+          <div class="admin-tisch">C1</div><div class="admin-tisch">C2</div><div class="admin-tisch">C3</div>
+        </div>
+        <div style="margin-top:12px;font-size:12px;color:var(--text-muted)">Tisch anklicken zum Bearbeiten · Gestrichelt = inaktiv</div>
+      </div></div>
+    </div>
+
+    <!-- EINSTELLUNGEN: STORNOGRÜNDE -->
+    <div id="page-einst-stornogründe" class="page">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <h1>Stornogründe</h1><button class="btn btn-primary">+ Neuer Grund</button>
+      </div>
+      <div class="card"><div class="card-body"><table><thead><tr><th>Bezeichnung</th><th>Buchungsart</th><th>Aktiv</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Nicht geliefert</td><td><span class="badge badge-red">Storno</span></td><td>✅</td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+          <tr><td>Ehrengast</td><td><span class="badge badge-amber">100% Rabatt</span></td><td>✅</td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+          <tr><td>Fehler Bedienung</td><td><span class="badge badge-red">Storno</span></td><td>✅</td><td><button class="btn btn-ghost btn-sm">Bearbeiten</button></td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+
+    <!-- EINSTELLUNGEN: UNTERNEHMEN -->
+    <div id="page-einst-unternehmen" class="page">
+      <div class="page-header"><h1>Unternehmensdaten</h1></div>
+      <div class="card" style="max-width:560px"><div class="card-body">
+        <div class="form-group"><label>Vereinsname</label><input type="text" value="Musterverein e.V."></div>
+        <div class="form-group"><label>Straße und Hausnummer</label><input type="text" value="Musterstraße 1"></div>
+        <div class="form-row">
+          <div class="form-group"><label>PLZ</label><input type="text" value="12345"></div>
+          <div class="form-group"><label>Ort</label><input type="text" value="Musterstadt"></div>
+        </div>
+        <div class="form-group"><label>Steueridentifikationsnummer</label><input type="text" value="12/345/67890"></div>
+        <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary">Speichern</button></div>
+      </div></div>
+    </div>
+
+    <!-- EINSTELLUNGEN: SYSTEM -->
+    <div id="page-einst-system" class="page">
+      <div class="page-header"><h1>System</h1></div>
+      <div class="card" style="max-width:560px"><div class="card-body">
+        <div class="form-group"><label>Server-Adresse (für QR-Code-URLs)</label><input type="text" value="192.168.1.10"></div>
+        <div class="form-group"><label>Zeitzone</label><select><option>Europe/Berlin</option><option>UTC</option></select></div>
+        <div class="form-group"><label>Backup-Verzeichnis</label><input type="text" value="/data/backup"></div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:24px"><button class="btn btn-primary">Speichern</button></div>
+        <hr style="border:none;border-top:1px solid var(--border);margin-bottom:24px">
+        <div style="display:grid;gap:10px;font-size:13px">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Kassensystem-Seriennummer</span><code>FairPOS-2026-A3KX92BT1Y</code></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Softwareversion</span><code>1.0.0</code></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">TSE-Status</span><span class="badge badge-green">Aktiv</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">TSE-Seriennummer</span><code style="font-size:10px">A3F2...C91B</code></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">TSE-Aktivierungsdatum</span><span>01.05.2026</span></div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
+        <button class="btn btn-secondary">📥 Backup herunterladen</button>
+      </div></div>
+    </div>
+
+  </div><!-- /admin-content -->
+</div><!-- /screen-admin -->
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- BONKASSE SCREEN                                                        -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-bonkasse" class="hidden">
+  <div class="bonkasse-header">
+    <h1>🖨️ Bonkasse 1</h1>
+    <button onclick="showScreen('start')">← Abmelden</button>
+  </div>
+  <div class="bonkasse-body">
+    <!-- Bestellliste -->
+    <div class="order-panel">
+      <div class="order-panel-header">Aktuelle Bestellung</div>
+      <div class="order-list" id="bonkasse-list">
+        <div class="order-empty" id="bonkasse-empty">Noch keine Artikel</div>
+      </div>
+      <div class="order-footer">
+        <div class="order-total">
+          <span class="label">Gesamt</span>
+          <span class="amount" id="bonkasse-total">0,00 €</span>
+        </div>
+        <button class="btn-kassieren" id="bonkasse-kassieren-btn" disabled onclick="showModal('modal-kassieren-bonkasse')">Kassieren</button>
+      </div>
+    </div>
+    <!-- Artikelraster -->
+    <div class="artikel-panel">
+      <div class="artikel-grid" id="bonkasse-grid">
+        <button class="artikel-btn" style="background:#d97706" onclick="addToOrder('Bier',3.50,'#d97706')">Bier<div class="preis">3,50 €</div></button>
+        <button class="artikel-btn" style="background:#3b82f6" onclick="addToOrder('Wasser',2.00,'#3b82f6')">Wasser<div class="preis">2,00 €</div></button>
+        <button class="artikel-btn" style="background:#7c3aed" onclick="addToOrder('Wein',5.00,'#7c3aed')">Wein<div class="preis">5,00 €</div></button>
+        <button class="artikel-btn" style="background:#dc2626" onclick="addToOrder('Cola',2.50,'#dc2626')">Cola<div class="preis">2,50 €</div></button>
+        <button class="artikel-btn" style="background:#eab308;color:#000" onclick="addToOrder('Pommes',4.00,'#eab308')">Pommes<div class="preis">4,00 €</div></button>
+        <button class="artikel-btn" style="background:#166534" onclick="addToOrder('Kaffee',2.50,'#166534')">Kaffee<div class="preis">2,50 €</div></button>
+        <button class="artikel-btn" style="background:#0891b2" onclick="addToOrder('Apfelsaft',2.50,'#0891b2')">Apfelsaft<div class="preis">2,50 €</div></button>
+        <button class="artikel-btn" style="background:#475569" onclick="addToOrder('Leergut',-1.00,'#475569')">Leergut<div class="preis">−1,00 €</div></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- BEDIENUNG SCREEN                                                       -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-bedienung" class="hidden">
+  <div class="phone-frame">
+    <div class="phone-statusbar">
+      <button class="phone-back" id="bed-back-btn" onclick="bedienungBack()" style="visibility:hidden">←</button>
+      <h1 id="bed-title">Saalplan</h1>
+      <button style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:13px" onclick="showScreen('start')">⏻</button>
+    </div>
+    <div class="phone-body">
+
+      <!-- SCHRITT 1: SAALPLAN -->
+      <div class="bedienung-step active" id="bed-step-saalplan">
+        <div class="saalplan">
+          <h2>Tisch wählen</h2>
+          <div class="tisch-grid">
+            <button class="tisch-btn tisch-besetzt" onclick="bedienungSelectTable('A1',true)">A1<span class="sub">offen</span></button>
+            <button class="tisch-btn tisch-frei" onclick="bedienungSelectTable('A2',false)">A2</button>
+            <button class="tisch-btn tisch-besetzt" onclick="bedienungSelectTable('A3',true)">A3<span class="sub">offen</span></button>
+            <button class="tisch-btn tisch-frei" onclick="bedienungSelectTable('A4',false)">A4</button>
+            <button class="tisch-btn tisch-frei" onclick="bedienungSelectTable('A5',false)">A5</button>
+            <button class="tisch-btn tisch-frei" onclick="bedienungSelectTable('B1',false)">B1</button>
+            <button class="tisch-btn tisch-besetzt" onclick="bedienungSelectTable('B2',true)">B2<span class="sub">offen</span></button>
+            <button class="tisch-btn tisch-frei" onclick="bedienungSelectTable('B3',false)">B3</button>
+            <button class="tisch-btn tisch-inaktiv" disabled>B4</button>
+            <button class="tisch-btn tisch-frei" onclick="bedienungSelectTable('B5',false)">B5</button>
+            <button class="tisch-btn tisch-frei" onclick="bedienungSelectTable('C1',false)">C1</button>
+            <button class="tisch-btn tisch-frei" onclick="bedienungSelectTable('C2',false)">C2</button>
+            <button class="tisch-btn tisch-frei" onclick="bedienungSelectTable('C3',false)">C3</button>
+          </div>
+          <div style="margin-top:16px;display:flex;gap:8px;font-size:12px;color:var(--text-muted)">
+            <div style="display:flex;align-items:center;gap:4px"><div style="width:12px;height:12px;border-radius:3px;background:var(--amber)"></div>Offen</div>
+            <div style="display:flex;align-items:center;gap:4px"><div style="width:12px;height:12px;border-radius:3px;background:#e2e8f0"></div>Frei</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCHRITT 2b: TISCHAKTIONSAUSWAHL -->
+      <div class="bedienung-step" id="bed-step-aktion">
+        <div class="tisch-aktion">
+          <h2 id="bed-aktion-tisch">Tisch A1</h2>
+          <p id="bed-aktion-sub">3 offene Positionen</p>
+          <button class="aktion-btn aktion-bestellen" onclick="bedienungGoTo('bestellen')">+ Bestellen</button>
+          <button class="aktion-btn aktion-kassieren" onclick="bedienungGoTo('kassieren')">💰 Kassieren</button>
+          <button class="aktion-btn aktion-back" onclick="bedienungGoTo('saalplan')">← Zurück zum Saalplan</button>
+        </div>
+      </div>
+
+      <!-- SCHRITT 2: BESTELLANSICHT -->
+      <div class="bedienung-step" id="bed-step-bestellen">
+        <div class="phone-order-list" id="bed-order-list">
+          <div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px" id="bed-order-empty">Noch keine Artikel</div>
+        </div>
+        <div class="phone-total">
+          <span class="label">Gesamt</span>
+          <span class="amount" id="bed-total">0,00 €</span>
+        </div>
+        <div class="phone-artikel-grid">
+          <button class="phone-artikel-btn" style="background:#d97706" onclick="bedAddToOrder('Bier',3.50)">Bier<br><span style="font-size:10px;font-weight:400">3,50 €</span></button>
+          <button class="phone-artikel-btn" style="background:#3b82f6" onclick="bedAddToOrder('Wasser',2.00)">Wasser<br><span style="font-size:10px;font-weight:400">2,00 €</span></button>
+          <button class="phone-artikel-btn" style="background:#7c3aed" onclick="bedAddToOrder('Wein',5.00)">Wein<br><span style="font-size:10px;font-weight:400">5,00 €</span></button>
+          <button class="phone-artikel-btn" style="background:#eab308;color:#000" onclick="showModal('modal-produktoptionen')">Pommes<br><span style="font-size:10px;font-weight:400">4,00 €</span></button>
+          <button class="phone-artikel-btn" style="background:#dc2626" onclick="bedAddToOrder('Cola',2.50)">Cola<br><span style="font-size:10px;font-weight:400">2,50 €</span></button>
+          <button class="phone-artikel-btn" style="background:#166534" onclick="bedAddToOrder('Kaffee',2.50)">Kaffee<br><span style="font-size:10px;font-weight:400">2,50 €</span></button>
+        </div>
+        <div class="phone-footer">
+          <button class="btn btn-primary" style="width:100%;padding:14px;font-size:15px;font-weight:700" onclick="bedienungBestellen()">Bestellen</button>
+        </div>
+      </div>
+
+      <!-- SCHRITT 3: KASSIEREN -->
+      <div class="bedienung-step" id="bed-step-kassieren">
+        <div class="kassieren-step">
+          <div style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
+            <span style="font-size:12px;color:var(--text-muted)">Menge je Artikel wählen:</span>
+            <button class="btn btn-secondary btn-sm" onclick="kassierReset()">Zurücksetzen</button>
+          </div>
+          <div class="kassieren-positionen" id="kassier-positionen">
+            <!-- Gruppe: Bier (3 offen) -->
+            <div class="kassier-item">
+              <div class="kassier-name">Bier<div class="kassier-options"></div></div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <button class="qty-btn" onclick="kassierQty(this,-1,3)">−</button>
+                <span class="qty-val kassier-qty" data-max="3" data-preis="3.50">3</span>
+                <button class="qty-btn" onclick="kassierQty(this,1,3)">+</button>
+              </div>
+              <div class="kassier-price" style="min-width:52px;text-align:right">10,50 €</div>
+            </div>
+            <!-- Gruppe: Pommes mit Ketchup (1 offen) -->
+            <div class="kassier-item">
+              <div class="kassier-name">Pommes<div class="kassier-options" style="color:var(--text-muted)">mit Ketchup</div></div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <button class="qty-btn" onclick="kassierQty(this,-1,1)">−</button>
+                <span class="qty-val kassier-qty" data-max="1" data-preis="4.50">1</span>
+                <button class="qty-btn" onclick="kassierQty(this,1,1)">+</button>
+              </div>
+              <div class="kassier-price" style="min-width:52px;text-align:right">4,50 €</div>
+            </div>
+          </div>
+          <div class="kassieren-footer">
+            <div class="kassieren-summe"><span>Summe</span><span id="kassier-summe">15,00 €</span></div>
+            <div class="kassieren-actions">
+              <button class="btn-do-kassieren" onclick="showModal('modal-kassieren-bedienung')">💰 Kassieren</button>
+              <button class="btn-do-storno" onclick="showModal('modal-stornodialog')">✕ Stornieren</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /phone-body -->
+  </div><!-- /phone-frame -->
+</div><!-- /screen-bedienung -->
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- MODALS                                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+
+<!-- Kassieren (Bonkasse) -->
+<div id="modal-kassieren-bonkasse" class="modal-overlay hidden" onclick="if(event.target===this)hideModal('modal-kassieren-bonkasse')">
+  <div class="modal">
+    <h2>Kassieren</h2>
+    <div class="qr-placeholder">⬛</div>
+    <div class="receipt-url">http://192.168.1.10/receipt/a3f9k2b7...</div>
+    <p style="text-align:center;font-size:13px;color:var(--text-muted);margin-bottom:20px">Betrag: <strong id="modal-bk-betrag">0,00 €</strong> · Zahlungsart: Bar</p>
+    <div style="display:grid;gap:10px">
+      <button class="btn btn-primary btn-lg" onclick="bonkasseAbschliessen()">🖨️ Rechnung drucken</button>
+      <button class="btn btn-secondary btn-lg" onclick="bonkasseAbschliessen()">📱 Rechnung per QR Code gescannt</button>
+    </div>
+    <div style="text-align:center;margin-top:16px"><button class="btn btn-ghost" onclick="hideModal('modal-kassieren-bonkasse')">Abbrechen</button></div>
+  </div>
+</div>
+
+<!-- Kassieren (Bedienung) -->
+<div id="modal-kassieren-bedienung" class="modal-overlay hidden" onclick="if(event.target===this)hideModal('modal-kassieren-bedienung')">
+  <div class="modal">
+    <h2>Kassieren</h2>
+    <div class="qr-placeholder">⬛</div>
+    <div class="receipt-url">http://192.168.1.10/receipt/x7m1p9...</div>
+    <p style="text-align:center;font-size:13px;color:var(--text-muted);margin-bottom:20px">Betrag: <strong>11,50 €</strong> · Zahlungsart: Bar</p>
+    <div style="display:grid;gap:10px">
+      <button class="btn btn-primary btn-lg" onclick="hideModal('modal-kassieren-bedienung');bedienungGoTo('saalplan')">🖨️ Rechnung drucken</button>
+      <button class="btn btn-secondary btn-lg" onclick="hideModal('modal-kassieren-bedienung');bedienungGoTo('saalplan')">📱 Rechnung per QR Code gescannt</button>
+    </div>
+    <div style="text-align:center;margin-top:16px"><button class="btn btn-ghost" onclick="hideModal('modal-kassieren-bedienung')">Abbrechen</button></div>
+  </div>
+</div>
+
+<!-- Produktoptionen -->
+<div id="modal-produktoptionen" class="modal-overlay hidden" onclick="if(event.target===this)hideModal('modal-produktoptionen')">
+  <div class="modal">
+    <h2>Pommes — Optionen</h2>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Mehrfachauswahl möglich, Auswahl optional</p>
+    <div style="display:grid;gap:8px">
+      <label style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="checkbox"> <span>mit Ketchup</span></label>
+      <label style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="checkbox"> <span>mit Mayo</span></label>
+      <label style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="checkbox"> <span>mit Currysauce (+0,50 €)</span></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="hideModal('modal-produktoptionen')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="bedAddToOrder('Pommes',4.00);hideModal('modal-produktoptionen')">Hinzufügen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Stornodialog (Ebene 1) -->
+<div id="modal-stornodialog" class="modal-overlay hidden" onclick="if(event.target===this)hideModal('modal-stornodialog')">
+  <div class="modal">
+    <h2>Stornieren / Kostenfrei</h2>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Stornogrund auswählen (Pflichtfeld)</p>
+    <div style="display:grid;gap:8px;margin-bottom:20px">
+      <label style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="radio" name="stornogrund"> <div><div style="font-weight:600">Nicht geliefert</div><div style="font-size:11px;color:var(--red)">Storno — kein Beleg</div></div></label>
+      <label style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="radio" name="stornogrund"> <div><div style="font-weight:600">Ehrengast</div><div style="font-size:11px;color:var(--amber)">100% Rabatt — 0 € Beleg</div></div></label>
+      <label style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="radio" name="stornogrund"> <div><div style="font-weight:600">Fehler Bedienung</div><div style="font-size:11px;color:var(--red)">Storno — kein Beleg</div></div></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="hideModal('modal-stornodialog')">Abbrechen</button>
+      <button class="btn btn-danger" onclick="hideModal('modal-stornodialog');bedienungGoTo('aktion')">Storno buchen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Zugangscode erzeugen -->
+<div id="modal-zugangscode" class="modal-overlay hidden" onclick="if(event.target===this)hideModal('modal-zugangscode')">
+  <div class="modal" style="text-align:center">
+    <h2>Zugangscode — Anna Schmidt</h2>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px">Gültig 10 Minuten · Einmalig verwendbar · Bedienungskasse 1</p>
+    <div class="qr-placeholder" style="width:200px;height:200px;margin:0 auto 16px">⬛</div>
+    <div style="display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:20px;text-align:left">
+      <code id="zugangscode-url" style="font-size:11px;flex:1;word-break:break-all;color:var(--text-muted)">http://192.168.1.10/login?token=a3f9k2b7x1m8p4q6</code>
+      <button class="btn btn-secondary btn-sm" style="flex-shrink:0" onclick="copyZugangscode()">Kopieren</button>
+    </div>
+    <div class="modal-actions" style="justify-content:center">
+      <button class="btn btn-secondary" onclick="hideModal('modal-zugangscode')">Schließen</button>
+      <button class="btn btn-primary" onclick="alert('Neuer Code generiert')">Neuen Code generieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tische generieren -->
+<div id="modal-tische-generieren" class="modal-overlay hidden" onclick="if(event.target===this)hideModal('modal-tische-generieren')">
+  <div class="modal modal-lg">
+    <h2>Tische generieren</h2>
+    <div class="form-row">
+      <div>
+        <div class="form-group"><label>Spalten (Anzahl)</label><input type="number" value="5" min="1"></div>
+        <div class="form-group"><label>Nummerierung Spalten</label><select><option>Alphabetisch (A, B, C …)</option><option>Numerisch (1, 2, 3 …)</option></select></div>
+        <div class="form-group"><label>Reihenfolge</label><select><option>Aufsteigend</option><option>Absteigend</option></select></div>
+      </div>
+      <div>
+        <div class="form-group"><label>Zeilen (Anzahl)</label><input type="number" value="3" min="1"></div>
+        <div class="form-group"><label>Nummerierung Zeilen</label><select><option>Numerisch (1, 2, 3 …)</option><option>Alphabetisch (A, B, C …)</option></select></div>
+        <div class="form-group"><label>Reihenfolge</label><select><option>Aufsteigend</option><option>Absteigend</option></select></div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--text-muted)">Vorschau: A1, A2, A3, B1, B2, B3, C1, C2, C3, D1 … (15 Tische)</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="hideModal('modal-tische-generieren')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="alert('Tische generiert');hideModal('modal-tische-generieren')">Tische anlegen</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ────────────────────────────────────────────────────────────────────
+const bonkasseOrder = {}; // { name: { preis, farbe, menge } }
+const bedOrder = {};      // { name: { preis, menge } }
+let bedCurrentTable = '';
+let bedTableHasOrder = false;
+let bedHistory = [];
+
+// ── SCREEN NAVIGATION ────────────────────────────────────────────────────────
+function showScreen(name) {
+  ['start','admin','bonkasse','bedienung'].forEach(s => {
+    document.getElementById('screen-'+s).classList.add('hidden');
+  });
+  document.getElementById('screen-'+name).classList.remove('hidden');
+  if (name === 'bedienung') bedienungGoTo('saalplan');
+}
+
+// ── ADMIN PAGE NAVIGATION ────────────────────────────────────────────────────
+function showAdminPage(pageId) {
+  document.querySelectorAll('#admin-content .page').forEach(p => p.classList.remove('active'));
+  const page = document.getElementById('page-'+pageId);
+  if (page) page.classList.add('active');
+
+  document.querySelectorAll('#sidebar .nav-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.page === pageId);
+  });
+}
+
+document.querySelectorAll('#sidebar .nav-item[data-page]').forEach(btn => {
+  btn.addEventListener('click', () => showAdminPage(btn.dataset.page));
+});
+
+// ── ADMIN TABS ───────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const targetId = tab.dataset.tab;
+    const parent = tab.closest('.page') || document.body;
+    parent.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    parent.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    const panel = document.getElementById(targetId);
+    if (panel) panel.classList.add('active');
+  });
+});
+
+// ── MODALS ───────────────────────────────────────────────────────────────────
+function showModal(id) {
+  document.getElementById(id).classList.remove('hidden');
+}
+function hideModal(id) {
+  document.getElementById(id).classList.add('hidden');
+}
+
+// ── BONKASSE ─────────────────────────────────────────────────────────────────
+function addToOrder(name, preis, farbe) {
+  if (!bonkasseOrder[name]) bonkasseOrder[name] = { preis, farbe, menge: 0 };
+  bonkasseOrder[name].menge++;
+  renderBonkasseOrder();
+}
+
+function changeBonkasseQty(name, delta) {
+  bonkasseOrder[name].menge += delta;
+  if (bonkasseOrder[name].menge <= 0) delete bonkasseOrder[name];
+  renderBonkasseOrder();
+}
+
+function renderBonkasseOrder() {
+  const list = document.getElementById('bonkasse-list');
+  const empty = document.getElementById('bonkasse-empty');
+  const totalEl = document.getElementById('bonkasse-total');
+  const kassierenBtn = document.getElementById('bonkasse-kassieren-btn');
+  const items = Object.entries(bonkasseOrder);
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="order-empty" id="bonkasse-empty">Noch keine Artikel</div>';
+    totalEl.textContent = '0,00 €';
+    kassierenBtn.disabled = true;
+    return;
+  }
+
+  let total = 0;
+  list.innerHTML = items.map(([name, {preis, farbe, menge}]) => {
+    total += preis * menge;
+    return `<div class="order-item">
+      <div class="order-dot" style="background:${farbe}"></div>
+      <span class="order-name">${name}</span>
+      <span class="order-price">${(preis*menge).toFixed(2).replace('.',',')} €</span>
+      <div class="qty-control">
+        <button class="qty-btn" onclick="changeBonkasseQty('${name}',-1)">−</button>
+        <span class="qty-val">${menge}</span>
+        <button class="qty-btn" onclick="changeBonkasseQty('${name}',1)">+</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  totalEl.textContent = total.toFixed(2).replace('.',',') + ' €';
+  document.getElementById('modal-bk-betrag').textContent = total.toFixed(2).replace('.',',') + ' €';
+  kassierenBtn.disabled = false;
+}
+
+function bonkasseAbschliessen() {
+  hideModal('modal-kassieren-bonkasse');
+  Object.keys(bonkasseOrder).forEach(k => delete bonkasseOrder[k]);
+  renderBonkasseOrder();
+}
+
+// ── BEDIENUNG ────────────────────────────────────────────────────────────────
+const bedSteps = ['saalplan','aktion','bestellen','kassieren'];
+
+function bedienungGoTo(step) {
+  bedSteps.forEach(s => {
+    const el = document.getElementById('bed-step-'+s);
+    if (el) el.classList.toggle('active', s === step);
+  });
+  const titles = { saalplan:'Saalplan', aktion:'Tisch '+bedCurrentTable, bestellen:'Bestellen — '+bedCurrentTable, kassieren:'Kassieren — '+bedCurrentTable };
+  document.getElementById('bed-title').textContent = titles[step] || step;
+  const backVisible = step !== 'saalplan';
+  document.getElementById('bed-back-btn').style.visibility = backVisible ? 'visible' : 'hidden';
+  if (step === 'saalplan') bedHistory = [];
+  else bedHistory.push(step);
+}
+
+function bedienungBack() {
+  bedHistory.pop();
+  const prev = bedHistory.length ? bedHistory[bedHistory.length-1] : 'saalplan';
+  bedHistory.pop();
+  bedienungGoTo(prev);
+}
+
+function bedienungSelectTable(name, hasOrder) {
+  bedCurrentTable = name;
+  bedTableHasOrder = hasOrder;
+  if (hasOrder) {
+    document.getElementById('bed-aktion-tisch').textContent = 'Tisch '+name;
+    document.getElementById('bed-aktion-sub').textContent = '3 offene Positionen';
+    bedienungGoTo('aktion');
+  } else {
+    Object.keys(bedOrder).forEach(k => delete bedOrder[k]);
+    renderBedOrder();
+    bedienungGoTo('bestellen');
+  }
+}
+
+function bedAddToOrder(name, preis) {
+  if (!bedOrder[name]) bedOrder[name] = { preis, menge: 0 };
+  bedOrder[name].menge++;
+  renderBedOrder();
+}
+
+function bedChangeQty(name, delta) {
+  bedOrder[name].menge += delta;
+  if (bedOrder[name].menge <= 0) delete bedOrder[name];
+  renderBedOrder();
+}
+
+function renderBedOrder() {
+  const list = document.getElementById('bed-order-list');
+  const totalEl = document.getElementById('bed-total');
+  const items = Object.entries(bedOrder);
+  if (items.length === 0) {
+    list.innerHTML = '<div style="text-align:center;padding:20px 12px;color:var(--text-muted);font-size:12px">Noch keine Artikel</div>';
+    totalEl.textContent = '0,00 €';
+    return;
+  }
+  let total = 0;
+  list.innerHTML = items.map(([name,{preis,menge}]) => {
+    total += preis * menge;
+    return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;font-size:13px">${name}</div>
+      <div style="font-size:12px;font-weight:600;min-width:44px;text-align:right">${(preis*menge).toFixed(2).replace('.',',')} €</div>
+      <div style="display:flex;align-items:center;gap:3px">
+        <button class="qty-btn" style="width:22px;height:22px;font-size:14px" onclick="bedChangeQty('${name}',-1)">−</button>
+        <span style="width:18px;text-align:center;font-size:13px;font-weight:600">${menge}</span>
+        <button class="qty-btn" style="width:22px;height:22px;font-size:14px" onclick="bedChangeQty('${name}',1)">+</button>
+      </div>
+    </div>`;
+  }).join('');
+  totalEl.textContent = total.toFixed(2).replace('.',',') + ' €';
+}
+
+function bedienungBestellen() {
+  Object.keys(bedOrder).forEach(k => delete bedOrder[k]);
+  renderBedOrder();
+  bedTableHasOrder = true;
+  document.getElementById('bed-aktion-tisch').textContent = 'Tisch '+bedCurrentTable;
+  document.getElementById('bed-aktion-sub').textContent = 'Bestellung aufgenommen';
+  bedienungGoTo('aktion');
+}
+
+function copyZugangscode() {
+  const url = document.getElementById('zugangscode-url').textContent;
+  navigator.clipboard.writeText(url).then(() => alert('Link kopiert'));
+}
+
+function kassierQty(btn, delta, max) {
+  const qtyEl = btn.parentElement.querySelector('.kassier-qty');
+  const priceEl = btn.parentElement.parentElement.querySelector('.kassier-price');
+  let qty = parseInt(qtyEl.textContent) + delta;
+  qty = Math.max(0, Math.min(max, qty));
+  qtyEl.textContent = qty;
+  const preis = parseFloat(qtyEl.dataset.preis);
+  priceEl.textContent = (qty * preis).toFixed(2).replace('.', ',') + ' €';
+  updateKassierSumme();
+}
+
+function kassierReset() {
+  document.querySelectorAll('#kassier-positionen .kassier-qty').forEach(el => {
+    el.textContent = '0';
+    el.parentElement.parentElement.querySelector('.kassier-price').textContent = '0,00 €';
+  });
+  updateKassierSumme();
+}
+
+function updateKassierSumme() {
+  let sum = 0;
+  document.querySelectorAll('#kassier-positionen .kassier-qty').forEach(el => {
+    sum += parseInt(el.textContent) * parseFloat(el.dataset.preis);
+  });
+  document.getElementById('kassier-summe').textContent = sum.toFixed(2).replace('.', ',') + ' €';
+}
+</script>
+</body>
+</html>
