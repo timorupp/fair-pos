@@ -107,7 +107,11 @@
 
   async function remove() {
     if (!editing) return;
-    if (!confirm(`Drucker "${editing.name}" wirklich löschen?`)) return;
+    if (!confirm(
+      `Drucker "${editing.name}" wirklich löschen? Noch nicht gedruckte Druckaufträge für diesen ` +
+      `Drucker werden abgebrochen, und Artikel/Kassen, die ihn als Drucker eingestellt haben, ` +
+      `verlieren diese Zuordnung.`,
+    )) return;
     deleting = true;
     try { await api.admin.printers.delete(editing.id); modalOpen = false; await load(); }
     catch (e) { formError = e instanceof Error ? e.message : 'Fehler'; }

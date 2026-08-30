@@ -20,7 +20,7 @@
     created_at: string; business_date: string;
     is_zero_closing: boolean;
     total_gross: number; total_cash: number; total_cancellations: number;
-    created_by: string;
+    created_by_name: string;
   };
 
   let register: RegisterDetail | null = $state(null);
@@ -268,7 +268,7 @@
               <td class="num">{c.z_number}</td>
               <td>{fmtBusinessDate(c.business_date)}</td>
               <td>{fmtDate(c.created_at)}</td>
-              <td>{c.created_by}</td>
+              <td>{c.created_by_name}</td>
               <td class="num">{fmt(c.total_gross)} €</td>
               <td class="num">{fmt(c.total_cash)} €</td>
               <td class="num">{fmt(c.total_cancellations)} €</td>

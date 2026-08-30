@@ -6,6 +6,7 @@ import { probePrinter } from '../../print/tcp.js';
 import { buildTestPrint } from '../../print/escpos.js';
 import { loadCompanyLogo } from '../../logo/logo.js';
 import { enqueuePrintJob } from '../../print/enqueue.js';
+import { MAX_ATTEMPTS } from '../../print/worker.helpers.js';
 
 /** Registers /api/admin/printers routes. */
 export async function printersAdminRoute(app: FastifyInstance): Promise<void> {
@@ -90,48 +91,47 @@ export async function printersAdminRoute(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * DELETE /api/admin/printers/:id — deletes a printer.
+   * DELETE /api/admin/printers/:id — deletes a printer (Task #96).
    *
    * If the deleted row was the current default and other printers remain, the
    * oldest one (by `created_at`) is auto-promoted to default so the invariant
    * holds. If no other printers exist, the "no default" state is acceptable.
    *
-   * Blocked by Postgres (23503, foreign key violation) while any register,
-   * article or print_job still references this printer — caught here to
-   * surface a clear message instead of a raw 500 (analog Task #54). No
-   * archive/deactivate alternative needed: unlike registers/users, a printer
-   * doesn't need to stay historically provable, so the operator simply has
-   * to remove the reference (reassign register/article, or wait for the
-   * print job to finish) before the printer can be deleted (Task #57).
+   * `register.printer_id`/`article.printer_id`/`print_job.printer_id` are
+   * `ON DELETE SET NULL` (migration 0016) — a deleted printer simply clears
+   * out of those rows instead of blocking the delete. Any print job still
+   * queued for this printer is terminally failed *before* the delete, since
+   * the print worker would otherwise never pick up (and never fail) a job
+   * whose `printer_id` just went `NULL` — it would sit as `pending` forever.
    */
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    try {
-      const result = await withTransaction(async (client) => {
-        const target = await client.query<{ is_default: boolean }>(
-          `SELECT is_default FROM printer WHERE id = $1`, [id],
-        );
-        if (target.rows.length === 0) return { found: false };
-        const wasDefault = target.rows[0]!.is_default;
-        await client.query(`DELETE FROM printer WHERE id = $1`, [id]);
-        if (wasDefault) {
-          // Promote the oldest remaining printer to default.
-          await client.query(
-            `UPDATE printer SET is_default = true
-               WHERE id = (SELECT id FROM printer ORDER BY created_at LIMIT 1)`,
-          );
-        }
-        return { found: true };
-      });
+    const result = await withTransaction(async (client) => {
+      const target = await client.query<{ is_default: boolean }>(
+        `SELECT is_default FROM printer WHERE id = $1`, [id],
+      );
+      if (target.rows.length === 0) return { found: false };
+      const wasDefault = target.rows[0]!.is_default;
 
-      if (!result.found) return reply.status(404).send({ error: 'Drucker nicht gefunden' });
-      return reply.status(204).send();
-    } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23503') {
-        return reply.status(409).send({ error: 'Drucker wird noch verwendet und kann nicht gelöscht werden' });
+      await client.query(
+        `UPDATE print_job
+            SET status = 'failed', attempts = $2, error_message = 'Drucker wurde gelöscht'
+          WHERE printer_id = $1 AND status IN ('pending', 'printing')`,
+        [id, MAX_ATTEMPTS],
+      );
+      await client.query(`DELETE FROM printer WHERE id = $1`, [id]);
+      if (wasDefault) {
+        // Promote the oldest remaining printer to default.
+        await client.query(
+          `UPDATE printer SET is_default = true
+             WHERE id = (SELECT id FROM printer ORDER BY created_at LIMIT 1)`,
+        );
       }
-      throw e;
-    }
+      return { found: true };
+    });
+
+    if (!result.found) return reply.status(404).send({ error: 'Drucker nicht gefunden' });
+    return reply.status(204).send();
   });
 
   /** GET /api/admin/printers/:id/status — TCP probe to determine if the printer is reachable. */

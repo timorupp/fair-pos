@@ -1,9 +1,10 @@
-/** Integration tests for DELETE /api/admin/printers/:id — see Task #57. */
+/** Integration tests for DELETE /api/admin/printers/:id — see Task #57 and Task #96. */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
-import { createTestPrinter, createTestRegister, createTestUser } from '../../test/fixtures.js';
+import { createTestArticle, createTestPrinter, createTestRegister, createTestUser } from '../../test/fixtures.js';
+import { MAX_ATTEMPTS } from '../../print/worker.helpers.js';
 
 beforeAll(async () => { await getTestApp(); });
 afterAll(closeTestApp);
@@ -36,19 +37,78 @@ describe('DELETE /api/admin/printers/:id', () => {
     expect(response.statusCode).toBe(404);
   });
 
-  it('returns 409 with a clear message instead of a raw 500 when a register still references the printer', async () => {
+  it('deletes a printer still referenced by a register, clearing the reference instead of blocking (Task #96)', async () => {
     const printer = await createTestPrinter();
-    await createTestRegister({ printerId: printer.id });
+    const register = await createTestRegister({ printerId: printer.id });
 
     const app = await getTestApp();
     const response = await app.inject({
       method: 'DELETE', url: `/api/admin/printers/${printer.id}`,
       headers: { cookie: adminCookie },
     });
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error).toMatch(/verwendet/);
+    expect(response.statusCode).toBe(204);
 
-    const stillThere = await pool.query('SELECT id FROM printer WHERE id = $1', [printer.id]);
-    expect(stillThere.rowCount).toBe(1);
+    const gone = await pool.query('SELECT id FROM printer WHERE id = $1', [printer.id]);
+    expect(gone.rowCount).toBe(0);
+    const registerRow = await pool.query<{ printer_id: string | null }>(
+      'SELECT printer_id FROM register WHERE id = $1', [register.id],
+    );
+    expect(registerRow.rows[0]!.printer_id).toBeNull();
+  });
+
+  it('deletes a printer still referenced by an article, clearing the reference (Task #96)', async () => {
+    const printer = await createTestPrinter();
+    const article = await createTestArticle({ printerId: printer.id });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'DELETE', url: `/api/admin/printers/${printer.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(204);
+
+    const articleRow = await pool.query<{ printer_id: string | null }>(
+      'SELECT printer_id FROM article WHERE id = $1', [article.id],
+    );
+    expect(articleRow.rows[0]!.printer_id).toBeNull();
+  });
+
+  it('terminally fails pending/printing jobs for the deleted printer instead of leaving them stuck (Task #96)', async () => {
+    const printer = await createTestPrinter();
+    const pendingJob = await pool.query<{ id: string }>(
+      `INSERT INTO print_job (printer_id, type, content, status)
+       VALUES ($1, 'test_print', 'AA==', 'pending') RETURNING id`,
+      [printer.id],
+    );
+    const printingJob = await pool.query<{ id: string }>(
+      `INSERT INTO print_job (printer_id, type, content, status)
+       VALUES ($1, 'test_print', 'AA==', 'printing') RETURNING id`,
+      [printer.id],
+    );
+    const doneJob = await pool.query<{ id: string }>(
+      `INSERT INTO print_job (printer_id, type, content, status)
+       VALUES ($1, 'test_print', 'AA==', 'done') RETURNING id`,
+      [printer.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'DELETE', url: `/api/admin/printers/${printer.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(204);
+
+    const jobs = await pool.query<{ id: string; status: string; attempts: number; error_message: string | null; printer_id: string | null }>(
+      'SELECT id, status, attempts, error_message, printer_id FROM print_job ORDER BY id',
+    );
+    const byId = new Map(jobs.rows.map((r) => [r.id, r]));
+    expect(byId.get(pendingJob.rows[0]!.id)).toMatchObject({
+      status: 'failed', attempts: MAX_ATTEMPTS, error_message: 'Drucker wurde gelöscht', printer_id: null,
+    });
+    expect(byId.get(printingJob.rows[0]!.id)).toMatchObject({
+      status: 'failed', attempts: MAX_ATTEMPTS, error_message: 'Drucker wurde gelöscht', printer_id: null,
+    });
+    // Already-terminal jobs are left alone (status untouched), only printer_id is cleared.
+    expect(byId.get(doneJob.rows[0]!.id)).toMatchObject({ status: 'done', printer_id: null });
   });
 });

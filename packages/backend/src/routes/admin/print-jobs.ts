@@ -18,7 +18,10 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
 
   /**
    * GET /api/admin/print-jobs — print jobs across ALL printers with the joined
-   * printer name. Drives the print-queue overview page.
+   * printer name. Drives the print-queue overview page. `printer_name` reads
+   * "Drucker gelöscht" for a job whose printer was deleted since (Task #96,
+   * `print_job.printer_id` is `ON DELETE SET NULL`) — a plain `JOIN` would
+   * silently drop that job from the list instead.
    *
    * Query param `status` accepts:
    *   - `pending | printing | failed | done | cancelled` → exact-match filter
@@ -39,11 +42,11 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
           : [filterStatus];
 
       const result = await query(
-        `SELECT j.id, j.printer_id, p.name AS printer_name,
+        `SELECT j.id, j.printer_id, COALESCE(p.name, 'Drucker gelöscht') AS printer_name,
                 j.type, j.status, j.attempts, j.reference_id,
                 j.created_at, j.last_attempt_at, j.error_message
            FROM print_job j
-           JOIN printer p ON p.id = j.printer_id
+           LEFT JOIN printer p ON p.id = j.printer_id
           WHERE j.status = ANY($1)
           ORDER BY j.created_at DESC
           LIMIT 500`,
@@ -92,11 +95,21 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
     const result = await query<{ status: string }>(
       `UPDATE print_job
           SET status = 'pending', last_attempt_at = NULL, error_message = NULL
-        WHERE id = $1 AND status = 'failed'
+        WHERE id = $1 AND status = 'failed' AND printer_id IS NOT NULL
         RETURNING status`,
       [id],
     );
     if (result.rows.length === 0) {
+      // Distinguish "wrong status" from "printer was deleted" (Task #96) for
+      // a clearer message — retrying with a NULL printer_id would just leave
+      // the job stuck as 'pending' forever, since the print worker's claim
+      // query can never match a NULL printer_id.
+      const current = await query<{ printer_id: string | null }>(
+        `SELECT printer_id FROM print_job WHERE id = $1 AND status = 'failed'`, [id],
+      );
+      if (current.rows[0] && current.rows[0].printer_id === null) {
+        return reply.status(409).send({ error: 'Der Drucker dieses Auftrags wurde gelöscht — kann nicht erneut gestartet werden.' });
+      }
       return reply.status(409).send({ error: 'Druckauftrag ist nicht im Status "Fehlgeschlagen" und kann nicht erneut gestartet werden.' });
     }
     return reply.send({ ok: true });

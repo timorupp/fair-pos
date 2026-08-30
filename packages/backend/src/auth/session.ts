@@ -46,12 +46,19 @@ export interface SessionWithUser {
 
 /**
  * Creates a new session row for the given user and sets the session cookie.
+ * Also opportunistically deletes every already-expired session row (Task
+ * #97) — `loadSession` only ever treats them as invalid via a timestamp
+ * comparison, nothing else ever removes them, so without this they'd
+ * accumulate in the table forever. Piggybacking on login (a frequent,
+ * already-write-heavy path) avoids needing a separate scheduled job.
  *
  * @param reply - Outgoing Fastify reply onto which the cookie is set.
  * @param userId - UUID of the user who just authenticated via PIN.
  * @param userAgent - `User-Agent` header of the logging-in request, stored for the admin sessions list.
  */
 export async function createSession(reply: FastifyReply, userId: string, userAgent: string | undefined): Promise<void> {
+  await query(`DELETE FROM session WHERE last_activity_at <= now() - interval '${SESSION_INACTIVITY_INTERVAL}'`);
+
   const token = randomBytes(32).toString('hex');
   await query(
     `INSERT INTO session (user_id, token, user_agent) VALUES ($1, $2, $3)`,

@@ -121,14 +121,14 @@ describe('GET /api/admin/reports/cash-balance', () => {
     const app = await getTestApp();
     const user = await createTestUser({ isAdmin: true });
     await pool.query(
-      `INSERT INTO cash_transaction (register_id, user_id, type, amount, created_at)
+      `INSERT INTO cash_transaction (register_id, user_name, type, amount, created_at)
        VALUES ($1, $2, 'deposit', 100, now() - interval '1 hour')`,
-      [registerId, user.id],
+      [registerId, user.name],
     );
     await pool.query(
-      `INSERT INTO cash_transaction (register_id, user_id, type, amount, created_at)
+      `INSERT INTO cash_transaction (register_id, user_name, type, amount, created_at)
        VALUES ($1, $2, 'withdrawal', 30, now() - interval '30 minutes')`,
-      [registerId, user.id],
+      [registerId, user.name],
     );
     await insertPaidInvoice(1, 20, 19, 'cash');
     const response = await app.inject({
@@ -189,9 +189,9 @@ describe('GET /api/admin/reports/cancellations', () => {
       await pool.query(
         `INSERT INTO order_item (
            invoice_id, register_id, article_name, article_category_name,
-           tax_rate, price, status, cancellation_reason_id, cancelled_by, cancelled_at, created_at
+           tax_rate, price, status, cancellation_reason_id, cancelled_by_name, cancelled_at, created_at
          ) VALUES ($1, $2, 'X', 'Y', 19, 5, 'cancelled', $3, $4, now() - interval '30 minutes', now() - interval '1 hour')`,
-        [inv.rows[0]!.id, registerId, reason.rows[0]!.id, user.id],
+        [inv.rows[0]!.id, registerId, reason.rows[0]!.id, user.name],
       );
     }
     const response = await app.inject({

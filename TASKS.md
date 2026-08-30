@@ -2147,3 +2147,419 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   — aktuell nicht wichtig genug, kein aktiver Bedarf. Task damit
   abgeschlossen; bei Bedarf später als neuer Task wieder aufgreifen statt
   hier weiter offen zu halten.
+- [ ] **#94** Zwei-Stufen-Admin (System-Administrator / Veranstaltungs-Administrator)
+  Aufgekommen beim Verleih-Konzept (2026-08-30): beim Verleih des Servers
+  an einen anderen Verein sollen bestimmte Einstellungen geschützt und alte
+  Daten nicht offengelegt werden. Erster Baustein dafür: zwei
+  Admin-Berechtigungsstufen statt der aktuellen einzelnen `is_admin`-Stufe.
+
+  **Konzept (Nutzervorgabe, 2026-08-30):**
+  - Zwei Checkboxen beim Benutzer statt einer: **System-Administrator**
+    (darf alles, wie heutiges `is_admin`) und **Veranstaltungs-Administrator**
+    (darf nur das für die laufende Veranstaltung Notwendige; **kein
+    Wechsel der aktiven Veranstaltung** — siehe Task #95, dort ist die
+    aktive Veranstaltung eine globale, nur vom System-Administrator
+    änderbare Server-Einstellung, keine Benutzer-Zuordnung nötig). Die
+    ursprünglich hier als Beispiele genannten Sperren (SSL-Zertifikat,
+    DNS-Konfiguration, Systemeinstellungen) wurden beim Ausfüllen der
+    Adminstufen-Matrix teils bewusst wieder aufgehoben — siehe dort für
+    den finalen Stand pro Route, dieser Aufzählung hier kommt keine
+    Bindungswirkung mehr zu.
+
+  **Wichtige Begriffsklärung (2026-08-30, beim Review gefunden):**
+  "Global" vs. "Kind der Veranstaltung" (Task #95) ist eine Aussage über
+  das **Datenmodell** — betrifft nur, ob ein Objekt einer Veranstaltung
+  zugeordnet ist oder nicht. Das trifft **keine** Aussage darüber, welche
+  Adminstufe (Task #94) das Objekt verwalten darf — beide Achsen sind
+  unabhängig voneinander. Beispiel: Drucker bleiben global (Task #95,
+  kein `event_id`), dürfen aber trotzdem vollständig vom
+  Veranstaltungs-Administrator verwaltet werden (Adminstufen-Matrix,
+  Nutzerentscheidung: lokale Netzwerkeinrichtung muss ohne anwesenden
+  System-Administrator möglich sein).
+
+  **Ist-Zustand analysiert (siehe Task #95 für die volle Analyse,
+  gemeinsam mit der Datenmodell-Hierarchie erarbeitet):** aktuell exakt
+  eine Berechtigungsstufe (`user.is_admin BOOLEAN`), geprüft durch eine
+  einzige `authenticateAdmin`-Middleware
+  (`middleware/authenticate.ts`), die **in jeder der 27
+  Admin-Routendateien einzeln** als Fastify-Hook eingehängt wird (kein
+  zentrales Gate in `app.ts`). Keine feingranulare Rechteprüfung
+  existiert bisher.
+
+  **Noch zu erarbeiten:** Umsetzungskonzept — Middleware-Erweiterung
+  (z. B. `authenticateAdmin(requiredLevel)`), Durchgehen aller 27
+  Routendateien zur Einstufung (System- vs.
+  Veranstaltungs-Administrator), Frontend-Anpassungen (Navigation blendet
+  nicht erlaubte Bereiche aus, Benutzerverwaltung bekommt zweite
+  Checkbox). Wird als nächstes gemeinsam ausgearbeitet.
+
+  **Umsetzungskonzept (2026-08-30, ausgearbeitet auf Basis der fertigen
+  Adminstufen-Matrix, noch nicht implementiert — Task #94 wird erst nach
+  dem Konzept für Task #95 umgesetzt, siehe dort):**
+
+  Wichtige Beobachtung aus der Matrix: `V` ist der überwältigende
+  Regelfall (~80 von ~90 Routen), `S`-exklusiv die Ausnahme (`events.ts`
+  komplett, `backup.ts`, `logs.ts`, plus einzelne Felder in
+  `users.ts`/`settings.ts`). Das dreht die naheliegende Umsetzung um: die
+  meisten der 27 Routendateien brauchen gar keine Änderung.
+
+  1. **Datenmodell:** neue Migration, `ALTER TABLE "user" ADD COLUMN
+     is_event_admin BOOLEAN NOT NULL DEFAULT false`. `is_admin` bleibt
+     unverändert (weiterhin "System-Administrator", kein Rename — spart
+     ein riskantes Rename einer an vielen Stellen referenzierten Spalte).
+  2. **Middleware** (`middleware/authenticate.ts`): zwei preHandler statt
+     einem. `authenticateAdmin` (bestehender Name, neue Bedeutung) lässt
+     `is_admin` **oder** `is_event_admin` durch — bleibt Default für alle
+     `V`-Routen, keine Änderung in diesen Dateien nötig.
+     `authenticateSystemAdmin` (neu) verlangt strikt `is_admin`, nur in
+     `events.ts`, `backup.ts`, `logs.ts` die Hook-Zeile darauf umstellen
+     (3 Dateien statt 27). Step-up-Passwortprüfung (`admin_verified`)
+     gilt unverändert für beide Stufen gleich.
+  3. **Feld-Ebene** (`users.ts`, `settings.ts`) — die zwei Fälle, wo eine
+     Route insgesamt `V` ist, aber ein Teil davon `S`-exklusiv bleiben
+     muss: `users.ts` bekommt einen Guard vor dem Schreiben von `is_admin`
+     (POST mit `is_admin: true`, PUT das `is_admin` ändert, DELETE eines
+     `is_admin`-Nutzers) — nur `request.adminUser.is_admin` darf das.
+     `settings.ts`s `PUT /` bekommt eine Whitelist, welche Keys `V`
+     schreiben darf (z. B. TSE-Einstellungen, Logo) vs. `S`-exklusiv
+     (Rechnungszähler-Präfix u. Ä.) — ähnlich der bestehenden
+     `ALLOWED_KEYS`-Logik dort.
+  4. **Frontend:** zweite Checkbox in der Benutzerverwaltung
+     (System-Administrator-Checkbox nur für `S` bearbeitbar/sichtbar),
+     Navigation blendet die drei `S`-exklusiven Bereiche (Veranstaltungen,
+     Backup, Systemprotokoll) für reine `V`-Nutzer aus.
+  5. **Wichtige Randbemerkung:** Bis Task #95 umgesetzt ist, sieht ein
+     `V`-Nutzer trotzdem **alle** Artikel/Kassen/Rechnungen usw., nicht
+     nur die der aktiven Veranstaltung — das volle Datenschutz-Ziel des
+     Verleihs greift erst, wenn beide Tasks zusammen fertig sind.
+  6. **Tests:** `createTestUser`-Fixture um `isEventAdmin` erweitern, neue
+     Integrationstests je `S`-exklusiver Datei (`V` bekommt 403) plus die
+     beiden Feld-Ebenen-Guards.
+
+  **Offener Punkt, mittlerweile gelöst — siehe Task #97 (2026-08-30,
+  beim Review der Adminstufen-Matrix gefunden):**
+  Veranstaltungs-Administrator soll seine eigenen Bedienungen verwalten
+  können (`users.ts` komplett `V`, siehe Adminstufen-Matrix). Idee war,
+  Accounts der vorherigen Veranstaltung nach deren Ende zu löschen, um sie
+  vor dem nächsten Verleih-Kunden zu verbergen — das scheiterte zunächst
+  daran, dass `DELETE /users/:id` mit 409 ablehnt, sobald der Benutzer
+  irgendetwas gebucht hat. Von zwei denkbaren Lösungswegen (Bedienungen
+  innerhalb der Veranstaltung anlegen vs. Buchungen speichern den Namen
+  als Text-Snapshot statt Fremdschlüssel) wurde Weg 2 gewählt — Details
+  und Fremdschlüssel-Liste siehe Task #97.
+
+  **Adminstufen-Matrix (2026-08-30):** vollständige Liste aller
+  `/api/admin/*`-Routen mit Zuordnungsvorschlag je Route liegt in
+  `docs/Adminstufen-Matrix.txt` (bewusst reines Textformat statt Tabelle,
+  einfacher manuell zu bearbeiten) — Grundlage für die
+  Middleware-Erweiterung.
+- [ ] **#95** Veranstaltung als Hierarchieebene im Datenmodell
+  Aufgekommen beim Verleih-Konzept (2026-08-30), gemeinsam mit Task #94:
+  aktuell ist eine Veranstaltung (`event`-Tabelle: `id`, `name`,
+  `start_time`, `end_time`) nicht mehr als ein gespeicherter Datumsfilter
+  für Reports/Exporte — keine andere Tabelle hat einen Bezug dazu. Idee:
+  Veranstaltung wird zur echten Hierarchieebene, der bestimmte Objekte
+  untergeordnet sind, sodass immer nur die Objekte der aktuell aktiven
+  Veranstaltung sichtbar sind. Löst nebenbei auch das Problem, dass sich
+  das System mit der Zeit mit alten Artikeln/Kassen/etc. füllt und
+  unübersichtlich wird.
+
+  **Objekte, die Kinder der Veranstaltung werden sollen (Nutzervorgabe):**
+  Artikel, Kassen, Kassenlayouts, Saalplan, Rechnungen, Bestellungen.
+  **Weiterhin global:** Systemeinstellungen, Drucker, Benutzer.
+
+  **Kritische Leitplanke (bei der Analyse gefunden, 2026-08-30):** die
+  Rechnungsnummer (`receipt_number`, global, lückenlos —
+  `receipt/sequence.ts`) und die Z-Bon-Nummer (`daily_closing.z_number`,
+  lückenlos pro Kasse — `docs/Rechtliche-Anforderungen.md`) sind
+  gesetzlich fixierte, fortlaufende Zähler (KassenSichV). Sie dürfen
+  **niemals** pro Veranstaltung zurückgesetzt oder pro Veranstaltung neu
+  gezählt werden — Rechnungen/Kassen dürfen einer Veranstaltung nur zur
+  Anzeige/Filterung zugeordnet werden, die Zähler selbst bleiben zwingend
+  global bzw. pro physischer Kasse.
+
+  **Aktive Veranstaltung (Nutzervorgabe, 2026-08-30):** genau eine
+  Veranstaltung gilt global auf dem Server als aktiv — eine
+  Server-Einstellung (vermutlich `system_setting`), persistent über
+  Neustarts hinweg. Nur der System-Administrator kann sie ändern; der
+  Veranstaltungs-Administrator (Task #94) sieht immer die gerade aktive
+  Veranstaltung, ohne selbst wechseln zu können. Keine Zuordnung
+  Benutzer↔Veranstaltung nötig — das ist über die eine globale aktive
+  Veranstaltung bereits gelöst.
+
+  **Altdatenmigration (Nutzervorgabe, 2026-08-30):** Migrationsskript legt
+  automatisch ein Dummy-/Altbestand-Event an und ordnet alle bestehenden
+  Artikel/Kassen/Layouts/Tische/Rechnungen/Bestellungen diesem zu, statt
+  `event_id` nullable zu lassen oder eine manuelle Zuordnung zu verlangen.
+
+  **Geklärt beim Ausfüllen der Adminstufen-Matrix (2026-08-30):**
+  `article_category` und `cancellation_reason` werden beide Kind der
+  Veranstaltung, nicht mehr global (Nutzerbegründung: „wird später ein
+  Kind-Objekt der Veranstaltung, daher nicht mehr global").
+
+  **Weitere Erkenntnis (2026-08-30):** die Event-Auswahl-Dropdowns in
+  Reports/Exporten (`EventSelector.svelte`, `reports.ts GET /events`)
+  werden mit dieser Task **überflüssig** — sobald es genau eine global
+  festgelegte aktive Veranstaltung gibt, muss niemand mehr manuell
+  auswählen, welche Veranstaltung ein Report/Export betrifft. Dieser
+  gesamte Auswahl-Mechanismus (Frontend-Komponente + Endpoint) kann dann
+  vermutlich entfernt werden statt mit einer Adminstufe versehen zu
+  werden.
+
+  **Geklärt (2026-08-30):**
+  - Saalplan-Grid-Achsen (`floor_plan_column`/`floor_plan_row`) werden
+    ebenfalls Kind der Veranstaltung, nicht nur `dining_table` — "alles
+    was zum Saalplan gehört soll der Veranstaltung untergeordnet sein"
+    (unterschiedliche Veranstaltungen finden oft in unterschiedlichen
+    Räumlichkeiten statt, ein wiederverwendetes Grid ergibt inhaltlich
+    wenig Sinn).
+  - Referenzielle Konsistenz `register_layout_slot.article_id` ↔
+    Layout-Event: anwendungsseitige Prüfung beim Speichern eines Slots,
+    kein DB-Constraint (zu komplex für den Nutzen).
+  - Benutzer und Drucker bleiben global — brauchen aber eine eigene
+    Lösung für die Löschbarkeits-/Sichtbarkeitsfrage, siehe Task #96.
+
+  **Umsetzungskonzept (2026-08-30):**
+  1. Neuer `system_setting`-Key `active_event_id`, geladen in `config`
+     beim Start (Muster wie `tse/settings.ts`). Eigener Endpoint zum
+     Wechseln, `S`-exklusiv (Task #94).
+  2. Empfohlene Migrationsreihenfolge (steigendes Risiko, jede Tabelle
+     einzeln testbar): (1) `article_category` → `article` (+
+     `product_option` erbt über `article_id`), (2) `register_layout` (+
+     `register_layout_slot` erbt über `register_layout_id`), (3)
+     `register`, (4) `floor_plan_column`/`floor_plan_row` + `dining_table`,
+     (5) `cancellation_reason`, (6) `invoice`/`order_item` zuletzt und am
+     vorsichtigsten (nur Sichtbarkeits-Filter, gesetzliche Zähler bleiben
+     unangetastet).
+  3. Jede Migration: Spalte hinzufügen, Dummy-„Altbestand"-Event
+     automatisch im Migrationsskript anlegen, bestehende Zeilen per
+     `UPDATE ... SET event_id = <dummy-id> WHERE event_id IS NULL`
+     zuordnen, danach `NOT NULL` setzen.
+  4. **Kombinierter Umsetzungsplan mit Task #94** (Nutzerwunsch,
+     2026-08-30): fast jede Route, die #94 einer Adminstufe zuordnet, ist
+     genau die Route, die hier einen `event_id`-Filter braucht (Artikel,
+     Kassen, Layouts, Saalplan, Rechnungen, Reports/Exporte). Getrennt
+     umgesetzt hieße dieselben ~15 Dateien zweimal anfassen — stattdessen
+     pro Tabelle/Routendatei in einem Rutsch: `event_id`-Spalte +
+     gefilterte Query + richtige Adminstufe + Tests, bevor die nächste
+     Tabelle beginnt.
+  5. **Frontend:** betrifft ausschließlich die Admin-UI. Der bisherige
+     lokale `EventSelector` auf den 5 Report-/Export-Seiten entfällt
+     komplett (ersetzt durch den globalen "aktive Veranstaltung"-Kontext,
+     `S` kann wechseln, `V` nur lesen) — die eigentliche Kassen-/
+     Bedienungs-Oberfläche (Bonkasse/Bedienungskasse) braucht dagegen
+     **keine** Änderungen.
+
+  **Größenordnung/Reihenfolge:** realistisch 6 Arbeitspakete (je
+  Migrationsschritt aus Punkt 2), jedes für sich abgeschlossen mit
+  Migration + Backend-Filter + Adminstufe + Tests + kurzer
+  Live-Verifikation, bevor das nächste beginnt. Nicht als ein großes
+  Vorhaben umsetzen, sondern schrittweise, und erst
+  nach Task #94. Task #94 wird zuerst umgesetzt.
+- [x] **#96** Drucker löschbar machen (Folgeaufgabe aus Task #94/#95)
+  Beim Review der Adminstufen-Matrix (2026-08-30) aufgefallen: Drucker
+  bleiben laut Task #94/#95 bewusst global — aber `DELETE
+  /api/admin/printers/:id` ist aktuell ein Hard-Delete ohne
+  FK-Fehlerbehandlung. Ein bereits verwendeter Drucker lässt sich schon
+  heute nicht löschen (Postgres lehnt mit `23503` ab, unbehandelt), und
+  im Gegensatz zu Benutzern (`is_active`) gibt es nicht mal eine
+  Deaktivieren-Ausweichoption.
+
+  **Fremdschlüssel auf `printer` (ermittelt 2026-08-30, keine `ON
+  DELETE`-Klausel vorhanden, Standard-Verhalten `RESTRICT`):**
+  - `register.printer_id` — nullable
+  - `article.printer_id` — nullable
+  - `print_job.printer_id` — **NOT NULL**
+
+  **Konzept (Nutzervorgabe, 2026-08-30):**
+  - Warnung beim Löschen in der UI: aktive Druckaufträge werden
+    abgebrochen, betroffene Artikel verlieren ihren Standarddrucker.
+  - Laufende Druckaufträge für den zu löschenden Drucker abbrechen — wie
+    ein Job, der nach zu vielen Versuchen nicht gedruckt werden konnte
+    (`status = 'failed'`, `attempts = MAX_ATTEMPTS` (500, siehe
+    `print/worker.helpers.ts`), passender `error_message`-Text).
+  - `print_job.printer_id` anschließend auf `NULL` setzen (Spalte muss
+    dafür erst nullable werden, aktuell `NOT NULL`) — mit
+    UI-Erweiterung: Druckwarteschlangen-Ansicht zeigt "Drucker gelöscht"
+    statt des Namens, falls das Feld dort angezeigt wird.
+    **Konkret gefunden:** `routes/admin/print-jobs.ts`s Liste nutzt aktuell
+    ein `JOIN printer p ON p.id = j.printer_id` (kein `LEFT JOIN`) — muss
+    zu `LEFT JOIN` werden, sonst verschwindet der Job nach dem Nullen
+    komplett aus der Warteschlangen-Ansicht statt "Drucker gelöscht" zu
+    zeigen.
+  - `article.printer_id` ebenfalls auf `NULL` setzen — Artikel hat dann
+    keinen zugeordneten Drucker mehr. Kein zusätzlicher UI-Aufwand nötig:
+    die Artikel-Bearbeitungsseite zeigt den Drucker ohnehin nur über ein
+    `<select>` aus der aktuellen Druckerliste, ein `NULL`-Wert erscheint
+    dort einfach als "kein Drucker ausgewählt".
+
+  **Geklärt (2026-08-30):** `register.printer_id` wird beim Löschen
+  ebenfalls auf `NULL` gesetzt — gleiches Muster wie `article.printer_id`.
+
+  **Verwandtes, separates Problem — siehe Task #97:** dieselbe
+  Löschbarkeits-/Sichtbarkeitsfrage besteht auch für Benutzer, dort aber
+  mit einer anderen Lösung (Text-Snapshot statt `NULL`, siehe dort), weil
+  bei Benutzern die Buchungshistorie den Namen dauerhaft erhalten soll.
+
+  **Erledigt (2026-08-30):** Migration `0016_printer_deletable.sql` stellt
+  `register.printer_id`/`article.printer_id`/`print_job.printer_id` auf
+  `ON DELETE SET NULL` um (`print_job.printer_id` dafür zuerst nullable
+  gemacht). `DELETE /api/admin/printers/:id` (`routes/admin/printers.ts`)
+  setzt noch offene Druckaufträge (`pending`/`printing`) vorher terminal auf
+  `failed` (inkl. `attempts = MAX_ATTEMPTS`, Fehlertext "Drucker wurde
+  gelöscht") — sonst würde der Print-Worker sie nie mehr aufgreifen und
+  auch nie fehlschlagen lassen, da seine Claim-Query zwingend einen
+  passenden Drucker braucht. `print-jobs.ts`s Liste nutzt jetzt `LEFT
+  JOIN` statt `JOIN` und zeigt "Drucker gelöscht" statt den Job
+  verschwinden zu lassen; `/retry` verweigert sich explizit mit klarer
+  Fehlermeldung, wenn der Drucker eines fehlgeschlagenen Jobs gelöscht
+  wurde (würde sonst für immer als "pending" hängen bleiben). Frontend:
+  Lösch-Bestätigung warnt jetzt vor den Konsequenzen. Backend-Unit-,
+  Integrations- und Frontend-Typecheck grün.
+- [x] **#97** Benutzer löschbar machen (Folgeaufgabe aus Task #94/#95)
+  Wie Task #96, aber für Benutzer statt Drucker — beim Review der
+  Adminstufen-Matrix aufgefallen (2026-08-30): Benutzer bleiben laut
+  Task #94/#95 bewusst global, aber `DELETE /api/admin/users/:id` ist ein
+  Hard-Delete, der mit 409 ablehnt, sobald der Benutzer schon irgendetwas
+  gebucht hat. Praktisch jede echte Bedienung bucht etwas, kann also nie
+  wieder gelöscht werden — nur deaktivieren (`is_active`), was den Account
+  aber nicht aus der Liste verschwinden lässt. Fürs Verleih-Ziel („alte
+  Daten nicht offenlegen") unbefriedigend, siehe Task #94, „Offener Punkt".
+
+  **Fremdschlüssel auf `user` in historischen/prüfungsrelevanten Tabellen
+  (ermittelt 2026-08-30 — `user_register` und `session` sind reine
+  Betriebsdaten ohne Audit-Wert, räumen sich aber NICHT von selbst auf,
+  siehe unten):**
+  - `daily_closing.created_by` — nullable
+  - `order_item.user_id` — nullable
+  - `order_item.cancelled_by` — nullable
+  - `cash_transaction.user_id` — nullable
+  - `service_order.user_id` — nullable
+  - `order_cancellation.cancelled_by` — nullable
+
+  Historischer Kontext (gefunden beim Review, 2026-08-30): die aktuelle
+  FK-RESTRICT-Sperre war eine bewusste Design-Entscheidung aus Task #56
+  (dokumentiert im Docstring von `DELETE /users/:id`) — dieser Task kehrt
+  das für den Verleih-Fall bewusst um.
+
+  **Konzept (Nutzervorgabe, 2026-08-30):** anders als bei Druckern (Task
+  #96, dort einfach `NULL`) diese Fremdschlüssel durch reine Textfelder
+  ersetzen, die den Benutzernamen zum Buchungszeitpunkt speichern — analog
+  zum bereits bestehenden Muster bei `order_item.article_name`/
+  `article_category_name`, die den Artikelnamen genauso denormalisiert
+  halten. Damit bleibt die Historie vollständig lesbar erhalten, ohne dass
+  das Benutzerobjekt selbst je vorgehalten werden muss — der
+  Benutzer-Datensatz wird nach dem Ersetzen frei löschbar.
+
+  **Konkret gefunden, muss mit angepasst werden (2026-08-30, vollständig
+  durchsucht — nichts widerspricht dem Konzept):**
+  - `exports/dsfinvk/load.ts` joint aktuell aktiv gegen `"user"`
+    (`LEFT JOIN "user" u ON u.id = oi.user_id`), um `user_name` für den
+    DSFinV-K-Export zu ermitteln — nach der Umstellung direkt aus der
+    neuen Text-Snapshot-Spalte lesen, kein Join mehr nötig. Da DSFinV-K
+    ein GoBD-Exportformat ist, hier besonders sorgfältig prüfen, dass sich
+    am exportierten Inhalt nichts ändert, nur die Datenquelle.
+  - `routes/admin/reports.ts`s Storno-Report (`GET /cancellations`)
+    gruppiert aktuell `GROUP BY oi.cancelled_by, u.name` mit Live-Join —
+    muss auf die neue Text-Spalte umgestellt werden (Join entfällt, nur
+    noch nach der Text-Spalte gruppieren).
+  - `routes/admin/closings.ts` und `routes/admin/registers.ts` lesen
+    `created_by_name`/`user_name` bereits über einen Live-Join
+    (`LEFT JOIN "user" u ON ...`) — trivial umzustellen, einfach direkt
+    die neue Spalte lesen statt zu joinen.
+  - Schreib-Stellen (`routes/register-session.ts` — Anlage von
+    `order_item`/`service_order`/`order_cancellation`,
+    `routes/admin/cancellations.ts`, `routes/admin/closings.ts`,
+    `routes/admin/registers.ts` — Anlage von `cash_transaction`) haben den
+    Namen der handelnden Person bereits im Request verfügbar
+    (`request.registerUser.name`/`request.adminUser.name`), keine
+    zusätzliche Query nötig.
+  - TSE-Signaturprozess (`tse/processData.ts`) referenziert `user_id`
+    nirgends — keine fiskalische Signatur-Altlast zu beachten.
+  - Betroffene Felder sind in `@fairpos/shared`s Typen (`OrderItem`,
+    `CashTransaction`) bereits als `string | null` typisiert — keine
+    TypeScript-Typumbauten nötig, nur semantische Neuinterpretation
+    (bisher UUID, künftig Name).
+
+  **Migration:** neue Text-Spalten (`_name`-Suffix wie beim bestehenden
+  Muster, z. B. `order_item.user_name` statt `user_id`) neben den
+  bisherigen Fremdschlüsseln anlegen, bestehende Zeilen per
+  `UPDATE ... SET x_name = u.name FROM "user" u WHERE u.id = x.user_id`
+  befüllen, danach die alten Fremdschlüssel-Spalten entfernen.
+
+  **Korrektur einer eigenen früheren Annahme (2026-08-30):**
+  `user_register` und `session` räumen sich **nicht** von selbst auf —
+  abgelaufene Sessions werden nie automatisch gelöscht, nur per
+  Zeitstempel-Vergleich als ungültig behandelt (`auth/session.ts`,
+  `SESSION_INACTIVITY_INTERVAL`), die Zeile bleibt für immer stehen.
+  `DELETE /users/:id` muss also explizit `DELETE FROM session WHERE
+  user_id = $1` und `DELETE FROM user_register WHERE user_id = $1` vor dem
+  eigentlichen Löschen ausführen (in derselben Transaktion), sonst
+  blockiert eine längst abgelaufene Session die Löschung für immer.
+
+  **Geklärt (aus Task #94 übernommen):** ob Bedienungen stattdessen doch
+  innerhalb der Veranstaltung angelegt werden sollen (Alternative 1 aus
+  Task #94) ist damit vom Tisch — Alternative 2 (diese hier) wurde
+  umgesetzt, beide schlossen sich gegenseitig aus.
+
+  **Erledigt (2026-08-30):** Migration `0017_user_deletable.sql` fügt
+  `user_name`/`cancelled_by_name`/`created_by_name`-Textspalten zu
+  `order_item`, `daily_closing`, `cash_transaction`, `service_order`,
+  `order_cancellation` hinzu, befüllt sie aus den bisherigen
+  Fremdschlüsseln und entfernt diese danach. Alle Schreib-Stellen
+  (`register-session.ts`, `admin/cancellations.ts`, `admin/closings.ts`,
+  `admin/registers.ts`) schreiben jetzt direkt den Namen aus der Session
+  (`request.registerUser.name`/`request.adminUser.name`), keine
+  zusätzliche Query nötig. Alle Lese-Stellen mit Live-Join
+  (`admin/reports.ts`s Storno-Report, `admin/closings.ts`,
+  `admin/registers.ts`, `admin/exports.ts`, `exports/dsfinvk/load.ts`)
+  entsprechend umgestellt. `DELETE /api/admin/users/:id` löscht jetzt
+  vorher explizit `session`- und `user_register`-Zeilen des Benutzers in
+  derselben Transaktion, statt auf natürliches Aufräumen zu hoffen.
+
+  **Nebenbei mit erledigt:** Login (`auth/session.ts`,
+  `createSession()`) räumt jetzt bei jedem Anmeldevorgang abgelaufene
+  Sessions server-weit auf (`DELETE FROM session WHERE last_activity_at
+  <= now() - interval '4 hours'`) — vorher blieben abgelaufene Sessions für
+  immer als Zeile stehen, kein anderer Mechanismus hätte sie je entfernt.
+
+  **Bewusste Entscheidung zu DSFinV-K (GoBD-Export):** `BEDIENER_ID`
+  (`exports/dsfinvk/rows.ts`) bekommt ab jetzt immer `null` statt einer
+  UUID, da nach dieser Umstellung keine stabile ID mehr existiert, nur noch
+  ein Namens-Snapshot — bewusst nicht der Name in das ID-Feld dupliziert,
+  um das Feld nicht mit Namens-Inhalt zu verfälschen. `BEDIENER_NAME`
+  bleibt unverändert befüllt. Betrifft nur zukünftige Exporte ab dieser
+  Umstellung.
+
+  Backend-Unit- (298), Backend-Integrations- (221) und Frontend-Tests (70)
+  grün, beide Typechecks sauber.
+- [ ] **#98** Aktualität aller `docs/`-Dateien prüfen und nachziehen
+  Aufgekommen 2026-08-30 während der Umsetzung von Task #96/#97: der Nutzer
+  ist sich nicht sicher, ob die Dokumente unter `docs/` (siehe Liste
+  „Kerndokumente" in AGENTS.md) bei jedem erledigten Task konsequent
+  mitgepflegt wurden. Bekanntes Beispiel für bereits vorhandene Drift:
+  `docs/Datenmodell.dbml` fehlt komplett die `event`-Tabelle und hat
+  weitere Abweichungen zum echten Schema (siehe Task #91s Notiz in der
+  Versionsgeschichte dieser Datei). Zu prüfen: `Anforderungen.md`,
+  `Datenmodell.dbml`, `Dictionary.md`, `SETUP.md`,
+  `Installationsanleitung.md`, `TSE-Integration.md`,
+  `Rechtliche-Anforderungen.md`, `Organisatorische-Anleitung.md`,
+  `Manueller-Testplan.md` — jeweils gegen den aktuellen Code-/Feature-Stand
+  abgleichen und Lücken schließen.
+
+  **Bewusst zurückgestellt:** erst angehen, wenn alle aktuell geplanten
+  Refactorings (#94, #95, #96, #97) abgeschlossen sind — sonst müsste
+  dieselbe Doku-Prüfung später für die durch diese Tasks neu entstandenen
+  Änderungen wiederholt werden.
+- [ ] **#99** "Herunterfahren"-Funktion an prominentere Stelle verschieben
+  Aufgekommen 2026-08-30: die Herunterfahren-Funktion (Task #61,
+  `POST /api/admin/system/shutdown`) liegt aktuell unter Einstellungen →
+  System (`admin/settings/system/+page.svelte`), zusammen mit
+  Systemzeit/Zeitzone/IP-Lockout-Reset — für eine vergleichsweise häufig
+  gebrauchte Funktion (Veranstaltungsende) muss man sie dort erst suchen.
+
+  **Noch zu entscheiden (Nutzervorgabe: Ziel-Ort erst bei der Umsetzung
+  festlegen):** wohin genau — Kandidaten wären z. B. ein eigener Button im
+  Admin-Dashboard, ein permanent sichtbares Element in der Admin-Sidebar/
+  Kopfzeile, oder eine eigene Seite. Design/Platzierung vor der Umsetzung
+  klären.

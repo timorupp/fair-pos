@@ -147,13 +147,13 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
             `INSERT INTO order_item (
                invoice_id, register_id, article_id,
                article_name, article_category_name, tax_rate, price, deposit_price,
-               status, cancellation_reason_id, cancelled_by, cancelled_at
+               status, cancellation_reason_id, cancelled_by_name, cancelled_at
              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'paid', $9, $10, now())`,
             [
               invoiceId, register_id, article.id,
               displayName, article.category_name,
               article.tax_rate, article.price, article.deposit_price,
-              cancellation_reason_id, req.adminUser.id,
+              cancellation_reason_id, req.adminUser.name,
             ],
           );
         }

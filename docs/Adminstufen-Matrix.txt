@@ -1,0 +1,790 @@
+ADMINSTUFEN-MATRIX (Task #94)
+==============================================================================
+
+Vollstaendige Liste aller /api/admin/*-Routen (Stand 2026-08-30, aus dem
+Code extrahiert - jede Zeile entspricht einem tatsaechlichen
+Fastify-Route-Handler, keine Vermutung). Zweck: Grundlage, um jeder Route
+eine Adminstufe zuzuordnen, bevor Task #94 umgesetzt wird.
+
+Pro Route drei Zeilen:
+  ROUTE        - Methode + Pfad
+  Beschreibung - was die Route tut
+  Vorschlag    - meine Einschaetzung als Ausgangspunkt (siehe Legende)
+  Entscheidung - hier deine endgueltige Zuordnung eintragen. Leer lassen
+                 heisst "Vorschlag uebernehmen".
+
+Legende: S = System-Administrator
+         V = Veranstaltungs-Administrator
+         S+V = beide ausdruecklich
+         ?   = noch ungeklaert, brauche deine Einschaetzung
+
+==============================================================================
+USERS.TS (/api/admin/users) -- Benutzerverwaltung
+==============================================================================
+Benutzerverwaltung war urspruenglich explizit als global/S genannt
+(Task #94). Nutzerentscheidung (2026-08-30): V soll seine eigenen
+Bedienungen komplett selbst verwalten koennen.
+
+OFFENER PUNKT (siehe Task #94, bewusst nur dokumentiert, noch nicht
+final entschieden): geloescht werden koennen in der Praxis nur Benutzer,
+die noch nie etwas gebucht haben (DELETE schlaegt sonst mit 409 fehl,
+FK auf order_item/daily_closing). Alte Bedienungen bleiben nach
+Deaktivierung trotzdem in der Liste sichtbar - das Verleih-Datenschutzziel
+("alte Daten nicht offenlegen") ist damit fuer Benutzer noch nicht
+wirklich geloest. Zwei Loesungswege im Raum, keiner entschieden:
+(1) Benutzer werden doch Kind der Veranstaltung, oder
+(2) Buchungen speichern den Namen als Text-Snapshot statt FK-Referenz
+    (analog zu order_item.article_name), Benutzer waere dann frei loeschbar.
+
+ROUTE:        GET /
+Beschreibung: Benutzerliste
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /
+Beschreibung: Benutzer anlegen
+Vorschlag:    S
+Entscheidung: V, aber Sysadmin Rechte ändern darf nur S
+
+ROUTE:        PUT /:id
+Beschreibung: Benutzer bearbeiten (inkl. beide Admin-Checkboxen)
+Vorschlag:    S
+Entscheidung: V, ABER die Sysadmin-Checkbox selbst darf nur von S geaendert
+              werden (Feld-Ebene wie bei Settings) - sonst koennte sich ein
+              Veranstaltungs-Administrator hierueber selbst zum
+              System-Administrator machen (2026-08-30, beim Review gefunden)
+
+ROUTE:        DELETE /:id
+Beschreibung: Benutzer loeschen
+Vorschlag:    S
+Entscheidung: V, außer Benutzer mit Sysadmin Rechnte, diese darf nur S löschen
+
+ROUTE:        GET /:id/registers
+Beschreibung: Kassen-Zuordnung eines Benutzers abrufen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        PUT /:id/registers
+Beschreibung: Kassen-Zuordnung eines Benutzers setzen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /:id/pin/generate
+Beschreibung: Neue PIN generieren
+Vorschlag:    S
+Entscheidung: V, außer bei Sysadmin Benutzern, dort darf es nur der Sysadmin
+
+ROUTE:        PUT /:id/pin
+Beschreibung: PIN manuell setzen
+Vorschlag:    S
+Entscheidung: V, außer bei Sysadmin Benutzern, dort darf es nur der Sysadmin
+
+ROUTE:        POST /:id/pin/print
+Beschreibung: PIN-Zettel drucken
+Vorschlag:    S
+Entscheidung: Logik wie beim PIN setzen
+
+==============================================================================
+CATEGORIES.TS (/api/admin/categories) -- Artikelkategorien
+==============================================================================
+Offene Frage aus Task #95: bleibt global (Steuersaetze ueber
+Veranstaltungen hinweg wiederverwendbar) oder wird Kind der Veranstaltung?
+Beeinflusst direkt die Adminstufe hier.
+
+Begründung meiner Entscheidung: wird später ein Kind-Objekt der Veranstaltung, daher nicht mehr global
+
+ROUTE:        GET /
+Beschreibung: Kategorieliste
+Vorschlag:    ?
+Entscheidung: V
+
+ROUTE:        POST /
+Beschreibung: Kategorie anlegen
+Vorschlag:    ?
+Entscheidung: V
+
+ROUTE:        PUT /:id
+Beschreibung: Kategorie bearbeiten (inkl. Steuersatz)
+Vorschlag:    ?
+Entscheidung: V
+
+ROUTE:        DELETE /:id
+Beschreibung: Kategorie loeschen
+Vorschlag:    ?
+Entscheidung: V
+
+==============================================================================
+ARTICLES.TS (/api/admin/articles) -- Artikel
+==============================================================================
+Artikel sind explizit Kind der Veranstaltung (Task #95) - komplett V.
+
+ROUTE:        GET /
+Beschreibung: Artikelliste
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /
+Beschreibung: Artikel anlegen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        PUT /:id
+Beschreibung: Artikel bearbeiten
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        DELETE /:id
+Beschreibung: Artikel loeschen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /:id/options
+Beschreibung: Produktoptionen abrufen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /:id/options
+Beschreibung: Produktoption anlegen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        DELETE /:id/options/:optionId
+Beschreibung: Produktoption loeschen
+Vorschlag:    V
+Entscheidung: V
+
+==============================================================================
+PRINTERS.TS (/api/admin/printers) -- Drucker
+==============================================================================
+Drucker bleiben global im Datenmodell (Task #95, kein event_id) - das
+trifft aber keine Aussage zur Adminstufe (siehe Begriffsklaerung in
+Task #94), beide Achsen sind unabhaengig. Nutzerentscheidung: komplett V,
+da lokale Netzwerkeinrichtung (IP anpassen etc.) ohne anwesenden
+System-Administrator moeglich sein muss.
+
+ROUTE:        GET /
+Beschreibung: Druckerliste
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /
+Beschreibung: Drucker anlegen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        PUT /:id
+Beschreibung: Drucker bearbeiten (IP, Name, Port)
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /:id/set-default
+Beschreibung: Standarddrucker setzen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        DELETE /:id
+Beschreibung: Drucker loeschen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        GET /:id/status
+Beschreibung: Druckerstatus abfragen
+Vorschlag:    S+V ?
+Entscheidung: V
+
+ROUTE:        POST /:id/test-print
+Beschreibung: Testdruck ausloesen
+Vorschlag:    S+V ?
+Entscheidung: V
+
+==============================================================================
+REGISTERS.TS (/api/admin/registers) -- Kassen
+==============================================================================
+Kassen sind explizit Kind der Veranstaltung (Task #95) - komplett V.
+
+ROUTE:        GET /
+Beschreibung: Kassenliste
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /:id
+Beschreibung: Kasse abrufen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /
+Beschreibung: Kasse anlegen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        PUT /:id
+Beschreibung: Kasse bearbeiten
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        DELETE /:id
+Beschreibung: Kasse loeschen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /:id/transactions
+Beschreibung: Bargeld-Transaktionen (Einlage/Entnahme) abrufen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /:id/transactions
+Beschreibung: Bargeld-Transaktion anlegen
+Vorschlag:    V
+Entscheidung: V
+
+==============================================================================
+EVENTS.TS (/api/admin/events) -- Veranstaltungen
+==============================================================================
+Fehlt noch (Task #95 noch nicht umgesetzt): ein Endpoint zum Setzen der
+AKTIVEN Veranstaltung - laut deiner Vorgabe explizit S-exklusiv. Liste
+ansehen (GET /) evtl. auch fuer V sinnvoll, damit er weiss welche
+Veranstaltung aktiv ist? Anlegen/Bearbeiten/Loeschen tendenziell S, da eng
+mit der globalen Aktiv-Steuerung verknuepft - deine Einschaetzung?
+
+ROUTE:        GET /
+Beschreibung: Veranstaltungsliste
+Vorschlag:    S+V ?
+Entscheidung: S
+
+ROUTE:        POST /
+Beschreibung: Veranstaltung anlegen
+Vorschlag:    S
+Entscheidung: S
+
+ROUTE:        PUT /:id
+Beschreibung: Veranstaltung bearbeiten
+Vorschlag:    S
+Entscheidung: S
+
+ROUTE:        DELETE /:id
+Beschreibung: Veranstaltung loeschen
+Vorschlag:    S
+Entscheidung: S
+
+==============================================================================
+CANCELLATION-REASONS.TS (/api/admin/cancellation-reasons) -- Storno-Gruende
+==============================================================================
+Aehnlich gelagert wie Artikelkategorien - globale Taxonomie oder
+Event-Kind? Noch nicht diskutiert.
+
+Begründung meiner Entscheidung: wird später ein Kind-Objekt der Veranstaltung, daher nicht mehr global
+
+ROUTE:        GET /
+Beschreibung: Liste
+Vorschlag:    ?
+Entscheidung: V
+
+ROUTE:        POST /
+Beschreibung: Anlegen
+Vorschlag:    ?
+Entscheidung: V
+
+ROUTE:        PUT /:id
+Beschreibung: Bearbeiten
+Vorschlag:    ?
+Entscheidung: V
+
+ROUTE:        DELETE /:id
+Beschreibung: Loeschen
+Vorschlag:    ?
+Entscheidung: V
+
+==============================================================================
+SETTINGS.TS (/api/admin/settings) -- Systemeinstellungen
+==============================================================================
+Explizit global (Task #94) - komplett S.
+
+Hier müssen wir aufteilen. Die TSE kommt ggf. vom Veranstaltungsbetreiber und er muss sie ändern können. Aber der Rechnungszähler ist global, sonst erfüllen wir ggf. manche Vorgaben nicht
+
+ROUTE:        GET /
+Beschreibung: Einstellungen abrufen (Unternehmensdaten, TSE-Keys, Rechnungszaehler-Praefix etc.)
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        PUT /
+Beschreibung: Einstellungen speichern
+Vorschlag:    S
+Entscheidung: muss je Einstellung entschieden werden z.B. TSE Funktionen = V, Logo = V, Rechnungszähler = S
+
+ROUTE:        GET /receipt-preview
+Beschreibung: Bon-Vorschau rendern
+Vorschlag:    S
+Entscheidung: V
+
+==============================================================================
+LAYOUTS.TS (/api/admin/layouts) -- Kassenlayouts
+==============================================================================
+Kassenlayouts sind explizit Kind der Veranstaltung (Task #95) - komplett V.
+
+ROUTE:        GET /
+Beschreibung: Layoutliste
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /:id
+Beschreibung: Layout abrufen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /
+Beschreibung: Layout anlegen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        PUT /:id
+Beschreibung: Layout bearbeiten (Groesse, Name)
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        DELETE /:id
+Beschreibung: Layout loeschen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /:id/duplicate
+Beschreibung: Layout duplizieren
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        PUT /:id/slots
+Beschreibung: Artikel-Buttons/Belegung speichern
+Vorschlag:    V
+Entscheidung: V
+
+==============================================================================
+TABLES.TS (/api/admin/tables) -- Saalplan
+==============================================================================
+Saalplan ist explizit Kind der Veranstaltung (Task #95) - komplett V.
+Offene Frage aus Task #95: bleiben die Grid-Achsen (floor_plan_column /
+floor_plan_row) global oder auch event-gebunden? Falls global, waeren
+/columns, /rows und deren DELETE-Varianten eher S.
+
+ROUTE:        GET /
+Beschreibung: Saalplan abrufen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /generate
+Beschreibung: Grid neu generieren (Spalten x Zeilen)
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        PUT /reorder
+Beschreibung: Reihenfolge von Spalten/Zeilen aendern
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        PUT /:id
+Beschreibung: Tisch umbenennen / Status aendern
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        DELETE /:id
+Beschreibung: Tisch loeschen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /columns
+Beschreibung: Spalte anlegen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /rows
+Beschreibung: Zeile anlegen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        DELETE /columns/:label
+Beschreibung: Spalte loeschen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        DELETE /rows/:label
+Beschreibung: Zeile loeschen
+Vorschlag:    V
+Entscheidung: V
+
+==============================================================================
+SYSTEM.TS (/api/admin/system) -- Systemsteuerung
+==============================================================================
+Systemebene, urspruenglich als komplett S vorgeschlagen. Nutzerentscheidung
+(2026-08-30, bestaetigt nach Rueckfrage): bewusst komplett V - ein sauberer
+Shutdown muss ohne anwesenden System-Administrator moeglich sein; Systemzeit/
+Zeitzone werden fuer den Betrieb bzw. die TSE-Anmeldung waehrend der
+Veranstaltung gebraucht; IP-Lockout-Reset dient dem laufenden Betrieb.
+
+ROUTE:        GET /status
+Beschreibung: Systemstatus (Serial, Zeitzone, Serverzeit, IP-Lockouts)
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /reset-ip-lockouts
+Beschreibung: IP-Sperren zuruecksetzen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        PUT /time
+Beschreibung: Systemzeit setzen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        PUT /timezone
+Beschreibung: Zeitzone setzen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /shutdown
+Beschreibung: Server herunterfahren
+Vorschlag:    S
+Entscheidung: V
+
+==============================================================================
+REPORTS.TS (/api/admin/reports) -- Auswertungen
+==============================================================================
+Reine Leserechte auf Geschaeftsdaten der (impliziten oder per event_id
+uebergebenen) Veranstaltung - passt gut zu V. tse-outages ist eher
+technische TSE-Diagnostik, tendenziell S - deine Einschaetzung?
+
+ROUTE:        GET /events
+Beschreibung: Veranstaltungsliste fuer Auswahl-Dropdown
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /open-positions
+Beschreibung: Offene Rechnungen (optional event_id-gefiltert)
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /invoices
+Beschreibung: Rechnungsliste (optional event_id-gefiltert)
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /cash-balance
+Beschreibung: Kassensturz (optional event_id-gefiltert)
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /today-revenue
+Beschreibung: Tagesumsatz
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /cancellations
+Beschreibung: Stornoliste (optional event_id-gefiltert)
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /tse-outages
+Beschreibung: TSE-Ausfallzeiten
+Vorschlag:    S ?
+Entscheidung: V
+
+==============================================================================
+CLOSINGS.TS (/api/admin, kein eigener Prefix) -- Z-Bons (Tagesabschluesse)
+==============================================================================
+Operativer Ablauf waehrend/nach der Veranstaltung - V. Die
+Z-Bon-Nummerierung selbst bleibt unabhaengig davon technisch pro Kasse
+lueckenlos (siehe Task #95), das betrifft nur die Berechtigung hier.
+
+ROUTE:        POST /registers/:id/closings
+Beschreibung: Z-Bon fuer eine Kasse erstellen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /registers/:id/closings
+Beschreibung: Z-Bon-Liste einer Kasse
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /closings/close-all
+Beschreibung: Alle offenen Kassen auf einmal abschliessen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /closings/pending
+Beschreibung: Ausstehende Abschluesse anzeigen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /registers/:id/close-pending
+Beschreibung: Ausstehenden Abschluss einer Kasse nachholen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /closings/:id/pdf
+Beschreibung: Z-Bon-PDF abrufen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /closings/:id/reprint
+Beschreibung: Z-Bon erneut drucken
+Vorschlag:    V
+Entscheidung: V
+
+==============================================================================
+EXPORTS.TS (/api/admin/exports) -- Excel/DSFinV-K/Rechnungs-ZIP
+==============================================================================
+Veranstaltungsbezogene Exporte passen zu V. Die tagesbasierten Exporte
+(/day) sind nicht an eine Veranstaltung gebunden - Nutzerentscheidung:
+V, aber die zugrundeliegenden Queries muessen dafuer zusaetzlich nach der
+aktiven Veranstaltung filtern (nicht nur nach Kalendertag) - das ist erst
+mit dem Event-Scoping aus Task #95 moeglich, nicht mit Task #94 allein.
+
+ROUTE:        GET /excel/event
+Beschreibung: Excel-Export fuer eine Veranstaltung
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /excel/day
+Beschreibung: Excel-Export fuer einen Kalendertag
+Vorschlag:    S ?
+Entscheidung: V, aber muss gefiltert sein auf die Veranstaltung
+
+ROUTE:        GET /dsfinvk/:closingId
+Beschreibung: DSFinV-K-Export fuer einen Tagesabschluss
+Vorschlag:    S ?
+Entscheidung: V, aber muss gefiltert sein auf die Veranstaltung
+
+ROUTE:        GET /invoices/day
+Beschreibung: Rechnungs-ZIP fuer einen Kalendertag
+Vorschlag:    S ?
+Entscheidung: V, aber muss gefiltert sein auf die Veranstaltung
+
+ROUTE:        GET /invoices/event
+Beschreibung: Rechnungs-ZIP fuer eine Veranstaltung
+Vorschlag:    V
+Entscheidung: V, aber muss gefiltert sein auf die Veranstaltung
+
+==============================================================================
+INVOICES.TS (/api/admin/invoices) -- Einzelrechnungen
+==============================================================================
+
+ROUTE:        POST /:id/reprint
+Beschreibung: Rechnung erneut drucken
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /:id/pdf
+Beschreibung: Rechnungs-PDF abrufen
+Vorschlag:    V
+Entscheidung: V
+
+==============================================================================
+CANCELLATIONS.TS (/api/admin/cancellations) -- Bonstorno
+==============================================================================
+
+ROUTE:        POST /
+Beschreibung: Eigenstaendige Storno-Rechnung anlegen
+Vorschlag:    V
+Entscheidung: V
+
+==============================================================================
+LOGO.TS (/api/admin/logo) -- Firmenlogo
+==============================================================================
+Noch nicht eingeordnet: in Task #94/#95 nicht explizit erwaehnt. Fuer den
+Verleih-Fall spricht einiges fuer V (der jeweils mietende Verein will
+vermutlich sein eigenes Logo auf den Bons haben, unabhaengig vom
+System-Administrator) - deine Einschaetzung?
+
+ROUTE:        POST /
+Beschreibung: Logo hochladen
+Vorschlag:    ?
+Entscheidung: V
+
+ROUTE:        DELETE /
+Beschreibung: Logo entfernen
+Vorschlag:    ?
+Entscheidung: V
+
+ROUTE:        GET /preview.png
+Beschreibung: Logo-Vorschau
+Vorschlag:    ?
+Entscheidung: V
+
+==============================================================================
+QR.TS (/api/admin/qr.png)
+==============================================================================
+
+ROUTE:        GET /qr.png
+Beschreibung: Beliebigen QR-Code rendern (Hilfsendpoint)
+Vorschlag:    S+V
+Entscheidung: V
+
+==============================================================================
+PRINT-JOBS.TS (/api/admin/print-jobs) -- Druckwarteschlange
+==============================================================================
+
+ROUTE:        GET /
+Beschreibung: Druckauftragsliste (nach Status filterbar)
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        DELETE /:id
+Beschreibung: Druckauftrag loeschen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        POST /:id/retry
+Beschreibung: Druckauftrag erneut versuchen
+Vorschlag:    V
+Entscheidung: V
+
+ROUTE:        GET /:id/pdf
+Beschreibung: Zugehoeriges PDF abrufen
+Vorschlag:    V
+Entscheidung: V
+
+==============================================================================
+TSE.TS (/api/admin/tse) -- Fiskal-TSE
+==============================================================================
+Hardware-/Fiskal-Konfiguration ist global (ein TSE-Geraet gehoert zum
+Server, nicht zur Veranstaltung) - S. status rein lesend koennte auch fuer
+V sinnvoll sein (er muss wissen, ob die Kasse waehrend seiner
+Veranstaltung fiskal funktionsfaehig ist) - deine Einschaetzung?
+
+ROUTE:        GET /status
+Beschreibung: TSE-Status abrufen
+Vorschlag:    S+V ?
+Entscheidung: V
+
+ROUTE:        GET /candidates
+Beschreibung: Moegliche TSE-Mountpoints auflisten
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /detect
+Beschreibung: TSE automatisch erkennen (Mountpoint/Client-ID setzen)
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /maintain
+Beschreibung: TSE-Wartungsvorgang (Selbsttest/Zeit-Sync) ausloesen
+Vorschlag:    S
+Entscheidung: V
+
+==============================================================================
+BACKUP.TS (/api/admin/backup) -- Datenbank-Backup
+==============================================================================
+SICHERHEITSKRITISCH fuer den Verleih-Fall: ein Backup enthaelt
+ausnahmslos ALLE Veranstaltungen/Vereine, die je auf diesem Server liefen
+- genau die Art Altdaten-Offenlegung, die Task #94/#95 verhindern soll.
+Unbedingt S-exklusiv, kein Diskussionsbedarf.
+
+ROUTE:        GET /
+Beschreibung: Vollstaendigen DB-Dump herunterladen
+Vorschlag:    S
+Entscheidung: S
+
+==============================================================================
+LOGS.TS (/api/admin/logs) -- Systemprotokoll
+==============================================================================
+Technische Diagnostik, potenziell auch Eintraege aus fremden
+Veranstaltungen sichtbar - S.
+
+ROUTE:        GET /
+Beschreibung: Log-Eintraege (nach Schweregrad/Kategorie filterbar)
+Vorschlag:    S
+Entscheidung: S
+
+ROUTE:        GET /categories
+Beschreibung: Verfuegbare Log-Kategorien
+Vorschlag:    S
+Entscheidung: S
+
+==============================================================================
+SESSIONS.TS (/api/admin/sessions) -- Aktive Sessions
+==============================================================================
+Sicherheitsrelevant, S.
+
+ROUTE:        GET /
+Beschreibung: Aktive Sessions auflisten
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        DELETE /:id
+Beschreibung: Session beenden
+Vorschlag:    S
+Entscheidung: V
+
+==============================================================================
+TLSCERT.TS (/api/admin/tls-cert) -- SSL-Zertifikat
+==============================================================================
+Urspruenglich als das Paradebeispiel fuer S-exklusiv genannt (Task #94).
+Nutzerentscheidung (2026-08-30, bestaetigt nach Rueckfrage trotz des
+Widerspruchs zum urspruenglichen Beispiel): bewusst V - kann nicht viel
+kaputt machen (Rollback bei ungueltigem Zertifikat existiert bereits, siehe
+system/tlsCert.ts) und zeigt keine Veranstaltungsdaten.
+
+ROUTE:        GET /
+Beschreibung: Installiertes Zertifikat anzeigen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /
+Beschreibung: Neues Zertifikat hochladen
+Vorschlag:    S
+Entscheidung: V
+
+==============================================================================
+HEALTHCHECKS.TS (/api/admin/health-checks) -- Health-Check
+==============================================================================
+Server-Hardware-Diagnostik, S.
+
+Wir machen das doch als V ... kann ja nicht viel kaputt machen und sieht keine Veranstaltungsdaten
+
+ROUTE:        GET /
+Beschreibung: Alle Health-Checks ausfuehren (Diskspace, DB, SMART, SSD-Wear)
+Vorschlag:    S
+Entscheidung: V
+
+==============================================================================
+DNSCONFIG.TS (/api/admin/dns-config) -- DNS-Masquerading
+==============================================================================
+Explizit als Beispiel fuer S-exklusiv genannt (Task #94) - kein
+Diskussionsbedarf.
+
+Wir machen das doch als V ... kann ja nicht viel kaputt machen und sieht keine Veranstaltungsdaten
+
+ROUTE:        GET /
+Beschreibung: Aktuelle DNS-Einstellungen abrufen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /
+Beschreibung: DNS-Einstellungen speichern + anwenden
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        DELETE /
+Beschreibung: DNS-Konfiguration deaktivieren
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /detect-ip
+Beschreibung: Eigene IP automatisch erkennen
+Vorschlag:    S
+Entscheidung: V
+
+ROUTE:        POST /test
+Beschreibung: Aufloesung testen
+Vorschlag:    S
+Entscheidung: V
+
+==============================================================================
+OFFENE META-FRAGE
+==============================================================================
+Erbt V automatisch alles, was fuer S gilt (also: jede Route, die nicht
+explizit fuer V freigegeben ist, bleibt S-only), oder soll es Routen
+geben, die NUR V und NICHT S sieht (z.B. weil ein System-Administrator gar
+keinen Zugriff auf veranstaltungsspezifische Geschaeftsdaten anderer
+Vereine haben soll)? Fuer die obige Liste bin ich von "S kann technisch
+alles, V nur seine Teilmenge" ausgegangen - falls das nicht stimmt, aendert
+das den Vorschlag an mehreren Stellen.
+=> S erbt alles von V. daher habe ich nirgends S+V angegeben.
+=> Bestaetigt (2026-08-30): S kann alles, was V kann, plus mehr (S ⊇ V).

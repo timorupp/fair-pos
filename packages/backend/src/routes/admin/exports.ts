@@ -53,7 +53,7 @@ async function loadExportSource(from: string, to: string): Promise<ExportSourceR
            i.receipt_number::text AS receipt_number,
            i.created_at           AS invoice_created_at,
            t.name                 AS table_name,
-           u.name                 AS ordering_user_name,
+           oi.user_name           AS ordering_user_name,
            r.name                 AS register_name,
            oi.article_name,
            oi.options,
@@ -64,7 +64,6 @@ async function loadExportSource(from: string, to: string): Promise<ExportSourceR
       JOIN order_item oi ON oi.invoice_id = i.id
       JOIN register r ON r.id = i.register_id
       LEFT JOIN dining_table t ON t.id = oi.dining_table_id
-      LEFT JOIN "user" u ON u.id = oi.user_id
      WHERE i.created_at >= $1 AND i.created_at < $2
        AND i.receipt_type = 'sales_receipt'
        AND oi.status IN ('paid', 'free')

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { query } from '../../db/client.js';
+import { query, withTransaction } from '../../db/client.js';
 import { hashPassword } from '../../auth/password.js';
 import { formatPinForDisplay, generateRandomPin, hashPin, isValidPinFormat, normalizePin } from '../../auth/pin.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
@@ -151,14 +151,13 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
   /**
    * DELETE /api/admin/users/:id — delete a user. Prevents self-deletion.
    *
-   * Succeeds (hard delete) only if the user has no fiscal/history references
-   * (`user_register`, `session`, `daily_closing.created_by`,
-   * `order_item.user_id`/`cancelled_by`, `cash_transaction.user_id`,
-   * `service_order.user_id`, `order_cancellation.cancelled_by`) — those are
-   * FK-RESTRICT by design (Task #56). Once any exist, Postgres blocks the
-   * delete with 23503; deactivate the user via `PUT .../:id { is_active: false }`
-   * instead. A currently logged-in user (open `session` row) therefore can't
-   * be deleted until they log out or the session expires.
+   * Task #97: historical/fiscal tables (`daily_closing`, `order_item`,
+   * `cash_transaction`, `service_order`, `order_cancellation`) no longer hold
+   * a foreign key to `user` — they keep a text name-snapshot instead, so a
+   * user can be deleted without losing that history. Only `user_register`
+   * (register assignments) and `session` (active logins) still reference the
+   * user directly, and both are pure operational data with no audit value —
+   * cleared explicitly here rather than requiring a logout first.
    */
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -167,21 +166,13 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'Du kannst deinen eigenen Benutzer nicht löschen' });
     }
 
-    try {
-      const result = await query(
-        'DELETE FROM "user" WHERE id = $1 RETURNING id',
-        [id],
-      );
-      if (result.rowCount === 0) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
-      return reply.status(204).send();
-    } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23503') {
-        return reply.status(409).send({
-          error: 'Benutzer wurde bereits verwendet und kann nicht gelöscht werden — stattdessen deaktivieren',
-        });
-      }
-      throw e;
-    }
+    const result = await withTransaction(async (client) => {
+      await client.query('DELETE FROM session WHERE user_id = $1', [id]);
+      await client.query('DELETE FROM user_register WHERE user_id = $1', [id]);
+      return client.query('DELETE FROM "user" WHERE id = $1 RETURNING id', [id]);
+    });
+    if (result.rowCount === 0) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+    return reply.status(204).send();
   });
 
   /** GET /api/admin/users/:id/registers — list registers assigned to a user. */

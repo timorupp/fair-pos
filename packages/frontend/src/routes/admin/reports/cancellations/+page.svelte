@@ -7,7 +7,7 @@
   import { api } from '$lib/api';
   import EventSelector from '$lib/components/EventSelector.svelte';
 
-  type SummaryRow = { user_id: string | null; user_name: string; count: number; total: number };
+  type SummaryRow = { user_name: string; count: number; total: number };
   type ItemRow = {
     id: string; cancelled_at: string | null; created_at: string;
     user_name: string; table_name: string;
@@ -59,7 +59,7 @@
       entry.total += it.line_gross;
       by.set(key, entry);
     }
-    return [...by.values()].sort((a, b) => b.total - a.total).map((r) => ({ user_id: null, ...r }));
+    return [...by.values()].sort((a, b) => b.total - a.total);
   })());
 
   let userOptions = $derived(['all', ...new Set(items.map((it) => it.user_name))]);

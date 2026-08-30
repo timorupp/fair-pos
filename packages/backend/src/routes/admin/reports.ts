@@ -286,7 +286,7 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
 
     const items = await query<{
       id: string; cancelled_at: Date | null; created_at: Date;
-      user_id: string | null; user_name: string | null;
+      cancelled_by_name: string | null;
       table_name: string | null;
       article_name: string; options: string | null;
       price: string; deposit_price: string | null;
@@ -295,8 +295,7 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
       SELECT oi.id,
              oi.cancelled_at,
              oi.created_at,
-             oi.cancelled_by AS user_id,
-             u.name          AS user_name,
+             oi.cancelled_by_name,
              t.name          AS table_name,
              oi.article_name,
              oi.options,
@@ -305,7 +304,6 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
              cr.name         AS reason_name,
              cr.booking_type AS booking_type
         FROM order_item oi
-        LEFT JOIN "user" u ON u.id = oi.cancelled_by
         LEFT JOIN dining_table t ON t.id = oi.dining_table_id
         LEFT JOIN cancellation_reason cr ON cr.id = oi.cancellation_reason_id
        WHERE oi.status IN ('cancelled', 'free')
@@ -313,30 +311,28 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
        ORDER BY oi.cancelled_at DESC
     `, [ev.start, ev.end]);
 
-    const summary = await query<{ user_id: string | null; user_name: string | null; count: string; total: string }>(`
-      SELECT oi.cancelled_by AS user_id,
-             u.name          AS user_name,
+    const summary = await query<{ cancelled_by_name: string | null; count: string; total: string }>(`
+      SELECT oi.cancelled_by_name,
              COUNT(*)::text  AS count,
              COALESCE(SUM(oi.price + COALESCE(oi.deposit_price, 0)), 0)::text AS total
         FROM order_item oi
-        LEFT JOIN "user" u ON u.id = oi.cancelled_by
        WHERE oi.status IN ('cancelled', 'free')
          AND oi.cancelled_at >= $1 AND oi.cancelled_at < $2
-       GROUP BY oi.cancelled_by, u.name
+       GROUP BY oi.cancelled_by_name
        ORDER BY total DESC
     `, [ev.start, ev.end]);
 
     return reply.send({
       event: { id: ev.id, start: ev.start, end: ev.end },
       summary: summary.rows.map((r) => ({
-        user_id: r.user_id, user_name: r.user_name ?? '(unbekannt)',
+        user_name: r.cancelled_by_name ?? '(unbekannt)',
         count: Number(r.count), total: Number(r.total),
       })),
       items: items.rows.map((r) => ({
         id: r.id,
         cancelled_at: r.cancelled_at?.toISOString() ?? null,
         created_at: r.created_at.toISOString(),
-        user_name: r.user_name ?? '(unbekannt)',
+        user_name: r.cancelled_by_name ?? '(unbekannt)',
         table_name: r.table_name ?? '(ohne Tisch)',
         article_name: r.article_name,
         options: r.options,

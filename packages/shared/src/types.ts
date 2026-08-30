@@ -108,7 +108,8 @@ export interface OrderItem {
   invoice_id: string | null;
   dining_table_id: string | null;
   register_id: string;
-  user_id: string | null;
+  /** Name of the user who booked the item, snapshotted at booking time (Task #97) — not a live reference, survives user deletion. */
+  user_name: string | null;
   article_id: string | null;
   article_name: string;
   article_category_name: string;
@@ -118,7 +119,8 @@ export interface OrderItem {
   options: string | null;
   status: OrderItemStatus;
   cancellation_reason_id: string | null;
-  cancelled_by: string | null;
+  /** Name of the user who cancelled the item, snapshotted at cancellation time (Task #97). */
+  cancelled_by_name: string | null;
   created_at: string;
   cancelled_at: string | null;
 }
@@ -149,7 +151,8 @@ export interface DailyClosing {
   register_id: string;
   z_number: number;
   created_at: string;
-  created_by: string | null;
+  /** Name of the user who created the closing, snapshotted at creation time (Task #97) — not a live reference, survives user deletion. */
+  created_by_name: string | null;
   is_zero_closing: boolean;
   total_gross: number;
   total_tax_standard: number;
@@ -204,7 +207,7 @@ export interface Event {
 export interface CashTransaction {
   id: string;
   register_id: string;
-  user_id: string | null;
+  /** Name of the user who booked the transaction, snapshotted at booking time (Task #97) — not a live reference, survives user deletion. */
   user_name: string | null;
   type: 'deposit' | 'withdrawal';
   amount: number;

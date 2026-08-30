@@ -8,7 +8,7 @@
   import { api } from '$lib/api';
 
   type JobRow = {
-    id: string; printer_id: string; printer_name: string;
+    id: string; printer_id: string | null; printer_name: string;
     type: string; status: string; attempts: number;
     reference_id: string | null;
     created_at: string; last_attempt_at: string | null;

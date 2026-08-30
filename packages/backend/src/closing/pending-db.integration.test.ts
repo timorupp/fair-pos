@@ -10,17 +10,12 @@ import { pool } from '../db/client.js';
 import { truncateAllTables } from '../test/db-fixture.js';
 import { findPendingDaysForRegister } from './pending-db.js';
 
-let userId: string;
 let registerId: string;
 let printerId: string;
 
 beforeEach(async () => {
   await truncateAllTables();
-  // Seed minimal fixtures: one user, one printer, one register.
-  const userResult = await pool.query<{ id: string }>(
-    `INSERT INTO "user" (name, password_hash, is_admin) VALUES ('admin', 'x', true) RETURNING id`,
-  );
-  userId = userResult.rows[0]!.id;
+  // Seed minimal fixtures: one printer, one register.
   const printerResult = await pool.query<{ id: string }>(
     `INSERT INTO printer (name, ip_address) VALUES ('p', '127.0.0.1') RETURNING id`,
   );
@@ -59,11 +54,11 @@ async function insertInvoice(createdAt: string): Promise<string> {
 async function insertClosing(createdAt: string, zNumber: number): Promise<void> {
   await pool.query(
     `INSERT INTO daily_closing (
-       register_id, z_number, created_at, business_date, created_by, is_zero_closing,
+       register_id, z_number, created_at, business_date, created_by_name, is_zero_closing,
        total_gross, total_tax_standard, total_tax_reduced, total_tax_zero,
        total_cash, total_cancellations
      ) VALUES ($1, $2, $3::timestamptz, $4::date, $5, true, 0, 0, 0, 0, 0, 0)`,
-    [registerId, zNumber, createdAt, createdAt.split(' ')[0], userId],
+    [registerId, zNumber, createdAt, createdAt.split(' ')[0], 'admin'],
   );
 }
 

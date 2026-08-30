@@ -130,10 +130,9 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
   app.get('/:id/transactions', async (req, reply) => {
     const { id } = req.params as { id: string };
     const result = await query(`
-      SELECT ct.id, ct.register_id, ct.user_id, u.name AS user_name,
+      SELECT ct.id, ct.register_id, ct.user_name,
              ct.type, ct.amount, ct.note, ct.created_at
       FROM cash_transaction ct
-      LEFT JOIN "user" u ON u.id = ct.user_id
       WHERE ct.register_id = $1
       ORDER BY ct.created_at DESC
     `, [id]);
@@ -159,10 +158,10 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
     if (regCheck.rows.length === 0) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
 
     const result = await query(
-      `INSERT INTO cash_transaction (register_id, user_id, type, amount, note)
+      `INSERT INTO cash_transaction (register_id, user_name, type, amount, note)
        VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, register_id, user_id, type, amount, note, created_at`,
-      [id, req.adminUser.id, body.type, body.amount, body.note ?? null],
+       RETURNING id, register_id, user_name, type, amount, note, created_at`,
+      [id, req.adminUser.name, body.type, body.amount, body.note ?? null],
     );
     return reply.status(201).send(result.rows[0]);
   });

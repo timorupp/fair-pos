@@ -536,7 +536,7 @@ export const api = {
       /** Cancelled and free-of-charge items in the event, with per-user summary. */
       cancellations: (eventId?: string): Promise<{
         event: { id: string; start: string; end: string } | null;
-        summary: { user_id: string | null; user_name: string; count: number; total: number }[];
+        summary: { user_name: string; count: number; total: number }[];
         items: {
           id: string; cancelled_at: string | null; created_at: string;
           user_name: string; table_name: string;

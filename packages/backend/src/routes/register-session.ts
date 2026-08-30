@@ -311,12 +311,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           for (let i = 0; i < pos.quantity; i++) {
             await client.query(
               `INSERT INTO order_item (
-                 invoice_id, register_id, user_id, article_id,
+                 invoice_id, register_id, user_name, article_id,
                  article_name, article_category_name, tax_rate, price, deposit_price,
                  status
                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'paid')`,
               [
-                invoiceId, registerId, req.registerUser.id, article.id,
+                invoiceId, registerId, req.registerUser.name, article.id,
                 displayName, article.category_name,
                 article.tax_rate, article.price, article.deposit_price,
               ],
@@ -663,14 +663,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // call reference the same service_order.
       const soResult = await client.query<{ id: string }>(
         `INSERT INTO service_order (
-           register_id, dining_table_id, user_id,
+           register_id, dining_table_id, user_name,
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number
          )
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
         [
-          registerId, tableId, req.registerUser.id,
+          registerId, tableId, req.registerUser.name,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
         ],
@@ -683,12 +683,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         for (let i = 0; i < pos.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (
-               service_order_id, dining_table_id, register_id, user_id, article_id,
+               service_order_id, dining_table_id, register_id, user_name, article_id,
                article_name, article_category_name, tax_rate, price, deposit_price,
                options, status
              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'open')`,
             [
-              serviceOrderId, tableId, registerId, req.registerUser.id, article.id,
+              serviceOrderId, tableId, registerId, req.registerUser.name, article.id,
               article.name, article.category_name,
               article.tax_rate, article.price, article.deposit_price,
               options,
@@ -958,14 +958,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // by this call reference the same cancellation.
       const cancellationResult = await client.query<{ id: string }>(
         `INSERT INTO order_cancellation (
-           register_id, cancellation_reason_id, cancelled_by,
+           register_id, cancellation_reason_id, cancelled_by_name,
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number
          )
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
         [
-          registerId, cancellation_reason_id, req.registerUser.id,
+          registerId, cancellation_reason_id, req.registerUser.name,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
         ],
@@ -976,11 +976,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         `UPDATE order_item
             SET status = $1,
                 cancellation_reason_id = $2,
-                cancelled_by = $3,
+                cancelled_by_name = $3,
                 cancelled_at = now(),
                 order_cancellation_id = $5
           WHERE id = ANY($4)`,
-        [nextStatus, cancellation_reason_id, req.registerUser.id, ids, cancellationId],
+        [nextStatus, cancellation_reason_id, req.registerUser.name, ids, cancellationId],
       );
 
       return { items_cancelled: ids.length, booking_type: reason.booking_type };

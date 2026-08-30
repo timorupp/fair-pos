@@ -130,14 +130,14 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     // Two order_items on the same invoice, placed by two different waiters
     // (as if from two separate order rounds), then both checked out together.
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, user_id, article_id, article_name, article_category_name, tax_rate, price, status, created_at)
+      `INSERT INTO order_item (invoice_id, register_id, user_name, article_id, article_name, article_category_name, tax_rate, price, status, created_at)
        VALUES ($1, $2, $3, $4, 'Bier', 'Getränke', 19, 5, 'paid', now() - interval '10 minutes')`,
-      [invoiceId, register.id, waiterA.id, article.id],
+      [invoiceId, register.id, waiterA.name, article.id],
     );
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, user_id, article_id, article_name, article_category_name, tax_rate, price, status, created_at)
+      `INSERT INTO order_item (invoice_id, register_id, user_name, article_id, article_name, article_category_name, tax_rate, price, status, created_at)
        VALUES ($1, $2, $3, $4, 'Bier', 'Getränke', 19, 5, 'paid', now())`,
-      [invoiceId, register.id, waiterB.id, article.id],
+      [invoiceId, register.id, waiterB.name, article.id],
     );
 
     const app = await getTestApp();

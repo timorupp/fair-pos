@@ -11,7 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
 import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
-import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
+import { closeTestApp, getTestApp, loginAsAdmin, loginAsRegisterUser } from '../../test/app-helpers.js';
 import {
   createTestArticle, createTestCategory, createTestPrinter, createTestRegister,
   createTestUser, seedReceiptCounter, setSystemSetting,
@@ -170,24 +170,42 @@ describe('Admin users', () => {
     expect(response.statusCode).toBe(204);
   });
 
-  it('returns 409 with a clear message instead of a raw 500 when the user has a cash transaction, and keeps the user (Task #56)', async () => {
+  it('deletes a user who has a cash transaction, keeping the name as a text snapshot (Task #97)', async () => {
     const app = await getTestApp();
-    const cashier = await createTestUser({ isAdmin: false });
+    const cashier = await createTestUser({ isAdmin: false, name: 'Kassier-Historie' });
     const register = await createTestRegister();
     await pool.query(
-      `INSERT INTO cash_transaction (register_id, user_id, type, amount) VALUES ($1, $2, 'deposit', 10)`,
-      [register.id, cashier.id],
+      `INSERT INTO cash_transaction (register_id, user_name, type, amount) VALUES ($1, $2, 'deposit', 10)`,
+      [register.id, cashier.name],
     );
 
     const response = await app.inject({
       method: 'DELETE', url: `/api/admin/users/${cashier.id}`,
       headers: { cookie: adminCookie },
     });
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error).toMatch(/deaktivieren/);
+    expect(response.statusCode).toBe(204);
 
-    const stillThere = await pool.query('SELECT id FROM "user" WHERE id = $1', [cashier.id]);
-    expect(stillThere.rowCount).toBe(1);
+    const gone = await pool.query('SELECT id FROM "user" WHERE id = $1', [cashier.id]);
+    expect(gone.rowCount).toBe(0);
+    const transaction = await pool.query<{ user_name: string }>(
+      'SELECT user_name FROM cash_transaction WHERE register_id = $1', [register.id],
+    );
+    expect(transaction.rows[0]!.user_name).toBe('Kassier-Historie');
+  });
+
+  it('deletes a user with an active session, clearing it first instead of blocking (Task #97)', async () => {
+    const app = await getTestApp();
+    const operator = await createTestUser({ isAdmin: false });
+    await loginAsRegisterUser(app, operator.pin);
+
+    const response = await app.inject({
+      method: 'DELETE', url: `/api/admin/users/${operator.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(204);
+
+    const session = await pool.query('SELECT id FROM session WHERE user_id = $1', [operator.id]);
+    expect(session.rowCount).toBe(0);
   });
 
   it('refuses to deactivate the currently logged-in admin (Task #56)', async () => {

@@ -47,11 +47,12 @@ interface CloseResult {
  * loop) is expected to gate this.
  *
  * @param registerId - The register to close.
- * @param userId - The administrator performing the closing.
+ * @param userName - Name of the administrator performing the closing, stored
+ *   as a text snapshot (Task #97) rather than a foreign key.
  * @param date - Optional `YYYY-MM-DD` string scoping the closing to one day.
  * @returns Details about the created closing including the enqueued print job id.
  */
-async function closeRegister(registerId: string, userId: string, date?: string): Promise<CloseResult> {
+async function closeRegister(registerId: string, userName: string, date?: string): Promise<CloseResult> {
   return withTransaction(async (client) => {
     // Serialise per-register Z-number issuance with an advisory lock based on the register UUID hash.
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [registerId]);
@@ -137,14 +138,14 @@ async function closeRegister(registerId: string, userId: string, date?: string):
     // it falls back to the database `current_date`, set via DEFAULT.
     const closingInsert = await client.query<{ id: string }>(
       `INSERT INTO daily_closing (
-         register_id, z_number, created_by, is_zero_closing,
+         register_id, z_number, created_by_name, is_zero_closing,
          total_gross, total_tax_standard, total_tax_reduced, total_tax_zero,
          total_cash, total_cancellations,
          business_date
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::date, current_date))
        RETURNING id`,
       [
-        registerId, nextZ, userId, totals.is_zero_closing,
+        registerId, nextZ, userName, totals.is_zero_closing,
         totals.total_gross, totals.total_tax_standard, totals.total_tax_reduced, totals.total_tax_zero,
         totals.total_cash, totals.total_cancellations,
         date ?? null,
@@ -212,7 +213,7 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string } }>('/registers/:id/closings', async (req, reply) => {
     const { id } = req.params;
     try {
-      const result = await closeRegister(id, req.adminUser.id);
+      const result = await closeRegister(id, req.adminUser.name);
       return reply.send(result);
     } catch (err) {
       const e = err as Error & { httpStatus?: number };
@@ -237,9 +238,8 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
               c.created_at, to_char(c.business_date, 'YYYY-MM-DD') AS business_date,
               c.is_zero_closing,
               c.total_gross::text, c.total_cash::text, c.total_cancellations::text,
-              u.name AS created_by_name
+              c.created_by_name
          FROM daily_closing c
-         LEFT JOIN "user" u ON u.id = c.created_by
         WHERE c.register_id = $1
         ORDER BY c.z_number DESC`,
       [id],
@@ -254,7 +254,7 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
         total_gross: Number(r.total_gross),
         total_cash: Number(r.total_cash),
         total_cancellations: Number(r.total_cancellations),
-        created_by: r.created_by_name ?? '(unbekannt)',
+        created_by_name: r.created_by_name ?? '(unbekannt)',
       })),
     });
   });
@@ -270,7 +270,7 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
     const closings: CloseResult[] = [];
     for (const r of regs.rows) {
       try {
-        closings.push(await closeRegister(r.id, req.adminUser.id));
+        closings.push(await closeRegister(r.id, req.adminUser.name));
       } catch (err) {
         const e = err as Error & { httpStatus?: number };
         // If a register cannot be closed (deleted mid-loop etc.) we skip it but keep going.
@@ -316,7 +316,7 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
     const closings: CloseResult[] = [];
     for (const day of pending) {
       try {
-        closings.push(await closeRegister(id, req.adminUser.id, day));
+        closings.push(await closeRegister(id, req.adminUser.name, day));
       } catch (err) {
         const e = err as Error & { httpStatus?: number };
         if (e.httpStatus) return reply.status(e.httpStatus).send({ error: e.message, closings });
