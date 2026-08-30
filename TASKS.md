@@ -1506,6 +1506,17 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Kein bekanntes Attribut gefunden (reine HDD, oder Hersteller nicht in
   der Liste) → `ok` mit neutralem Hinweis, kein Fehler. 3 neue
   Unit-Tests, davon einer direkt gegen die echte ADATA-Ausgabe.
+
+  **Live gefunden und behoben (2026-08-30, dritte Runde):** durch die
+  Umstellung von `-H` auf `-a` meldete "SMART-Festplattenstatus" plötzlich
+  für jede gesunde Platte "FEHLER" — `classifySmartOutput()` suchte
+  ungeschützt nach dem Teilstring "FAILED" irgendwo im Text, und die
+  Attributtabellen-Spaltenüberschrift **"WHEN_FAILED"** enthält genau
+  diesen Teilstring. Bei `-H` (nur die Statuszeile, keine Attributtabelle)
+  war das nie aufgefallen. Fix: `\bFAILED\b`/`\bPASSED\b` mit
+  Wortgrenzen — `_` zählt als Wortzeichen in Regex, „WHEN_FAILED" hat
+  daher keine Wortgrenze vor „FAILED". Regressionstest ergänzt (echte
+  ADATA-Attributtabelle + Erfolgszeile kombiniert, muss `ok` liefern).
 - [x] **#88** Nachträglich Hinweis zu einer bereits platzierten Position hinzufügen (auch für Artikel ohne vordefinierte Optionen)
   Aus #86 ausgelagert (2026-08-27): dort wurde der Umfang bewusst auf
   Artikel mit bereits vorhandenen Optionen beschränkt (Dialog öffnet dort

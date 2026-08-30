@@ -108,8 +108,14 @@ async function checkDatabaseIntegrity(): Promise<HealthCheckResult> {
  *   output format).
  */
 export function classifySmartOutput(output: string): 'ok' | 'error' | 'unknown' {
-  if (/FAILED/i.test(output)) return 'error';
-  if (/PASSED|:\s*OK\b/i.test(output)) return 'ok';
+  // \b word boundaries are required here (found live, 2026-08-30): switching
+  // smart-check.sh from `-H` to `-a` (Task #87, SSD-wear check) pulled in the
+  // full attribute table, whose "WHEN_FAILED" column header contains "FAILED"
+  // as a bare substring — a plain /FAILED/ match misclassified every healthy
+  // disk as failing the moment `-a` output was used. "_" counts as a word
+  // character in regex, so \bFAILED\b does not match inside "WHEN_FAILED".
+  if (/\bFAILED\b/i.test(output)) return 'error';
+  if (/\bPASSED\b|:\s*OK\b/i.test(output)) return 'ok';
   return 'unknown';
 }
 

@@ -32,6 +32,11 @@ describe('classifySmartOutput', () => {
   it('treats unrecognized output as unknown', () => {
     expect(classifySmartOutput('Some unexpected smartctl output')).toBe('unknown');
   });
+
+  it('does not misread the WHEN_FAILED attribute-table column header as a failure (regression, 2026-08-30)', () => {
+    const fullOutput = 'SMART overall-health self-assessment test result: PASSED\n' + ADATA_ATTRIBUTE_TABLE;
+    expect(classifySmartOutput(fullOutput)).toBe('ok');
+  });
 });
 
 describe('parseSmartCheckOutput', () => {
