@@ -6,9 +6,6 @@
   import { page } from '$app/stores';
   import { adminUser, registerUser } from '$lib/stores/user';
   import { api } from '$lib/api';
-  import type { ActiveEvent } from '$lib/api';
-  import Modal from '$lib/components/Modal.svelte';
-  import type { Event } from '@fairpos/shared';
   interface Props {
     children?: import('svelte').Snippet;
   }
@@ -21,38 +18,6 @@
   /** Pending-Z-Bon summary, refreshed on mount and on route change. */
   let pendingSummary: { total_pending_registers: number; total_pending_days: number } | null = $state(null);
   let pendingRefreshTimer: ReturnType<typeof setInterval> | null = null;
-
-  // ── Active event (Task #95) ──────────────────────────────────────────────
-  let activeEvent: ActiveEvent | null = $state(null);
-  let switchEventOpen = $state(false);
-  let switchEventOptions: Event[] = $state([]);
-  let switchEventError = $state('');
-  let switching = $state(false);
-
-  async function loadActiveEvent() {
-    try { activeEvent = (await api.admin.system.getActiveEvent()).event; }
-    catch { activeEvent = null; }
-  }
-
-  async function openSwitchEvent() {
-    switchEventError = '';
-    switchEventOpen = true;
-    try { switchEventOptions = await api.admin.events.list(); }
-    catch (e) { switchEventError = e instanceof Error ? e.message : 'Fehler'; }
-  }
-
-  async function switchToEvent(eventId: string) {
-    switching = true; switchEventError = '';
-    try {
-      const result = await api.admin.system.setActiveEvent(eventId);
-      activeEvent = result.event;
-      switchEventOpen = false;
-    } catch (e) {
-      switchEventError = e instanceof Error ? e.message : 'Fehler';
-    } finally {
-      switching = false;
-    }
-  }
 
   /**
    * Loads the pending-Z-Bon summary so the global warning banner can show
@@ -81,7 +46,6 @@
       checking = false;
     }
     loadPending();
-    loadActiveEvent();
     // Auto-refresh every 5 minutes so a freshly arrived day pushes into the banner.
     pendingRefreshTimer = setInterval(loadPending, 5 * 60 * 1000);
   });
@@ -114,42 +78,38 @@
   let groupActive = $derived((hrefs: string[]): boolean => hrefs.some((h) => $page.url.pathname.startsWith(h)));
 
   /** Sidebar groups — auto-expanded when one of their items is the active route. */
+  let organisationOpen = $state(false);
+  let businessOpen = $state(false);
   let reportsOpen = $state(false);
-  let exportsOpen = $state(false);
-  let articlesOpen = $state(false);
-  let registersOpen = $state(false);
   let settingsOpen = $state(false);
   let monitoringOpen = $state(false);
 
   run(() => {
-    reportsOpen = groupActive(['/admin/reports']);
-  });
-  run(() => {
-    exportsOpen = groupActive(['/admin/exports']);
-  });
-  run(() => {
-    articlesOpen = groupActive([
+    organisationOpen = groupActive([
       '/admin/events',
-      '/admin/settings/floor-plan',
-      '/admin/settings/categories',
-      '/admin/articles',
-      '/admin/settings/cancellation-reasons',
-    ]);
-  });
-  run(() => {
-    registersOpen = groupActive([
-      '/admin/settings/layouts',
-      '/admin/registers',
-      '/admin/cancellations',
+      '/admin/settings/company',
       '/admin/users',
     ]);
   });
   run(() => {
+    businessOpen = groupActive([
+      '/admin/settings/floor-plan',
+      '/admin/settings/categories',
+      '/admin/articles',
+      '/admin/settings/cancellation-reasons',
+      '/admin/registers',
+      '/admin/settings/layouts',
+      '/admin/cancellations',
+    ]);
+  });
+  run(() => {
+    reportsOpen = groupActive(['/admin/reports', '/admin/exports']);
+  });
+  run(() => {
     settingsOpen = groupActive([
-      '/admin/settings/company',
+      '/admin/settings/system',
       '/admin/settings/printers',
       '/admin/settings/tse',
-      '/admin/settings/system',
       '/admin/settings/tls-cert',
       '/admin/settings/dns-config',
     ]);
@@ -184,6 +144,40 @@
       <a href="/admin" class:active={isActive('/admin', true)}>Dashboard</a>
 
       <div class="nav-group">
+        <button class="nav-group-btn" class:active={organisationOpen} onclick={() => (organisationOpen = !organisationOpen)}>
+          <span>Organisation</span>
+          <span class="chevron" class:open={organisationOpen}>›</span>
+        </button>
+        {#if organisationOpen}
+          <div class="nav-sub">
+            {#if $adminUser?.is_admin}
+              <a href="/admin/events" class:active={isActive('/admin/events')}>Veranstaltungen</a>
+            {/if}
+            <a href="/admin/settings/company" class:active={isActive('/admin/settings/company')}>Unternehmensdaten</a>
+            <a href="/admin/users" class:active={isActive('/admin/users')}>Benutzer</a>
+          </div>
+        {/if}
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-group-btn" class:active={businessOpen} onclick={() => (businessOpen = !businessOpen)}>
+          <span>Wirtschaftsbetrieb</span>
+          <span class="chevron" class:open={businessOpen}>›</span>
+        </button>
+        {#if businessOpen}
+          <div class="nav-sub">
+            <a href="/admin/settings/floor-plan" class:active={isActive('/admin/settings/floor-plan')}>Saalplan</a>
+            <a href="/admin/settings/categories" class:active={isActive('/admin/settings/categories')}>Artikelgruppen</a>
+            <a href="/admin/articles" class:active={isActive('/admin/articles')}>Artikel</a>
+            <a href="/admin/settings/cancellation-reasons" class:active={isActive('/admin/settings/cancellation-reasons')}>Stornogründe</a>
+            <a href="/admin/registers" class:active={isActive('/admin/registers')}>Kassen</a>
+            <a href="/admin/settings/layouts" class:active={isActive('/admin/settings/layouts')}>Kassenlayouts</a>
+            <a href="/admin/cancellations" class:active={isActive('/admin/cancellations')}>Bonstorno</a>
+          </div>
+        {/if}
+      </div>
+
+      <div class="nav-group">
         <button class="nav-group-btn" class:active={reportsOpen} onclick={() => (reportsOpen = !reportsOpen)}>
           <span>Auswertungen</span>
           <span class="chevron" class:open={reportsOpen}>›</span>
@@ -195,53 +189,9 @@
             <a href="/admin/reports/cash-balance" class:active={isActive('/admin/reports/cash-balance')}>Soll-Kassenstand</a>
             <a href="/admin/reports/cancellations" class:active={isActive('/admin/reports/cancellations')}>Stornos & Rabatte</a>
             <a href="/admin/reports/tse-outages" class:active={isActive('/admin/reports/tse-outages')}>TSE-Ausfall-Log</a>
-          </div>
-        {/if}
-      </div>
-
-      <div class="nav-group">
-        <button class="nav-group-btn" class:active={exportsOpen} onclick={() => (exportsOpen = !exportsOpen)}>
-          <span>Exporte</span>
-          <span class="chevron" class:open={exportsOpen}>›</span>
-        </button>
-        {#if exportsOpen}
-          <div class="nav-sub">
             <a href="/admin/exports/excel" class:active={isActive('/admin/exports/excel')}>Excel-Export</a>
             <a href="/admin/exports/invoices" class:active={isActive('/admin/exports/invoices')}>Rechnungs-PDFs (ZIP)</a>
             <a href="/admin/exports/dsfinvk" class:active={isActive('/admin/exports/dsfinvk')}>DSFinV-K</a>
-          </div>
-        {/if}
-      </div>
-
-      <div class="nav-group">
-        <button class="nav-group-btn" class:active={articlesOpen} onclick={() => (articlesOpen = !articlesOpen)}>
-          <span>Artikel &amp; Saalplan</span>
-          <span class="chevron" class:open={articlesOpen}>›</span>
-        </button>
-        {#if articlesOpen}
-          <div class="nav-sub">
-            {#if $adminUser?.is_admin}
-              <a href="/admin/events" class:active={isActive('/admin/events')}>Veranstaltungen</a>
-            {/if}
-            <a href="/admin/settings/floor-plan" class:active={isActive('/admin/settings/floor-plan')}>Saalplan</a>
-            <a href="/admin/settings/categories" class:active={isActive('/admin/settings/categories')}>Artikelgruppen</a>
-            <a href="/admin/articles" class:active={isActive('/admin/articles')}>Artikel</a>
-            <a href="/admin/settings/cancellation-reasons" class:active={isActive('/admin/settings/cancellation-reasons')}>Stornogründe</a>
-          </div>
-        {/if}
-      </div>
-
-      <div class="nav-group">
-        <button class="nav-group-btn" class:active={registersOpen} onclick={() => (registersOpen = !registersOpen)}>
-          <span>Kassen &amp; Benutzer</span>
-          <span class="chevron" class:open={registersOpen}>›</span>
-        </button>
-        {#if registersOpen}
-          <div class="nav-sub">
-            <a href="/admin/settings/layouts" class:active={isActive('/admin/settings/layouts')}>Kassenlayouts</a>
-            <a href="/admin/registers" class:active={isActive('/admin/registers')}>Kassen</a>
-            <a href="/admin/cancellations" class:active={isActive('/admin/cancellations')}>Bonstorno</a>
-            <a href="/admin/users" class:active={isActive('/admin/users')}>Benutzer</a>
           </div>
         {/if}
       </div>
@@ -253,10 +203,9 @@
         </button>
         {#if settingsOpen}
           <div class="nav-sub">
-            <a href="/admin/settings/company" class:active={isActive('/admin/settings/company')}>Unternehmensdaten</a>
+            <a href="/admin/settings/system" class:active={isActive('/admin/settings/system')}>System</a>
             <a href="/admin/settings/printers" class:active={isActive('/admin/settings/printers')}>Drucker</a>
             <a href="/admin/settings/tse" class:active={isActive('/admin/settings/tse')}>TSE</a>
-            <a href="/admin/settings/system" class:active={isActive('/admin/settings/system')}>System</a>
             <a href="/admin/settings/tls-cert" class:active={isActive('/admin/settings/tls-cert')}>SSL-Zertifikat</a>
             <a href="/admin/settings/dns-config" class:active={isActive('/admin/settings/dns-config')}>DNS-Masquerading</a>
           </div>
@@ -282,13 +231,6 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div class="active-event">
-        <span class="active-event-label">Veranstaltung</span>
-        <span class="active-event-name">{activeEvent?.name ?? '—'}</span>
-        {#if $adminUser?.is_admin}
-          <button class="btn-link" onclick={openSwitchEvent}>wechseln</button>
-        {/if}
-      </div>
       <span class="user-name">{$adminUser?.name}</span>
       <button class="btn-secondary" onclick={() => goto('/register')}>Zur Kassenauswahl</button>
       <button class="btn-logout" onclick={logout}>Abmelden</button>
@@ -307,38 +249,6 @@
   </main>
 </div>
 {/if}
-
-<Modal bind:open={switchEventOpen} title="Aktive Veranstaltung wechseln">
-  <div class="switch-event-box">
-    <p class="muted">
-      Wählt die Veranstaltung, in deren Kontext gearbeitet wird — betrifft
-      Artikel, Kassen, Kassenlayouts, Saalplan, Rechnungen und Bestellungen.
-    </p>
-    {#if switchEventError}<p class="error-text">{switchEventError}</p>{/if}
-    {#if switchEventOptions.length === 0 && !switchEventError}
-      <p class="muted">Lade…</p>
-    {:else}
-      <ul class="switch-event-list">
-        {#each switchEventOptions as ev}
-          <li>
-            <button
-              class="switch-event-item"
-              class:current={ev.id === activeEvent?.id}
-              disabled={switching || ev.id === activeEvent?.id}
-              onclick={() => switchToEvent(ev.id)}
-            >
-              <span class="switch-event-name">{ev.name}</span>
-              <span class="switch-event-dates">
-                {new Date(ev.start_time).toLocaleDateString('de-DE')} – {new Date(ev.end_time).toLocaleDateString('de-DE')}
-              </span>
-              {#if ev.id === activeEvent?.id}<span class="switch-event-current-badge">aktiv</span>{/if}
-            </button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </div>
-</Modal>
 
 <style>
   .shell { display: flex; min-height: 100dvh; }
@@ -396,36 +306,6 @@
     display: flex; flex-direction: column; gap: 0.5rem;
   }
   .user-name { font-size: 0.8rem; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .active-event {
-    display: flex; align-items: baseline; gap: 0.4rem;
-    font-size: 0.8rem; overflow: hidden;
-  }
-  .active-event-label { color: var(--color-text-muted); flex-shrink: 0; }
-  .active-event-name {
-    color: var(--color-text); font-weight: 500;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
-  }
-  .btn-link {
-    background: none; border: none; padding: 0; color: var(--color-primary);
-    font-size: 0.8rem; text-decoration: underline; cursor: pointer; flex-shrink: 0;
-  }
-  .switch-event-box { display: flex; flex-direction: column; gap: 0.75rem; }
-  .switch-event-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
-  .switch-event-item {
-    width: 100%; display: flex; align-items: center; gap: 0.75rem;
-    padding: 0.6rem 0.8rem; background: var(--color-surface-2);
-    border: 1px solid var(--color-border); border-radius: var(--radius-sm);
-    font-size: 0.9rem; text-align: left; cursor: pointer;
-    transition: background 0.1s, border-color 0.1s;
-  }
-  .switch-event-item:hover:not(:disabled) { background: var(--color-surface-hover); border-color: var(--color-primary); }
-  .switch-event-item.current { border-color: var(--color-primary); background: rgba(79, 124, 255, 0.10); cursor: default; }
-  .switch-event-name { font-weight: 500; flex: 1; }
-  .switch-event-dates { font-size: 0.8rem; color: var(--color-text-muted); }
-  .switch-event-current-badge {
-    font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px;
-    color: var(--color-primary); background: rgba(79, 124, 255, 0.12);
-  }
   .btn-secondary, .btn-logout {
     padding: 0.4rem 0; background: transparent; border: 1px solid var(--color-border);
     border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: 0.8rem;

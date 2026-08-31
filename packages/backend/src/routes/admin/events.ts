@@ -1,17 +1,23 @@
 import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
 import { authenticateSystemAdmin } from '../../middleware/authenticate.js';
+import { config } from '../../config.js';
 
-/** Admin routes for event management (reporting periods). */
+/** Admin routes for event management — Task #95's hierarchy level, not just a reporting period. */
 export async function eventsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateSystemAdmin);
 
-  /** GET /api/admin/events — list all events ordered by start time descending. */
+  /**
+   * GET /api/admin/events — list all events ordered by start time descending.
+   * Each row carries `is_active` (Task #95) — derived from `config.activeEventId`,
+   * not a stored column, so the list always reflects whichever event is
+   * currently active without a second round-trip.
+   */
   app.get('/', async (_req, reply) => {
-    const result = await query(
+    const result = await query<{ id: string; name: string; start_time: Date; end_time: Date; created_at: Date }>(
       'SELECT id, name, start_time, end_time, created_at FROM event ORDER BY start_time DESC',
     );
-    return reply.send(result.rows);
+    return reply.send(result.rows.map((r) => ({ ...r, is_active: r.id === config.activeEventId })));
   });
 
   /** POST /api/admin/events — create an event; validates no time overlap with existing events. */

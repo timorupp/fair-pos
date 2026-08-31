@@ -197,13 +197,21 @@ export interface RegisterLayoutSlot {
   hidden: boolean;
 }
 
-/** An event used as a reporting period; does not affect live operations. */
+/**
+ * A Veranstaltung — the hierarchy level articles, registers, layouts, the
+ * floor plan, invoices and orders belong to (Task #95). `start_time`/
+ * `end_time` are informational display fields only; they play no role in
+ * scoping which data belongs to the event (that's `event_id`/register
+ * ownership) — exactly one event is globally "active" at a time.
+ */
 export interface Event {
   id: string;
   name: string;
   start_time: string;
   end_time: string;
   created_at: string;
+  /** Whether this is the currently active event. Only present on `GET /admin/events` responses — derived, not a stored column. */
+  is_active?: boolean;
 }
 
 /** A manual cash deposit or withdrawal on a register. */

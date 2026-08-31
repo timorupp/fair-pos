@@ -38,13 +38,16 @@
   let todayRevenue = $state(0);
   let openPositionsTotal = $state(0);
 
+  /** Name of the currently active event (Task #95), or `null` if none is active. */
+  let activeEventName: string | null = $state(null);
+
   let loading = $state(true);
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   /** Loads (or silently re-loads) every tile's data in parallel. */
   async function loadAll() {
     await Promise.allSettled([
-      loadStatus(), loadPendingClosings(), loadTse(), loadPrintJobs(), loadSessions(), loadRevenue(),
+      loadStatus(), loadPendingClosings(), loadTse(), loadPrintJobs(), loadSessions(), loadRevenue(), loadActiveEvent(),
     ]);
   }
 
@@ -120,6 +123,11 @@
     } catch { openPositionsTotal = 0; }
   }
 
+  async function loadActiveEvent() {
+    try { activeEventName = (await api.admin.system.getActiveEvent()).event?.name ?? null; }
+    catch { activeEventName = null; }
+  }
+
   const fmtEuro = (n: number) => `${n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
   /** Clears every IP's PIN-login lockout (Task #90) — for a device that locked itself out by mistake. */
@@ -166,6 +174,17 @@
     {/if}
 
     <div class="tiles">
+      <a class="tile" class:warn={activeEventName === null} href="/admin/events">
+        <h2>Aktive Veranstaltung</h2>
+        {#if activeEventName}
+          <p class="tile-value">{activeEventName}</p>
+          <p class="tile-detail">Betrifft Artikel, Kassen, Layouts, Saalplan, Rechnungen, Bestellungen.</p>
+        {:else}
+          <p class="tile-value muted">⚠ Keine aktiv</p>
+          <p class="tile-detail">Veranstaltung anlegen und aktivieren, bevor Artikel/Kassen eingerichtet werden können.</p>
+        {/if}
+      </a>
+
       <a class="tile" class:warn={tseHealth?.severity === 'warning'} href="/admin/settings/logs">
         <h2>TSE-Zustand</h2>
         {#if tseHealth}

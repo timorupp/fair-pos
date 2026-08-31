@@ -1,0 +1,73 @@
+ADMIN-SEITENMENÜ — AKTUELLE STRUKTUR (zum Bearbeiten)
+======================================================
+
+Zweck: Ausgangspunkt zum Neustrukturieren des linken Seitenmenüs im
+Adminbereich (packages/frontend/src/routes/admin/+layout.svelte). Diese
+Datei bildet 1:1 ab, was aktuell im Code steht — Gruppen, Reihenfolge,
+Einträge, Routen und wer was sieht.
+
+Bitte einfach direkt in dieser Datei umbauen: Zeilen verschieben,
+umbenennen, neue Gruppen einziehen, Einträge zwischen Gruppen verschieben,
+Gruppen auflösen/zusammenlegen. Die Pfade in Klammern bitte stehen lassen
+(oder klar vermerken, wenn sich eine Route ändern soll) — daran orientiere
+ich mich beim Umsetzen. Wenn danach fertig, einfach zurückgeben.
+
+Legende:
+  [S]  nur für System-Administrator sichtbar (Task #94)
+  ohne Markierung: für beide Adminstufen sichtbar (System- und
+       Veranstaltungs-Administrator)
+
+------------------------------------------------------------------------
+
+Dashboard (/admin)
+
+Organisation
+├── Veranstaltungen  [S]        (/admin/events)
+├── Unternehmensdaten            (/admin/settings/company)
+└── Benutzer                     (/admin/users)
+
+Wirtschaftsbetrieb
+├── Saalplan                    (/admin/settings/floor-plan)
+├── Artikelgruppen               (/admin/settings/categories)
+├── Artikel                      (/admin/articles)
+├── Stornogründe                 (/admin/settings/cancellation-reasons)
+├── Kassen                       (/admin/registers)
+├── Kassenlayouts                (/admin/settings/layouts)
+└── Bonstorno                    (/admin/cancellations)
+
+Auswertungen
+├── Offene Positionen        (/admin/reports/open-positions)
+├── Rechnungen                (/admin/reports/invoices)
+├── Soll-Kassenstand          (/admin/reports/cash-balance)
+├── Stornos & Rabatte         (/admin/reports/cancellations)
+├── TSE-Ausfall-Log           (/admin/reports/tse-outages)
+├── Excel-Export               (/admin/exports/excel)
+├── Rechnungs-PDFs (ZIP)       (/admin/exports/invoices)
+└── DSFinV-K                   (/admin/exports/dsfinvk)
+
+Einstellungen
+├── System                       (/admin/settings/system)
+│     └── enthält (kein eigener Menüpunkt): Datenbank-Backup-Download [S]
+├── Drucker                      (/admin/settings/printers)
+├── TSE                          (/admin/settings/tse)
+├── SSL-Zertifikat               (/admin/settings/tls-cert)
+└── DNS-Masquerading             (/admin/settings/dns-config)
+
+Monitoring
+├── Aktive Sessions              (/admin/settings/sessions)
+├── Druckwarteschlange           (/admin/settings/print-queue)
+├── Systemprotokoll  [S]         (/admin/settings/logs)
+└── Health-Check                 (/admin/settings/health-checks)
+
+------------------------------------------------------------------------
+
+Hinweise zu den aktuellen Gruppen (nur zur Einordnung, keine Vorgabe):
+- Jede Gruppe außer "Dashboard" ist ein aufklappbarer Abschnitt
+  (Klick auf Gruppenname klappt die Einträge darunter auf/zu).
+- "Veranstaltungen" und "Systemprotokoll" sind die einzigen zwei
+  Einzeleinträge, die für eine Veranstaltungs-Administratorin komplett
+  ausgeblendet werden — der Rest ist für beide Stufen sichtbar (manche
+  Einstellungsseiten blenden aber einzelne *Felder* innerhalb der Seite
+  aus, siehe Task #94 — das betrifft dieses Menü nicht direkt).
+- Backup-Download hat keinen eigenen Menüpunkt, sondern sitzt als
+  Abschnitt auf der "System"-Seite.
