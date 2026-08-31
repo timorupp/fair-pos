@@ -20,7 +20,7 @@ Anforderungen werden schrittweise erfasst — nur explizit bestätigte Angaben w
 
 Alle Benutzer sind vom gleichen Typ; die Unterscheidung erfolgt über drei Attribute:
 
-- **Ist System-Administrator** (`is_admin`, Schalter) — unbeschränkter Zugang zur Administrationsoberfläche, inkl. der drei System-exklusiven Bereiche (Veranstaltungen, Backup, Systemprotokoll) und einzelner System-exklusiver Felder in Benutzerverwaltung/Einstellungen
+- **Ist System-Administrator** (`is_admin`, Schalter) — unbeschränkter Zugang zur Administrationsoberfläche, inkl. der System-exklusiven Bereiche (Veranstaltungen, Backup) und einzelner System-exklusiver Felder in Benutzerverwaltung/Einstellungen. Das Systemprotokoll war ursprünglich ebenfalls System-exklusiv, wurde aber am 2026-08-31 für beide Adminstufen geöffnet, da das für beide sichtbare „TSE-Zustand"-Kachel auf dem Dashboard davon abhängt
 - **Ist Veranstaltungs-Administrator** (`is_event_admin`, Schalter, unabhängig vom ersten — ein Benutzer kann keins, eins oder beide Attribute haben) — Zugang zur Administrationsoberfläche, aber beschränkt auf die aktuell aktive Veranstaltung; kann die aktive Veranstaltung nicht selbst wechseln, keinem Benutzer den System-Administrator-Status geben/entziehen, keinen System-Administrator löschen oder dessen Passwort/PIN ändern, und sieht die System-exklusiven Einstellungsfelder nicht
 - **Zugewiesene Kassen** — bestimmt, auf welche Kassen der Benutzer Zugriff hat; die Kasse bestimmt über ihren **Typ** die angezeigte Oberfläche (Bonkasse → Kassenpersonal-UI, Bedienungskasse → Bedienungs-UI)
 
@@ -93,7 +93,7 @@ Administrator
 └── Monitoring
     ├── Aktive Sessions
     ├── Druckwarteschlange
-    ├── Systemprotokoll [S]
+    ├── Systemprotokoll
     └── Health-Check
 ```
 

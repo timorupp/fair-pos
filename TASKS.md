@@ -2299,6 +2299,19 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
 
   Backend-Unit- (298), Backend-Integrations- (236, +15 neue) und
   Frontend-Tests (70) grün, beide Typechecks + `svelte-check` sauber.
+
+  **Nachtrag (2026-08-31):** `logs.ts` (Systemprotokoll) war ursprünglich
+  eines der drei System-exklusiven Bereiche (neben `events.ts`/`backup.ts`)
+  — live gefunden: die für **beide** Adminstufen sichtbare Dashboard-Kachel
+  „TSE-Zustand" liest ihre Daten aus genau diesem Endpoint
+  (`system_log`, Kategorie `tse_health`), wodurch eine
+  Veranstaltungs-Administratorin dort nie den echten TSE-Status sah. Auf
+  `authenticateAdmin` (V+S) umgestellt, Nav-Gating im Frontend entfernt.
+  Vertretbar, weil `system_log` aktuell ausschließlich die Kategorie
+  `tse_health` führt — keine faktische Cross-Tenant-Datenpreisgabe im
+  heutigen Stand, siehe `docs/Adminstufen-Matrix.txt` für die volle
+  Begründung inkl. der ursprünglichen Sorge (potenziell sensiblere
+  künftige Log-Kategorien).
 - [x] **#95** Veranstaltung als Hierarchieebene im Datenmodell
   Aufgekommen beim Verleih-Konzept (2026-08-30), gemeinsam mit Task #94:
   aktuell ist eine Veranstaltung (`event`-Tabelle: `id`, `name`,

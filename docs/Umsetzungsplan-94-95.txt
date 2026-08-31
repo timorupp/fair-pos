@@ -39,6 +39,10 @@ PHASE 0 — TASK #94: ZWEI-STUFEN-ADMIN (unabhaengig von #95, zuerst)
     - routes/admin/events.ts (komplett)
     - routes/admin/backup.ts (komplett)
     - routes/admin/logs.ts (komplett)
+      NACHTRAG 2026-08-31: logs.ts wieder zurueck auf authenticateAdmin
+      (V+S) umgestellt -- die Dashboard-Kachel "TSE-Zustand" (fuer beide
+      Stufen sichtbar) haengt davon ab. Siehe TASKS.md Task #94-Nachtrag
+      und docs/Adminstufen-Matrix.txt fuer die volle Begruendung.
 
 [x] 0.4 Feld-Ebene in users.ts
     PUT/POST: is_admin darf nur gesetzt/geaendert werden, wenn

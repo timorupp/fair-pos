@@ -456,7 +456,10 @@ keine reinen JWT-/stateless Cookies mehr.
 `middleware/authenticate.ts` stellt zwei preHandler bereit:
 `authenticateAdmin` (lässt `is_admin` **oder** `is_event_admin` durch —
 Default für die meisten Admin-Routen) und `authenticateSystemAdmin`
-(verlangt strikt `is_admin`, nur für `events.ts`, `backup.ts`, `logs.ts`).
+(verlangt strikt `is_admin`, nur für `events.ts`/`backup.ts`). `logs.ts`
+stand ursprünglich ebenfalls auf dieser Liste, wurde aber am 2026-08-31
+auf `authenticateAdmin` umgestellt, da die für beide Stufen sichtbare
+Dashboard-Kachel „TSE-Zustand" ihre Daten von dort bezieht.
 Einzelne Felder innerhalb ansonsten für beide Stufen offener Routen
 (`users.ts`, `settings.ts`) haben zusätzliche inline-Guards für
 System-exklusive Aktionen (z.B. `is_admin` vergeben, einen

@@ -684,13 +684,22 @@ Entscheidung: S
 ==============================================================================
 LOGS.TS (/api/admin/logs) -- Systemprotokoll
 ==============================================================================
-Technische Diagnostik, potenziell auch Eintraege aus fremden
-Veranstaltungen sichtbar - S.
+Urspruengliche Begruendung (2026-08-30): Technische Diagnostik, potenziell
+auch Eintraege aus fremden Veranstaltungen sichtbar - S.
+
+REVIDIERT (2026-08-31): Die fuer beide Stufen sichtbare Dashboard-Kachel
+"TSE-Zustand" liest ihre Daten aus genau diesem Endpoint (Kategorie
+tse_health) - ohne Freigabe zeigt sie einer Veranstaltungs-Administratorin
+nie den echten TSE-Status. system_log traegt aktuell ausschliesslich die
+Kategorie tse_health (siehe logSystemEvent-Aufrufstellen) - keine
+faktische Cross-Tenant-Leckage im heutigen Stand. Die urspruengliche Sorge
+bleibt aber grundsaetzlich richtig, falls spaeter eine sensiblere
+Kategorie dazukommt - dann diese Entscheidung erneut pruefen.
 
 ROUTE:        GET /
 Beschreibung: Log-Eintraege (nach Schweregrad/Kategorie filterbar)
 Vorschlag:    S
-Entscheidung: S
+Entscheidung: V+S (revidiert 2026-08-31, urspruenglich S)
 
 ROUTE:        GET /categories
 Beschreibung: Verfuegbare Log-Kategorien

@@ -19,7 +19,11 @@
  *  - `authenticateSystemAdmin` — like `authenticateAdmin`, but requires
  *    `is_admin` strictly (System-Administrator only). Used only by the
  *    handful of route files reserved for the System-Administrator
- *    (`events.ts`, `backup.ts`, `logs.ts` — see the matrix).
+ *    (`events.ts`, `backup.ts` — see the matrix). `logs.ts` was originally
+ *    on this list too but was opened up to both levels (2026-08-31) once
+ *    the Dashboard's TSE-Zustand tile — visible to both — turned out to
+ *    depend on it, and system_log currently only ever carries the
+ *    `tse_health` category in practice.
  *
  * A logged-in admin (either level) who hasn't stepped up yet gets a
  * distinguishable 403 (`needs_admin_verification: true`) so the frontend

@@ -1,8 +1,20 @@
-/** Admin endpoint for the generic system-log viewer (Task #64). */
+/**
+ * Admin endpoint for the generic system-log viewer (Task #64).
+ *
+ * V+S accessible (Task #94 revision, 2026-08-31) — originally
+ * System-Administrator-exclusive like events.ts/backup.ts, but the
+ * Dashboard's "TSE-Zustand" tile (visible to both admin levels) reads its
+ * data from here (`category=tse_health`), and system_log currently only
+ * ever receives that one category in practice (see system/log.ts and every
+ * `logSystemEvent` call site) — nothing sensitive to a specific rented
+ * event/tenant. Revisit this if a future feature starts logging something
+ * more sensitive under a new category; `authenticateSystemAdmin` is a
+ * one-line change back if so.
+ */
 
 import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
-import { authenticateSystemAdmin } from '../../middleware/authenticate.js';
+import { authenticateAdmin } from '../../middleware/authenticate.js';
 import type { LogSeverity, SystemLogEntry } from '../../system/log.js';
 
 /** Hard cap on rows returned per request — the log grows unbounded over time, so the viewer always shows the most recent slice, not the whole table. */
@@ -10,7 +22,7 @@ const MAX_ROWS = 500;
 
 /** Registers `/api/admin/logs` routes. */
 export async function logsAdminRoute(app: FastifyInstance): Promise<void> {
-  app.addHook('preHandler', authenticateSystemAdmin);
+  app.addHook('preHandler', authenticateAdmin);
 
   /**
    * GET /api/admin/logs — most recent system log entries, newest first.

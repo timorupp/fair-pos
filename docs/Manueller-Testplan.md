@@ -67,7 +67,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] **Zeit synchronisieren**-Button (Task #64) läuft ohne Fehler, wenn die TSE erreichbar ist
 
 ### Zwei-Stufen-Admin (Task #94)
-- [ ] Veranstaltungs-Administrator-Konto: Menüpunkte „Veranstaltungen", „Backup", „Systemprotokoll" sind nicht sichtbar/erreichbar (403 bei direktem Aufruf der jeweiligen Route)
+- [ ] Veranstaltungs-Administrator-Konto: Menüpunkte „Veranstaltungen" und „Backup" sind nicht sichtbar/erreichbar (403 bei direktem Aufruf der jeweiligen Route) — „Systemprotokoll" dagegen bewusst sichtbar (seit 2026-08-31, siehe Task #94-Revision), da die Dashboard-Kachel „TSE-Zustand" für beide Adminstufen davon abhängt
 - [ ] Veranstaltungs-Administrator kann `is_admin` bei keinem Benutzer setzen, keinen System-Administrator löschen oder dessen Passwort/PIN ändern
 - [ ] Veranstaltungs-Administrator sieht in den Einstellungen keine System-exklusiven Felder (Belegnummer-Präfix/-Start, Pfand-USt-Satz, Server-Adresse)
 - [ ] Veranstaltungs-Administrator sieht die aktive Veranstaltung auf dem Dashboard und in der Veranstaltungsliste, hat aber keinen „Aktivieren"-Button

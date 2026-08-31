@@ -76,7 +76,8 @@ describe('GET /api/admin/logs', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('rejects a Veranstaltungs-Administrator (System-Administrator only, Task #94)', async () => {
+  it('allows a Veranstaltungs-Administrator too (Task #94 revision, 2026-08-31 — the Dashboard TSE-Zustand tile depends on this for both admin levels)', async () => {
+    await insertLog('info', 'tse_health', 'a');
     const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
     const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
     const app = await getTestApp();
@@ -84,7 +85,8 @@ describe('GET /api/admin/logs', () => {
       method: 'GET', url: '/api/admin/logs',
       headers: { cookie: eventAdminCookie },
     });
-    expect(response.statusCode).toBe(403);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toHaveLength(1);
   });
 });
 
