@@ -12,7 +12,7 @@
   type ClosingRow = {
     id: string; z_number: number; created_at: string; business_date: string;
     is_zero_closing: boolean; total_gross: number; total_cash: number; total_cancellations: number;
-    created_by: string;
+    created_by_name: string;
   };
 
   let registers: Register[] = $state([]);
