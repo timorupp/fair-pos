@@ -706,6 +706,41 @@ describe('Archivierte Kassen (Task #55)', () => {
   });
 });
 
+describe('GET /me user object (Task #94)', () => {
+  it('reports is_event_admin so a pure Veranstaltungs-Administrator is recognised on the Kassenauswahl screen', async () => {
+    // Regression test: GET /me previously only returned is_admin, so a pure
+    // Veranstaltungs-Administrator (is_event_admin only) was never
+    // recognised as admin-level here — with exactly one assigned register,
+    // the frontend auto-skip logic would silently route them straight past
+    // the "Systemverwaltung" button, permanently locking them out of
+    // /admin/* through the normal UI (found during Task #98 docs audit).
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    await assignRegisterToUser(eventAdmin.id, registerId);
+    const eventAdminCookie = await loginAsRegisterUser(await getTestApp(), eventAdmin.pin);
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/register-session/me',
+      headers: { cookie: eventAdminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const user = response.json().user as { is_admin: boolean; is_event_admin: boolean };
+    expect(user.is_admin).toBe(false);
+    expect(user.is_event_admin).toBe(true);
+  });
+
+  it('reports is_event_admin: false for a plain non-admin operator', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/register-session/me',
+      headers: { cookie: userCookie },
+    });
+    const user = response.json().user as { is_admin: boolean; is_event_admin: boolean };
+    expect(user.is_admin).toBe(false);
+    expect(user.is_event_admin).toBe(false);
+  });
+});
+
 describe('Deaktivierte Benutzer (Task #56)', () => {
   it('logs a deactivated operator out of an already-open register session immediately', async () => {
     await pool.query('UPDATE "user" SET is_active = false WHERE id = $1', [userId]);

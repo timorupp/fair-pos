@@ -14,8 +14,16 @@
   };
 
   let registers: RegisterRow[] = $state([]);
-  /** Whether the logged-in user is admin-flagged — drives the "Systemverwaltung" button (Task #90). */
-  let isAdmin = $state(false);
+  /**
+   * Whether the logged-in user has either admin level — drives the
+   * "Systemverwaltung" button (Task #90) and whether the single-register
+   * auto-skip below applies. Task #94: a pure Veranstaltungs-Administrator
+   * (is_event_admin only) must reach this screen exactly like a
+   * System-Administrator does — checking only is_admin here would silently
+   * lock them out of /admin entirely if they have exactly one register
+   * assigned (found live, see DANGER.md).
+   */
+  let hasAdminAccess = $state(false);
   let loading = $state(true);
   let error = $state('');
 
@@ -31,7 +39,7 @@
     try {
       const me = await api.registerSession.me();
       registers = me.registers;
-      isAdmin = me.user.is_admin;
+      hasAdminAccess = me.user.is_admin || me.user.is_event_admin;
       // If exactly one register is assigned, skip the selection screen —
       // but never for an admin (needs the chance to reach Systemverwaltung
       // instead of being routed straight past this screen), and never when
@@ -40,7 +48,7 @@
       // reach this screen at all after logging in, since it's also the
       // only place the "Abmelden" button lives (found live, 2026-08-29).
       const stay = page.url.searchParams.get('stay') === '1';
-      if (!isAdmin && !stay && registers.length === 1) {
+      if (!hasAdminAccess && !stay && registers.length === 1) {
         goto(`/register/${registers[0]!.id}`, { replaceState: true });
         return;
       }
@@ -123,7 +131,7 @@
     </div>
   {/if}
 
-  {#if !loading && isAdmin}
+  {#if !loading && hasAdminAccess}
     <div class="admin-row">
       <button class="btn-ghost" onclick={openSystemverwaltung}>Systemverwaltung</button>
     </div>

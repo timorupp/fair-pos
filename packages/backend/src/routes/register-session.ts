@@ -116,7 +116,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       registers.push({ ...r, locked: pending.length > 0, pending_days: pending });
     }
     return reply.send({
-      user: { id: req.registerUser.id, name: req.registerUser.name, is_admin: req.registerUser.is_admin },
+      user: {
+        id: req.registerUser.id, name: req.registerUser.name,
+        is_admin: req.registerUser.is_admin, is_event_admin: req.registerUser.is_event_admin,
+      },
       registers,
     });
   });
