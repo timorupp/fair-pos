@@ -81,6 +81,37 @@ describe('GET /api/admin/exports/excel/event', () => {
     expect(articleNames).toEqual(['Wein']);
   });
 
+  it('includes an invoice booked on the active event\'s register even when its created_at falls outside the event\'s own start/end window', async () => {
+    // Task #95: the event's start_time/end_time are informational display
+    // fields only — scoping must go by register.event_id alone. Regression
+    // test for a bug where the export still additionally filtered by that
+    // date range, silently dropping invoices outside it (e.g. anything
+    // booked after the auto-created "Altbestand" event's frozen end_time).
+    const ownRegister = await createTestRegister({ name: 'Eigen', eventId: config.activeEventId });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'sales_receipt', 'cash', now() - interval '90 days')`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, price, status, created_at)
+       SELECT id, register_id, 'Radler', 'Getränke', 19, 4, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      [ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 7).value).toBe('Radler');
+  });
+
   it('rejects the request without an admin session', async () => {
     const app = await getTestApp();
     const response = await app.inject({ method: 'GET', url: '/api/admin/exports/excel/event' });

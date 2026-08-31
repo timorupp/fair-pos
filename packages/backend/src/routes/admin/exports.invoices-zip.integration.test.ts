@@ -86,10 +86,10 @@ describe('GET /api/admin/exports/invoices/event', () => {
     expect(response.statusCode).toBe(404);
   });
 
-  it('bundles every invoice of the active event within its window, including a training receipt', async () => {
+  it('bundles every invoice booked on a register of the active event, including a training receipt and one outside the event\'s own date window', async () => {
     // Task #95: exports are always scoped to the currently active event, not
     // a manually-selected one — override it to a custom event with a known
-    // date window, following the established test pattern for this.
+    // (narrow) date window, following the established test pattern for this.
     const event = await pool.query<{ id: string }>(
       `INSERT INTO event (name, start_time, end_time)
        VALUES ('Sommerfest', '2026-08-05 00:00:00', '2026-08-07 00:00:00') RETURNING id`,
@@ -100,11 +100,27 @@ describe('GET /api/admin/exports/invoices/event', () => {
 
     const eventRegister = await createTestRegister({ type: 'receipt_register', eventId });
     await pool.query(
+      // The third invoice is dated 2026-08-10 — outside the event's own
+      // start_time/end_time (05.–07.08) — but still booked on a register of
+      // this event. That date is purely informational (Task #95): scoping
+      // must go by register.event_id alone, so this invoice must still be
+      // included, not silently dropped by a leftover date-range filter.
       `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, receipt_token, created_at)
        VALUES ($1, 1, 'sales_receipt', 'cash', 'tok-1', '2026-08-05 10:00:00'),
               ($1, 2, 'training', 'cash', 'tok-2', '2026-08-06 10:00:00'),
               ($1, 3, 'sales_receipt', 'cash', 'tok-3', '2026-08-10 10:00:00')`,
       [eventRegister.id],
+    );
+
+    // Invoice on a register of a *different* event must still be excluded.
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreignRegister = await createTestRegister({ type: 'receipt_register', eventId: otherEvent.rows[0]!.id });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, receipt_token, created_at)
+       VALUES ($1, 4, 'sales_receipt', 'cash', 'tok-4', '2026-08-06 10:00:00')`,
+      [foreignRegister.id],
     );
 
     const app = await getTestApp();
@@ -115,7 +131,7 @@ describe('GET /api/admin/exports/invoices/event', () => {
     expect(response.statusCode).toBe(200);
 
     const names = await zipEntryNames(response.rawPayload);
-    expect(names).toHaveLength(2); // the 2026-08-10 invoice is outside the event window
+    expect(names).toHaveLength(3); // all three of the active event's own invoices, none of the foreign event's
   });
 
   it('rejects the request without an admin session', async () => {
