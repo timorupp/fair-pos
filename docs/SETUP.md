@@ -70,6 +70,11 @@ Weiteres durchreichen.
 
 ## Repository-Struktur
 
+Illustrativ, nicht erschöpfend — `routes/admin/` allein hat inzwischen über
+25 Dateien (eine je Verwaltungsbereich: Artikel, Kassen, Benutzer,
+Veranstaltungen, Berichte, Exporte, Einstellungen, TSE, …), nicht einzeln
+aufgeführt:
+
 ```
 club-pos/
 ├── package.json                  # Root-Workspace, gemeinsame Skripte
@@ -79,7 +84,7 @@ club-pos/
 │
 ├── packages/
 │   ├── shared/                   # @fairpos/shared — geteilte TypeScript-Typen
-│   │   └── src/types.ts          # Alle Domain-Typen (OrderItemStatus, Invoice …)
+│   │   └── src/types.ts          # Alle Domain-Typen (OrderItemStatus, Invoice, User, Event …)
 │   │
 │   ├── backend/                  # @fairpos/backend — Fastify API + Print Worker
 │   │   ├── native/tse-cli/       # Minimaler C++-Wrapper um das Swissbit-SDK
@@ -88,11 +93,30 @@ club-pos/
 │   │   │   └── vendor/           # gitignored — SDK-Header/-Lib + gebaute Binary,
 │   │   │                         # siehe vendor/PLACE_SDK_FILES_HERE.txt
 │   │   └── src/
-│   │       ├── index.ts          # Einstiegspunkt: Migrate → Server → Print Worker
+│   │       ├── index.ts          # Einstiegspunkt: Migrate → ensureSystemSerial →
+│   │       │                     #   initReceiptCounter → Server → Print Worker →
+│   │       │                     #   TSE-Health-Job
 │   │       ├── app.ts            # Fastify-Factory, Plugins, Routing
 │   │       ├── config.ts         # Umgebungsvariablen (Pflichtfelder geprüft)
+│   │       ├── auth/             # Passwort-/PIN-Hashing, Sessions (Task #90)
+│   │       ├── backup/           # Datenbank-Backup-Erstellung (pg_dump-Wrapper)
+│   │       ├── closing/          # Tagesabschluss (Z-Bon)-Berechnung + PDF/ESC-POS-Rendering
+│   │       ├── exports/          # Excel-, DSFinV-K- und Rechnungs-PDF-ZIP-Export
+│   │       ├── logo/             # Firmenlogo-Upload/-Verarbeitung für Bons/Z-Bons
+│   │       ├── middleware/       # authenticateRegister/authenticateAdmin/
+│   │       │                     #   authenticateSystemAdmin (Task #94)
+│   │       ├── order/            # Reine Hilfsfunktionen für Bestell-Gruppierung
+│   │       ├── print/            # ESC/POS-Rendering, Druckauftrags-Enqueue
+│   │       ├── receipt/          # Belegnummer, Rechnungsdaten-Assemblierung, PDF/ESC-POS
+│   │       ├── system/           # Aktive Veranstaltung (activeEvent.ts, Task #95),
+│   │       │                     #   Systemzeit/-zone, IP-Sperren
 │   │       ├── routes/
-│   │       │   └── health.ts     # GET /api/health
+│   │       │   ├── health.ts     # GET /api/health
+│   │       │   ├── auth.ts       # PIN-Login, Systemverwaltung-Stufenauth
+│   │       │   ├── register-session.ts  # Bonkasse-/Bedienungskasse-Endpunkte
+│   │       │   └── admin/        # ~25 Dateien, je ein Verwaltungsbereich
+│   │       │                     #   (articles.ts, registers.ts, users.ts,
+│   │       │                     #   events.ts, reports.ts, exports.ts, …)
 │   │       ├── tse/              # TSE-Client (queue.ts, client.ts, settings.ts, …)
 │   │       │                     # siehe docs/TSE-Integration.md
 │   │       ├── workers/
@@ -101,7 +125,8 @@ club-pos/
 │   │           ├── client.ts     # pg.Pool, query(), withTransaction()
 │   │           ├── migrate.ts    # Migrations-Runner (schema_migrations-Tabelle)
 │   │           └── migrations/
-│   │               └── 0001_initial.sql  # Vollständiges Datenbankschema
+│   │               ├── 0001_initial.sql   # Basisschema
+│   │               └── …                  # fortlaufend nummeriert, aktuell bis 0026
 │   │
 │   └── frontend/                 # @fairpos/frontend — SvelteKit SPA
 │       ├── svelte.config.js      # adapter-static, fallback: index.html
@@ -110,15 +135,23 @@ club-pos/
 │           ├── app.html          # HTML-Rahmen (lang="de")
 │           ├── app.d.ts          # SvelteKit App-Typen
 │           └── routes/
-│               ├── +layout.svelte
-│               └── +page.svelte  # Startseite (Platzhalter)
+│               ├── login/        # PIN-Eingabe (einziger Login-Weg, Task #90)
+│               ├── register/     # Kassenauswahl + Bonkasse-/Bedienungskasse-UI
+│               └── admin/        # Administrationsoberfläche
+│                   ├── +layout.svelte  # Seitenleiste (5 Gruppen, Task #98-Umbau),
+│                   │                   #   aktive-Veranstaltung-Kontext
+│                   └── +page.svelte    # Dashboard
 │
 └── docs/
-    ├── Anforderungen.md           # Fachliche Anforderungen
-    ├── Datenmodell.dbml           # Datenmodell (dbdiagram.io)
-    ├── Dictionary.md              # Deutsch ↔ Englisch Übersetzungsreferenz
-    ├── TSE-Integration.md         # TSE-Architekturkonzept (CLI-Subprozess, Vendoring, Lifecycle)
-    └── SETUP.md                  # Dieses Dokument
+    ├── Anforderungen.md               # Fachliche Anforderungen
+    ├── Datenmodell.dbml               # Datenmodell (dbdiagram.io)
+    ├── Dictionary.md                  # Deutsch ↔ Englisch Übersetzungsreferenz
+    ├── SETUP.md                       # Dieses Dokument
+    ├── Installationsanleitung.md      # Schritt-für-Schritt-Produktionsinstallation
+    ├── TSE-Integration.md             # TSE-Architekturkonzept (CLI-Subprozess, Vendoring, Lifecycle)
+    ├── Rechtliche-Anforderungen.md    # KassenSichV-/GoBD-Vorgaben
+    ├── Organisatorische-Anleitung.md  # Betriebsabläufe für den Verein
+    └── Manueller-Testplan.md          # Checkliste für den manuellen Regressionstest
 ```
 
 ---
@@ -140,7 +173,7 @@ DATABASE_URL=postgresql://fairpos:changeme@localhost:5432/fairpos
 ```
 
 Die TSE-Konfiguration (Mount-Pfad, Client-ID) gibt es nur über die Admin-UI
-(Systemeinstellungen → System) — kein `.env`-Pendant. Ohne physische TSE
+(Einstellungen → System) — kein `.env`-Pendant. Ohne physische TSE
 (lokale Entwicklung, CI) einfach unkonfiguriert lassen; das Backend
 überspringt die Signierung dann und lässt die `tse_*`-Spalten der Rechnung
 `null`. Siehe docs/TSE-Integration.md.
@@ -274,7 +307,7 @@ docs/TSE-Integration.md; hier nur das Deployment-relevante:
 - Die TSE muss auf dem Host als Dateisystem gemountet sein, bevor die
   Signierung genutzt werden kann — der Node-Prozess liest/schreibt direkt auf
   diesem Pfad, kein Container-Mapping dazwischen.
-- Mount-Pfad und Client-ID werden ausschließlich über Systemeinstellungen →
+- Mount-Pfad und Client-ID werden ausschließlich über Einstellungen →
   System in der Admin-UI konfiguriert (inkl. "Auto-erkennen"-Button, der die
   TSE unter den aktuell gemounteten Wechseldatenträgern findet — kein
   manuelles Pfad-Tippen nötig) — es gibt bewusst kein `.env`-Pendant mehr
@@ -321,7 +354,12 @@ Backend-Start fehlen, führen zu einem sofortigen Fehler.
 | `SESSION_SECRET`     | ja      | —                         | Signierungsschlüssel für Cookies     |
 | `PIN_HASH_SECRET`    | ja      | —                         | Schlüssel für das PIN-Login (Task #90) — MUSS getrennt von DB-Backups aufbewahrt werden, siehe unten |
 | `PORT`               | nein    | `3000`                    | HTTP-Port des Backends               |
+| `HOST`               | nein    | `0.0.0.0`                 | Bind-Adresse; hinter einem nginx-Reverse-Proxy (Task #66) empfiehlt die Installationsanleitung `127.0.0.1`, damit das Backend nie direkt erreichbar ist |
 | `NODE_ENV`           | nein    | `development`             | `development` oder `production`      |
+| `TLS_STAGING_DIR`    | nein    | `/var/lib/fairpos/ssl-staging` | Staging-Verzeichnis für ein hochgeladenes TLS-Zertifikat (Task #66), bevor das privilegierte Install-Skript es in die echte nginx-Config kopiert |
+| `TLS_CERT_PATH`      | nein    | `/etc/nginx/ssl/fairpos.crt` | Pfad zum aktuell installierten nginx-Zertifikat — vom unprivilegierten Backend lesbar, um Ablaufdatum/Subject in der Admin-UI zu zeigen |
+| `DNS_STAGING_DIR`    | nein    | `/var/lib/fairpos/dns-staging` | Staging-Verzeichnis für die Split-Horizon-DNS-Konfiguration (Task #92), analog zu `TLS_STAGING_DIR` |
+| `TSE_CLI_PATH`, `PG_DUMP_PATH`, `SUDO_PATH` | nein | — (nutzt `PATH`) | **Nur für Tests** — zeigen dort auf Stub-Skripte statt der echten, hardwareabhängigen Programme. In Produktion nicht setzen; dort werden `tseCli`, `pg_dump` und `sudo` reell über `PATH` aufgelöst |
 
 `SESSION_SECRET`/`PIN_HASH_SECRET` sollten je mindestens 32 zufällige Zeichen
 enthalten und **unterschiedliche** Werte sein. `PIN_HASH_SECRET` ist der
@@ -331,7 +369,7 @@ diesen Schlüssel, kann die PINs nicht offline durchprobieren. Deshalb gehört
 er **nicht** in dieselbe Sicherung wie die Datenbank.
 
 TSE-Mount-Pfad und Client-ID sind **keine** Umgebungsvariablen — sie werden
-ausschließlich über Systemeinstellungen → System in der Admin-UI konfiguriert
+ausschließlich über Einstellungen → System in der Admin-UI konfiguriert
 (siehe oben, "Swissbit USB-TSE-Anbindung").
 Generieren z.B. mit: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
 
@@ -383,11 +421,14 @@ mit `LISTEN print_job_new`. PostgreSQL sendet bei jedem `INSERT` in `print_job`
 eine Benachrichtigung via Trigger + `pg_notify`. Der Worker schickt ESC/POS-Daten
 direkt über eine TCP-Verbindung an den Drucker.
 
-### Keine WebSockets — SSE für Echtzeit
+### Kein SSE/WebSocket — Client-seitiges Polling
 
-Für Echtzeit-Updates (z.B. Tischstatus-Aktualisierungen im Browser) werden
-Server-Sent Events (SSE) eingesetzt. SSE ist unidirektional (Server → Client),
-einfacher als WebSockets und ausreichend für diesen Anwendungsfall.
+Für Echtzeit-Updates (Server → Client) gibt es keinen SSE- oder
+WebSocket-Mechanismus — Ansichten mit Aktualisierungsbedarf pollen selbst
+per `setInterval`, z.B. das Admin-Dashboard alle 30 Sekunden
+(`admin/+page.svelte`) oder der ausstehende-Tagesabschlüsse-Banner alle 5
+Minuten (`admin/+layout.svelte`). Einfacher als beide Alternativen und für
+die Aktualisierungshäufigkeit dieses Anwendungsfalls ausreichend.
 
 ### Swissbit USB-TSE über CLI-Subprozess (kein Middleware-Container)
 
@@ -398,3 +439,42 @@ Swissbit-SDK und wird vom Node-Prozess per `child_process.execFile`
 aufgerufen — kein separater Dienst, kein natives Node-Addon, kein REST-Bridge.
 Details, Entscheidungsverlauf und das vollständige Architekturkonzept stehen in
 docs/TSE-Integration.md.
+
+### PIN-Login als einziger Anmeldeweg (Task #90)
+
+Eine persistente, vom Admin vergebene PIN (Format `XXX-XXX-XXX`) ist für
+jeden Benutzer der einzige Anmeldeweg — Kassenpersonal wie Administratoren
+gleichermaßen, keine separate Administrator-Loginseite mehr. Ein
+Passwort existiert weiterhin, wird aber ausschließlich für den einmal pro
+Sitzung nötigen „Systemverwaltung"-Bestätigungsschritt gebraucht
+(`POST /api/auth/admin/verify`), bevor die Administrationsoberfläche
+erreichbar ist. Sessions sind server-seitig getrackt (Tabelle `session`),
+keine reinen JWT-/stateless Cookies mehr.
+
+### Zwei Admin-Stufen (Task #94)
+
+`middleware/authenticate.ts` stellt zwei preHandler bereit:
+`authenticateAdmin` (lässt `is_admin` **oder** `is_event_admin` durch —
+Default für die meisten Admin-Routen) und `authenticateSystemAdmin`
+(verlangt strikt `is_admin`, nur für `events.ts`, `backup.ts`, `logs.ts`).
+Einzelne Felder innerhalb ansonsten für beide Stufen offener Routen
+(`users.ts`, `settings.ts`) haben zusätzliche inline-Guards für
+System-exklusive Aktionen (z.B. `is_admin` vergeben, einen
+System-Administrator löschen). Siehe `docs/Anforderungen.md` Abschnitt
+„Benutzerrollen" für die fachliche Beschreibung.
+
+### Veranstaltung als Hierarchieebene (Task #95)
+
+Artikel, Artikelgruppen, Kassen, Kassenlayouts, der komplette Saalplan und
+Stornogründe sind jeweils einer Veranstaltung (`event`) zugeordnet
+(`event_id`-Spalte); Rechnungen/Bestellungen ordnen sich transitiv über
+ihre Kasse zu, ohne eigene `event_id` — eine Kasse wechselt nie ihre
+Veranstaltung, daher genügt ein `JOIN register`. Diese bewusste
+Entscheidung hält die gesetzlich fixierten, lückenlosen Zähler
+(`invoice.receipt_number`, `daily_closing.z_number`) vollständig
+unberührt von der Veranstaltungs-Zuordnung. Genau eine Veranstaltung ist
+global „aktiv" (`system_setting`-Key `active_event_id`, gespiegelt in
+`config.activeEventId`, siehe `system/activeEvent.ts` — Muster wie
+`tse/settings.ts`); nur ein System-Administrator kann wechseln. Eine
+frische, leere Datenbank hat bewusst keine Veranstaltung, bis der erste
+System-Administrator selbst eine anlegt und aktiviert.

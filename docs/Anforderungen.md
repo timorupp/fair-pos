@@ -18,14 +18,17 @@ Anforderungen werden schrittweise erfasst — nur explizit bestätigte Angaben w
 
 ## Benutzerrollen
 
-Alle Benutzer sind vom gleichen Typ; die Unterscheidung erfolgt über zwei Attribute:
+Alle Benutzer sind vom gleichen Typ; die Unterscheidung erfolgt über drei Attribute:
 
-- **Ist Administrator** (Schalter) — gibt Zugang zur Administrationsoberfläche über eine separate Administrator-Loginseite; Anmeldung mit Benutzername + Passwort
-- **Zugewiesene Kassen** — bestimmt, auf welche Kassen der Benutzer Zugriff hat; die Kasse bestimmt über ihren **Typ** die angezeigte Oberfläche (Bonkasse → Kassenpersonal-UI, Bedienungskasse → Bedienungs-UI); Anmeldung per Einmal-Zugangscode
+- **Ist System-Administrator** (`is_admin`, Schalter) — unbeschränkter Zugang zur Administrationsoberfläche, inkl. der drei System-exklusiven Bereiche (Veranstaltungen, Backup, Systemprotokoll) und einzelner System-exklusiver Felder in Benutzerverwaltung/Einstellungen
+- **Ist Veranstaltungs-Administrator** (`is_event_admin`, Schalter, unabhängig vom ersten — ein Benutzer kann keins, eins oder beide Attribute haben) — Zugang zur Administrationsoberfläche, aber beschränkt auf die aktuell aktive Veranstaltung; kann die aktive Veranstaltung nicht selbst wechseln, keinem Benutzer den System-Administrator-Status geben/entziehen, keinen System-Administrator löschen oder dessen Passwort/PIN ändern, und sieht die System-exklusiven Einstellungsfelder nicht
+- **Zugewiesene Kassen** — bestimmt, auf welche Kassen der Benutzer Zugriff hat; die Kasse bestimmt über ihren **Typ** die angezeigte Oberfläche (Bonkasse → Kassenpersonal-UI, Bedienungskasse → Bedienungs-UI)
 
-**Sessions:** Administrator-Session und Kassen-Session sind vollständig voneinander getrennt und können gleichzeitig aktiv sein (z.B. in verschiedenen Browser-Tabs). Von der Kassen-UI gibt es keinen Zugang zur Administrationsoberfläche und umgekehrt.
+**Anmeldung:** Ausschließlich per persistenter PIN (Format `XXX-XXX-XXX`) — für Administratoren wie für Kassenpersonal gleichermaßen, keine separate Administrator-Loginseite. Ein System- oder Veranstaltungs-Administrator muss zusätzlich einmal pro Sitzung ("Systemverwaltung"-Schritt) sein Passwort bestätigen, bevor die Administrationsoberfläche erreichbar ist — Passwort wird ausschließlich hierfür benötigt, nicht für die eigentliche Anmeldung.
 
-Hat ein Benutzer Zugriff auf mehrere Kassen, wird nach dem Kassen-Login eine Auswahl der zugewiesenen Kassen angezeigt.
+**Sessions:** Eine einzige Sitzung pro angemeldetem Gerät — Kassen-Bereich und Administrationsoberfläche laufen in derselben Sitzung, der zusätzliche Passwort-Schritt entscheidet lediglich, ob die Administrationsoberfläche für diese Sitzung bereits freigeschaltet ist.
+
+Hat ein Benutzer Zugriff auf mehrere Kassen, wird nach dem Login eine Auswahl der zugewiesenen Kassen angezeigt.
 
 ---
 
@@ -41,49 +44,60 @@ Hat ein Benutzer Zugriff auf mehrere Kassen, wird nach dem Kassen-Login eine Aus
 
 ### Navigationsstruktur
 
+Fünf aufklappbare Gruppen plus Dashboard, `[S]` markiert System-Administrator-exklusive Einträge (Task #94):
+
 ```
 Administrator
 │
-├── Dashboard  ← Startseite
+├── Dashboard  ← Startseite, inkl. Kachel "Aktive Veranstaltung"
+│
+├── Organisation
+│   ├── Veranstaltungen [S]  — anlegen, aktivieren (Task #95)
+│   ├── Unternehmensdaten
+│   └── Benutzer
+│
+├── Wirtschaftsbetrieb
+│   ├── Saalplan
+│   ├── Artikelgruppen
+│   ├── Artikel
+│   ├── Stornogründe
+│   ├── Kassen
+│   │   ├── [Button: Alle Kassen abschließen]
+│   │   └── [Kassendetail]
+│   │       ├── Kassenstand
+│   │       ├── Wechselgeldeinlage
+│   │       ├── Entnahme
+│   │       ├── Transaktionshistorie
+│   │       ├── Kassenabschluss
+│   │       └── Tagesabschluss
+│   ├── Kassenlayouts
+│   └── Bonstorno  ← eigener Menüpunkt, nicht unter Kassen
 │
 ├── Auswertungen
 │   ├── Offene Positionen je Tisch
 │   ├── Erstellte Rechnungen
 │   ├── Soll-Kassenstand
-│   └── Stornos & kostenfreie Abgaben
-│
-├── Exporte
+│   ├── Stornos & kostenfreie Abgaben
+│   ├── TSE-Ausfall-Log
 │   ├── Excel-Export (Tagesexport / Veranstaltungsexport)
+│   ├── Rechnungs-PDFs (ZIP)
 │   └── DSFinV-K-Export
 │
-├── Kassen
-│   ├── [Button: Alle Kassen abschließen]
-│   ├── Bonstorno
-│   └── [Kassendetail]
-│       ├── Kassenstand
-│       ├── Wechselgeldeinlage
-│       ├── Entnahme
-│       ├── Transaktionshistorie
-│       ├── Kassenabschluss
-│       └── Tagesabschluss
+├── Einstellungen
+│   ├── System (Zeitzone, Uhrzeit, TSE-Status, Seriennummer, Server-Adresse [S], Backup-Download [S])
+│   ├── Drucker
+│   ├── TSE
+│   ├── SSL-Zertifikat
+│   └── DNS-Masquerading
 │
-├── Artikel
-│
-├── Veranstaltungen
-│
-├── Benutzer
-│   └── [je Benutzer: Zugangscode erzeugen]
-│
-└── Einstellungen
-    ├── Artikelgruppen
-    ├── Kassenlayouts
-    │   └── Standardlayout je Typ
-    ├── Drucker
-    ├── Saalplan
-    ├── Stornogründe
-    ├── Unternehmensdaten
-    └── System (Zeitzone, Uhrzeit, TSE-Status, Seriennummer, Server-Adresse, Backup-Verzeichnis, Backup-Download)
+└── Monitoring
+    ├── Aktive Sessions
+    ├── Druckwarteschlange
+    ├── Systemprotokoll [S]
+    └── Health-Check
 ```
+
+Alle Auswertungen/Exporte zeigen ausschließlich Daten der aktuell **aktiven** Veranstaltung — keine Auswahl mehr pro Seite; zum Betrachten einer anderen (z. B. vergangenen) Veranstaltung muss diese zuerst unter „Organisation → Veranstaltungen" aktiviert werden (Task #95). Benutzerverwaltung: PIN-Verwaltung (erzeugen/setzen/drucken) statt des früheren Einmal-Zugangscodes, siehe Abschnitt „Benutzerverwaltung" weiter unten.
 
 ---
 
@@ -190,15 +204,12 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
 - **Benutzerverwaltung:** Administrator kann Benutzer anlegen und verwalten
   - Attribute pro Benutzer:
     - Vollständiger Name
-    - **Ist Administrator** (Schalter) — Zugang zur Administrationsoberfläche; Login-Name und Passwort werden nur bei aktivem Schalter konfiguriert
+    - **Ist System-Administrator** (Schalter, `is_admin`) — unbeschränkter Zugang zur Administrationsoberfläche; Passwort wird nur bei aktivem Schalter benötigt (für den „Systemverwaltung"-Anmeldeschritt, nicht für die eigentliche PIN-Anmeldung). Nur ein System-Administrator selbst darf diesen Schalter setzen/entfernen, einen anderen System-Administrator löschen oder dessen Passwort/PIN ändern (Task #94) — für eine Veranstaltungs-Administratorin ist dieser Schalter nicht sichtbar
+    - **Ist Veranstaltungs-Administrator** (Schalter, `is_event_admin`, unabhängig vom vorigen) — Zugang zur Administrationsoberfläche, beschränkt auf die aktive Veranstaltung (Task #94); Passwort wird auch hier für den „Systemverwaltung"-Schritt benötigt
     - **Zugewiesene Kassen** — Liste der Kassen, auf die der Benutzer berechtigt ist; bestimmt über den Kassentyp die angezeigte Kassen-Oberfläche; kann auch bei Administratoren gesetzt sein
-    - **Aktiv/Deaktiviert (Schalter):** Ein Benutzer, der bereits eine Buchung ausgeführt hat (Rechnung, Bestellung, Kassenbewegung, Storno, Tagesabschluss), kann aus fiskalischen Gründen nicht mehr gelöscht werden (der Löschen-Button liefert dann eine entsprechende Fehlermeldung); Benutzer ohne solche Historie bleiben weiterhin löschbar. Als Alternative kann jeder Benutzer über diesen Schalter deaktiviert werden — er kann sich danach nicht mehr anmelden (auch eine bereits offene Kassen-Session wird sofort beendet) und verschwindet aus der Kassenzuweisung, bleibt aber vollständig in der Datenbank erhalten. Ein Administrator kann sich nicht selbst deaktivieren (Task #56)
-  - **Zugangscode erzeugen** — Aktion pro Benutzer direkt in der Übersichtsliste der Benutzerverwaltung; öffnet einen Dialog (oder eine neue Seite) mit dem Einmal-Zugangscode für die Kassen-Session; Gültigkeit: 10 Minuten, einmalig verwendbar. Der Dialog zeigt den Code in drei Formen:
-    - **QR-Code** — immer angezeigt; zum Scannen mit dem Mobilgerät
-    - **Zugangslink** — immer angezeigt als Klartext-URL mit „Link kopieren"-Button daneben; kann kopiert oder in einem neuen Tab geöffnet werden
-    - **„Kasse in neuem Tab öffnen"-Button** — nur angezeigt, wenn der Code für den aktuell eingeloggten Administrator selbst erzeugt wird; öffnet den Zugangslink direkt im Browser
-    - Alle drei Optionen enthalten technisch denselben Einmal-Link mit dem Token; nach dem Öffnen wird die Kassenwahl angezeigt
-  - **Kassen-Sessions:** persistent — nach dem ersten Login bleibt die Kassen-Session aktiv, auch nach Schließen des Browsers; kein erneuter Login erforderlich, solange die Session gültig ist
+    - **Aktiv/Deaktiviert (Schalter):** unabhängig von der Löschbarkeit — ein deaktivierter Benutzer kann sich nicht mehr anmelden (auch eine bereits offene Kassen-Session wird sofort beendet) und verschwindet aus der Kassenzuweisung, bleibt aber vollständig in der Datenbank erhalten. Ein Administrator kann sich nicht selbst deaktivieren (Task #56)
+  - **Löschen:** uneingeschränkt möglich, unabhängig von vorhandener Buchungshistorie (Rechnung, Bestellung, Kassenbewegung, Storno, Tagesabschluss) — solche Buchungen behalten den Benutzernamen als reinen Text-Schnappschuss, keine Fremdschlüsselbindung mehr, daher aus fiskalischer Sicht unproblematisch (Task #97). Zwei Einschränkungen bleiben: ein Benutzer kann sich nicht selbst löschen, und nur ein System-Administrator darf einen anderen System-Administrator löschen (Task #94)
+  - **PIN-Verwaltung** — Aktionen pro Benutzer in der Bearbeitungsansicht: PIN neu erzeugen, PIN explizit setzen, PIN drucken (als Beleg über den zugeordneten Drucker). Die PIN ist persistent (kein Ablauf, keine Einmalverwendung) — sie bleibt gültig, bis sie erneut geändert wird. Nur ein System-Administrator darf die PIN eines anderen System-Administrators verwalten (Task #94)
 
 - **Stornogründe-Verwaltung:** Liste der Gründe für Stornierungen und kostenfreie Abgaben; in den Einstellungen pflegbar
   - Attribute pro Stornogrund:
@@ -215,9 +226,9 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
     - Kein typ-spezifisches Attribut am einzelnen Layout — Standardlayouts werden typ-global konfiguriert (siehe unten)
   - Aktionen:
     - **Kassenlayout duplizieren** — erstellt eine Kopie eines bestehenden Layouts als Ausgangspunkt
-  - **Standardlayout je Kassentyp** — in der Kassenlayout-Verwaltung wird je Typ ein Standardlayout festgelegt:
-    - Standard für Bonkassen
-    - Standard für Bedienungskassen
+  - **Standardlayout je Kassentyp** — je aktiver Veranstaltung wird ein Standardlayout pro Typ festgelegt (Task #95, vorher global; ergibt seit der Veranstaltung-als-Hierarchieebene keinen Sinn mehr, da Layouts selbst der Veranstaltung zugeordnet sind):
+    - Standard für Bonkassen der aktiven Veranstaltung
+    - Standard für Bedienungskassen der aktiven Veranstaltung
     - Einzelne Kassen können dieses Standard durch ein explizit zugewiesenes Layout überschreiben
   - **Ablage:** Alle noch nicht platzierten Artikel, alphabetisch sortiert; Artikel per Drag & Drop zwischen Ablage und Raster verschiebbar
   - **Tastenfarbe:** Wird pro Platzierung im Kassenlayout festgelegt (nicht am Artikel); dasselbe Produkt kann in verschiedenen Layouts unterschiedliche Farben haben
@@ -228,6 +239,7 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
 
 - **Dashboard (Startseite):** Erste Seite nach dem Systemverwaltung-Login, gibt einen schnellen Überblick über Systemzustand und aktuelle Geschäftszahlen — jede Kachel verlinkt auf die zugehörige Detailseite, aktualisiert sich alle 30 Sekunden automatisch im Hintergrund:
   - **Warnzeile** (nur sichtbar, wenn tatsächlich etwas ansteht): Uhrzeit-Abweichung Server/Browser, offener TSE-Ausfall
+  - **Aktive Veranstaltung** (Task #95) — Name der aktiven Veranstaltung; Warnzustand, wenn keine aktiv ist (dann können keine Artikel/Kassen/Layouts/Saalplan-Elemente angelegt werden)
   - **TSE-Zustand** — Ergebnis der letzten automatischen TSE-Prüfung
   - **Ausstehende Tagesabschlüsse** — Anzahl Tage und betroffene Kassen
   - **Druckwarteschlange** — Aufträge, die aktuell mit Fehler erneut versucht werden
@@ -236,13 +248,11 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
   - **Tagesumsatz** — alle heute gebuchten Einnahmen (unabhängig von der Veranstaltung)
   - **Offene Rechnungen** — Summe aller aktuell offenen Positionen an den Tischen
 
-- **Auswertungen:** Der Administrator hat Einsicht in folgende Übersichten; alle Auswertungsfunktionen bieten eine Veranstaltungsauswahl:
-  - **Standardauswahl:** die aktuell laufende Veranstaltung; läuft keine, wird die zuletzt stattgefundene vorausgewählt
-  - Auswertungen vergangener Veranstaltungen können jederzeit eingesehen werden
-  - **Offene Positionen je Tisch** — alle bestellten aber noch nicht bezahlten Artikel, gruppiert nach Tisch
-  - **Erstellte Rechnungen** — alle erzeugten Rechnungen der gewählten Veranstaltung; je Rechnung ist ein PDF-Download der Rechnung möglich
-  - **Soll-Kassenstand** — zeigt je Kasse einen einzigen Betrag (Startgeld + Einnahmen − Entnahmen); Details über Einlagen/Entnahmen sind in der Kassenverwaltung einsehbar
-  - **Stornos & kostenfreie Abgaben** — Übersicht aller stornierten und kostenfreien Positionen; gefiltert nach Veranstaltung und Bedienung; Spalten: Datum/Uhrzeit, Bedienung, Tisch, Artikel, Menge, Normalpreis, Stornogrund, Buchungsart (Storno / 100% Rabatt); dient der Kontrolle, dass die Funktion nicht missbraucht wird
+- **Auswertungen:** Der Administrator hat Einsicht in folgende Übersichten; alle Auswertungsfunktionen zeigen ausschließlich Daten der aktuell **aktiven** Veranstaltung (Task #95) — keine Veranstaltungsauswahl mehr pro Seite. Um eine andere (z. B. vergangene) Veranstaltung einzusehen, muss diese zuerst unter „Organisation → Veranstaltungen" aktiviert werden
+  - **Offene Positionen je Tisch** — alle bestellten aber noch nicht bezahlten Artikel, gruppiert nach Tisch; bewusst **nicht** nach Veranstaltung gefiltert, damit offene (noch nicht kassierte) Positionen beim Veranstaltungswechsel nie aus dem Blick geraten
+  - **Erstellte Rechnungen** — alle erzeugten Rechnungen der aktiven Veranstaltung; je Rechnung ist ein PDF-Download der Rechnung möglich
+  - **Soll-Kassenstand** — zeigt je Kasse der aktiven Veranstaltung einen einzigen Betrag (Startgeld + Einnahmen − Entnahmen); Details über Einlagen/Entnahmen sind in der Kassenverwaltung einsehbar
+  - **Stornos & kostenfreie Abgaben** — Übersicht aller stornierten und kostenfreien Positionen der aktiven Veranstaltung; gefiltert nach Bedienung; Spalten: Datum/Uhrzeit, Bedienung, Tisch, Artikel, Menge, Normalpreis, Stornogrund, Buchungsart (Storno / 100% Rabatt); dient der Kontrolle, dass die Funktion nicht missbraucht wird
     - Oben: Zusammenfassungstabelle mit Anzahl Artikel und Gesamtbetrag je Bedienung (gefiltert nach aktiver Filterauswahl)
 
 - **Pflichtexporte (DSFinV-K):** Alle gesetzlich vorgeschriebenen Exporte der deutschen Finanzbehörden müssen unterstützt werden; der Export muss jederzeit auf Anforderung des Finanzamts bereitstehen. Da Hardware-TSE eingesetzt wird, muss der DSFinV-K-Export selbst implementiert werden:
@@ -260,9 +270,9 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
   (`TSE_ZERTIFIKAT_I/II`), nicht für die QR-Code-Prüfung erforderlich, siehe
   `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7.
 
-- **Excel-Exporte:** Veranstaltungsauswahl wie bei den Auswertungen (Standard: laufende bzw. zuletzt stattgefundene Veranstaltung)
-  - Export für einen einzelnen Tag (Datum wählbar)
-  - Export für eine gesamte Veranstaltung
+- **Excel-Exporte:**
+  - Export für einen einzelnen Tag (Datum wählbar) — bewusst unabhängig von der Veranstaltung, reiner Kalendertag
+  - Export für die gesamte aktive Veranstaltung (Task #95) — keine Veranstaltungsauswahl mehr, gefiltert über die Kassenzugehörigkeit, nicht über den Zeitraum der Veranstaltung
   - Beide Exporte enthalten jede einzelne Rechnungsposition als eigene Zeile mit folgenden Spalten:
     - Belegnummer (bei mehreren Positionen einer Rechnung in jeder Zeile wiederholt)
     - Datum und Uhrzeit der Rechnung
@@ -284,18 +294,16 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
   - **Server-Adresse (QR-Code)** — lokale Netzwerkadresse des Servers (z.B. `192.168.1.10` oder `fairpos.local`); wird für die Bon-URL im QR-Code verwendet; manuell konfigurierbar
   - **Datenbank-Backup** — manueller Download eines vollständigen Datenbank-Backups als ZIP (kein automatischer/geplanter Backup-Job, siehe „Backup-Konzept" weiter unten, Task #25)
 
-- **Veranstaltungsverwaltung:** Veranstaltungen dienen ausschließlich als Auswertungszeiträume — sie haben keinen Einfluss auf den laufenden Betrieb
+- **Veranstaltungsverwaltung (Task #95):** Veranstaltung ist eine echte Hierarchieebene, keine reine Auswertungszeitspanne — Artikel, Artikelgruppen, Kassen, Kassenlayouts, der komplette Saalplan und Stornogründe gehören jeweils genau einer Veranstaltung an; Rechnungen/Bestellungen ordnen sich transitiv über ihre Kasse zu (eine Kasse wechselt nie ihre Veranstaltung). Eine neue Veranstaltung anzulegen bedeutet: Artikel/Kassen/Layouts/Saalplan/Stornogründe starten für sie komplett leer — kein automatisches Kopieren von einer vorherigen Veranstaltung.
+  - **Genau eine Veranstaltung ist global "aktiv"** — nur ein System-Administrator kann wechseln (Task #94); ein Veranstaltungs-Administrator sieht die aktive Veranstaltung, kann sie aber nicht wechseln. Wechseln löscht keine Daten — es ändert nur, was sichtbar/anlegbar ist; zurückwechseln macht alle Daten der vorherigen Veranstaltung wieder vollständig sichtbar
   - Attribute pro Veranstaltung:
     - Name
     - Startdatum und -uhrzeit
-    - Enddatum und -uhrzeit
-  - Buchungsdaten (Bestellungen, Rechnungen) entstehen unabhängig von Veranstaltungen; bei der Erstellung von Auswertungen werden sie über den Zeitraum der Veranstaltung zugeordnet
+    - Enddatum und -uhrzeit — rein informativ zur Anzeige, hat **keinen** Einfluss darauf, welche Buchungen zur Veranstaltung gehören (das entscheidet ausschließlich die Kassenzugehörigkeit)
   - Veranstaltungen können auch rückwirkend für vergangene Zeiträume angelegt werden
   - Zeiträume mehrerer Veranstaltungen dürfen sich nicht überschneiden
-  - Buchungsdaten bleiben dauerhaft im System gespeichert
-  - **Buchungsdaten löschen:** Der Administrator gibt ein Datum an; alle Buchungsdaten bis einschließlich dieses Datums werden gelöscht
-    - Vor der Ausführung wird eine deutliche Warnung angezeigt (Hinweis auf Unwiderruflichkeit und Verlust der Auswertungsmöglichkeit)
-    - Der Administrator muss das Wort „löschen" manuell in ein Textfeld eintippen, um die Aktion zu bestätigen — versehentliches Auslösen wird damit verhindert
+  - Buchungsdaten bleiben dauerhaft im System gespeichert — es gibt keine Löschfunktion für Buchungsdaten; alte Veranstaltungen bleiben über das Aktivieren/Wechseln jederzeit wieder einsehbar, statt gelöscht zu werden
+  - Auswertungen und Exporte (Excel, Rechnungs-PDFs) zeigen ausschließlich Daten der aktuell aktiven Veranstaltung — keine manuelle Veranstaltungsauswahl mehr auf diesen Seiten (der frühere Auswahl-Dropdown mit automatischer Vorauswahl der laufenden/zuletzt stattgefundenen Veranstaltung entfällt); der DSFinV-K-Export ist davon unberührt und bleibt vollständig unabhängig von der aktiven Veranstaltung (GoBD-Vollständigkeit)
 
 ---
 
@@ -792,7 +800,7 @@ Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — una
 
 - ~~**DSFinV-K-Export**~~ — Technisches Implementierungsdetail; Mapping dokumentiert in `Rechtliche-Anforderungen.md`; keine weiteren Entscheidungen ausstehend
 
-- ~~**TSE-Konfiguration**~~ — **Entschieden/umgesetzt (August 2026):** Mount-Pfad, Client-ID und TimeAdmin-PIN der Swissbit USB-TSE werden manuell über Systemeinstellungen → System konfiguriert (kein fiskaltrust/Docker-Compose-Automatismus mehr — dieser Ansatz wurde mit fiskaltrust verworfen). Änderungen wirken sofort, ohne Backend-Neustart. Details: docs/TSE-Integration.md
+- ~~**TSE-Konfiguration**~~ — **Entschieden/umgesetzt (August 2026):** Mount-Pfad, Client-ID und TimeAdmin-PIN der Swissbit USB-TSE werden manuell über Einstellungen → TSE konfiguriert (kein fiskaltrust/Docker-Compose-Automatismus mehr — dieser Ansatz wurde mit fiskaltrust verworfen). Änderungen wirken sofort, ohne Backend-Neustart. Details: docs/TSE-Integration.md
 
 - ~~**Kassensystem-Seriennummer**~~ — **Entschieden:** Wird beim ersten Serverstart automatisch generiert und unveränderbar in der Datenbank gespeichert. Format: `FairPOS-{Jahr}-{10-stellig, Großbuchstaben + Ziffern}` (Beispiel: `FairPOS-2025-A3B7K2M9XQ`). In den Systemeinstellungen angezeigt, aber nicht bearbeitbar. Gilt für die gesamte Installation (nicht je Kasse); Kassen werden im DSFinV-K über `Z_KASSE_ID` unterschieden.
 

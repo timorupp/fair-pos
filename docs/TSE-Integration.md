@@ -107,7 +107,7 @@ mehr ab, als wir benötigen; unser Tool bleibt bewusst kleiner.
 | Befehl | Zweck | Häufigkeit |
 |---|---|---|
 | `setup` | Einmalige Erstinbetriebnahme der TSE (PUK/PINs setzen, Client registrieren) | einmalig, admin-getriggert |
-| `maintain` | Self-Test + Zeit-Synchronisation | periodisch (z.B. alle paar Stunden, Cron-artig aus dem Backend) |
+| `maintain` | Self-Test + Zeit-Synchronisation | admin-getriggert ("Zeit synchronisieren"-Button) oder automatisch, wenn der 60s-Health-Poll (Task #64, `tse/healthJob.ts`) ein Problem erkennt — kein blinder Fest-Intervall-Job |
 | `start <processData> <processType>` | `worm_transaction_start` | pro Kassiervorgang / Bestellung |
 | `update <transactionNumber> <processData> <processType>` | `worm_transaction_update` | optional, bei mehrstufigen Vorgängen |
 | `finish <transactionNumber> <processData> <processType>` | `worm_transaction_finish` | pro Kassiervorgang / Bestellung / Storno |
@@ -169,23 +169,31 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
 
 ## 6. Lifecycle im Betrieb
 
-1. **Einmalig bei Erstinbetriebnahme:** Admin löst über die Systemeinstellungen
+1. **Einmalig bei Erstinbetriebnahme:** Admin löst über die Einstellungen
    `setup` aus. Erzeugt PUK/PINs (nicht im Code hinterlegt — siehe Abschnitt 7),
    registriert den Client, TSE ist danach transaktionsbereit.
-2. **Periodisch (Hintergrundjob im Backend, z.B. alle 4h):** `maintain` läuft
-   automatisch — Self-Test + Zeit-Sync. Kein Einfluss auf den Kassiervorgang,
-   läuft unabhängig.
+2. **Hintergrund-Health-Job (Task #64, `tse/healthJob.ts`, seit Serverstart
+   aktiv):** pollt alle 60 Sekunden das günstige `info`-Kommando; nur wenn
+   dieser Snapshot tatsächlich ein Problem zeigt (z.B. fehlgeschlagener
+   Self-Test, fehlende Zeit), löst der Job automatisch `maintain` aus —
+   kein blinder Fest-Intervall-Job. Zustandswechsel werden über
+   `system_log` (Kategorie `tse_health`) protokolliert, sichtbar im
+   Systemprotokoll. Kein Einfluss auf den Kassiervorgang, läuft
+   unabhängig. Zusätzlich admin-getriggert über den "Zeit
+   synchronisieren"-Button (`POST /api/admin/tse/maintain`, siehe
+   Abschnitt 7).
 3. **Pro fiskalisch relevantem Vorgang:** `start` → (optional `update`) →
    `finish`, jeweils mit dem passenden `processType` je nach Vorgang (siehe
    `Anforderungen.md` → „Zu signierende Vorgänge in FairPOS" für die Zuordnung
    Kassenbeleg-V1 / AVBestellung / AVSonstige).
 
-**✅ Umgesetzt (August 2026):** Alle vier Aufrufer (Bonkasse-Checkout,
-Bedienungskasse-Bestellung, Bedienungskasse-Split-Kassieren, admin-Bonstorno)
-laufen über `tse/signing.ts` → `signTseTransaction(processType, processData)`
-— ein einziger, nie blockierender Einstiegspunkt, der `start`+`finish` kapselt
-und automatisch die Ausfall-Dokumentation (Abschnitt 8.1) mitführt. Keiner der
-vier Aufrufer implementiert Fehlerbehandlung/Ausfall-Logik selbst.
+**✅ Umgesetzt (August 2026):** Alle fünf Aufrufer (Bonkasse-Checkout,
+Bedienungskasse-Bestellung, Bedienungskasse-Split-Kassieren,
+Bedienungskasse-Storno, admin-Bonstorno) laufen über `tse/signing.ts` →
+`signTseTransaction(processType, processData)` — ein einziger, nie
+blockierender Einstiegspunkt, der `start`+`finish` kapselt und automatisch
+die Ausfall-Dokumentation (Abschnitt 8.1) mitführt. Keiner der fünf
+Aufrufer implementiert Fehlerbehandlung/Ausfall-Logik selbst.
 
 ---
 
@@ -204,7 +212,7 @@ werden** — das sind Zugangsdaten des Betreibers, nicht des Software-Hersteller
   (erneutes Setup, Dekommissionierung) verlangen erneute manuelle Eingabe.
 
 **Umgesetzt (August 2026):** Mount-Pfad, Client-ID und TimeAdmin-PIN sind über
-Systemeinstellungen → System konfigurierbar, gespeichert als `tse_mount_point` /
+Einstellungen → System konfigurierbar, gespeichert als `tse_mount_point` /
 `tse_client_id` / `tse_time_admin_pin` in `system_setting` (gleiche Tabelle wie
 `server_address`). `tse/settings.ts` spiegelt Mount-Pfad und
 Client-ID beim Start und nach jedem Speichern synchron in `config` (siehe
@@ -213,6 +221,10 @@ Admin-PIN/PUK/Credential-Seed werden bewusst NICHT über die UI abgefragt — di
 einmalige Hardware-Inbetriebnahme (`setup`) ist nicht Teil dieser UI-Iteration.
 Ein "TSE testen"-Button ruft `GET /api/admin/tse/status` auf, der live `info`
 aufruft und Self-Test-Status, Restsignaturen, Zertifikatsablauf usw. anzeigt.
+Daneben ein "Zeit synchronisieren"-Button (`POST /api/admin/tse/maintain`,
+liest die TimeAdmin-PIN frisch aus `system_setting` und ruft `maintainTse()`
+auf) — derselbe manuelle Auslöser, der auch automatisch vom
+Hintergrund-Health-Job (Abschnitt 6, Punkt 2) verwendet wird.
 
 **Umgesetzt (Task #51):** Den Mount-Pfad muss der Admin nicht mehr von Hand
 eintippen — ein "Auto-erkennen"-Button (`POST /api/admin/tse/detect`,
@@ -243,9 +255,10 @@ Ausfalls zu puffern und später in die TSE nachzutragen — das wäre mit der
 TSE-Architektur (Live-Signatur mit TSE-eigenem Zeitstempel) auch technisch
 nicht sinnvoll möglich.
 
-**Verbindliche Regel für jede Stelle, die `tse/client.ts` aufruft** (aktuell
-`routes/register-session.ts` Bonkasse-Checkout; künftig auch die
-Bedienungskasse-Flows aus Task #41):
+**Verbindliche Regel für jede Stelle, die `tse/client.ts` aufruft** (alle
+fünf Aufrufer in `routes/register-session.ts` — Bonkasse-Checkout,
+Bedienungskasse-Bestellung/-Kassieren/-Storno — sowie
+`routes/admin/cancellations.ts`, siehe Abschnitt 6):
 
 1. **Niemals blockieren.** Jeder Aufruf von `startTransaction`/
    `finishTransaction`/etc. steht in einem `try/catch`. Ein Fehler (TSE
@@ -286,10 +299,10 @@ Bedienungskasse-Flows aus Task #41):
    wird das nur geloggt — der Aufrufer bekommt ohnehin dieselbe Warnung.
 
 **✅ Umgesetzt (August 2026):** Punkte 1–6 leben zentral in
-`tse/signing.ts` (`signTseTransaction`) — jeder der vier Aufrufer
-(Bonkasse-Checkout, Bedienungskasse-Bestellung/-Kassieren, admin-Bonstorno)
-ruft nur diese eine Funktion auf und muss weder Try/Catch noch
-Ausfall-Buchführung selbst implementieren. Tests:
+`tse/signing.ts` (`signTseTransaction`) — jeder der fünf Aufrufer
+(Bonkasse-Checkout, Bedienungskasse-Bestellung/-Kassieren/-Storno,
+admin-Bonstorno) ruft nur diese eine Funktion auf und muss weder Try/Catch
+noch Ausfall-Buchführung selbst implementieren. Tests:
 `register-session.integration.test.ts` (Describe-Blöcke „TSE-Signierung"),
 `cancellations.integration.test.ts`, `tse/signing.integration.test.ts` (prüft
 `tse_outage` direkt: öffnet genau eine Zeile pro Ausfall, schließt sie bei
@@ -309,18 +322,20 @@ nötig). Stattdessen:
   Entwickler bereitgestellt werden) und wird auch nicht erwartet.
 - Manuelles Testen gegen die echte TSE bleibt manuell/vor Ort.
 
-**Stand 2026-08-24:** Automatisierte Tests (CI, lokale Entwicklung unter
-WSL2) bleiben weiterhin auf die Stub-basierten Unit-Tests beschränkt — WSL2
-reicht USB-Geräte nicht ohne `usbipd-win` (Windows-Host-Aktion) durch.
-Erste echte Hardware-Verifikation hat aber stattgefunden, im Zuge der
-Produktionsinstallation auf einem nativen Ubuntu 26.04 LTS Server (siehe
-`docs/Installationsanleitung.md` Abschnitt 8): `tseCli` erfolgreich gegen
-die echte Swissbit-SDK gebaut und gelinkt (Abschnitt 8.1), USB-TSE
-automatisch gemountet mit korrekten Schreibrechten für den
-Backend-Service-User (Abschnitt 8.2). Noch offen zum Zeitpunkt dieser
-Formulierung: die erste echte `setup`-Aktivierung (Abschnitt 8.4, läuft
-direkt über `tseCli`, nicht über die Admin-UI) bzw. ein echter Checkout mit
-Signierung.
+**Stand 2026-08-26 (live bestätigt, siehe DANGER.md D-038-Fortsetzung):**
+Automatisierte Tests (CI, lokale Entwicklung unter WSL2) bleiben weiterhin
+auf die Stub-basierten Unit-Tests beschränkt — WSL2 reicht USB-Geräte
+nicht ohne `usbipd-win` (Windows-Host-Aktion) durch. Die erste echte
+Hardware-Verifikation ist inzwischen vollständig abgeschlossen: `tseCli`
+erfolgreich gegen die echte Swissbit-SDK gebaut und gelinkt, USB-TSE
+automatisch gemountet mit korrekten Schreibrechten, `setup`-Aktivierung
+durchgeführt, und ein echter Checkout mit Signierung erfolgreich sowohl
+auf der Bonkasse als auch der Bedienungskasse bestätigt (Signatur sichtbar
+auf Ausdruck und PDF). Ursache eines anfänglichen Fehlschlags war eine
+noch nicht synchronisierte TSE-Zeit (`WORM_ERROR_NO_TIME_SET`), behoben
+über den manuellen "Zeit synchronisieren"-Button (Abschnitt 7) — seither
+zusätzlich automatisch über den Hintergrund-Health-Job abgesichert
+(Abschnitt 6, Punkt 2).
 
 ---
 

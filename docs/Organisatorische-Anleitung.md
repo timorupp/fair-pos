@@ -129,7 +129,7 @@ Alle Kassendaten (Transaktionen, Rechnungen, Kassenabschlüsse) müssen 10 Jahre
   **nicht** selbst (der Server läuft nicht durchgehend, ein zeitbasierter
   automatischer Trigger würde regelmäßig verpasst — siehe
   `docs/Anforderungen.md` "Backup-Konzept") — stattdessen: Admin klickt in
-  Systemeinstellungen → System auf "Backup herunterladen" (lädt ein
+  Einstellungen → System auf "Backup herunterladen" (lädt ein
   vollständiges `pg_dump`-Backup als ZIP), idealerweise direkt nach jedem
   Tagesabschluss.
 - Sicherung auf einem externen Medium (USB-Festplatte, NAS) oder Cloud-Speicher (verschlüsselt)
@@ -161,7 +161,10 @@ Alle Kassendaten (Transaktionen, Rechnungen, Kassenabschlüsse) müssen 10 Jahre
 
 ## 5. Inbetriebnahme-Checkliste (Ersteinrichtung)
 
-- [ ] Swissbit USB-TSE beschaffen und über FairPOS (Systemeinstellungen → System bzw. `native/tse-cli`) aktivieren — siehe docs/TSE-Integration.md; fiskaltrust wurde als zu teuer verworfen (August 2026)
+- [ ] Swissbit USB-TSE beschaffen und über FairPOS (Einstellungen → System bzw. `native/tse-cli`) aktivieren — siehe docs/TSE-Integration.md; fiskaltrust wurde als zu teuer verworfen (August 2026)
+- [ ] Erste Veranstaltung anlegen und aktivieren (Adminbereich →
+      Organisation → Veranstaltungen) — erst danach lassen sich
+      Artikel, Kassen, Kassenlayouts und der Saalplan einrichten
 - [ ] FairPOS installieren und konfigurieren (Unternehmensdaten, Steuernummer, Steuersätze)
 - [ ] Kassensystem-Seriennummer und Softwareversion notieren
 - [ ] Kassenmeldung über ELSTER einreichen (Frist beachten)

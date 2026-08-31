@@ -73,7 +73,7 @@ zusätzliches Netzwerk-Setup nötig.
 Das `postgresql`-Metapaket zieht das passende `postgresql-client-*` (u.a.
 `pg_dump`, `psql`) als Abhängigkeit automatisch mit — kein separater Schritt
 nötig für den manuellen
-Datenbank-Backup-Download in der Admin-UI (Systemeinstellungen → System,
+Datenbank-Backup-Download in der Admin-UI (Einstellungen → System,
 siehe `docs/Anforderungen.md` "Backup-Konzept").
 
 ---
@@ -224,6 +224,16 @@ wird nur noch für die Systemverwaltung-Stufenauth im Adminbereich gebraucht)
 und gibt sie einmalig auf der Konsole aus — notieren, sie wird danach nicht
 erneut angezeigt (bei Bedarf über die Benutzerverwaltung neu vergeben).
 
+**Erste Veranstaltung anlegen und aktivieren (Task #95):** Eine frische,
+leere Datenbank hat bewusst **keine** Veranstaltung — anders als ein
+Upgrade einer bestehenden Installation, wo die Migration automatisch ein
+„Altbestand"-Sammelbecken für die vorhandenen Daten anlegt. Ohne aktive
+Veranstaltung lassen sich weder Artikel, Kassen, Kassenlayouts, der
+Saalplan noch Stornogründe anlegen. Nach dem ersten Login also im
+Adminbereich unter „Organisation → Veranstaltungen" eine Veranstaltung
+anlegen und über den „Aktivieren"-Button in der Liste aktiv setzen, bevor
+mit der eigentlichen Konfiguration (Abschnitt weiter unten) begonnen wird.
+
 ---
 
 ## 8. Swissbit USB-TSE einrichten
@@ -323,7 +333,7 @@ bei Bedarf `lsblk`/`stat` einfach nach einer Sekunde erneut ausführen).
 
 ### 8.3 TSE in der Admin-UI konfigurieren
 
-Nach dem ersten Start des Backends (Abschnitt 10): Systemeinstellungen →
+Nach dem ersten Start des Backends (Abschnitt 10): Einstellungen →
 System → "Auto-erkennen" klickt sich durch alle aktuell gemounteten
 Wechseldatenträger und trägt den ersten Treffer automatisch ein. Danach
 Client-ID frei vergeben (z.B. `FairPOS-1`), TimeAdmin-PIN eintragen und
@@ -452,7 +462,7 @@ sudo systemctl restart fairpos
 
 ## 13. Optionale privilegierte Admin-Aktionen (Sudoers)
 
-Drei Funktionen in der Admin-UI (Systemeinstellungen → System) brauchen
+Drei Funktionen in der Admin-UI (Einstellungen → System) brauchen
 Root-Rechte, die der `fairpos`-Service-User bewusst nicht hat (Abschnitt 4):
 Systemzeit und Zeitzone manuell setzen (Task #60) und Server herunterfahren
 (Task #61). Alle drei Endpunkte sind bereits implementiert und rufen `sudo`
@@ -524,7 +534,7 @@ Passwort zu fragen (`-n` bricht sofort ab, statt zu warten, falls doch eins
 nötig wäre — dann stimmt etwas an der Regel/Dateiberechtigung nicht).
 
 **Echter Funktionstest:**
-- Systemzeit/Zeitzone setzen: über die Admin-UI (Systemeinstellungen →
+- Systemzeit/Zeitzone setzen: über die Admin-UI (Einstellungen →
   System) einen Wert setzen und prüfen, dass die Erfolgsmeldung erscheint
   und `date`/`timedatectl` auf dem Server sich tatsächlich geändert haben.
 - Shutdown: **fährt den Server wirklich herunter** — bewusst am Ende einer

@@ -2631,7 +2631,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
 
   Backend-Unit- (298), Backend-Integrations- (221) und Frontend-Tests (70)
   grün, beide Typechecks sauber.
-- [ ] **#98** Aktualität aller `docs/`-Dateien prüfen und nachziehen
+- [x] **#98** Aktualität aller `docs/`-Dateien prüfen und nachziehen
   Aufgekommen 2026-08-30 während der Umsetzung von Task #96/#97: der Nutzer
   ist sich nicht sicher, ob die Dokumente unter `docs/` (siehe Liste
   „Kerndokumente" in AGENTS.md) bei jedem erledigten Task konsequent
@@ -2645,7 +2645,65 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `Manueller-Testplan.md` — jeweils gegen den aktuellen Code-/Feature-Stand
   abgleichen und Lücken schließen.
 
-  **Bewusst zurückgestellt:** erst angehen, wenn alle aktuell geplanten
+  **Erledigt (2026-08-31):** Alle 9 Dokumente einzeln gegen den echten
+  aktuellen Code abgeglichen (Migrationen, Routen, Frontend-Seiten), nicht
+  nur gegen die Aufgabenbeschreibung. Wesentliche Funde und Korrekturen:
+  - `Datenmodell.dbml`: umfassendste Korrektur — 4 fehlende Tabellen
+    (`cash_transaction`, `company_logo`, `system_log`, `session`), eine
+    zu entfernende (`register_access_token`, in Task #90 abgelöst),
+    `register_layout` hatte eine erfundene, nie existierende Struktur
+    (`register_id`/`is_default` statt der echten `event_id`/`grid_cols`/
+    `grid_rows`), die komplette Task-#97-Umstellung auf `*_name`-Text-
+    Snapshots fehlte, ebenso alle `event_id`-Spalten aus Task #95 inkl.
+    der zusammengesetzten Schlüssel von Migration 0025.
+  - `Anforderungen.md`: Benutzerrollen-Abschnitt beschrieb noch
+    Benutzername+Passwort-Login statt PIN-Login (Task #90) und kannte nur
+    eine Adminstufe statt zwei (Task #94); Veranstaltungsverwaltung-Abschnitt
+    beschrieb Veranstaltungen noch als reinen Auswertungszeitraum ohne
+    Einfluss auf den Betrieb — das genaue Gegenteil von Task #95; die
+    Navigationsstruktur war komplett veraltet (alte 7-Gruppen-Struktur
+    statt der aktuellen 5 Gruppen); eine dokumentierte
+    "Buchungsdaten löschen"-Funktion existiert im Code gar nicht (retired,
+    ersetzt durch das Veranstaltungsmodell).
+  - `Manueller-Testplan.md`: **live gefundener echter Bug, nicht nur
+    Doku-Drift** — `GET /register-session/me` gab nur `is_admin` zurück,
+    nie `is_event_admin`; eine reine Veranstaltungs-Administratorin mit
+    genau einer zugewiesenen Kasse wurde dadurch automatisch an der
+    Kassenauswahl vorbei direkt in die Kasse geleitet und konnte den
+    „Systemverwaltung"-Button nie sehen — faktisch dauerhaft ausgesperrt
+    von `/admin/*`. Behoben (`register-session.ts`, `register/+page.svelte`,
+    `hasAdminAccess = is_admin || is_event_admin`), Regressionstest ergänzt.
+    Testplan zusätzlich um Task #94/#95/#96/#97-Testfälle erweitert, die
+    komplett fehlten (Zwei-Stufen-Admin-Verhalten, Veranstaltungs-Lebenszyklus,
+    erfolgreiches Löschen von Drucker/Benutzer statt nur der Fehlerfälle).
+  - `SETUP.md`: behauptete fälschlich SSE/Server-Sent-Events für Echtzeit-
+    Updates (tatsächlich reines Polling, stand schon korrekt in AGENTS.md);
+    Repository-Struktur-Baum fehlten 11 Backend-Verzeichnisse und 4 von 9
+    `docs/`-Dateien; Umgebungsvariablen-Tabelle behauptete vollständig zu
+    sein, ließ aber 6 reale Variablen aus; drei neue Architekturentscheidungs-
+    Abschnitte ergänzt (PIN-Login, Zwei-Stufen-Admin, Veranstaltungs-Hierarchie).
+  - `Installationsanleitung.md`: fehlender Schritt „erste Veranstaltung
+    anlegen und aktivieren" (ohne den ist eine frische Installation nach
+    Migration 0019's Praezisierung funktional blockiert, siehe Task #95);
+    durchgängig falsche Navigationsangabe „Systemeinstellungen → System"
+    statt „Einstellungen → System" (Gruppe wurde in dieser Session umbenannt).
+  - `TSE-Integration.md`: veraltete "vier Aufrufer"-Zählung (tatsächlich
+    fünf, Bedienungskasse-Storno fehlte), `tse/healthJob.ts` (Task #64,
+    60s-Poll mit bedingtem `maintain`-Trigger) war komplett undokumentiert,
+    Abschnitt 9 war seit dem erfolgreichen Hardware-Test (2026-08-26)
+    nicht aktualisiert worden.
+  - `Rechtliche-Anforderungen.md`, `Organisatorische-Anleitung.md`,
+    `Dictionary.md`: kleinere gezielte Ergänzungen (Task #95-Klarstellung
+    zu den unberührten Zählern, fehlender Inbetriebnahme-Schritt, neue
+    Begriffspaare für beide Adminstufen/aktive Veranstaltung/Text-Snapshot-
+    Spalten).
+  Zusätzlich alle verbleibenden `Systemeinstellungen`-Navigationsverweise
+  über alle Dokumente hinweg auf die echten aktuellen Bezeichnungen
+  korrigiert (`Einstellungen → System`/`TSE`), inkl. eines verschobenen
+  Features (IP-Sperren-Reset lebt jetzt auf dem Dashboard, nicht mehr in
+  den Systemeinstellungen).
+
+  **Bewusst zurückgestellt (vor Erledigung):** erst angehen, wenn alle aktuell geplanten
   Refactorings (#94, #95, #96, #97) abgeschlossen sind — sonst müsste
   dieselbe Doku-Prüfung später für die durch diese Tasks neu entstandenen
   Änderungen wiederholt werden.

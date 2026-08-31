@@ -1,5 +1,5 @@
 // FairPOS — Data Model
-// Updated: May 2026
+// Updated: August 2026 (Task #98 — synced against migrations 0001–0026)
 // Database: PostgreSQL
 // Visualization: dbdiagram.io (import file or paste content)
 
@@ -9,28 +9,76 @@ Project FairPOS {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// EVENT (Veranstaltung) — hierarchy level, Task #95
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// A Veranstaltung — the hierarchy level article_category, article,
+// register_layout, register, the floor plan (floor_plan_column/
+// floor_plan_row/dining_table) and cancellation_reason all belong to
+// (Task #95). start_time/end_time are informational display fields only —
+// they play NO role in scoping which data belongs to the event (that's
+// event_id / register ownership). Exactly one event is globally "active" at
+// a time (system_setting key active_event_id), switchable only by a
+// System-Administrator. invoice/order_item deliberately have NO event_id of
+// their own — both already reference register_id, and a register never
+// changes its event, so visibility scoping joins through register instead;
+// this keeps the KassenSichV counters (invoice.receipt_number,
+// daily_closing.z_number) completely untouched by event-scoping.
+Table event {
+  id                                  uuid         [pk, default: `gen_random_uuid()`]
+  name                                varchar(200) [not null]
+  start_time                          timestamptz  [not null]
+  end_time                            timestamptz  [not null, note: 'CHECK end_time > start_time']
+  created_at                          timestamptz  [not null, default: `now()`]
+  default_receipt_register_layout_id  uuid         [null, note: 'Default register_layout for new receipt registers (Bonkassen) in this event']
+  default_service_register_layout_id  uuid         [null, note: 'Default register_layout for new service registers (Bedienungskassen) in this event']
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // USERS & REGISTERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// A user of the system. Administrators manage the system; non-administrators
+// A user of the system. Two independent admin levels (Task #94):
+// is_admin = System-Administrator (unrestricted), is_event_admin =
+// Veranstaltungs-Administrator (scoped to the active event, cannot switch
+// it). A user can hold either, both, or neither flag. Non-admin users
 // operate registers assigned to them.
 Table user {
   id             uuid         [pk, default: `gen_random_uuid()`]
   name           varchar(100) [not null, unique]
-  password_hash  varchar(255) [null, note: 'null = no real password set — only required for administrators (Task #90 follow-up); PIN is the only login method for everyone']
-  is_admin       boolean      [not null, default: false]
+  password_hash  varchar(255) [null, note: 'null = no real password set — only required for is_admin/is_event_admin users; PIN is the only login method for everyone']
+  pin_hash       varchar(64)  [null, note: 'Task #90 — PIN login is the sole way in, admin or not']
+  is_admin       boolean      [not null, default: false, note: 'System-Administrator — unrestricted (Task #94)']
+  is_event_admin boolean      [not null, default: false, note: 'Veranstaltungs-Administrator — scoped to the active event, cannot switch it (Task #94)']
   is_active      boolean      [not null, default: true, note: 'false = deactivated: login blocked, hidden from register assignment, never anonymized/deleted (Task #56)']
   created_at     timestamptz  [not null, default: `now()`]
 }
 
-// A cash register. Type determines the UI shown to the operator.
+// A server-tracked login session (Task #90) — replaced the old stateless
+// admin cookie and the one-time QR-token flow. admin_verified tracks the
+// once-per-session "Systemverwaltung" password step-up for an admin-level
+// user (Task #94: is_admin OR is_event_admin).
+Table session {
+  id                uuid        [pk, default: `gen_random_uuid()`]
+  user_id           uuid        [not null]
+  token             varchar(64) [not null, unique]
+  admin_verified    boolean     [not null, default: false]
+  created_at        timestamptz [not null, default: `now()`]
+  last_activity_at  timestamptz [not null, default: `now()`]
+  user_agent        text        [null]
+}
+
+// A cash register. Type determines the UI shown to the operator. Belongs to
+// exactly one event for its whole lifetime (Task #95) — never reassigned.
 // Bonkasse = self-checkout with receipt printer.
 // Bedienungskasse = table-service terminal without printer.
 Table register {
   id          uuid         [pk, default: `gen_random_uuid()`]
+  event_id    uuid         [not null, note: 'Task #95 — fixed at creation, never changes']
   name        varchar(100) [not null]
   type        varchar(20)  [not null, note: 'receipt_register | service_register']
   printer_id  uuid         [null, note: 'receipt_register only: assigned receipt printer']
+  layout_id   uuid         [null, note: 'Explicit register_layout override; null falls back to the default layout of the active event for this register type']
   is_active   boolean      [not null, default: true, note: 'false = archived: hidden from the operator login/register picker, still visible in history/exports (Task #55)']
   created_at  timestamptz  [not null, default: `now()`]
 }
@@ -45,39 +93,50 @@ Table user_register {
   }
 }
 
-// One-time QR code token generated by an administrator so a user can log in
-// to their assigned registers. Valid for 10 minutes, single use.
-Table register_access_token {
-  id          uuid        [pk, default: `gen_random_uuid()`]
-  user_id     uuid        [not null]
-  token       varchar(64) [not null, unique]
-  valid_until timestamptz [not null]
-  created_at  timestamptz [not null, default: `now()`]
+// A manual cash deposit or withdrawal on a register (Task #54).
+Table cash_transaction {
+  id          uuid          [pk, default: `gen_random_uuid()`]
+  register_id uuid          [not null]
+  user_name   text          [null, note: 'Text snapshot of the acting user name (Task #97) — not a foreign key, survives user deletion']
+  type        varchar(20)   [not null, note: 'deposit | withdrawal']
+  amount      decimal(10,2) [not null]
+  note        varchar(200)  [null]
+  created_at  timestamptz   [not null, default: `now()`]
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ARTICLES & CATEGORIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Groups articles by type and carries the applicable VAT rate.
+// Groups articles by type and carries the applicable VAT rate. Child of the
+// event (Task #95) — the same name is reusable across different events.
 Table article_category {
   id         uuid         [pk, default: `gen_random_uuid()`]
+  event_id   uuid         [not null]
   name       varchar(100) [not null]
   tax_rate   decimal(5,2) [not null, note: '0.00 | 7.00 | 19.00']
   created_at timestamptz  [not null, default: `now()`]
+
+  indexes {
+    (event_id, name) [unique]
+  }
 }
 
-// A sellable item. Linked to a category (which carries the VAT rate).
-// Optionally assigned to a printer for kitchen/bar order slips.
+// A sellable item. Linked to a category (which carries the VAT rate) —
+// application-level check (no DB constraint) ensures the category belongs
+// to the same event as the article (Task #95). Optionally assigned to a
+// printer for kitchen/bar order slips.
 Table article {
-  id            uuid          [pk, default: `gen_random_uuid()`]
-  category_id   uuid          [not null]
-  name          varchar(100)  [not null]
-  price         decimal(10,2) [not null]
-  deposit_price decimal(10,2) [null, note: 'Positive = deposit charged; negative = deposit refunded']
-  printer_id    uuid          [null, note: 'Printer for order slips; null = default printer']
-  is_active     boolean       [not null, default: true]
-  created_at    timestamptz   [not null, default: `now()`]
+  id                     uuid          [pk, default: `gen_random_uuid()`]
+  event_id               uuid          [not null]
+  category_id            uuid          [not null]
+  name                   varchar(200)  [not null]
+  price                  decimal(10,2) [not null]
+  deposit_price          decimal(10,2) [null, note: 'Positive = deposit charged; negative = deposit refunded']
+  print_deposit_receipt  boolean       [not null, default: false, note: 'true = the deposit is printed as its own separate slip instead of an extra line on the article slip']
+  printer_id             uuid          [null, note: 'Printer for order slips; null = default printer']
+  is_active              boolean       [not null, default: true]
+  created_at             timestamptz   [not null, default: `now()`]
 }
 
 // A selectable option for an article (e.g. "with ketchup").
@@ -93,17 +152,21 @@ Table product_option {
 // REGISTER LAYOUT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// A named button layout assigned to a register. One layout per register type
-// can be marked as the system-wide default.
+// A named button layout, shared by any number of registers (a register
+// optionally points at one via register.layout_id). Child of the event
+// (Task #95).
 Table register_layout {
   id         uuid         [pk, default: `gen_random_uuid()`]
-  register_id uuid        [not null]
+  event_id   uuid         [not null]
   name       varchar(100) [not null]
-  is_default boolean      [not null, default: false]
+  grid_cols  smallint     [not null, default: 4]
+  grid_rows  smallint     [not null, default: 4]
   created_at timestamptz  [not null, default: `now()`]
 }
 
 // A single article button placed at a grid position within a layout.
+// Application-level check (no DB constraint) ensures article_id belongs to
+// the same event as the layout (Task #95).
 Table register_layout_slot {
   id                 uuid      [pk, default: `gen_random_uuid()`]
   register_layout_id uuid      [not null]
@@ -123,21 +186,57 @@ Table register_layout_slot {
 // FLOOR PLAN & TABLES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// A dining table placed on the single floor plan. pos_x / pos_y are grid
-// coordinates used to render the floor plan in the UI.
+// One column of the floor plan grid. Child of the event (Task #95) — the
+// primary key and the col_order uniqueness are both widened to include
+// event_id, so the same label is reusable across events.
+Table floor_plan_column {
+  event_id  uuid        [not null]
+  label     varchar(10) [not null]
+  col_order int         [not null]
+
+  indexes {
+    (event_id, label) [pk]
+    (event_id, col_order) [unique]
+  }
+}
+
+// One row of the floor plan grid. Same event-scoped composite-key pattern
+// as floor_plan_column.
+Table floor_plan_row {
+  event_id  uuid        [not null]
+  label     varchar(10) [not null]
+  row_order int         [not null]
+
+  indexes {
+    (event_id, label) [pk]
+    (event_id, row_order) [unique]
+  }
+}
+
+// A dining table placed on the floor plan, positioned by its
+// (col_label, row_label) intersection rather than pixel coordinates. Child
+// of the event (Task #95).
 Table dining_table {
-  id      uuid        [pk, default: `gen_random_uuid()`]
-  name    varchar(50) [not null]
-  pos_x   int         [not null]
-  pos_y   int         [not null]
-  is_active boolean   [not null, default: true]
+  id        uuid        [pk, default: `gen_random_uuid()`]
+  event_id  uuid        [not null]
+  name      varchar(50) [not null]
+  col_label varchar(10) [not null]
+  row_label varchar(10) [not null]
+  status    varchar(20) [not null, default: 'active', note: 'active | inactive | hidden']
+
+  indexes {
+    (event_id, col_label, row_label) [unique]
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRINTERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// An ESC/POS network printer reachable via TCP/IP.
+// An ESC/POS network printer reachable via TCP/IP. Deliberately global, not
+// a child of the event (Task #95) — hardware doesn't belong to one
+// Veranstaltung. Deletable (Task #96); every reference to a deleted printer
+// falls back to null (see the ON DELETE SET NULL refs below).
 Table printer {
   id         uuid         [pk, default: `gen_random_uuid()`]
   name       varchar(100) [not null]
@@ -151,15 +250,17 @@ Table printer {
 // DAILY CLOSING (Z-BON)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// A daily closing record (Z-Bon) for one register. z_number must be sequential
-// per register with no gaps (GoBD requirement). is_zero_closing = true when no
-// transactions occurred and the system auto-generated this record.
+// A daily closing record (Z-Bon) for one register. z_number must be
+// sequential per register with no gaps (GoBD requirement) — deliberately
+// UNAFFECTED by event-scoping (Task #95): a Kassenabschluss must never
+// depend on which event happens to be active. is_zero_closing = true when
+// no transactions occurred and the system auto-generated this record.
 Table daily_closing {
   id                    uuid          [pk, default: `gen_random_uuid()`]
   register_id           uuid          [not null]
   z_number              int           [not null, note: 'Sequential per register, no gaps allowed (GoBD)']
   created_at            timestamptz   [not null, default: `now()`]
-  created_by            uuid          [null, note: 'User ID; null for automatic zero closings']
+  created_by_name       text          [null, note: 'Text snapshot of the acting admin name (Task #97) — not a foreign key, survives user deletion; null for automatic zero closings']
   is_zero_closing       boolean       [not null, default: false]
   total_gross           decimal(12,2) [not null]
   total_tax_standard    decimal(12,2) [not null, note: '19% tax portion']
@@ -182,7 +283,9 @@ Table daily_closing {
 
 // One record per article unit ordered. Three Bier = three rows.
 // All article data is snapshotted at order time so later changes to the
-// article catalogue do not affect existing orders.
+// article catalogue do not affect existing orders. No event_id of its own
+// (Task #95) — scoped transitively via register_id, since a register never
+// changes its event.
 //
 // status:
 //   open       — not yet invoiced; sitting on a table
@@ -199,13 +302,13 @@ Table order_item {
   invoice_id           uuid          [null, note: 'Null while open; set when invoiced']
   dining_table_id      uuid          [null, note: 'Null for receipt_register items']
   register_id          uuid          [not null]
-  user_id              uuid          [null, note: 'Waiter who took the order']
+  user_name            text          [null, note: 'Text snapshot of the waiter who took the order (Task #97) — not a foreign key, survives user deletion']
 
   // Soft reference to original article — snapshot fields below are authoritative
   article_id           uuid          [null, note: 'Soft reference; null if article archived']
 
   // Snapshot at order time — immutable after creation
-  article_name         varchar(100)  [not null]
+  article_name         varchar(200)  [not null]
   article_category_name varchar(100) [not null]
   tax_rate             decimal(5,2)  [not null]
   price                decimal(10,2) [not null, note: 'Original price — preserved even for free items']
@@ -216,7 +319,7 @@ Table order_item {
 
   status                  varchar(20) [not null, note: 'open | paid | free | cancelled']
   cancellation_reason_id  uuid        [null, note: 'Set for free and cancelled items']
-  cancelled_by            uuid        [null, note: 'User ID of the waiter who cancelled']
+  cancelled_by_name       text        [null, note: 'Text snapshot of the waiter who cancelled (Task #97) — not a foreign key, survives user deletion']
   created_at              timestamptz [not null, default: `now()`]
   cancelled_at            timestamptz [null]
 
@@ -232,7 +335,7 @@ Table service_order {
   id                     uuid         [pk, default: `gen_random_uuid()`]
   register_id            uuid         [not null]
   dining_table_id        uuid         [null]
-  user_id                uuid         [null, note: 'Waiter who took the order']
+  user_name              text         [null, note: 'Text snapshot of the waiter who took the order (Task #97) — not a foreign key, survives user deletion']
   created_at             timestamptz  [not null, default: `now()`]
   tse_transaction_number bigint       [null]
   tse_signature_counter  bigint       [null]
@@ -250,7 +353,7 @@ Table order_cancellation {
   id                     uuid         [pk, default: `gen_random_uuid()`]
   register_id            uuid         [not null]
   cancellation_reason_id uuid         [not null]
-  cancelled_by           uuid         [null]
+  cancelled_by_name      text         [null, note: 'Text snapshot of the acting user name (Task #97) — not a foreign key, survives user deletion']
   created_at             timestamptz  [not null, default: `now()`]
   tse_transaction_number bigint       [null]
   tse_signature_counter  bigint       [null]
@@ -261,7 +364,10 @@ Table order_cancellation {
 }
 
 // A fiscal receipt created at payment time. Carries the TSE signature.
-// Links to its order_items via order_item.invoice_id.
+// Links to its order_items via order_item.invoice_id. No event_id of its
+// own (Task #95) — scoped transitively via register_id. receipt_number
+// stays system-wide sequential and gapless regardless of event-scoping
+// (KassenSichV — see docs/Rechtliche-Anforderungen.md).
 // For receipt_register: created atomically together with its order_items.
 // For service_register: created when the waiter initiates payment.
 Table invoice {
@@ -292,7 +398,7 @@ Table invoice {
 // LISTEN/NOTIFY and retries failed jobs periodically.
 Table print_job {
   id              uuid        [pk, default: `gen_random_uuid()`]
-  printer_id      uuid        [not null]
+  printer_id      uuid        [null, note: 'Nullable since Task #96 — a queued job whose printer was deleted falls back to null rather than being deleted']
   type            varchar(20) [not null, note: 'order_slip | receipt | daily_closing']
   content         text        [not null, note: 'ESC/POS content (Base64)']
   reference_id    uuid        [null, note: 'ID of the related invoice or daily_closing']
@@ -307,23 +413,49 @@ Table print_job {
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// A configurable reason for cancelling or giving away items for free.
+// A configurable reason for cancelling or giving away items for free. Child
+// of the event (Task #95) — the same name is reusable across events.
 // booking_type determines the resulting order_item.status (free | cancelled)
 // — both are recorded via order_cancellation + a TSE SonstigerVorgang
 // signature, not via a 0 € invoice (see order_item.status above).
 Table cancellation_reason {
   id           uuid         [pk, default: `gen_random_uuid()`]
+  event_id     uuid         [not null]
   name         varchar(100) [not null]
   booking_type varchar(30)  [not null, note: 'cancellation | free_of_charge']
   is_active    boolean      [not null, default: true]
 }
 
 // Generic key-value store for system-wide settings
-// (e.g. server_address, register_serial_number).
+// (e.g. server_address, active_event_id, receipt_prefix).
 Table system_setting {
   key        varchar(100) [pk]
   value      text         [not null]
   updated_at timestamptz  [not null, default: `now()`]
+}
+
+// Singleton logo storage (one row, id fixed at 1) — the admin-uploaded
+// company logo, pre-rendered into both the PDF and ESC/POS formats needed
+// by the receipt/Z-Bon renderers.
+Table company_logo {
+  id            smallint    [pk, default: 1]
+  pdf_data      bytea       [not null]
+  escpos_data   bytea       [not null]
+  pdf_width     int         [not null]
+  pdf_height    int         [not null]
+  original_data bytea       [null, note: 'Original uploaded file, kept so the logo can be re-processed without re-uploading']
+  updated_at    timestamptz [not null, default: `now()`]
+}
+
+// Generic system event log (Task #64) — written by the TSE background
+// health job and other system-level checks, shown in the admin
+// "Systemprotokoll" (System-Administrator only, Task #94).
+Table system_log {
+  id         uuid        [pk, default: `gen_random_uuid()`]
+  created_at timestamptz [not null, default: `now()`]
+  severity   varchar(20) [not null, note: 'info | warning | error']
+  category   varchar(50) [not null]
+  message    text        [not null]
 }
 
 // Automated TSE outage documentation (AEAO zu § 146a AO Nr. 1.14.1): every
@@ -342,7 +474,7 @@ Table tse_outage {
 // middleware/fiskaltrust, no Docker; direct Swissbit SDK CLI subprocess,
 // see docs/TSE-Integration.md).
 // - mount_point / client_id → system_setting (tse_mount_point/tse_client_id),
-//                             editable via Systemeinstellungen -> System
+//                             editable via Einstellungen -> System
 // - serial_number, bsi_certification_id, signature_algorithm, log_time_format,
 //                             public_key → read live via the tseCli `info` command
 // - activation_date         → NOT tracked anywhere; operator notes it manually
@@ -352,34 +484,48 @@ Table tse_outage {
 // FOREIGN KEYS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Users & registers
-Ref: register.printer_id > printer.id
+// Event (Task #95)
+Ref: event.default_receipt_register_layout_id > register_layout.id
+Ref: event.default_service_register_layout_id > register_layout.id
+
+// Users, sessions & registers
+Ref: session.user_id > user.id
+Ref: register.event_id > event.id
+Ref: register.layout_id > register_layout.id
+Ref: register.printer_id > printer.id [delete: set null]
 Ref: user_register.user_id > user.id
 Ref: user_register.register_id > register.id
-Ref: register_access_token.user_id > user.id
+Ref: cash_transaction.register_id > register.id
 
 // Articles
+Ref: article_category.event_id > event.id
+Ref: article.event_id > event.id
 Ref: article.category_id > article_category.id
-Ref: article.printer_id > printer.id
+Ref: article.printer_id > printer.id [delete: set null]
 Ref: product_option.article_id > article.id
 
 // Register layout
-Ref: register_layout.register_id > register.id
+Ref: register_layout.event_id > event.id
 Ref: register_layout_slot.register_layout_id > register_layout.id
 Ref: register_layout_slot.article_id > article.id
 
+// Floor plan (Task #95 — composite keys; if dbdiagram.io fails to parse a
+// composite Ref, treat this comment as the source of truth instead)
+Ref: floor_plan_column.event_id > event.id
+Ref: floor_plan_row.event_id > event.id
+Ref: dining_table.event_id > event.id
+Ref: dining_table.(event_id, col_label) > floor_plan_column.(event_id, label) [delete: cascade]
+Ref: dining_table.(event_id, row_label) > floor_plan_row.(event_id, label) [delete: cascade]
+
 // Daily closing
 Ref: daily_closing.register_id > register.id
-Ref: daily_closing.created_by > user.id
 
 // Order items & invoices
 Ref: order_item.invoice_id > invoice.id
 Ref: order_item.dining_table_id > dining_table.id
 Ref: order_item.register_id > register.id
-Ref: order_item.user_id > user.id
 Ref: order_item.article_id > article.id
 Ref: order_item.cancellation_reason_id > cancellation_reason.id
-Ref: order_item.cancelled_by > user.id
 Ref: order_item.service_order_id > service_order.id
 Ref: order_item.order_cancellation_id > order_cancellation.id
 Ref: invoice.register_id > register.id
@@ -389,10 +535,11 @@ Ref: invoice.cancels_invoice_id > invoice.id
 // Bedienungskasse: order rounds & open-position cancellations (TSE-relevant)
 Ref: service_order.register_id > register.id
 Ref: service_order.dining_table_id > dining_table.id
-Ref: service_order.user_id > user.id
 Ref: order_cancellation.register_id > register.id
 Ref: order_cancellation.cancellation_reason_id > cancellation_reason.id
-Ref: order_cancellation.cancelled_by > user.id
+
+// Configuration
+Ref: cancellation_reason.event_id > event.id
 
 // Print queue
-Ref: print_job.printer_id > printer.id
+Ref: print_job.printer_id > printer.id [delete: set null]

@@ -69,7 +69,12 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 | Sitzung | session | Serverseitig verwaltete Login-Sitzung (Task #90) |
 | Transaktion | transaction | TSE-Transaktion |
 | Uhrzeit | time | — |
-| Veranstaltung | event | Auswertungszeitraum |
+| Veranstaltung | event | Hierarchieebene, der Artikel/Kassen/Kassenlayouts/Saalplan/Rechnungen/Bestellungen zugeordnet sind; genau eine ist global aktiv (Task #95) |
+| Aktive Veranstaltung | active_event_id (system_setting) / config.activeEventId | Die eine global aktive Veranstaltung; nur ein System-Administrator kann wechseln (Task #95) |
+| System-Administrator | is_admin | Unbeschränkte Adminstufe (Task #94) |
+| Veranstaltungs-Administrator | is_event_admin | Auf die aktive Veranstaltung beschränkte Adminstufe, unabhängig von is_admin (Task #94) |
+| Systemverwaltung (Schritt) | admin_verified | Einmal pro Sitzung nötige Passwort-Bestätigung für eine der beiden Adminstufen, bevor die Administrationsoberfläche erreichbar ist (Task #90/#94) |
+| Benutzername (Text-Schnappschuss) | user_name / cancelled_by_name / created_by_name | Auf order_item/daily_closing/cash_transaction/service_order/order_cancellation — Name des handelnden Benutzers zum Buchungszeitpunkt, kein Fremdschlüssel, übersteht das Löschen des Benutzers (Task #97) |
 | Versteckt (Flag) | hidden | Pro-Platzierung-Flag auf `register_layout_slot` — Taste vorübergehend von Bonkasse/Bedienung ausgeblendet, ohne Position/Farbe/Beschriftung zu verlieren (Task #91) |
 | Zahlung | payment | — |
 | Zahlungsart | payment_method | bar / EC-Karte |
@@ -85,6 +90,9 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 | Benutzer | user |
 | Benutzer-Kassen-Zuordnung | user_register |
 | Drucker | printer |
+| Veranstaltung | event |
+| Saalplan-Spalte | floor_plan_column |
+| Saalplan-Zeile | floor_plan_row |
 | Kasse | register |
 | Kassenlayout | register_layout |
 | Kassenlayout-Platzierung | register_layout_slot |

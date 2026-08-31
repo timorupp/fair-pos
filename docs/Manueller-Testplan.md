@@ -24,7 +24,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] Mindestens 3 Artikel in mind. 2 Artikelgruppen mit unterschiedlichen Steuersätzen (19 %, 7 %, ggf. 0 %)
 - [ ] Mindestens 1 Artikel mit Pfand (`deposit_price` > 0)
 - [ ] Getestet in mind. einem Desktop-Browser und einem mobilen/Touch-Browser (Bonkasse/Bedienungskasse sind Touch-UIs)
-- [ ] TSE-Konfiguration (Systemeinstellungen → System) für diesen Lauf bewusst gewählt: **entweder** komplett unkonfiguriert (Warnungs-Pfad testen) **oder** auf echte/simulierte Hardware zeigend (Erfolgs-Pfad testen) — beide Zustände separat durchlaufen, siehe Abschnitt 9
+- [ ] TSE-Konfiguration (Einstellungen → TSE) für diesen Lauf bewusst gewählt: **entweder** komplett unkonfiguriert (Warnungs-Pfad testen) **oder** auf echte/simulierte Hardware zeigend (Erfolgs-Pfad testen) — beide Zustände separat durchlaufen, siehe Abschnitt 9
 
 ---
 
@@ -32,9 +32,9 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 - [ ] PIN-Login funktioniert (PIN aus Admin-Benutzerverwaltung vergeben, auf der Login-Seite eingeben — mit und ohne Bindestriche, Groß-/Kleinschreibung egal)
 - [ ] Falsche/unbekannte PIN wird mit generischer Meldung abgelehnt
-- [ ] Nach 3 Fehlversuchen wird die eigene IP für 15 Minuten gesperrt; „Alle aktiven IP-Sperren zurücksetzen" (Systemeinstellungen → System) hebt die Sperre sofort auf
+- [ ] Nach 3 Fehlversuchen wird die eigene IP für 15 Minuten gesperrt; die „PIN-Login: IP-Sperren"-Kachel auf dem Dashboard zeigt die Anzahl und bietet einen „Zurücksetzen"-Button, der die Sperre sofort aufhebt
 - [ ] Deaktivierter Benutzer kann sich nicht mehr per PIN anmelden, eine bereits offene Session wird beim nächsten Request sofort beendet (Task #56)
-- [ ] „Systemverwaltung"-Button erscheint auf der Kassenauswahl nur bei einem Administrator-Konto, zwischen Kassenliste und „Abmelden"
+- [ ] „Systemverwaltung"-Button erscheint auf der Kassenauswahl bei einem System- **oder** Veranstaltungs-Administrator-Konto (Task #94), zwischen Kassenliste und „Abmelden" — insbesondere bei einer reinen Veranstaltungs-Administratorin mit genau einer zugewiesenen Kasse, die sonst automatisch direkt in diese Kasse weitergeleitet würde
 - [ ] Passwort-Abfrage bei „Systemverwaltung" wird nur beim ersten Klick pro Sitzung gestellt, nicht erneut bei weiteren Wechseln zwischen Kasse und Verwaltung
 - [ ] Falsches Passwort bei der Systemverwaltung-Abfrage wird abgelehnt, Zugriff auf `/admin/*` bleibt verwehrt
 - [ ] Logout beendet die Sitzung vollständig — sowohl Kassenauswahl als auch Systemverwaltung sind danach ohne erneuten Login nicht mehr erreichbar
@@ -42,26 +42,35 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 ---
 
-## 2. Admin: Systemeinstellungen
+## 2. Admin: Einstellungen
 
-### Unternehmensdaten (`/admin/settings/company`)
+### Unternehmensdaten (Organisation → Unternehmensdaten, `/admin/settings/company`)
 - [ ] Name, Anschrift, Steuernummer, USt-IdNr. speichern und laden
-- [ ] Belegnummer-Präfix + Startwert ändern — nächster Beleg übernimmt neuen Präfix
+- [ ] Belegnummer-Präfix + Startwert ändern — nächster Beleg übernimmt neuen Präfix — **System-Administrator-exklusiv** (Task #94): bei einer Veranstaltungs-Administratorin nicht editierbar/sichtbar
 - [ ] Logo hochladen, auf Bon-Vorschau sichtbar; Logo entfernen
 - [ ] Logo-Zoom ändern, Vorschau aktualisiert sich
-- [ ] Pfand-USt-Satz ändern
+- [ ] Pfand-USt-Satz ändern — **System-Administrator-exklusiv** (Task #94)
 
-### System (`/admin/settings/system`)
+### System (Einstellungen → System, `/admin/settings/system`)
 - [ ] Kassensystem-Seriennummer wird angezeigt (nicht editierbar), Kopieren-Button funktioniert
 - [ ] Zeitzone + laufende Serverzeit werden angezeigt und aktualisieren sich
-- [ ] Server-Adresse speichern — QR-Code auf Kundenbon zeigt danach korrekt auf diese Adresse
-- [ ] **Datenbank-Backup:** „Backup herunterladen" liefert ein ZIP mit SQL-Dump + Wiederherstellungs-README
+- [ ] Server-Adresse speichern — QR-Code auf Kundenbon zeigt danach korrekt auf diese Adresse — **System-Administrator-exklusiv** (Task #94)
+- [ ] **Datenbank-Backup:** „Backup herunterladen" liefert ein ZIP mit SQL-Dump + Wiederherstellungs-README — **System-Administrator-exklusiv** (Task #94)
+
+### TSE (Einstellungen → TSE, `/admin/settings/tse`)
 - [ ] **TSE-Verbindung:** Mount-Pfad, Client-ID, TimeAdmin-PIN eintragen und speichern — Änderung wirkt **ohne Neustart**
 - [ ] **TSE testen**-Button:
   - [ ] Ohne Konfiguration: zeigt „TSE ist nicht konfiguriert"
   - [ ] Mit falschem/nicht existierendem Pfad: zeigt Fehlermeldung, keine Absturz
   - [ ] Mit funktionierender TSE: zeigt Self-Test-Status, Seriennummer, Zertifizierungs-ID, Restsignaturen, Zertifikatsablauf
   - [ ] „Rohdaten (JSON)"-Aufklapper + Kopieren-Button funktionieren
+- [ ] **Zeit synchronisieren**-Button (Task #64) läuft ohne Fehler, wenn die TSE erreichbar ist
+
+### Zwei-Stufen-Admin (Task #94)
+- [ ] Veranstaltungs-Administrator-Konto: Menüpunkte „Veranstaltungen", „Backup", „Systemprotokoll" sind nicht sichtbar/erreichbar (403 bei direktem Aufruf der jeweiligen Route)
+- [ ] Veranstaltungs-Administrator kann `is_admin` bei keinem Benutzer setzen, keinen System-Administrator löschen oder dessen Passwort/PIN ändern
+- [ ] Veranstaltungs-Administrator sieht in den Einstellungen keine System-exklusiven Felder (Belegnummer-Präfix/-Start, Pfand-USt-Satz, Server-Adresse)
+- [ ] Veranstaltungs-Administrator sieht die aktive Veranstaltung auf dem Dashboard und in der Veranstaltungsliste, hat aber keinen „Aktivieren"-Button
 
 ---
 
@@ -69,23 +78,30 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 - [ ] **Artikelgruppen:** anlegen, Steuersatz ändern, löschen (nur wenn keine Artikel mehr zugeordnet)
 - [ ] **Artikel:** anlegen mit Preis/Pfand/Belegtext, Produktoptionen hinzufügen, Drucker zuordnen, deaktivieren/aktivieren
-- [ ] **Drucker:** anlegen (IP/Port), Standarddrucker setzen (genau einer aktiv), Testdruck auslösen, Löschen eines noch zugeordneten Druckers zeigt klare Fehlermeldung statt Absturz (Task #57)
+- [ ] **Drucker:** anlegen (IP/Port), Standarddrucker setzen (genau einer aktiv), Testdruck auslösen
+  - [ ] Löschen eines noch zugeordneten Druckers zeigt klare Fehlermeldung statt Absturz (Task #57)
+  - [ ] Drucker ohne Zuordnung erfolgreich löschen (Task #96)
 - [ ] **Kassen (Register):** Bonkasse + Bedienungskasse anlegen, Typ nicht nachträglich änderbar (falls so vorgesehen), Drucker zuordnen
   - [ ] Kasse mit vorhandener Rechnung archivieren (Aktiv-Häkchen entfernen) — verschwindet aus dem Kassen-Login-Picker, bleibt in Auswertungen/DSFinV-K-Export sichtbar (Task #55)
-- [ ] **Kassenlayouts:** Raster anlegen, Artikel per Drag&Drop platzieren, Standardlayout je Kassentyp setzen
+- [ ] **Kassenlayouts:** Raster anlegen, Artikel per Drag&Drop platzieren, Standardlayout je Kassentyp der aktiven Veranstaltung setzen (Task #95 — Einstellung liegt auf der Kassenlayouts-Seite, nicht mehr global)
 - [ ] **Kassenlayout-Slot-Attribute (Task #91):** Farbe/Beschriftung/Versteckt bleiben beim Verschieben eines Artikels auf einen anderen Slot erhalten; individuelle Tastenbeschriftung erscheint an der Kasse, Bestellliste zeigt weiterhin den echten Artikelnamen; versteckte Taste ist an Bonkasse/Bedienung nicht sichtbar
 - [ ] **Saalplan:** Spalten/Zeilen hinzufügen/löschen, Tische anlegen, Tisch-Status ändern (aktiv/inaktiv/versteckt), Tisch umbenennen
 - [ ] **Stornogründe:** anlegen mit `booking_type` Storno bzw. Kostenfrei, deaktivieren
-- [ ] **Benutzer:** anlegen (Admin/Kassenpersonal), Passwort setzen (nur Admin), PIN generieren/manuell ändern, Selbstlöschung wird verhindert
+- [ ] **Benutzer:** anlegen (System-/Veranstaltungs-Administrator/Kassenpersonal), Passwort setzen (nur bei aktiviertem Admin-Schalter), PIN generieren/manuell ändern/drucken
   - [ ] PIN-Duplikat wird beim Speichern abgelehnt (409), eigene unveränderte PIN erneut speichern funktioniert
-  - [ ] Benutzer mit vorhandener Buchung deaktivieren — PIN-Login und Passwort-Stufenauth werden abgelehnt, eine bereits offene Session dieses Benutzers wird sofort beendet, Selbstdeaktivierung wird verhindert (Task #56)
-- [ ] **Veranstaltungen:** anlegen mit Zeitraum, wird als Standard in Auswertungen/Excel-Export vorausgewählt
+  - [ ] Selbstlöschung wird verhindert; nur ein System-Administrator darf einen anderen System-Administrator löschen (Task #94)
+  - [ ] Benutzer mit vorhandener Buchungshistorie erfolgreich löschen (Task #97) — keine Fehlermeldung mehr, Buchungen behalten den Namen als Text-Schnappschuss
+  - [ ] Benutzer deaktivieren — PIN-Login und Passwort-Stufenauth werden abgelehnt, eine bereits offene Session dieses Benutzers wird sofort beendet, Selbstdeaktivierung wird verhindert (Task #56)
+- [ ] **Veranstaltungen (Organisation → Veranstaltungen, System-Administrator-exklusiv):** anlegen mit Zeitraum; in der Liste per „Aktivieren"-Button als aktive Veranstaltung setzen (markiert wie der Standarddrucker) — nichts wird mehr automatisch vorausgewählt
+  - [ ] Neue Veranstaltung anlegen und aktivieren → Artikel/Kassen/Kassenlayouts/Saalplan/Stornogründe zeigen sich leer
+  - [ ] Zurück auf die vorherige Veranstaltung wechseln → alle Altdaten sind wieder vollständig sichtbar
+  - [ ] Zeiträume überschneidender Veranstaltungen werden beim Anlegen abgelehnt (409)
 
 ---
 
 ## 4. Bonkasse (Kassieren)
 
-- [ ] Login per QR-Token, Kassenlayout wird angezeigt
+- [ ] PIN-Login, Kasse aus der Auswahl wählen, Kassenlayout wird angezeigt
 - [ ] Artikel per Tap zur Bestellliste hinzufügen, Menge ändern, Position entfernen
 - [ ] Negative/leere Bestellliste wird beim Kassieren-Versuch abgelehnt
 - [ ] Kassieren erzeugt Beleg mit korrekter, fortlaufender Belegnummer
@@ -101,7 +117,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 ## 5. Bedienungskasse
 
-- [ ] Login per QR-Token, Saalplan wird angezeigt, Tisch-Belegungsstatus korrekt
+- [ ] PIN-Login, Kasse aus der Auswahl wählen, Saalplan wird angezeigt, Tisch-Belegungsstatus korrekt
 - [ ] Tisch auswählen → Bestellansicht → Artikel mit Optionen bestellen
 - [ ] Bestellbon wird am artikelspezifischen Drucker gedruckt (Fallback: Standarddrucker)
 - [ ] Bestellung ohne verfügbaren Drucker: Bestellung wird trotzdem angelegt, Warnhinweis (Alert) erscheint
@@ -142,11 +158,12 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 ## 8. Auswertungen & Excel-Export
 
-- [ ] Umsatz-/Storno-/offene-Positionen-Reports laden korrekte Daten für die ausgewählte Veranstaltung
+- [ ] Umsatz-/Storno-/offene-Positionen-Reports laden korrekte Daten für die **aktive** Veranstaltung (Task #95 — keine Veranstaltungsauswahl mehr auf diesen Seiten; zum Prüfen einer anderen Veranstaltung diese zuerst unter „Organisation → Veranstaltungen" aktivieren)
 - [ ] Kassenbestand-Auswertung zeigt korrekten Soll-Bestand (Stornos/kostenfreie Positionen korrekt ausgeschlossen/eingerechnet)
 - [ ] „Erstellte Rechnungen"-Auswertung: Reprint-Button je Zeile funktioniert
 - [ ] Excel-Tagesexport für ein gewähltes Datum lädt herunter, öffnet in Excel/LibreOffice, Zeilen plausibel
-- [ ] Excel-Veranstaltungsexport für die gewählte Veranstaltung lädt herunter
+- [ ] Excel-Veranstaltungsexport für die aktive Veranstaltung lädt herunter — ohne Veranstaltungsauswahl
+- [ ] Rechnungs-PDFs (ZIP) — Tagesexport und Veranstaltungsexport laden je ein ZIP mit einem PDF pro Rechnung herunter
 
 ---
 

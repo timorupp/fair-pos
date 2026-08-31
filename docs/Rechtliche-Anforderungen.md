@@ -164,6 +164,16 @@ Ein **täglicher Kassenabschluss** ist rechtlich zwingend. Pflichtangaben auf de
 
 Das DSFinV-K-Kassenabschlussmodul ist das elektronische Äquivalent des Z-Bons (`businesscases.csv`, `payment.csv`, `cash_per_currency.csv`).
 
+**Hinweis (Task #95):** Die interne Organisationsebene „Veranstaltung"
+(zur Trennung von Artikeln/Kassen/Rechnungen bei Server-Verleih zwischen
+Vereinen) hat keinerlei Einfluss auf `invoice.receipt_number` oder
+`daily_closing.z_number` — beide Zähler bleiben zwingend global bzw. pro
+Kasse lückenlos, unabhängig davon, welche Veranstaltung gerade aktiv ist
+oder wie oft gewechselt wird. Ebenso unberührt: der DSFinV-K-Export
+(Abschnitt 6) bleibt vollständig unabhängig von der aktiven Veranstaltung,
+da die GoBD-Vollständigkeit niemals von einer internen UI-Einstellung
+abhängen darf.
+
 ---
 
 ## 6. DSFinV-K-Export
@@ -456,7 +466,7 @@ Ein gemeinnütziger Verein ist in vier steuerliche Bereiche aufgeteilt:
 ## 10. Checkliste: Inbetriebnahme FairPOS
 
 - [ ] Swissbit USB-TSE beschaffen und aktivieren
-- [ ] TSE-CLI-Binary bauen (`native/tse-cli/build.sh`) und Mount-Pfad/Client-ID konfigurieren (Systemeinstellungen → System, siehe docs/TSE-Integration.md)
+- [ ] TSE-CLI-Binary bauen (`native/tse-cli/build.sh`) und Mount-Pfad/Client-ID konfigurieren (Einstellungen → TSE, siehe docs/TSE-Integration.md)
 - [ ] FairPOS-Seriennummer und Softwareversion dokumentieren
 - [ ] Unternehmensdaten und Steuernummer im System hinterlegen
 - [ ] Alle Steuersätze korrekt konfigurieren
