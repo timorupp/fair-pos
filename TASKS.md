@@ -2732,3 +2732,52 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Admin-Dashboard, ein permanent sichtbares Element in der Admin-Sidebar/
   Kopfzeile, oder eine eigene Seite. Design/Platzierung vor der Umsetzung
   klären.
+
+- [ ] **#100** Entscheidung: digitalen Kundenbeleg (QR-Code/PDF) für Gäste beibehalten oder verwerfen
+  Aufgekommen 2026-08-31 aus einer Nutzerfrage zum bestehenden
+  `GET /receipt/:token`-Mechanismus (Anforderungen.md, Entscheidung Punkt 2):
+  der digitale Beleg wurde ursprünglich eingeführt, damit unter der
+  Belegausgabepflicht (§ 146a Abs. 1/2 AO, § 6 KassenSichV — siehe
+  `Rechtliche-Anforderungen.md` Abschnitt 2) nicht bei jeder Transaktion
+  zwingend gedruckt werden muss ("Ausgabeform: Papier, QR-Code oder
+  elektronisch zulässig"). Der Mechanismus setzt voraus, dass das
+  Kundengerät im selben lokalen Netz wie der Server ist — der Nutzer
+  möchte Gäste aber nicht in sein eigenes WLAN lassen.
+
+  **Netzwerktechnisches Kernproblem (Nutzerbefund, 2026-08-31):** eine
+  saubere Lösung bräuchte einen eigenen Gast-Access-Point oder einen
+  teureren Router mit zwei echt getrennten WLAN-Netzen (separate
+  IP-Pools/Subnetze). Normale Haushaltsrouter mit "Gast-WLAN"-Funktion
+  vergeben Haupt- und Gastnetz meist aus demselben IP-Pool — Geräte lassen
+  sich dadurch nicht zuverlässig unterscheiden, wodurch sich sensible
+  Bereiche des Systems auch nicht zuverlässig vor Gästen abschotten lassen.
+
+  **Bereits diskutierte Optionen:**
+  1. **Eigenes isoliertes Gäste-Funknetz** (eigener AP oder Router mit
+     getrennten IP-Pools) — sauberste Lösung, aber zusätzliche Hardware-
+     Anschaffung/Einrichtung nötig.
+  2. **PDF-Upload in einen Cloud-Speicher (Nutzeridee: Azure Blob
+     Storage), QR-Code zeigt auf die öffentliche Cloud-URL** — löst das
+     Netzwerkproblem vollständig (Gast erreicht die Cloud über eigene
+     Mobildaten, muss gar nicht ins lokale Netz), bringt aber eigene
+     Probleme mit: (a) **Verstößt aller Voraussicht nach gegen die
+     Organisationsvorgabe „keine API Keys erlauben"** — ein Azure-Blob-
+     Upload aus dem Backend würde einen Storage-Account-Key oder ein
+     SAS-Token erfordern; das müsste vor jeder Umsetzung explizit
+     abgeklärt werden, nicht nur technisch gelöst. (b) Widerspricht der
+     bisherigen Projekt-Prämisse „kein Internet nötig, keine laufenden
+     Cloud-Kosten" (siehe `AGENTS.md`/`Anforderungen.md` Rahmenbedingungen).
+     (c) Lädt Rechnungsdaten (Firmendaten, Beträge, Steuersätze — keine
+     personenbezogenen Kundendaten, aber dennoch betriebliche Daten) auf
+     einen Server eines Drittanbieters hoch, der aktuell nirgends im
+     Datenschutz-/Backup-Konzept vorgesehen ist.
+  3. **Funktion für Gäste ohne lösbaren Netzzugang schlicht nicht
+     anbieten**, stattdessen aktiv (unaufgefordert) nach jedem Verkauf
+     fragen, ob ein Papierbon gewünscht ist — rechtlich ausreichend
+     (Belegausgabepflicht verlangt aktives Anbieten in nutzbarer Form,
+     keine bestimmte Ausgabeform), kein zusätzlicher technischer Aufwand.
+
+  **Zu entscheiden:** ob die digitale Beleg-Funktion für Gäste überhaupt
+  beibehalten wird, und falls ja, über welchen der obigen Wege — vor einer
+  Umsetzung mit dem Nutzer klären, insbesondere Option 2 nicht ohne
+  ausdrückliche Freigabe der API-Key-Frage angehen.
