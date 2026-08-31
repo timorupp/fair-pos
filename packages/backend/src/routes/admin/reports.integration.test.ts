@@ -5,6 +5,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import {
@@ -79,6 +80,9 @@ describe('GET /api/admin/reports/invoices', () => {
 
   it('returns an empty list when no event is configured', async () => {
     const app = await getTestApp();
+    // Task #95: register.event_id is a NOT NULL FK to event — the register
+    // fixture must go first, or deleting every event violates that constraint.
+    await pool.query(`DELETE FROM register`);
     await pool.query(`DELETE FROM event`);
     const response = await app.inject({
       method: 'GET', url: '/api/admin/reports/invoices',
@@ -178,7 +182,8 @@ describe('GET /api/admin/reports/cancellations', () => {
     const user = await createTestUser({ isAdmin: false });
     // Insert two cancelled items
     const reason = await pool.query<{ id: string }>(
-      `INSERT INTO cancellation_reason (name, booking_type) VALUES ('X', 'cancellation') RETURNING id`,
+      `INSERT INTO cancellation_reason (name, booking_type, event_id) VALUES ('X', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
     );
     const inv = await pool.query<{ id: string }>(
       `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
@@ -210,11 +215,12 @@ describe('GET /api/admin/reports/cancellations', () => {
 describe('GET /api/admin/reports/open-positions', () => {
   it('groups open items by table', async () => {
     const app = await getTestApp();
-    await pool.query(`INSERT INTO floor_plan_column (label, col_order) VALUES ('A', 0)`);
-    await pool.query(`INSERT INTO floor_plan_row    (label, row_order) VALUES ('1', 0)`);
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
     const t = await pool.query<{ id: string }>(
-      `INSERT INTO dining_table (name, col_label, row_label, status)
-       VALUES ('A1', 'A', '1', 'active') RETURNING id`,
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('A1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
     );
     await pool.query(
       `INSERT INTO order_item (
@@ -278,7 +284,6 @@ describe('Authentication required', () => {
       '/api/admin/reports/cash-balance',
       '/api/admin/reports/cancellations',
       '/api/admin/reports/open-positions',
-      '/api/admin/reports/events',
       '/api/admin/reports/tse-outages',
     ]) {
       const r = await app.inject({ method: 'GET', url });

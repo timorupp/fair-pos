@@ -233,7 +233,8 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
 describe('GET /api/register-session/registers/:id — layout slots (Task #91 follow-up)', () => {
   it('excludes hidden slots entirely and includes the custom label of visible ones', async () => {
     const layout = await pool.query<{ id: string }>(
-      `INSERT INTO register_layout (name, grid_cols, grid_rows) VALUES ('L', 2, 2) RETURNING id`,
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('L', 2, 2, $1) RETURNING id`,
+      [config.activeEventId],
     );
     const layoutId = layout.rows[0]!.id;
     const hiddenArticle = await createTestArticle({ name: 'Versteckt' });
@@ -255,6 +256,22 @@ describe('GET /api/register-session/registers/:id — layout slots (Task #91 fol
     expect(slots).toHaveLength(1);
     expect(slots[0].article_id).toBe(articleId);
     expect(slots[0].label).toBe('Meine Taste');
+  });
+
+  it('only lists articles of the active event (Task #95)', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    await createTestArticle({ name: 'Fremd', eventId: otherEvent.rows[0]!.id });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/registers/${registerId}`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const names = (response.json().articles as { name: string }[]).map((a) => a.name);
+    expect(names).not.toContain('Fremd');
   });
 });
 
@@ -373,11 +390,12 @@ describe('Bedienungskasse: order + checkout flow', () => {
   let tableId: string;
 
   beforeEach(async () => {
-    await pool.query(`INSERT INTO floor_plan_column (label, col_order) VALUES ('A', 0)`);
-    await pool.query(`INSERT INTO floor_plan_row    (label, row_order) VALUES ('1', 0)`);
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
     const t = await pool.query<{ id: string }>(
-      `INSERT INTO dining_table (name, col_label, row_label, status)
-       VALUES ('A1', 'A', '1', 'active') RETURNING id`,
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('A1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
     );
     tableId = t.rows[0]!.id;
   });
@@ -437,8 +455,9 @@ describe('Bedienungskasse: order + checkout flow', () => {
   it('cancel marks selected items as cancelled with the reason', async () => {
     const app = await getTestApp();
     const reason = await pool.query<{ id: string }>(
-      `INSERT INTO cancellation_reason (name, booking_type)
-       VALUES ('Test-Storno', 'cancellation') RETURNING id`,
+      `INSERT INTO cancellation_reason (name, booking_type, event_id)
+       VALUES ('Test-Storno', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
     );
     await app.inject({
       method: 'POST',
@@ -477,11 +496,12 @@ describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSon
   let tableId: string;
 
   beforeEach(async () => {
-    await pool.query(`INSERT INTO floor_plan_column (label, col_order) VALUES ('A', 0)`);
-    await pool.query(`INSERT INTO floor_plan_row    (label, row_order) VALUES ('1', 0)`);
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
     const t = await pool.query<{ id: string }>(
-      `INSERT INTO dining_table (name, col_label, row_label, status)
-       VALUES ('A1', 'A', '1', 'active') RETURNING id`,
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('A1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
     );
     tableId = t.rows[0]!.id;
   });
@@ -599,8 +619,9 @@ describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSon
   it('signs a cancellation as AVSonstige and stores it on order_cancellation', async () => {
     const appSetup = await getTestApp();
     const reason = await pool.query<{ id: string }>(
-      `INSERT INTO cancellation_reason (name, booking_type)
-       VALUES ('Test-Storno', 'cancellation') RETURNING id`,
+      `INSERT INTO cancellation_reason (name, booking_type, event_id)
+       VALUES ('Test-Storno', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
     );
     await appSetup.inject({
       method: 'POST',

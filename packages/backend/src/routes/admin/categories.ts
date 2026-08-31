@@ -1,20 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
+import { config } from '../../config.js';
 
-/** Admin routes for article category management. */
+/** Admin routes for article category management. Scoped to the active event (Task #95). */
 export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
-  /** GET /api/admin/categories — list all categories ordered by name. */
+  /** GET /api/admin/categories — list categories of the active event, ordered by name. */
   app.get('/', async (_req, reply) => {
     const result = await query(
-      'SELECT id, name, tax_rate, created_at FROM article_category ORDER BY name',
+      'SELECT id, name, tax_rate, created_at FROM article_category WHERE event_id = $1 ORDER BY name',
+      [config.activeEventId],
     );
     return reply.send(result.rows);
   });
 
-  /** POST /api/admin/categories — create a category. */
+  /** POST /api/admin/categories — create a category in the active event. */
   app.post('/', async (req, reply) => {
     const body = req.body as { name?: string; tax_rate?: number };
     if (!body.name || body.tax_rate === undefined) {
@@ -23,10 +25,10 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
 
     try {
       const result = await query(
-        `INSERT INTO article_category (name, tax_rate)
-         VALUES ($1, $2)
+        `INSERT INTO article_category (name, tax_rate, event_id)
+         VALUES ($1, $2, $3)
          RETURNING id, name, tax_rate, created_at`,
-        [body.name, body.tax_rate],
+        [body.name, body.tax_rate, config.activeEventId],
       );
       return reply.status(201).send(result.rows[0]);
     } catch (e: unknown) {
@@ -37,7 +39,7 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
     }
   });
 
-  /** PUT /api/admin/categories/:id — update a category. */
+  /** PUT /api/admin/categories/:id — update a category of the active event. */
   app.put('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = req.body as { name?: string; tax_rate?: number };
@@ -46,9 +48,9 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
       const result = await query(
         `UPDATE article_category
          SET name = COALESCE($1, name), tax_rate = COALESCE($2, tax_rate)
-         WHERE id = $3
+         WHERE id = $3 AND event_id = $4
          RETURNING id, name, tax_rate, created_at`,
-        [body.name ?? null, body.tax_rate ?? null, id],
+        [body.name ?? null, body.tax_rate ?? null, id, config.activeEventId],
       );
       if (result.rows.length === 0) return reply.status(404).send({ error: 'Artikelgruppe nicht gefunden' });
       return reply.send(result.rows[0]);
@@ -60,7 +62,7 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
     }
   });
 
-  /** DELETE /api/admin/categories/:id — delete a category (fails if articles reference it). */
+  /** DELETE /api/admin/categories/:id — delete a category of the active event (fails if articles reference it). */
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
 
@@ -73,8 +75,8 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
     }
 
     const result = await query(
-      'DELETE FROM article_category WHERE id = $1 RETURNING id',
-      [id],
+      'DELETE FROM article_category WHERE id = $1 AND event_id = $2 RETURNING id',
+      [id, config.activeEventId],
     );
     if (result.rowCount === 0) return reply.status(404).send({ error: 'Artikelgruppe nicht gefunden' });
     return reply.status(204).send();

@@ -1,0 +1,348 @@
+UMSETZUNGSPLAN: ZWEI-STUFEN-ADMIN (#94) + VERANSTALTUNG ALS HIERARCHIEEBENE (#95)
+==============================================================================
+
+Zweck: Schrittweise abarbeitbarer Plan, damit bei einer so grossen,
+mehrere Sessions uebergreifenden Aenderung nichts uebersehen wird. Jeder
+Schritt ist einzeln abschliessbar (Migration + Code + Tests + kurze
+Verifikation), bevor der naechste beginnt. Reihenfolge ist absichtlich so
+gewaehlt, dass nach jedem einzelnen Schritt ein funktionsfaehiger,
+getesteter Zwischenstand existiert.
+
+Hintergrund/Entscheidungen, die in diesen Plan eingeflossen sind: siehe
+TASKS.md Task #94 und #95 fuer die vollstaendige Herleitung. Dieser Plan
+wiederholt nur, WAS zu tun ist, nicht WARUM.
+
+Checkbox-Status: [ ] offen, [x] erledigt. Bei jedem abgeschlossenen
+Schritt hier den Haken setzen, damit eine neue Session sofort sieht, wo
+weitergemacht wird.
+
+==============================================================================
+PHASE 0 — TASK #94: ZWEI-STUFEN-ADMIN (unabhaengig von #95, zuerst)
+==============================================================================
+
+[x] 0.1 Migration: user.is_event_admin
+    ALTER TABLE "user" ADD COLUMN is_event_admin BOOLEAN NOT NULL DEFAULT false.
+    is_admin bleibt unveraendert (weiterhin "System-Administrator", kein Rename).
+
+[x] 0.2 Middleware-Erweiterung (middleware/authenticate.ts)
+    - authenticateAdmin (bestehender Name): laesst is_admin ODER
+      is_event_admin durch (neue Bedeutung). Bleibt der Default-Aufruf in
+      allen Routendateien, die V (oder beide) erlauben sollen -- KEINE
+      Aenderung der Aufrufzeile in diesen Dateien noetig.
+    - authenticateSystemAdmin (neu): verlangt strikt is_admin. Ersetzt
+      authenticateAdmin nur in den unten explizit genannten Dateien.
+    - Step-up-Passwortpruefung (admin_verified) unveraendert fuer beide
+      Stufen gleich.
+
+[x] 0.3 S-exklusive Routendateien umstellen (authenticateSystemAdmin statt
+    authenticateAdmin) -- laut Adminstufen-Matrix.txt nur diese drei:
+    - routes/admin/events.ts (komplett)
+    - routes/admin/backup.ts (komplett)
+    - routes/admin/logs.ts (komplett)
+
+[x] 0.4 Feld-Ebene in users.ts
+    PUT/POST: is_admin darf nur gesetzt/geaendert werden, wenn
+    request.adminUser.is_admin true ist (sonst 403 mit klarer Meldung).
+    DELETE: ein Benutzer mit is_admin=true darf nur von einem
+    System-Administrator geloescht werden.
+    is_event_admin selbst darf von V frei gesetzt werden (kein Guard noetig
+    -- ein Veranstaltungs-Administrator dieselbe Stufe an einen Kollegen
+    weiterzugeben ist keine Eskalation).
+
+[x] 0.5 Feld-Ebene in settings.ts -- ALLOWED_KEYS aufteilen:
+    S-exklusiv: receipt_prefix, receipt_counter_start, vat_rate_deposit,
+    server_address.
+    V-erlaubt: company_name, company_street, company_postal_code,
+    company_city, company_tax_number, company_vat_id (Nutzerentscheidung
+    2026-08-30: mietender Verein braucht eigene Daten auf den Bons),
+    logo_on_*, logo_zoom_percent, TSE_SETTING_KEYS.
+    ENTFAELLT KOMPLETT aus system_setting (wandert zu Phase 1.4):
+    default_layout_receipt_register, default_layout_service_register.
+    PUT /settings filtert je nach Adminstufe des Anfragenden, welche Keys
+    aus dem Body uebernommen werden -- ein V-Request, der einen S-Key
+    mitschickt, ignoriert diesen Key still (kein Fehler), analog zum
+    bestehenden ALLOWED_KEYS-Filterprinzip.
+
+[x] 0.6 Frontend: Benutzerverwaltung
+    Zweite Checkbox "Veranstaltungs-Administrator" im Anlage-/Bearbeiten-
+    Formular. Die "System-Administrator"-Checkbox ist nur sichtbar/aktiv,
+    wenn der eingeloggte Benutzer selbst System-Administrator ist.
+
+[x] 0.7 Frontend: Navigation
+    admin/+layout.svelte blendet die drei S-exklusiven Bereiche
+    (Veranstaltungen, Backup, Systemprotokoll) fuer reine
+    Veranstaltungs-Administratoren aus.
+
+[x] 0.8 Frontend: Settings-Seite(n)
+    Felder, die laut 0.5 S-exklusiv sind, werden für einen
+    Veranstaltungs-Administrator schreibgeschuetzt/ausgeblendet
+    dargestellt (welche genaue Seite betroffen ist je nach aktueller
+    Aufteilung der Settings-Unterseiten pruefen -- company/tse/system
+    etc. liegen aktuell auf getrennten Routen).
+
+[x] 0.9 Tests
+    - test/fixtures.ts: createTestUser um isEventAdmin erweitern.
+    - Je S-exklusiver Datei (events.ts, backup.ts, logs.ts): Integrationstest,
+      der belegt dass ein reiner Veranstaltungs-Administrator 403 bekommt.
+    - Feld-Ebenen-Guards (users.ts is_admin-Schutz, settings.ts Key-Filter):
+      je ein Integrationstest pro Guard.
+    - Vollstaendige Suite (Unit + Integration, beide Pakete) gruen,
+      Typecheck sauber.
+
+[x] 0.10 TASKS.md: Task #94 als erledigt markieren, kurze
+    Umsetzungszusammenfassung ergaenzen (Muster: siehe #96/#97-Eintraege).
+
+--- Ab hier NICHT vor Abschluss von Phase 0 beginnen ---
+
+==============================================================================
+PHASE 1 — TASK #95, GRUNDLAGEN: AKTIVE VERANSTALTUNG
+==============================================================================
+
+[x] 1.1 Migration: Dummy-/Altbestand-Event automatisch anlegen
+    INSERT INTO event (name, start_time, end_time) VALUES
+    ('Altbestand', '2020-01-01T00:00:00Z', now()) -- weiter Zeitraum
+    (Nutzerentscheidung 2026-08-30), deckt alle Altdaten in
+    zeitbasierten Reports sicher ab. Id dieses Events wird in derselben
+    Migration direkt als initialer Wert fuer 1.2 verwendet.
+
+    NACHTRAEGLICH PRAEZISIERT (Nutzervorgabe 2026-08-31): nur anlegen, wenn
+    tatsaechlich Altdaten vorliegen -- eine frische, leere Datenbank
+    (Neuinstallation) soll KEIN Dummy-Event bekommen. Migration
+    0019_active_event.sql umgestellt auf einen DO $$ ... $$-Block, der vorab
+    per EXISTS-Check ueber alle acht spaeter event-gescopten Tabellen
+    (article_category, article, register_layout, register,
+    floor_plan_column, floor_plan_row, dining_table, cancellation_reason)
+    prueft, ob ueberhaupt etwas zu migrieren ist. Event + active_event_id
+    werden nur im Ja-Fall angelegt; ansonsten bleibt config.activeEventId
+    nach dem Serverstart schlicht null (bereits ueberall im Code sauber
+    behandelt, siehe system/activeEvent.ts -- die Endpoints geben dann
+    passende "keine aktive Veranstaltung"-Antworten statt eines Fehlers).
+    Manuell an einer Scratch-DB gegen beide Zweige verifiziert (leere DB ->
+    kein Event; DB mit einer bestehenden article_category-Zeile -> Altbestand
+    wird angelegt, Zeile korrekt zugeordnet, alle Folgemigrationen bis 0026
+    laufen fehlerfrei durch). test/db-fixture.ts's truncateAllTables()
+    bleibt bewusst unveraendert -- sie seedet fuer Tests immer ein eigenes
+    "Testveranstaltung"-Event, unabhaengig von dieser produktionsseitigen
+    Unterscheidung.
+
+[x] 1.2 Migration: system_setting-Key active_event_id
+    Initial auf die Id des in 1.1 angelegten Altbestand-Events gesetzt,
+    damit direkt nach der Migration alles wie gewohnt funktioniert (siehe
+    1.7, "sichere Migrationsgeschichte").
+
+[x] 1.3 Backend: system/activeEvent.ts (neues Modul, Muster wie
+    tse/settings.ts)
+    - loadActiveEventIdFromDb() beim Serverstart in config laden
+      (synchroner Hot-Path-Zugriff wie bei tseMountPoint/tseClientId).
+    - setActiveEvent(eventId) validiert dass die Event-Id existiert,
+      schreibt system_setting, aktualisiert config.
+    - Endpoint PUT /api/admin/system/active-event (authenticateSystemAdmin)
+      -- S-exklusiv, wie in Task #94/#95 vereinbart.
+    - Endpoint GET /api/admin/system/active-event (authenticateAdmin,
+      also fuer S+V) -- liefert id/name/start/end der aktiven Veranstaltung,
+      Grundlage fuer den Frontend-Kontext (1.6).
+
+[x] 1.4 Migration: event.default_receipt_register_layout_id /
+    event.default_service_register_layout_id
+    Zwei neue nullable Spalten direkt auf event (REFERENCES register_layout(id)),
+    ersetzen die bisherigen globalen system_setting-Keys
+    default_layout_receipt_register/default_layout_service_register
+    (Nutzerentscheidung 2026-08-30: gehoert zur Veranstaltung, nicht global,
+    da die Layouts selbst ja auch event-gebunden werden). Alte Werte aus
+    system_setting in die neuen Spalten des Altbestand-Events uebernehmen,
+    alte Keys aus system_setting entfernen. Betrifft resolve-printer.ts o.ae.
+    Stellen, die diese Defaults aktuell lesen -- pruefen und umstellen.
+
+[x] 1.5 events.ts erweitern -- ANDERS GELOEST als urspruenglich geplant:
+    NICHT in events.ts (das ist S-exklusiv), sondern eigener Endpoint
+    PUT /api/admin/system/active-event/default-layouts (authenticateAdmin,
+    also S+V) in system.ts -- layouts.ts (Kassenlayouts) ist V-zugaenglich,
+    ein Veranstaltungs-Administrator muss den Standard fuer die *aktive*
+    Veranstaltung setzen koennen, ohne allgemeine Event-Verwaltung zu
+    brauchen. Live gefunden beim Umsetzen von 1.4/1.5 zusammen.
+
+[x] 1.6 Frontend: globaler "aktive Veranstaltung"-Kontext
+    In admin/+layout.svelte (kein separater Store noetig) -- laedt einmalig
+    GET /admin/system/active-event, Anzeige in der Sidebar (Name), dauerhaft
+    sichtbar. "Wechseln"-Button nur fuer S sichtbar, oeffnet ein Modal mit
+    allen Veranstaltungen (GET /admin/events, daher zwangslaeufig S-only),
+    ruft PUT /admin/system/active-event auf.
+
+[x] 1.7 EventSelector + event_id-Query-Parameter entfernen
+    lib/components/EventSelector.svelte und dessen Verwendung auf den 5
+    Report-/Export-Seiten sowie das event_id-Querystring-Argument in
+    reports.ts/exports.ts entfernen -- diese Routen nutzen ab jetzt immer
+    automatisch die aktive Veranstaltung server-seitig, keine manuelle
+    Auswahl mehr noetig (siehe Task #95, Punkt 5 in TASKS.md).
+    ACHTUNG: nicht in Phase 1 entfernen, falls Phase 2 (insbesondere 2.7,
+    invoice/order_item) das noch braucht -- ggf. erst nach 2.7 durchfuehren,
+    dann diesen Punkt entsprechend verschieben. Bei Umsetzung pruefen.
+
+    ERLEDIGT (zusammen mit 2.7, wie hier vorgemerkt): EventSelector.svelte
+    geloescht; GET /api/admin/reports/events sowie das komplette
+    pickDefaultEventId/resolveReportEvent/resolveEvent-Auswahlkonzept
+    (reports/event-select.ts inkl. Test) entfernt. Die 5 betroffenen Seiten
+    (reports/invoices, reports/cash-balance, reports/cancellations,
+    exports/excel, exports/invoices) laden jetzt direkt beim Mount ohne
+    Auswahl-UI. api.ts entsprechend angepasst (kein eventId-Parameter mehr
+    bei reports.invoices/cashBalance/cancellations). Frontend-Typecheck
+    (svelte-check, 0 Fehler) und Produktionsbuild beide gruen bestaetigt.
+
+[x] 1.8 Tests + Verifikation
+    Unit-Tests fuer activeEvent.ts (Validierung), Integrationstests fuer
+    beide neuen Endpoints. Volle Suite gruen.
+
+==============================================================================
+PHASE 2 — PRO-TABELLE-DURCHGAENGE (event_id + Filter + Tests je Tabelle)
+==============================================================================
+Pro Schritt: Migration (Spalte + Backfill aufs Altbestand-Event + NOT NULL),
+alle lesenden Queries um "WHERE event_id = aktive Veranstaltung" ergaenzen,
+alle schreibenden Queries setzen event_id automatisch (aus dem geladenen
+active_event_id in config, keine Nutzerauswahl), Tests anpassen/ergaenzen,
+kurzer Live-Check. Admin-Stufe je Routendatei ist laut Adminstufen-Matrix.txt
+bereits in Phase 0 gesetzt -- hier NICHT nochmal anfassen, nur event_id.
+
+Testinfrastruktur (live bei 2.1 gefunden, gilt fuer den ganzen Rest von
+Phase 2): truncateAllTables() (test/db-fixture.ts) seedet jetzt nach jedem
+Truncate automatisch ein "Testveranstaltung"-Event + active_event_id +
+config.activeEventId -- sonst haette praktisch jeder Fixture-Helper
+(createTestCategory, bald createTestArticle/-Register/... ) explizit eine
+event_id durchgereicht bekommen muessen, was dutzende Testdateien angefasst
+haette. Funktion gibt jetzt die geseedete Event-Id zurueck (vorher void).
+Fixture-Helper akzeptieren weiterhin ein optionales eventId-Override.
+
+[x] 2.1 article_category (routes/admin/categories.ts)
+[x] 2.2 article + product_option (routes/admin/articles.ts) -- erledigt, alle Tests gruen (247 Integrationstests gesamt).
+[x] 2.3 register_layout + register_layout_slot (routes/admin/layouts.ts) --
+    zusaetzlich: anwendungsseitige Pruefung beim Speichern eines Slots,
+    dass article.event_id == register_layout.event_id (Nutzerentscheidung:
+    kein DB-Constraint, siehe Task #95). -- erledigt, alle Tests gruen (250
+    Integrationstests gesamt; ein unabhaengiger, zeitbasierter Flaky-Test in
+    settings.receipt-preview.integration.test.ts gefunden und in DANGER.md
+    als D-052 dokumentiert, nicht Teil dieser Aenderung).
+[x] 2.4 register (routes/admin/registers.ts) -- erledigt, inkl. anwendungs-
+    seitiger Pruefung dass register.layout_id zur aktiven Veranstaltung
+    gehoert (analog 2.3). Live gefunden: reports.integration.test.ts's
+    "returns an empty list when no event is configured" loeschte bisher
+    per DELETE FROM event alle Events, was jetzt an der neuen NOT-NULL-FK
+    register.event_id scheitert -- Test angepasst (loescht zuerst das
+    Register). Alle Tests gruen (253 Integrationstests gesamt).
+[x] 2.5 floor_plan_column + floor_plan_row + dining_table (routes/admin/tables.ts)
+    -- alle drei zusammen, da "alles was zum Saalplan gehoert" (Nutzervorgabe).
+    Strukturell aufwendiger als die bisherigen Schritte: floor_plan_column/
+    floor_plan_row nutzen ihr label als Primary Key, direkt von dining_table
+    referenziert -- Migration 0025 haengt event_id an alle drei Tabellen,
+    weitet PRIMARY KEY/UNIQUE(col_order)/UNIQUE(row_order) auf (event_id, ...)
+    und die beiden FKs von dining_table auf zusammengesetzte (event_id, label)
+    -- gleiche Spaltenbezeichnung ist so pro Veranstaltung wiederverwendbar.
+    routes/register-session.ts (Bedienungskasse-Tischauswahl, eng mit
+    order_item/service_order verzahnt) bewusst NICHT angefasst -- gehoert wie
+    im Plan vorgesehen zu Schritt 2.7. Alle Tests gruen (254 Integrationstests
+    gesamt).
+[x] 2.6 cancellation_reason (routes/admin/cancellation-reasons.ts) -- erledigt.
+    routes/register-session.ts (Stornoflow, eng mit order_item verzahnt) und
+    admin/cancellations.ts/reports.ts/exports/dsfinvk bewusst NICHT
+    angefasst -- gehoeren wie im Plan vorgesehen zu Schritt 2.7. Bisher
+    fehlende Integrationstestdatei fuer diese Route ergaenzt
+    (cancellation-reasons.integration.test.ts, inkl. Event-Scoping-Tests).
+    Alle Tests gruen (258 Integrationstests gesamt).
+[x] 2.7 invoice + order_item (routes/register-session.ts, receipt.ts,
+    admin/invoices.ts, admin/cancellations.ts, admin/closings.ts,
+    admin/reports.ts, admin/exports.ts, exports/dsfinvk/*) -- zuletzt und am
+    vorsichtigsten: NUR Sichtbarkeits-/Filterlogik aendert sich,
+    receipt_number bleibt zwingend global und lueckenlos, daily_closing.z_number
+    bleibt zwingend pro Kasse lueckenlos (siehe Task #95, kritische Leitplanke).
+
+    ERLEDIGT -- kein neues event_id-Feld auf invoice/order_item noetig:
+    invoice.register_id / order_item.register_id verweisen bereits auf ein
+    register, das seit 2.4 selbst event_id traegt und nie den Besitzer
+    wechselt -- Scoping erfolgt daher immer per JOIN auf register, nie durch
+    eine eigene Spalte auf den beiden fiskalisch kritischen Tabellen.
+
+    Umgesetzt (Sichtbarkeit/Filter per aktiver Veranstaltung):
+    - admin/reports.ts: /invoices, /cash-balance, /cancellations komplett
+      auf register.event_id umgestellt statt Datumsfenster + manuellem
+      event_id-Query-Param; die alte Auswahl-Heuristik (pickDefaultEventId,
+      GET /reports/events) komplett entfernt (siehe Punkt 1.7 unten).
+      /open-positions, /today-revenue, /tse-outages bewusst weiterhin NICHT
+      event-gescoped (siehe jeweilige Docstrings -- offene Posten duerfen
+      beim Veranstaltungswechsel nie unsichtbar werden, Tagesumsatz/TSE-Log
+      sind ohnehin tages-/nicht-event-bezogen).
+    - admin/exports.ts: /excel/event, /invoices/event nutzen jetzt
+      config.activeEventId statt manueller Auswahl, zusaetzlich per
+      register.event_id gefiltert (nicht nur Datumsfenster, praeziser bei
+      ueberlappenden Eventzeitraeumen). /excel/day, /invoices/day bewusst
+      unveraendert (Tagesexport ist absichtlich nicht event-gescoped).
+      exports/dsfinvk/* NICHT angefasst -- laedt ausschliesslich ueber
+      daily_closing_id, hat nie einen Event-Bezug gehabt (GoBD-Vollstaendigkeit
+      darf nie von der aktiven Veranstaltung abhaengen).
+    - admin/cancellations.ts (Bonstorno): register- und cancellation_reason-
+      Existenzpruefungen zusaetzlich auf event_id = aktive Veranstaltung.
+    - routes/register-session.ts: GET /me, GET /registers/:id, GET
+      /registers/:id/floor-plan, GET /cancellation-reasons zeigen nur noch
+      Registrierungen/Tische/Stornogruende der aktiven Veranstaltung; POST
+      .../orders und .../cancel pruefen zusaetzlich, dass Tisch bzw.
+      Stornogrund zur aktiven Veranstaltung gehoeren.
+    Bewusst NICHT angefasst (Begruendung siehe Docstrings/Leitplanke):
+    - admin/closings.ts: close-all/pending/GET .../closings bleiben komplett
+      global -- ein Kassenabschluss darf beim Veranstaltungswechsel niemals
+      aus dem Blick geraten, das ist genau die kritische Leitplanke.
+    - admin/invoices.ts (reprint/pdf), routes/register-session.ts's eigene
+      /invoices/:id/print und /qr.png: Drilldown ueber bereits bekannte id,
+      keine Browsing-Liste -- kein zusaetzlicher Scope noetig.
+    - receipt.ts / loadReceiptByToken: oeffentlicher QR-Code-Abruf per Token,
+      muss unabhaengig von der aktuell aktiven Veranstaltung immer aufloesbar
+      bleiben (Kunde koennte Wochen spaeter noch scannen).
+    Live gefunden: zwei eigene Testbugs beim Umsetzen (nicht produktiv) --
+    reports.integration.test.ts's Auth-Test listete noch den entfernten
+    Endpoint /reports/events; exports.excel.integration.test.ts's neuer Test
+    verletzte kurz die globale receipt_number-Eindeutigkeit (zwei Rechnungen
+    mit derselben Nummer in unterschiedlichen Registern) -- beides in der
+    Testdatei selbst behoben, keine Aenderung an Produktionscode noetig.
+    Alle Tests gruen (260 von 261 Integrationstests; der eine verbleibende
+    Fehlschlag ist der bereits in DANGER.md als D-052 dokumentierte,
+    unabhaengige Zeitstempel-Flake in settings.receipt-preview, isoliert
+    erneut gruen bestaetigt).
+
+    Punkt 1.7 (EventSelector entfernen) im selben Zug erledigt, siehe unten.
+
+Nach jedem einzelnen Punkt in Phase 2: volle Test-Suite (Unit + Integration,
+beide Pakete) gruen, Typecheck sauber, bevor der naechste Punkt beginnt.
+
+==============================================================================
+PHASE 3 — ABSCHLUSS
+==============================================================================
+
+[x] 3.1 TASKS.md: Task #95 als erledigt markieren, Umsetzungszusammenfassung
+    ergaenzen. -- erledigt, siehe TASKS.md Task #95.
+[x] 3.2 DANGER.md: pruefen ob waehrend der Umsetzung neue Risiken auffielen,
+    die nicht sofort behoben wurden -- dort eintragen. -- erledigt: einziger
+    Fund war der bereits waehrend Schritt 2.3 dokumentierte, unabhaengige
+    Zeitstempel-Flake in settings.receipt-preview.integration.test.ts
+    (D-052). Sonst keine neuen, unbehobenen Risiken waehrend 2.4-2.7
+    aufgefallen -- alle live gefundenen Testfehler (siehe Notizen bei 2.4
+    und 2.7) waren reine Testbugs, sofort in derselben Aenderung behoben,
+    kein Eintrag noetig.
+[ ] 3.3 Live-Verifikation auf dem Produktivserver: neue Veranstaltung
+    anlegen, aktiv setzen, pruefen dass Artikel/Kassen/Saalplan/Layouts leer
+    starten (erwartetes Verhalten, kein Bug), zurueck auf Altbestand
+    wechseln und pruefen dass alle bisherigen Daten wieder sichtbar sind.
+    -- NICHT durchfuehrbar aus dieser Session heraus (kein Zugriff auf den
+    Produktivserver) -- liegt beim Nutzer, sobald der aktuelle
+    Entwicklungsstand dort deployed ist.
+[ ] 3.4 Task #98 (Doku-Aktualitaet) ist jetzt nicht mehr zurueckgestellt --
+    kann als naechstes angegangen werden. -- eigener, separater Task,
+    bewusst nicht im Rahmen dieses Plans begonnen.
+
+==============================================================================
+OFFENE PUNKTE, DIE WAEHREND DER UMSETZUNG NOCH AUFTAUCHEN KOENNTEN
+==============================================================================
+- Migrationsnummerierung: jeder Schritt bekommt seine Nummer erst zum
+  tatsaechlichen Umsetzungszeitpunkt (max+1), nicht vorab -- vermeidet
+  Kollisionen falls zwischen den Sessions andere Migrationen entstehen.
+- Neue Veranstaltung anlegen bedeutet bewusst: Artikel/Kassen/Layouts/
+  Saalplan starten komplett leer, kein automatisches Kopieren von der
+  letzten Veranstaltung vorgesehen (kein Task dafuer bisher) -- falls das
+  in der Praxis zu muehsam ist, waere das ein eigener Folge-Task
+  ("Veranstaltung aus Vorlage/letzter Veranstaltung anlegen"), analog zum
+  bereits bestehenden Kassenlayout-Duplizieren-Button.

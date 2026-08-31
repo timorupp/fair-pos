@@ -26,6 +26,7 @@ interface PinUserRow {
   id: string;
   name: string;
   is_admin: boolean;
+  is_event_admin: boolean;
   is_active: boolean;
 }
 
@@ -34,6 +35,7 @@ interface UserResponse {
   id: string;
   name: string;
   is_admin: boolean;
+  is_event_admin: boolean;
 }
 
 /**
@@ -62,7 +64,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const result = await query<PinUserRow>(
-      'SELECT id, name, is_admin, is_active FROM "user" WHERE pin_hash = $1',
+      'SELECT id, name, is_admin, is_event_admin, is_active FROM "user" WHERE pin_hash = $1',
       [hashPin(normalized)],
     );
     const user = result.rows[0];
@@ -73,7 +75,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     recordSuccessfulAttempt(ip);
     await createSession(reply, user.id, request.headers['user-agent']);
-    const response: UserResponse = { id: user.id, name: user.name, is_admin: user.is_admin };
+    const response: UserResponse = {
+      id: user.id, name: user.name, is_admin: user.is_admin, is_event_admin: user.is_event_admin,
+    };
     return reply.send(response);
   });
 
@@ -85,7 +89,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
    * `admin_verified` isn't set yet.
    */
   app.post('/admin/verify', { preHandler: authenticateRegister }, async (request, reply) => {
-    if (!request.registerUser.is_admin) {
+    if (!request.registerUser.is_admin && !request.registerUser.is_event_admin) {
       return reply.status(403).send({ error: 'Keine Berechtigung' });
     }
     const body = request.body as { password?: string };
@@ -123,6 +127,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       id: request.adminUser.id,
       name: request.adminUser.name,
       is_admin: request.adminUser.is_admin,
+      is_event_admin: request.adminUser.is_event_admin,
     };
     return reply.send(response);
   });
@@ -133,6 +138,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       id: request.registerUser.id,
       name: request.registerUser.name,
       is_admin: request.registerUser.is_admin,
+      is_event_admin: request.registerUser.is_event_admin,
     };
     return reply.send(response);
   });

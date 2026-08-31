@@ -54,14 +54,16 @@ beforeEach(async () => {
   articleId = art.id;
 
   const cancelReason = await pool.query<{ id: string }>(
-    `INSERT INTO cancellation_reason (name, booking_type)
-     VALUES ('Retoure', 'cancellation') RETURNING id`,
+    `INSERT INTO cancellation_reason (name, booking_type, event_id)
+     VALUES ('Retoure', 'cancellation', $1) RETURNING id`,
+    [config.activeEventId],
   );
   cancellationReasonId = cancelReason.rows[0]!.id;
 
   const freeReason = await pool.query<{ id: string }>(
-    `INSERT INTO cancellation_reason (name, booking_type)
-     VALUES ('Mitarbeiter', 'free_of_charge') RETURNING id`,
+    `INSERT INTO cancellation_reason (name, booking_type, event_id)
+     VALUES ('Mitarbeiter', 'free_of_charge', $1) RETURNING id`,
+    [config.activeEventId],
   );
   freeOfChargeReasonId = freeReason.rows[0]!.id;
 

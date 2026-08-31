@@ -30,18 +30,25 @@ import {
 import { formatReceiptNumber, readReceiptPrefix } from '../receipt/format-receipt-number.js';
 import { makeGroupKey, pickItemsToCharge } from '../order/grouping.js';
 import { isRegisterUnlocked, findPendingDaysForRegister } from '../closing/pending-db.js';
+import { config } from '../config.js';
 
-/** Resolves the effective layout for a register: explicit `layout_id`, else the per-type default from settings, else null. */
+/**
+ * Resolves the effective layout for a register: explicit `layout_id`, else
+ * the active event's per-type default (Task #95 — moved off `system_setting`
+ * onto `event` itself, since a global default could point at a layout
+ * belonging to a different event), else null.
+ */
 async function resolveLayoutId(registerLayoutId: string | null, registerType: RegisterType): Promise<string | null> {
   if (registerLayoutId) return registerLayoutId;
-  const key = registerType === 'receipt_register'
-    ? 'default_layout_receipt_register'
-    : 'default_layout_service_register';
-  const result = await query<{ value: string }>(
-    `SELECT value FROM system_setting WHERE key = $1`,
-    [key],
+  if (!config.activeEventId) return null;
+  const column = registerType === 'receipt_register'
+    ? 'default_receipt_register_layout_id'
+    : 'default_service_register_layout_id';
+  const result = await query<{ layout_id: string | null }>(
+    `SELECT ${column} AS layout_id FROM event WHERE id = $1`,
+    [config.activeEventId],
   );
-  return result.rows[0]?.value ?? null;
+  return result.rows[0]?.layout_id ?? null;
 }
 
 /** Confirms the authenticated user has been assigned the given register. Returns 403 via reply if not. */
@@ -87,7 +94,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    * Each register is annotated with its pending-Z-Bon state so the UI can
    * show a "locked" indicator on the chooser screen. Archived registers
    * (`is_active = false`, Task #55) are excluded entirely — they stay
-   * assigned in `user_register` but no longer appear as choosable.
+   * assigned in `user_register` but no longer appear as choosable. Task #95:
+   * also excludes registers of an event other than the active one.
    */
   app.get('/me', async (req, reply) => {
     const result = await query<{
@@ -97,9 +105,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       SELECT r.id, r.name, r.type, r.printer_id, r.layout_id
         FROM register r
         JOIN user_register ur ON ur.register_id = r.id
-       WHERE ur.user_id = $1 AND r.is_active = true
+       WHERE ur.user_id = $1 AND r.is_active = true AND r.event_id = $2
        ORDER BY r.name
-    `, [req.registerUser.id]);
+    `, [req.registerUser.id, config.activeEventId]);
 
     const today = new Date();
     const registers = [];
@@ -118,6 +126,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    * An archived register (Task #55) is treated as not found — it has already
    * disappeared from `GET /me`, so reaching this by a stale/typed-in id should
    * behave the same as a deleted register, not silently allow operating it.
+   * Task #95: same treatment for a register of a different (non-active) event.
    */
   app.get('/registers/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -129,8 +138,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       id: string; name: string; type: RegisterType;
       printer_id: string | null; layout_id: string | null;
     }>(
-      `SELECT id, name, type, printer_id, layout_id FROM register WHERE id = $1 AND is_active = true`,
-      [id],
+      `SELECT id, name, type, printer_id, layout_id FROM register WHERE id = $1 AND is_active = true AND event_id = $2`,
+      [id, config.activeEventId],
     );
     const register = regResult.rows[0];
     if (!register) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
@@ -166,7 +175,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
               c.name AS category_name, c.tax_rate
          FROM article a
          JOIN article_category c ON c.id = a.category_id
-        WHERE a.is_active = true`,
+        WHERE a.is_active = true AND a.event_id = $1`,
+      [config.activeEventId],
     );
 
     const pending = await findPendingDaysForRegister(register.id);
@@ -248,8 +258,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
                 c.name AS category_name, c.tax_rate
            FROM article a
            JOIN article_category c ON c.id = a.category_id
-          WHERE a.id = ANY($1)`,
-        [articleIds],
+          WHERE a.id = ANY($1) AND a.event_id = $2`,
+        [articleIds, config.activeEventId],
       );
       const articleById = new Map(articlesResult.rows.map((a) => [a.id, a]));
       for (const pos of positions) {
@@ -443,7 +453,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
   // because they always go straight from cart → paid invoice in one step.
   // ──────────────────────────────────────────────────────────────────────────
 
-  /** GET /registers/:id/floor-plan — tables visible to the operator with per-table occupancy status. */
+  /** GET /registers/:id/floor-plan — tables of the active event visible to the operator with per-table occupancy status. */
   app.get<{ Params: { id: string } }>('/registers/:id/floor-plan', async (req, reply) => {
     const { id: registerId } = req.params;
     if (!(await userHasRegister(req.registerUser.id, registerId))) {
@@ -459,17 +469,17 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
              c.col_order, r.row_order, t.status,
              COALESCE(o.cnt, 0)::text AS open_count
         FROM dining_table t
-        JOIN floor_plan_column c ON c.label = t.col_label
-        JOIN floor_plan_row    r ON r.label = t.row_label
+        JOIN floor_plan_column c ON c.event_id = t.event_id AND c.label = t.col_label
+        JOIN floor_plan_row    r ON r.event_id = t.event_id AND r.label = t.row_label
         LEFT JOIN (
           SELECT dining_table_id, COUNT(*) AS cnt
             FROM order_item
            WHERE status = 'open' AND dining_table_id IS NOT NULL
            GROUP BY dining_table_id
         ) o ON o.dining_table_id = t.id
-       WHERE t.status <> 'hidden'
+       WHERE t.status <> 'hidden' AND t.event_id = $1
        ORDER BY c.col_order, r.row_order
-    `);
+    `, [config.activeEventId]);
 
     return reply.send({
       tables: tables.rows.map((t) => ({
@@ -495,13 +505,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     return reply.send(result.rows);
   });
 
-  /** GET /cancellation-reasons — active cancellation reasons available to the operator. */
+  /** GET /cancellation-reasons — active cancellation reasons of the active event available to the operator. */
   app.get('/cancellation-reasons', async (_req, reply) => {
     const result = await query(
       `SELECT id, name, booking_type, is_active
          FROM cancellation_reason
-        WHERE is_active = true
+        WHERE is_active = true AND event_id = $1
         ORDER BY name`,
+      [config.activeEventId],
     );
     return reply.send(result.rows);
   });
@@ -604,9 +615,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       if (locked) return reply.status(locked.status).send(locked.body);
     }
 
-    // Validate the table exists and is bookable (active). Hidden / inactive tables refuse new orders.
+    // Validate the table exists (of the active event) and is bookable (active). Hidden / inactive tables refuse new orders.
     const tableCheck = await query<{ name: string; status: string }>(
-      `SELECT name, status FROM dining_table WHERE id = $1`, [tableId],
+      `SELECT name, status FROM dining_table WHERE id = $1 AND event_id = $2`, [tableId, config.activeEventId],
     );
     if (tableCheck.rows.length === 0) return reply.status(404).send({ error: 'Tisch nicht gefunden' });
     if (tableCheck.rows[0]!.status !== 'active') {
@@ -631,8 +642,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
               c.name AS category_name, c.tax_rate
          FROM article a
          JOIN article_category c ON c.id = a.category_id
-        WHERE a.id = ANY($1)`,
-      [articleIds],
+        WHERE a.id = ANY($1) AND a.event_id = $2`,
+      [articleIds, config.activeEventId],
     );
     const articleById = new Map(articlesResult.rows.map((a) => [a.id, a]));
     for (const pos of positions) {
@@ -898,8 +909,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     }
 
     const reasonResult = await query<{ name: string; booking_type: 'cancellation' | 'free_of_charge'; is_active: boolean }>(
-      `SELECT name, booking_type, is_active FROM cancellation_reason WHERE id = $1`,
-      [cancellation_reason_id],
+      `SELECT name, booking_type, is_active FROM cancellation_reason WHERE id = $1 AND event_id = $2`,
+      [cancellation_reason_id, config.activeEventId],
     );
     const reason = reasonResult.rows[0];
     if (!reason || !reason.is_active) {

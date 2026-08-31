@@ -2147,7 +2147,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   — aktuell nicht wichtig genug, kein aktiver Bedarf. Task damit
   abgeschlossen; bei Bedarf später als neuer Task wieder aufgreifen statt
   hier weiter offen zu halten.
-- [ ] **#94** Zwei-Stufen-Admin (System-Administrator / Veranstaltungs-Administrator)
+- [x] **#94** Zwei-Stufen-Admin (System-Administrator / Veranstaltungs-Administrator)
   Aufgekommen beim Verleih-Konzept (2026-08-30): beim Verleih des Servers
   an einen anderen Verein sollen bestimmte Einstellungen geschützt und alte
   Daten nicht offengelegt werden. Erster Baustein dafür: zwei
@@ -2221,9 +2221,19 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
      (POST mit `is_admin: true`, PUT das `is_admin` ändert, DELETE eines
      `is_admin`-Nutzers) — nur `request.adminUser.is_admin` darf das.
      `settings.ts`s `PUT /` bekommt eine Whitelist, welche Keys `V`
-     schreiben darf (z. B. TSE-Einstellungen, Logo) vs. `S`-exklusiv
-     (Rechnungszähler-Präfix u. Ä.) — ähnlich der bestehenden
-     `ALLOWED_KEYS`-Logik dort.
+     schreiben darf — ähnlich der bestehenden `ALLOWED_KEYS`-Logik dort.
+
+     **Konkrete Aufteilung (2026-08-30):** `S`-exklusiv: `receipt_prefix`,
+     `receipt_counter_start`, `vat_rate_deposit`, `server_address`.
+     `V`-erlaubt: `company_name`/`company_street`/`company_postal_code`/
+     `company_city`/`company_tax_number`/`company_vat_id` (Nutzerentscheidung:
+     ein mietender Verein braucht seine eigenen Daten auf den Bons, nicht
+     die des Vorgänger-Vereins), `logo_on_*`/`logo_zoom_percent`,
+     `TSE_SETTING_KEYS`. `default_layout_receipt_register`/
+     `default_layout_service_register` entfallen komplett aus
+     `system_setting` — wandern zu Task #95 in zwei neue Spalten direkt auf
+     `event` (Nutzerentscheidung: gehört zur Veranstaltung, da die Layouts
+     selbst ja auch event-gebunden werden, siehe dort).
   4. **Frontend:** zweite Checkbox in der Benutzerverwaltung
      (System-Administrator-Checkbox nur für `S` bearbeitbar/sichtbar),
      Navigation blendet die drei `S`-exklusiven Bereiche (Veranstaltungen,
@@ -2253,7 +2263,43 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `docs/Adminstufen-Matrix.txt` (bewusst reines Textformat statt Tabelle,
   einfacher manuell zu bearbeiten) — Grundlage für die
   Middleware-Erweiterung.
-- [ ] **#95** Veranstaltung als Hierarchieebene im Datenmodell
+
+  **Umsetzungsplan (2026-08-30):** ausführlicher, schrittweise abhakbarer
+  Plan für #94 und #95 gemeinsam liegt in
+  `docs/Umsetzungsplan-94-95.txt` — dort weitermachen, nicht hier neu
+  planen.
+
+  **Erledigt (2026-08-30, Phase 0 des Umsetzungsplans vollständig):**
+  Migration `0018_event_admin_role.sql` (`user.is_event_admin`).
+  `middleware/authenticate.ts`: `authenticateAdmin` lässt jetzt `is_admin`
+  ODER `is_event_admin` durch, neues `authenticateSystemAdmin` verlangt
+  strikt `is_admin` — nur `events.ts`/`backup.ts`/`logs.ts` darauf
+  umgestellt. `users.ts`: Feld-Ebenen-Guards für `is_admin`-Vergabe/-Änderung/
+  -Löschung, PIN-Verwaltung und Passwortänderung eines
+  System-Administrators — jeweils nur durch einen System-Administrator
+  selbst. `settings.ts`: `PUT /` filtert `S`-exklusive Keys
+  (`receipt_prefix`, `receipt_counter_start`, `vat_rate_deposit`,
+  `server_address`) für einen Veranstaltungs-Administrator still heraus.
+  Frontend: zweite Checkbox in der Benutzerverwaltung, Navigation blendet
+  Veranstaltungen/Systemprotokoll aus, Settings-Seiten (Unternehmensdaten,
+  System) blenden die S-exklusiven Abschnitte für `V` aus.
+
+  **Live gefunden und behoben, nicht im ursprünglichen Plan (2026-08-30):**
+  `POST /api/auth/admin/verify` (die "Systemverwaltung"-Passwort-Stufe)
+  prüfte bisher nur `is_admin` — ein reiner Veranstaltungs-Administrator
+  hätte diese Stufe nie passieren und dadurch **keinen** `V`-Endpoint je
+  erreichen können, egal wie die Middleware sonst konfiguriert ist. Jetzt
+  `is_admin ODER is_event_admin`. Ebenso musste die Passwort-Pflicht beim
+  Anlegen/Bearbeiten eines Benutzers (`users.ts`) von "nur bei `is_admin`"
+  auf "bei `is_admin` ODER `is_event_admin`" erweitert werden — sonst
+  hätte ein reiner Veranstaltungs-Administrator ganz ohne Passwort angelegt
+  werden können und wäre dann aus demselben Grund für immer ausgesperrt
+  gewesen. `auth.ts`s `UserResponse`/`PinUserRow` um `is_event_admin`
+  ergänzt (Frontend braucht das für Navigation/Checkbox-Sichtbarkeit).
+
+  Backend-Unit- (298), Backend-Integrations- (236, +15 neue) und
+  Frontend-Tests (70) grün, beide Typechecks + `svelte-check` sauber.
+- [x] **#95** Veranstaltung als Hierarchieebene im Datenmodell
   Aufgekommen beim Verleih-Konzept (2026-08-30), gemeinsam mit Task #94:
   aktuell ist eine Veranstaltung (`event`-Tabelle: `id`, `name`,
   `start_time`, `end_time`) nicht mehr als ein gespeicherter Datumsfilter
@@ -2291,6 +2337,13 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   automatisch ein Dummy-/Altbestand-Event an und ordnet alle bestehenden
   Artikel/Kassen/Layouts/Tische/Rechnungen/Bestellungen diesem zu, statt
   `event_id` nullable zu lassen oder eine manuelle Zuordnung zu verlangen.
+  **Praezisiert (Nutzervorgabe, 2026-08-31):** nur wenn tatsaechlich
+  Altdaten vorliegen — eine frische, leere Datenbank (Neuinstallation)
+  bekommt **kein** Dummy-Event, `active_event_id` bleibt dort schlicht
+  unbesetzt, bis der erste System-Administrator selbst eine echte
+  Veranstaltung anlegt und aktiviert. Migration `0019_active_event.sql`
+  prueft dafuer vorab per `DO $$ ... $$`-Block, ob eine der spaeter
+  event-gescopten Tabellen bereits Zeilen enthaelt.
 
   **Geklärt beim Ausfüllen der Adminstufen-Matrix (2026-08-30):**
   `article_category` und `cancellation_reason` werden beide Kind der
@@ -2356,6 +2409,51 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Live-Verifikation, bevor das nächste beginnt. Nicht als ein großes
   Vorhaben umsetzen, sondern schrittweise, und erst
   nach Task #94. Task #94 wird zuerst umgesetzt.
+
+  **Umsetzungsplan:** ausführlicher, schrittweise abhakbarer Plan (7
+  Migrationsschritte statt der ursprünglich geschätzten 6 — Saalplan und
+  register wurden getrennt) liegt in `docs/Umsetzungsplan-94-95.txt`,
+  jeder Schritt dort mit eigener Erledigt-Notiz inkl. live gefundener
+  Abweichungen vom ursprünglichen Konzept.
+
+  **Erledigt (2026-08-31, vollständig):** aktive Veranstaltung als globale
+  `system_setting`/`config.activeEventId`-Einstellung (Muster wie
+  `tse/settings.ts`), S-exklusiv wechselbar
+  (`PUT /admin/system/active-event`), für S+V lesbar. Sieben Tabellen
+  nacheinander event-gescoped, jede mit eigener Migration
+  (Spalte + Backfill aufs automatisch angelegte "Altbestand"-Event +
+  `NOT NULL`) und eigenen Tests: `article_category`, `article` (+
+  `product_option` transitiv), `register_layout` (+ `register_layout_slot`
+  transitiv), `register`, `floor_plan_column`/`floor_plan_row`/
+  `dining_table`, `cancellation_reason`. `invoice`/`order_item` brauchten
+  **keine** eigene `event_id`-Spalte — beide referenzieren bereits
+  `register_id`, und ein Register wechselt nie sein Event, daher genügt
+  ein `JOIN register` beim Filtern; die fiskalisch kritischen Zähler
+  (`receipt_number`, `daily_closing.z_number`) blieben dadurch komplett
+  unangetastet, wie in der kritischen Leitplanke gefordert.
+  Anwendungsseitige Konsistenzprüfungen (kein DB-Constraint, siehe oben)
+  überall ergänzt, wo ein Objekt auf ein anderes Event-gebundenes Objekt
+  verweist: `article.category_id`, `register_layout_slot.article_id`,
+  `register.layout_id`. `admin/closings.ts` (Kassenabschluss-Mechanik:
+  close-all, pending, Z-Bon-Liste) und `exports/dsfinvk/*`
+  (GoBD-Vollständigkeits-Export) bewusst **komplett unangetastet** — beide
+  müssen unabhängig von der aktiven Veranstaltung immer alles erfassen.
+  `EventSelector.svelte` + `GET /admin/reports/events` +
+  die alte `pickDefaultEventId`-Auswahlheuristik vollständig entfernt
+  (Punkt 5 oben) — Reports/Exporte nutzen jetzt ausnahmslos die aktive
+  Veranstaltung. `truncateAllTables()` (Testinfrastruktur) seedet seither
+  automatisch ein Test-Event, sonst hätte praktisch jeder Fixture-Helper
+  einzeln angepasst werden müssen.
+  Alle Unit- und Integrationstests grün (298 Unit-, 261 Integrationstests,
+  bis auf den bereits vorher bekannten, unabhängigen Zeitstempel-Flake
+  D-052), beide Typechecks + `svelte-check` + Produktionsbuild sauber.
+
+  **Noch offen (nicht im Rahmen dieser Session durchführbar):** Punkt 3.3
+  des Umsetzungsplans — Live-Verifikation auf dem Produktivserver (neue
+  Veranstaltung anlegen/aktivieren, prüfen dass Artikel/Kassen/Saalplan/
+  Layouts leer starten, zurück auf „Altbestand" wechseln und prüfen dass
+  alle Altdaten wieder sichtbar sind) — erfordert Zugriff auf den
+  laufenden Produktivserver, muss vom Nutzer selbst durchgeführt werden.
 - [x] **#96** Drucker löschbar machen (Folgeaufgabe aus Task #94/#95)
   Beim Review der Adminstufen-Matrix (2026-08-30) aufgefallen: Drucker
   bleiben laut Task #94/#95 bewusst global — aber `DELETE

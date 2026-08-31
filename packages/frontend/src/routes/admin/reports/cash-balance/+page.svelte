@@ -1,35 +1,31 @@
 <script lang="ts">
   /**
-   * "Soll-Kassenstand" report: one calculated cash balance per register, scoped
-   * to the selected event. Detail of individual deposits / withdrawals is in
-   * the register management page (admin/registers/[id]).
+   * "Soll-Kassenstand" report: one calculated cash balance per register of
+   * the active event. Detail of individual deposits / withdrawals is in the
+   * register management page (admin/registers/[id]).
    */
+  import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import EventSelector from '$lib/components/EventSelector.svelte';
 
   type Row = {
     id: string; name: string; type: string;
     deposits: number; withdrawals: number; cash_takings: number; balance: number;
   };
 
-  let selectedEventId: string | null = $state(null);
   let registers: Row[] = $state([]);
-  let loading = $state(false);
+  let loading = $state(true);
   let error = $state('');
 
-  /** Reload triggered by the event-selector when the choice changes. */
-  async function onEventChange() {
-    if (!selectedEventId) { registers = []; return; }
-    loading = true; error = '';
+  onMount(async () => {
     try {
-      const result = await api.admin.reports.cashBalance(selectedEventId);
+      const result = await api.admin.reports.cashBalance();
       registers = result.registers;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally {
       loading = false;
     }
-  }
+  });
 
   let totalBalance = $derived(registers.reduce((s, r) => s + r.balance, 0));
 
@@ -53,14 +49,10 @@
 <div class="page">
   <div class="page-header"><h1>Soll-Kassenstand</h1></div>
 
-  <EventSelector bind:selectedId={selectedEventId} on:change={onEventChange} />
-
   {#if error}<p class="error-text">{error}</p>{/if}
 
   {#if loading}
     <p class="muted">Lade…</p>
-  {:else if !selectedEventId}
-    <p class="muted">Bitte eine Veranstaltung wählen.</p>
   {:else if registers.length === 0}
     <p class="muted">Keine Kassen konfiguriert.</p>
   {:else}

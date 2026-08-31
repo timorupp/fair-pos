@@ -106,4 +106,15 @@ describe('GET /api/admin/backup', () => {
     const response = await app.inject({ method: 'GET', url: '/api/admin/backup' });
     expect(response.statusCode).toBe(401);
   });
+
+  it('rejects a Veranstaltungs-Administrator (System-Administrator only, Task #94)', async () => {
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/backup',
+      headers: { cookie: eventAdminCookie },
+    });
+    expect(response.statusCode).toBe(403);
+  });
 });

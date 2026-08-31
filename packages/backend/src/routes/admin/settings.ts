@@ -13,7 +13,6 @@ const ALLOWED_KEYS = new Set([
   'company_name', 'company_street', 'company_postal_code', 'company_city',
   'company_tax_number', 'company_vat_id', 'receipt_prefix', 'receipt_counter_start',
   'vat_rate_deposit', 'server_address',
-  'default_layout_receipt_register', 'default_layout_service_register',
   // Per-document-type checkboxes for the company logo.
   'logo_on_receipt', 'logo_on_cancellation', 'logo_on_z_bon',
   'logo_on_order_slip', 'logo_on_pickup_slip', 'logo_on_deposit_slip',
@@ -22,6 +21,17 @@ const ALLOWED_KEYS = new Set([
   // TSE connection (mount path, client id, persisted TimeAdmin-PIN — see
   // docs/TSE-Integration.md Abschnitt 7).
   ...TSE_SETTING_KEYS,
+]);
+
+/**
+ * Keys editable only by a System-Administrator (Task #94) — everything else
+ * in `ALLOWED_KEYS` is editable by a Veranstaltungs-Administrator too. A
+ * renting club needs to set its own company data/logo/TSE connection, but
+ * must not touch the legally-sensitive global receipt numbering, the
+ * statutory deposit VAT rate, or this server's own network address.
+ */
+const SYSTEM_ONLY_KEYS = new Set([
+  'receipt_prefix', 'receipt_counter_start', 'vat_rate_deposit', 'server_address',
 ]);
 
 /** Admin routes for system settings (key-value store). */
@@ -49,7 +59,9 @@ export async function settingsAdminRoute(app: FastifyInstance): Promise<void> {
    */
   app.put('/', async (req, reply) => {
     const body = req.body as Record<string, string>;
-    const entries = Object.entries(body).filter(([k]) => ALLOWED_KEYS.has(k));
+    const entries = Object.entries(body).filter(
+      ([k]) => ALLOWED_KEYS.has(k) && (req.adminUser.is_admin || !SYSTEM_ONLY_KEYS.has(k)),
+    );
 
     for (const [key, value] of entries) {
       await query(

@@ -1,56 +1,33 @@
 /**
- * Admin report endpoints. Each report accepts an optional `event_id` query parameter;
- * when omitted, the server picks the default event via `pickDefaultEventId`.
- * Date filtering uses each event's `[start_time, end_time)` interval.
+ * Admin report endpoints. Scoped to the currently active event (Task #95) —
+ * a register (and everything booked through it) belongs to exactly one
+ * event for its whole lifetime, so filtering by `register.event_id` is both
+ * simpler and more precise than the old manual event-selector / date-range
+ * heuristic it replaces (see docs/Umsetzungsplan-94-95.txt Phase 2.7).
  */
 
 import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
-import { pickDefaultEventId, type EventLike } from '../../reports/event-select.js';
+import { config } from '../../config.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../../receipt/format-receipt-number.js';
 
 /**
- * Returns the time range (ISO strings) of the event identified by `eventId`, or `null`
- * when no event was found.
+ * Loads the active event's own id/start/end, or `null` when no event is
+ * currently active (should not normally happen — every fresh install seeds
+ * one — but handled defensively, same as before).
  *
- * @param eventId - Primary key of the event.
- * @returns `{ start, end }` ISO timestamps, or `null` if the event id is unknown.
+ * @returns `{ id, start, end }` of the active event, or `null`.
  */
-async function loadEventRange(eventId: string): Promise<{ start: string; end: string } | null> {
-  const result = await query<{ start_time: Date; end_time: Date }>(
-    `SELECT start_time, end_time FROM event WHERE id = $1`,
-    [eventId],
+async function loadActiveEvent(): Promise<{ id: string; start: string; end: string } | null> {
+  if (!config.activeEventId) return null;
+  const result = await query<{ id: string; start_time: Date; end_time: Date }>(
+    `SELECT id, start_time, end_time FROM event WHERE id = $1`,
+    [config.activeEventId],
   );
   const row = result.rows[0];
   if (!row) return null;
-  return { start: row.start_time.toISOString(), end: row.end_time.toISOString() };
-}
-
-/**
- * Resolves the event to report on:
- *   - explicit `eventId` parameter wins if it matches a row;
- *   - otherwise pick the default event (current → most-recent-past);
- *   - returns null if no events exist at all.
- *
- * @param eventId - Optional explicit selection from the request.
- * @returns `{ id, start, end }` of the chosen event, or `null`.
- */
-async function resolveReportEvent(
-  eventId: string | undefined,
-): Promise<{ id: string; start: string; end: string } | null> {
-  if (eventId) {
-    const range = await loadEventRange(eventId);
-    if (range) return { id: eventId, ...range };
-  }
-  const all = await query<EventLike & { id: string }>(
-    `SELECT id, start_time, end_time FROM event`,
-  );
-  const id = pickDefaultEventId(all.rows, new Date());
-  if (!id) return null;
-  const range = await loadEventRange(id);
-  if (!range) return null;
-  return { id, ...range };
+  return { id: row.id, start: row.start_time.toISOString(), end: row.end_time.toISOString() };
 }
 
 /**
@@ -62,26 +39,13 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
   /**
-   * GET /api/admin/reports/events — minimal event list for the selector dropdown.
-   * Annotates each entry with `is_current` so the UI can highlight it.
-   */
-  app.get('/events', async (_req, reply) => {
-    const result = await query<{ id: string; name: string; start_time: Date; end_time: Date }>(
-      `SELECT id, name, start_time, end_time FROM event ORDER BY start_time DESC`,
-    );
-    const defaultId = pickDefaultEventId(result.rows, new Date());
-    return reply.send({
-      events: result.rows,
-      default_event_id: defaultId,
-    });
-  });
-
-  /**
    * GET /api/admin/reports/open-positions — open order items grouped by table.
-   * `event_id` is accepted but currently ignored: open positions are always
-   * "now" data, not historical. Kept for symmetry with the other endpoints.
+   * Deliberately NOT scoped to the active event: an open item represents
+   * goods already served but not yet paid, and must stay visible even if the
+   * admin switches the active event before the table is settled — hiding it
+   * would risk revenue silently slipping through the cracks.
    */
-  app.get<{ Querystring: { event_id?: string } }>('/open-positions', async (_req, reply) => {
+  app.get('/open-positions', async (_req, reply) => {
     const result = await query<{
       table_id: string | null; table_name: string | null;
       article_name: string; options: string | null;
@@ -145,12 +109,12 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * GET /api/admin/reports/invoices — all invoices issued during the selected event.
-   * Each row includes the aggregated gross total and the receipt token so the UI can
-   * link to the PDF download.
+   * GET /api/admin/reports/invoices — all invoices issued on a register of
+   * the active event. Each row includes the aggregated gross total and the
+   * receipt token so the UI can link to the PDF download.
    */
-  app.get<{ Querystring: { event_id?: string } }>('/invoices', async (req, reply) => {
-    const ev = await resolveReportEvent(req.query.event_id);
+  app.get('/invoices', async (_req, reply) => {
+    const ev = await loadActiveEvent();
     if (!ev) return reply.send({ event: null, invoices: [] });
 
     const result = await query<{
@@ -171,10 +135,10 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
         FROM invoice i
         JOIN register r ON r.id = i.register_id
         LEFT JOIN order_item oi ON oi.invoice_id = i.id
-       WHERE i.created_at >= $1 AND i.created_at < $2
+       WHERE r.event_id = $1
        GROUP BY i.id, r.name
        ORDER BY i.created_at DESC
-    `, [ev.start, ev.end]);
+    `, [ev.id]);
 
     const prefix = await readReceiptPrefix();
     return reply.send({
@@ -194,12 +158,12 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * GET /api/admin/reports/cash-balance — single-figure cash balance per register.
+   * GET /api/admin/reports/cash-balance — single-figure cash balance per
+   * register of the active event.
    * Balance = (Σ deposits) + (Σ paid cash invoices) − (Σ withdrawals).
-   * Filtered to the selected event's time window.
    */
-  app.get<{ Querystring: { event_id?: string } }>('/cash-balance', async (req, reply) => {
-    const ev = await resolveReportEvent(req.query.event_id);
+  app.get('/cash-balance', async (_req, reply) => {
+    const ev = await loadActiveEvent();
     if (!ev) return reply.send({ event: null, registers: [] });
 
     const result = await query<{
@@ -215,13 +179,13 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
         LEFT JOIN (
           SELECT register_id, SUM(amount) AS total
             FROM cash_transaction
-           WHERE type = 'deposit' AND created_at >= $1 AND created_at < $2
+           WHERE type = 'deposit'
            GROUP BY register_id
         ) d ON d.register_id = r.id
         LEFT JOIN (
           SELECT register_id, SUM(amount) AS total
             FROM cash_transaction
-           WHERE type = 'withdrawal' AND created_at >= $1 AND created_at < $2
+           WHERE type = 'withdrawal'
            GROUP BY register_id
         ) w ON w.register_id = r.id
         LEFT JOIN (
@@ -235,11 +199,11 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
            WHERE i.payment_method = 'cash'
              AND i.receipt_type = 'sales_receipt'
              AND oi.status = 'paid'
-             AND i.created_at >= $1 AND i.created_at < $2
            GROUP BY i.register_id
         ) c ON c.register_id = r.id
+       WHERE r.event_id = $1
        ORDER BY r.name
-    `, [ev.start, ev.end]);
+    `, [ev.id]);
 
     return reply.send({
       event: { id: ev.id, start: ev.start, end: ev.end },
@@ -276,12 +240,13 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * GET /api/admin/reports/cancellations — all `cancelled` and `free` order items
-   * within the selected event, joined to user (who) and table (where). A summary
-   * per user is included so the operator can spot misuse at a glance.
+   * GET /api/admin/reports/cancellations — all `cancelled` and `free` order
+   * items booked on a register of the active event, joined to user (who) and
+   * table (where). A summary per user is included so the operator can spot
+   * misuse at a glance.
    */
-  app.get<{ Querystring: { event_id?: string } }>('/cancellations', async (req, reply) => {
-    const ev = await resolveReportEvent(req.query.event_id);
+  app.get('/cancellations', async (_req, reply) => {
+    const ev = await loadActiveEvent();
     if (!ev) return reply.send({ event: null, items: [], summary: [] });
 
     const items = await query<{
@@ -304,23 +269,25 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
              cr.name         AS reason_name,
              cr.booking_type AS booking_type
         FROM order_item oi
+        JOIN register r ON r.id = oi.register_id
         LEFT JOIN dining_table t ON t.id = oi.dining_table_id
         LEFT JOIN cancellation_reason cr ON cr.id = oi.cancellation_reason_id
        WHERE oi.status IN ('cancelled', 'free')
-         AND oi.cancelled_at >= $1 AND oi.cancelled_at < $2
+         AND r.event_id = $1
        ORDER BY oi.cancelled_at DESC
-    `, [ev.start, ev.end]);
+    `, [ev.id]);
 
     const summary = await query<{ cancelled_by_name: string | null; count: string; total: string }>(`
       SELECT oi.cancelled_by_name,
              COUNT(*)::text  AS count,
              COALESCE(SUM(oi.price + COALESCE(oi.deposit_price, 0)), 0)::text AS total
         FROM order_item oi
+        JOIN register r ON r.id = oi.register_id
        WHERE oi.status IN ('cancelled', 'free')
-         AND oi.cancelled_at >= $1 AND oi.cancelled_at < $2
+         AND r.event_id = $1
        GROUP BY oi.cancelled_by_name
        ORDER BY total DESC
-    `, [ev.start, ev.end]);
+    `, [ev.id]);
 
     return reply.send({
       event: { id: ev.id, start: ev.start, end: ev.end },
@@ -350,8 +317,7 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
    * from `tse_outage` (see tse/outage.ts — written automatically by every
    * signing attempt, AEAO zu § 146a AO Nr. 1.14.1). Unlike the other reports
    * here this isn't scoped to an event: an outage isn't tied to a specific
-   * Veranstaltung, so there's no `event_id` filter. Capped at the 500 most
-   * recent rows, newest first.
+   * Veranstaltung. Capped at the 500 most recent rows, newest first.
    */
   app.get('/tse-outages', async (_req, reply) => {
     const result = await query<{ id: string; started_at: Date; ended_at: Date | null; reason: string }>(

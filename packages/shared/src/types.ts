@@ -32,7 +32,10 @@ export type PrintJobType = 'order_slip' | 'receipt' | 'daily_closing' | 'test_pr
 export interface User {
   id: string;
   name: string;
+  /** System-Administrator (Task #94) — unrestricted access. */
   is_admin: boolean;
+  /** Veranstaltungs-Administrator (Task #94) — access scoped to what's needed for the active event; independent of is_admin, a user can hold either, both, or neither. */
+  is_event_admin: boolean;
   /** Deactivated users cannot log in and disappear from register assignment; never anonymized/deleted. */
   is_active: boolean;
   created_at: string;

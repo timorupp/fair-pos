@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { loadTseSettingsFromDb } from './tse/settings.js';
+import { loadActiveEventFromDb } from './system/activeEvent.js';
 import { healthRoute } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { usersAdminRoute } from './routes/admin/users.js';
@@ -57,6 +58,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Overlay `config`'s TSE fields with whatever the admin has configured via
   // the Settings UI, so a DB-stored value always wins over the env-var default.
   await loadTseSettingsFromDb();
+  // The one globally active event (Task #95) — every Veranstaltungs-
+  // Administrator-scoped view operates against it.
+  await loadActiveEventFromDb();
 
   await app.register(fastifyCookie, {
     secret: config.sessionSecret,

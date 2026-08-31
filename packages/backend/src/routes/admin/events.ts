@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
-import { authenticateAdmin } from '../../middleware/authenticate.js';
+import { authenticateSystemAdmin } from '../../middleware/authenticate.js';
 
 /** Admin routes for event management (reporting periods). */
 export async function eventsAdminRoute(app: FastifyInstance): Promise<void> {
-  app.addHook('preHandler', authenticateAdmin);
+  app.addHook('preHandler', authenticateSystemAdmin);
 
   /** GET /api/admin/events — list all events ordered by start time descending. */
   app.get('/', async (_req, reply) => {

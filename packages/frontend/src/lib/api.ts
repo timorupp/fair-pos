@@ -57,6 +57,16 @@ export interface DnsConfigSettings {
   configured: boolean;
 }
 
+/** The one globally active event (Task #95). */
+export interface ActiveEvent {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  defaultReceiptRegisterLayoutId: string | null;
+  defaultServiceRegisterLayoutId: string | null;
+}
+
 /** Sends a JSON request to the backend and returns the parsed response. Exported for testing. */
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, credentials: 'include' };
@@ -130,9 +140,9 @@ export const api = {
     users: {
       /** `has_pin` (Task #90) tells the UI whether a PIN is already assigned, without ever exposing the hash. */
       list: (): Promise<(User & { has_pin: boolean })[]> => request('GET', '/admin/users'),
-      create: (data: { name: string; password: string; is_admin: boolean; is_active?: boolean }): Promise<User> =>
+      create: (data: { name: string; password: string; is_admin: boolean; is_event_admin?: boolean; is_active?: boolean }): Promise<User> =>
         request('POST', '/admin/users', data),
-      update: (id: string, data: { name?: string; password?: string; is_admin?: boolean; is_active?: boolean }): Promise<User> =>
+      update: (id: string, data: { name?: string; password?: string; is_admin?: boolean; is_event_admin?: boolean; is_active?: boolean }): Promise<User> =>
         request('PUT', `/admin/users/${id}`, data),
       delete: (id: string): Promise<void> => request('DELETE', `/admin/users/${id}`),
       listRegisters: (id: string): Promise<string[]> =>
@@ -296,6 +306,16 @@ export const api = {
       shutdown: (): Promise<void> => request('POST', '/admin/system/shutdown'),
       /** Clears every IP's PIN-login lockout (Task #90) — for a device that locked itself out by mistake. */
       resetIpLockouts: (): Promise<void> => request('POST', '/admin/system/reset-ip-lockouts'),
+      /** The one globally active event (Task #95) — readable by either admin level. */
+      getActiveEvent: (): Promise<{ event: ActiveEvent | null }> => request('GET', '/admin/system/active-event'),
+      /** Switches the active event — System-Administrator only. */
+      setActiveEvent: (eventId: string): Promise<{ event: ActiveEvent | null }> =>
+        request('PUT', '/admin/system/active-event', { event_id: eventId }),
+      /** Sets the active event's default register layouts — reachable by either admin level (see `layouts.ts`). */
+      setActiveEventDefaultLayouts: (receiptLayoutId: string | null, serviceLayoutId: string | null): Promise<{ event: ActiveEvent | null }> =>
+        request('PUT', '/admin/system/active-event/default-layouts', {
+          receipt_layout_id: receiptLayoutId, service_layout_id: serviceLayoutId,
+        }),
     },
 
     backup: {
@@ -368,7 +388,7 @@ export const api = {
           created_at: string; business_date: string;
           is_zero_closing: boolean;
           total_gross: number; total_cash: number; total_cancellations: number;
-          created_by: string;
+          created_by_name: string;
         }[];
       }> => request('GET', `/admin/registers/${registerId}/closings`),
 
@@ -496,13 +516,7 @@ export const api = {
     },
 
     reports: {
-      /** List of events for the report selector, with the default-selection hint. */
-      events: (): Promise<{
-        events: { id: string; name: string; start_time: string; end_time: string }[];
-        default_event_id: string | null;
-      }> => request('GET', '/admin/reports/events'),
-
-      /** Open positions grouped by table — always "now", `event_id` is ignored. */
+      /** Open positions grouped by table — always "now", not event-scoped. */
       openPositions: (): Promise<{
         tables: {
           table_id: string | null; table_name: string; total_gross: number;
@@ -515,8 +529,8 @@ export const api = {
         }[];
       }> => request('GET', '/admin/reports/open-positions'),
 
-      /** Invoices issued during the selected event. */
-      invoices: (eventId?: string): Promise<{
+      /** Invoices issued on a register of the active event (Task #95). */
+      invoices: (): Promise<{
         event: { id: string; start: string; end: string } | null;
         invoices: {
           id: string; receipt_number: number; receipt_number_formatted: string;
@@ -524,17 +538,17 @@ export const api = {
           payment_method: string; created_at: string; register_name: string;
           receipt_token: string | null; total_gross: number;
         }[];
-      }> => request('GET', `/admin/reports/invoices${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`),
+      }> => request('GET', '/admin/reports/invoices'),
 
-      /** Single-figure cash balance per register, scoped to the event. */
-      cashBalance: (eventId?: string): Promise<{
+      /** Single-figure cash balance per register of the active event (Task #95). */
+      cashBalance: (): Promise<{
         event: { id: string; start: string; end: string } | null;
         registers: { id: string; name: string; type: string;
           deposits: number; withdrawals: number; cash_takings: number; balance: number; }[];
-      }> => request('GET', `/admin/reports/cash-balance${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`),
+      }> => request('GET', '/admin/reports/cash-balance'),
 
-      /** Cancelled and free-of-charge items in the event, with per-user summary. */
-      cancellations: (eventId?: string): Promise<{
+      /** Cancelled and free-of-charge items of the active event (Task #95), with per-user summary. */
+      cancellations: (): Promise<{
         event: { id: string; start: string; end: string } | null;
         summary: { user_name: string; count: number; total: number }[];
         items: {
@@ -544,7 +558,7 @@ export const api = {
           price: number; deposit_price: number | null; line_gross: number;
           reason_name: string; booking_type: string;
         }[];
-      }> => request('GET', `/admin/reports/cancellations${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`),
+      }> => request('GET', '/admin/reports/cancellations'),
 
       /** TSE outage log (Task #72) — not event-scoped, newest first, capped at 500 rows. */
       tseOutages: (): Promise<{

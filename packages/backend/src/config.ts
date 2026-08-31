@@ -74,5 +74,12 @@ export const config = {
   // privileged install script copies it into dnsmasq's real config
   // location — same reasoning as tlsStagingDir. Overridable for tests.
   dnsStagingDir: process.env['DNS_STAGING_DIR'] ?? '/var/lib/fairpos/dns-staging',
+  // Set exclusively via system/activeEvent.ts (system_setting / admin UI) —
+  // loaded at startup and after every save, same pattern as
+  // tseMountPoint/tseClientId above. Migration 0019 only seeds this on an
+  // upgrade with pre-existing data — a fresh install has no active event
+  // until the first System-Administrator creates and activates one, so this
+  // legitimately stays null until then, not just before the first load.
+  activeEventId: null as string | null,
   isDev: (process.env['NODE_ENV'] ?? 'development') === 'development',
 };

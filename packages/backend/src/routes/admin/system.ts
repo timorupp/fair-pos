@@ -6,6 +6,7 @@ import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { setSystemTime, setSystemTimezone } from '../../system/time.js';
 import { shutdownServer } from '../../system/shutdown.js';
 import { countActiveLockouts, resetAllLockouts } from '../../auth/rateLimit.js';
+import { getActiveEvent, setActiveEvent, setActiveEventDefaultLayouts } from '../../system/activeEvent.js';
 
 /** Shape returned by `GET /api/admin/system/status`. */
 interface SystemStatus {
@@ -103,5 +104,57 @@ export async function systemAdminRoute(app: FastifyInstance): Promise<void> {
     } catch (e) {
       return reply.status(500).send({ error: e instanceof Error ? e.message : 'Unbekannter Fehler' });
     }
+  });
+
+  /**
+   * GET /api/admin/system/active-event — the currently active event (Task
+   * #95). Readable by either admin level — a Veranstaltungs-Administrator
+   * needs to see which event is active, just not change it.
+   */
+  app.get('/active-event', async (_req, reply) => {
+    const event = await getActiveEvent();
+    return reply.send({ event });
+  });
+
+  /**
+   * PUT /api/admin/system/active-event — switches the active event (Task
+   * #95). System-Administrator only — checked inline rather than via a
+   * separate route-scoped middleware, since every other route in this file
+   * intentionally allows both admin levels.
+   */
+  app.put('/active-event', async (req, reply) => {
+    if (!req.adminUser.is_admin) {
+      return reply.status(403).send({ error: 'Nur ein System-Administrator darf die aktive Veranstaltung wechseln' });
+    }
+    const body = req.body as { event_id?: string };
+    if (!body.event_id) {
+      return reply.status(400).send({ error: 'event_id erforderlich' });
+    }
+    try {
+      await setActiveEvent(body.event_id);
+    } catch (e) {
+      return reply.status(400).send({ error: e instanceof Error ? e.message : 'Unbekannter Fehler' });
+    }
+    const event = await getActiveEvent();
+    return reply.send({ event });
+  });
+
+  /**
+   * PUT /api/admin/system/active-event/default-layouts — sets the active
+   * event's default register layouts (Task #95). Deliberately reachable by
+   * both admin levels (unlike the rest of this file's active-event routes)
+   * — a Veranstaltungs-Administrator manages layouts (`layouts.ts`) and
+   * needs to be able to pick the active event's default, without needing
+   * access to general event editing.
+   */
+  app.put('/active-event/default-layouts', async (req, reply) => {
+    const body = req.body as { receipt_layout_id?: string | null; service_layout_id?: string | null };
+    try {
+      await setActiveEventDefaultLayouts(body.receipt_layout_id ?? null, body.service_layout_id ?? null);
+    } catch (e) {
+      return reply.status(400).send({ error: e instanceof Error ? e.message : 'Unbekannter Fehler' });
+    }
+    const event = await getActiveEvent();
+    return reply.send({ event });
   });
 }

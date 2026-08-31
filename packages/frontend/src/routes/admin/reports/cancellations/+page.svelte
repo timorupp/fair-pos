@@ -1,11 +1,11 @@
 <script lang="ts">
   /**
    * "Stornos & kostenfreie Abgaben" report: all cancelled and free-of-charge
-   * items in the selected event, with a per-user summary above the table for
+   * items of the active event, with a per-user summary above the table for
    * abuse spotting.
    */
+  import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import EventSelector from '$lib/components/EventSelector.svelte';
 
   type SummaryRow = { user_name: string; count: number; total: number };
   type ItemRow = {
@@ -16,22 +16,18 @@
     reason_name: string; booking_type: string;
   };
 
-  let selectedEventId: string | null = $state(null);
   let items: ItemRow[] = $state([]);
   let summary: SummaryRow[] = $state([]);
-  let loading = $state(false);
+  let loading = $state(true);
   let error = $state('');
 
   /** Filters */
   let userFilter: string | 'all' = $state('all');
   let typeFilter: '' | 'cancellation' | 'free_of_charge' = $state('');
 
-  /** Reload report data when the event selection changes. */
-  async function onEventChange() {
-    if (!selectedEventId) { items = []; summary = []; return; }
-    loading = true; error = '';
+  onMount(async () => {
     try {
-      const result = await api.admin.reports.cancellations(selectedEventId);
+      const result = await api.admin.reports.cancellations();
       items = result.items;
       summary = result.summary;
     } catch (e) {
@@ -39,7 +35,7 @@
     } finally {
       loading = false;
     }
-  }
+  });
 
   /** Returns the items list with the active user/type filters applied. */
   let filteredItems = $derived(items.filter((it) => {
@@ -97,9 +93,7 @@
 <div class="page">
   <div class="page-header"><h1>Stornos &amp; kostenfreie Abgaben</h1></div>
 
-  <EventSelector bind:selectedId={selectedEventId} on:change={onEventChange} />
-
-  {#if selectedEventId}
+  {#if !loading && items.length > 0}
     <div class="filters">
       <label>
         Bedienung
@@ -124,8 +118,6 @@
 
   {#if loading}
     <p class="muted">Lade…</p>
-  {:else if !selectedEventId}
-    <p class="muted">Bitte eine Veranstaltung wählen.</p>
   {:else if items.length === 0}
     <p class="muted">Keine Stornos oder kostenfreie Abgaben in diesem Zeitraum.</p>
   {:else}

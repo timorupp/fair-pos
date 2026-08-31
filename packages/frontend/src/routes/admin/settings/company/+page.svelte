@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import type { Printer } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
+  import { adminUser } from '$lib/stores/user';
 
   let settings: Record<string, string> = $state({});
   /** All configured printers — used by the logo testdruck dropdown. */
@@ -183,24 +184,26 @@
         </div>
       </section>
 
-      <section>
-        <h2>Belegnummern</h2>
-        <div class="field-row">
-          <div class="field field-short">
-            <label for="s-prefix">Präfix</label>
-            <input id="s-prefix" value={settings['receipt_prefix'] ?? ''}
-                   oninput={(e) => { settings['receipt_prefix'] = e.currentTarget.value; success = false; }}
-                   disabled={saving} placeholder="z. B. RE-" />
+      {#if $adminUser?.is_admin}
+        <section>
+          <h2>Belegnummern</h2>
+          <div class="field-row">
+            <div class="field field-short">
+              <label for="s-prefix">Präfix</label>
+              <input id="s-prefix" value={settings['receipt_prefix'] ?? ''}
+                     oninput={(e) => { settings['receipt_prefix'] = e.currentTarget.value; success = false; }}
+                     disabled={saving} placeholder="z. B. RE-" />
+            </div>
+            <div class="field field-short">
+              <label for="s-counter">Startwert Zähler</label>
+              <input id="s-counter" type="number" min="1" value={settings['receipt_counter_start'] ?? '1'}
+                     oninput={(e) => { settings['receipt_counter_start'] = e.currentTarget.value; success = false; }}
+                     disabled={saving} />
+            </div>
           </div>
-          <div class="field field-short">
-            <label for="s-counter">Startwert Zähler</label>
-            <input id="s-counter" type="number" min="1" value={settings['receipt_counter_start'] ?? '1'}
-                   oninput={(e) => { settings['receipt_counter_start'] = e.currentTarget.value; success = false; }}
-                   disabled={saving} />
-          </div>
-        </div>
-        <p class="hint">Beispielergebnis: {(settings['receipt_prefix'] ?? 'RE-')}{String(parseInt(settings['receipt_counter_start'] ?? '1') || 1).padStart(5, '0')}</p>
-      </section>
+          <p class="hint">Beispielergebnis: {(settings['receipt_prefix'] ?? 'RE-')}{String(parseInt(settings['receipt_counter_start'] ?? '1') || 1).padStart(5, '0')}</p>
+        </section>
+      {/if}
 
       <section>
         <h2>Logo</h2>
@@ -308,15 +311,17 @@
         {#if testPrintFeedback}<p class="hint">{testPrintFeedback}</p>{/if}
       </section>
 
-      <section>
-        <h2>Pfand</h2>
-        <div class="field field-short">
-          <label for="s-vat-deposit">Umsatzsteuersatz Pfand (%)</label>
-          <input id="s-vat-deposit" inputmode="decimal" value={settings['vat_rate_deposit'] ?? ''}
-                 oninput={(e) => { settings['vat_rate_deposit'] = e.currentTarget.value; success = false; }}
-                 disabled={saving} placeholder="z. B. 19" />
-        </div>
-      </section>
+      {#if $adminUser?.is_admin}
+        <section>
+          <h2>Pfand</h2>
+          <div class="field field-short">
+            <label for="s-vat-deposit">Umsatzsteuersatz Pfand (%)</label>
+            <input id="s-vat-deposit" inputmode="decimal" value={settings['vat_rate_deposit'] ?? ''}
+                   oninput={(e) => { settings['vat_rate_deposit'] = e.currentTarget.value; success = false; }}
+                   disabled={saving} placeholder="z. B. 19" />
+          </div>
+        </section>
+      {/if}
 
       {#if error}<p class="error-text">{error}</p>{/if}
       {#if success}<p class="success-text">Gespeichert.</p>{/if}

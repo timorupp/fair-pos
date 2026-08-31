@@ -85,3 +85,74 @@ describe('register.is_active (Task #55)', () => {
     expect(stillThere.rows[0]?.is_active).toBe(false);
   });
 });
+
+describe('register scoped to the active event (Task #95)', () => {
+  it('GET only shows registers of the active event', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    await createTestRegister({ name: 'Fremd', eventId: otherEvent.rows[0]!.id });
+    await createTestRegister({ name: 'Eigen' });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/registers',
+      headers: { cookie: adminCookie },
+    });
+    const names = (response.json() as { name: string }[]).map((r) => r.name);
+    expect(names).toEqual(['Eigen']);
+  });
+
+  it('does not get, update or delete a register belonging to a different event (404)', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreign = await createTestRegister({ eventId: otherEvent.rows[0]!.id });
+
+    const app = await getTestApp();
+    const getResponse = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${foreign.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(getResponse.statusCode).toBe(404);
+
+    const putResponse = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${foreign.id}`,
+      headers: { cookie: adminCookie },
+      payload: { name: 'Umbenannt' },
+    });
+    expect(putResponse.statusCode).toBe(404);
+
+    const deleteResponse = await app.inject({
+      method: 'DELETE', url: `/api/admin/registers/${foreign.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(deleteResponse.statusCode).toBe(404);
+  });
+
+  it('rejects a register referencing a layout from a different event', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreignLayout = await pool.query<{ id: string }>(
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('Fremd', 4, 4, $1) RETURNING id`,
+      [otherEvent.rows[0]!.id],
+    );
+
+    const app = await getTestApp();
+    const createResponse = await app.inject({
+      method: 'POST', url: '/api/admin/registers',
+      headers: { cookie: adminCookie },
+      payload: { name: 'K1', type: 'receipt_register', layout_id: foreignLayout.rows[0]!.id },
+    });
+    expect(createResponse.statusCode).toBe(400);
+
+    const register = await createTestRegister();
+    const updateResponse = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { layout_id: foreignLayout.rows[0]!.id },
+    });
+    expect(updateResponse.statusCode).toBe(400);
+  });
+});

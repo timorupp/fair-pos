@@ -7,13 +7,13 @@
  * "externen Datenträger mitnehmen" workflow this supports).
  */
 import type { FastifyInstance } from 'fastify';
-import { authenticateAdmin } from '../../middleware/authenticate.js';
+import { authenticateSystemAdmin } from '../../middleware/authenticate.js';
 import { createDatabaseDump } from '../../backup/dump.js';
 import { buildBackupZip } from '../../backup/zip.js';
 
 /** Registers `/api/admin/backup` routes. */
 export async function backupAdminRoute(app: FastifyInstance): Promise<void> {
-  app.addHook('preHandler', authenticateAdmin);
+  app.addHook('preHandler', authenticateSystemAdmin);
 
   /**
    * GET /api/admin/backup — runs `pg_dump` and returns the result as a ZIP

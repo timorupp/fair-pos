@@ -2,16 +2,13 @@
   /**
    * Rechnungs-PDFs (ZIP) export page. Offers two download buttons:
    *   - Tag: scoped to a calendar day (date picker, defaults to "today")
-   *   - Veranstaltung: scoped to the selected event's full range
+   *   - Veranstaltung: scoped to the currently active event's full range (Task #95)
    *
    * Same scoping/UI pattern as the Excel-export page. Both endpoints stream
    * a .zip file (one PDF per invoice, every receipt type — sales, Storno,
    * Training); the browser handles the download via a synthetic anchor click
    * so the user stays on this page.
    */
-  import EventSelector from '$lib/components/EventSelector.svelte';
-
-  let selectedEventId: string | null = $state(null);
   let dayDate: string = $state(todayIso());
 
   /**
@@ -46,10 +43,9 @@
     download(`/api/admin/exports/invoices/day?date=${encodeURIComponent(dayDate)}`);
   }
 
-  /** Triggers the event-export download for the currently selected event. */
+  /** Triggers the event-export download for the currently active event. */
   function downloadEvent() {
-    const qs = selectedEventId ? `?event_id=${encodeURIComponent(selectedEventId)}` : '';
-    download(`/api/admin/exports/invoices/event${qs}`);
+    download('/api/admin/exports/invoices/event');
   }
 </script>
 
@@ -72,10 +68,9 @@
 
   <section class="card">
     <h2>Veranstaltungsexport</h2>
-    <p class="hint">Ein PDF je Rechnung einer Veranstaltung — vom Start bis zum Ende, inkl. Storno- und Trainingsbelegen.</p>
-    <EventSelector bind:selectedId={selectedEventId} />
+    <p class="hint">Ein PDF je Rechnung der aktiven Veranstaltung — vom Start bis zum Ende, inkl. Storno- und Trainingsbelegen.</p>
     <div class="row">
-      <button class="btn-primary" onclick={downloadEvent} disabled={!selectedEventId}>
+      <button class="btn-primary" onclick={downloadEvent}>
         ZIP herunterladen
       </button>
     </div>

@@ -2,7 +2,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
-import { authenticateAdmin } from '../../middleware/authenticate.js';
+import { authenticateSystemAdmin } from '../../middleware/authenticate.js';
 import type { LogSeverity, SystemLogEntry } from '../../system/log.js';
 
 /** Hard cap on rows returned per request — the log grows unbounded over time, so the viewer always shows the most recent slice, not the whole table. */
@@ -10,7 +10,7 @@ const MAX_ROWS = 500;
 
 /** Registers `/api/admin/logs` routes. */
 export async function logsAdminRoute(app: FastifyInstance): Promise<void> {
-  app.addHook('preHandler', authenticateAdmin);
+  app.addHook('preHandler', authenticateSystemAdmin);
 
   /**
    * GET /api/admin/logs — most recent system log entries, newest first.

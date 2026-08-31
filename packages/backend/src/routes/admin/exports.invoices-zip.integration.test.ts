@@ -8,6 +8,7 @@
 import unzipper from 'unzipper';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import { createTestRegister, createTestUser } from '../../test/fixtures.js';
@@ -76,7 +77,7 @@ describe('GET /api/admin/exports/invoices/day', () => {
 });
 
 describe('GET /api/admin/exports/invoices/event', () => {
-  it('returns 404 when no event exists', async () => {
+  it('returns 404 when the active event has no invoices yet', async () => {
     const app = await getTestApp();
     const response = await app.inject({
       method: 'GET', url: '/api/admin/exports/invoices/event',
@@ -85,22 +86,30 @@ describe('GET /api/admin/exports/invoices/event', () => {
     expect(response.statusCode).toBe(404);
   });
 
-  it('bundles every invoice within the event window, including a training receipt', async () => {
+  it('bundles every invoice of the active event within its window, including a training receipt', async () => {
+    // Task #95: exports are always scoped to the currently active event, not
+    // a manually-selected one — override it to a custom event with a known
+    // date window, following the established test pattern for this.
     const event = await pool.query<{ id: string }>(
       `INSERT INTO event (name, start_time, end_time)
        VALUES ('Sommerfest', '2026-08-05 00:00:00', '2026-08-07 00:00:00') RETURNING id`,
     );
+    const eventId = event.rows[0]!.id;
+    await pool.query(`UPDATE system_setting SET value = $1 WHERE key = 'active_event_id'`, [eventId]);
+    config.activeEventId = eventId;
+
+    const eventRegister = await createTestRegister({ type: 'receipt_register', eventId });
     await pool.query(
       `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, receipt_token, created_at)
        VALUES ($1, 1, 'sales_receipt', 'cash', 'tok-1', '2026-08-05 10:00:00'),
               ($1, 2, 'training', 'cash', 'tok-2', '2026-08-06 10:00:00'),
               ($1, 3, 'sales_receipt', 'cash', 'tok-3', '2026-08-10 10:00:00')`,
-      [registerId],
+      [eventRegister.id],
     );
 
     const app = await getTestApp();
     const response = await app.inject({
-      method: 'GET', url: `/api/admin/exports/invoices/event?event_id=${event.rows[0]!.id}`,
+      method: 'GET', url: '/api/admin/exports/invoices/event',
       headers: { cookie: adminCookie },
     });
     expect(response.statusCode).toBe(200);

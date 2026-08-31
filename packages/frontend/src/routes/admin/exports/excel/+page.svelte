@@ -2,14 +2,11 @@
   /**
    * Excel-export page. Offers two download buttons:
    *   - Tag: scoped to a calendar day (date picker, defaults to "today")
-   *   - Veranstaltung: scoped to the selected event's full range
+   *   - Veranstaltung: scoped to the currently active event's full range (Task #95)
    *
    * Both endpoints stream an .xlsx file; the browser handles the download via
    * a synthetic anchor click so the user stays on this page.
    */
-  import EventSelector from '$lib/components/EventSelector.svelte';
-
-  let selectedEventId: string | null = $state(null);
   let dayDate: string = $state(todayIso());
 
   /**
@@ -44,10 +41,9 @@
     download(`/api/admin/exports/excel/day?date=${encodeURIComponent(dayDate)}`);
   }
 
-  /** Triggers the event-export download for the currently selected event. */
+  /** Triggers the event-export download for the currently active event. */
   function downloadEvent() {
-    const qs = selectedEventId ? `?event_id=${encodeURIComponent(selectedEventId)}` : '';
-    download(`/api/admin/exports/excel/event${qs}`);
+    download('/api/admin/exports/excel/event');
   }
 </script>
 
@@ -70,10 +66,9 @@
 
   <section class="card">
     <h2>Veranstaltungsexport</h2>
-    <p class="hint">Alle Rechnungspositionen einer Veranstaltung — vom Start bis zum Ende.</p>
-    <EventSelector bind:selectedId={selectedEventId} />
+    <p class="hint">Alle Rechnungspositionen der aktiven Veranstaltung — vom Start bis zum Ende.</p>
     <div class="row">
-      <button class="btn-primary" onclick={downloadEvent} disabled={!selectedEventId}>
+      <button class="btn-primary" onclick={downloadEvent}>
         Veranstaltungsexport herunterladen
       </button>
     </div>

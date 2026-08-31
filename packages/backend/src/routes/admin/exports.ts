@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { ZipArchive } from 'archiver';
 import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
-import { pickDefaultEventId } from '../../reports/event-select.js';
+import { config } from '../../config.js';
 import { buildExportRows, type ExportSourceRow } from '../../exports/rows.js';
 import { buildExcelWorkbook } from '../../exports/workbook.js';
 import { loadDsfinvkSource } from '../../exports/dsfinvk/load.js';
@@ -33,9 +33,13 @@ async function readReceiptPrefix(): Promise<string> {
  *
  * @param from - ISO timestamp marking the start of the window (inclusive).
  * @param to   - ISO timestamp marking the end of the window (exclusive).
+ * @param eventId - When given, additionally restricts rows to registers of
+ *   this event (Task #95) — used by the event-scoped export only; the
+ *   day-scoped export deliberately ignores event boundaries (a calendar day
+ *   is independent of them).
  * @returns Raw rows ready to be aggregated by `buildExportRows`.
  */
-async function loadExportSource(from: string, to: string): Promise<ExportSourceRow[]> {
+async function loadExportSource(from: string, to: string, eventId?: string): Promise<ExportSourceRow[]> {
   const result = await query<{
     invoice_id: string;
     receipt_number: string;
@@ -67,8 +71,9 @@ async function loadExportSource(from: string, to: string): Promise<ExportSourceR
      WHERE i.created_at >= $1 AND i.created_at < $2
        AND i.receipt_type = 'sales_receipt'
        AND oi.status IN ('paid', 'free')
+       AND ($3::uuid IS NULL OR r.event_id = $3)
      ORDER BY i.created_at, i.id, oi.created_at
-  `, [from, to]);
+  `, [from, to, eventId ?? null]);
 
   return result.rows.map((r) => ({
     invoice_id: r.invoice_id,
@@ -86,28 +91,18 @@ async function loadExportSource(from: string, to: string): Promise<ExportSourceR
 }
 
 /**
- * Resolves an event id (explicit or default) and returns the row plus its `[start, end)` range.
+ * Loads the active event's own id/name/start/end, or `null` when no event is
+ * currently active.
  *
- * @param eventId - Optional explicit selection from the request.
- * @returns Event with timestamps as ISO strings, or `null` if no events exist at all.
+ * @returns The active event, or `null`.
  */
-async function resolveEvent(eventId: string | undefined): Promise<{ id: string; name: string; start: string; end: string } | null> {
-  if (eventId) {
-    const result = await query<{ id: string; name: string; start_time: Date; end_time: Date }>(
-      `SELECT id, name, start_time, end_time FROM event WHERE id = $1`,
-      [eventId],
-    );
-    const row = result.rows[0];
-    if (row) {
-      return { id: row.id, name: row.name, start: row.start_time.toISOString(), end: row.end_time.toISOString() };
-    }
-  }
-  const all = await query<{ id: string; name: string; start_time: Date; end_time: Date }>(
-    `SELECT id, name, start_time, end_time FROM event`,
+async function loadActiveEvent(): Promise<{ id: string; name: string; start: string; end: string } | null> {
+  if (!config.activeEventId) return null;
+  const result = await query<{ id: string; name: string; start_time: Date; end_time: Date }>(
+    `SELECT id, name, start_time, end_time FROM event WHERE id = $1`,
+    [config.activeEventId],
   );
-  const id = pickDefaultEventId(all.rows, new Date());
-  if (!id) return null;
-  const row = all.rows.find((e) => e.id === id);
+  const row = result.rows[0];
   if (!row) return null;
   return { id: row.id, name: row.name, start: row.start_time.toISOString(), end: row.end_time.toISOString() };
 }
@@ -147,14 +142,19 @@ function safeFilename(input: string): string {
  *
  * @param from - ISO timestamp marking the start of the window (inclusive).
  * @param to   - ISO timestamp marking the end of the window (exclusive).
+ * @param eventId - When given, additionally restricts rows to registers of
+ *   this event (Task #95) — used by the event-scoped export only; the
+ *   day-scoped export deliberately ignores event boundaries.
  * @returns Invoice ids, ordered by receipt number.
  */
-async function loadInvoiceIdsInRange(from: string, to: string): Promise<string[]> {
+async function loadInvoiceIdsInRange(from: string, to: string, eventId?: string): Promise<string[]> {
   const result = await query<{ id: string }>(`
-    SELECT id FROM invoice
-     WHERE created_at >= $1 AND created_at < $2
-     ORDER BY receipt_number
-  `, [from, to]);
+    SELECT i.id FROM invoice i
+      JOIN register r ON r.id = i.register_id
+     WHERE i.created_at >= $1 AND i.created_at < $2
+       AND ($3::uuid IS NULL OR r.event_id = $3)
+     ORDER BY i.receipt_number
+  `, [from, to, eventId ?? null]);
   return result.rows.map((r) => r.id);
 }
 
@@ -195,14 +195,14 @@ export async function exportsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
   /**
-   * GET /api/admin/exports/excel/event — full-event sales export as an .xlsx file.
-   * Query parameters: `event_id` (optional — defaults to current/last event).
+   * GET /api/admin/exports/excel/event — full-event sales export as an .xlsx
+   * file, for the currently active event (Task #95).
    */
-  app.get<{ Querystring: { event_id?: string } }>('/excel/event', async (req, reply) => {
-    const ev = await resolveEvent(req.query.event_id);
+  app.get('/excel/event', async (_req, reply) => {
+    const ev = await loadActiveEvent();
     if (!ev) return reply.status(404).send({ error: 'Keine Veranstaltung verfügbar' });
 
-    const source = await loadExportSource(ev.start, ev.end);
+    const source = await loadExportSource(ev.start, ev.end, ev.id);
     const rows = buildExportRows(source, await readReceiptPrefix());
     const subtitleStart = new Date(ev.start).toLocaleDateString('de-DE');
     const subtitleEnd = new Date(ev.end).toLocaleDateString('de-DE');
@@ -223,10 +223,10 @@ export async function exportsAdminRoute(app: FastifyInstance): Promise<void> {
    * GET /api/admin/exports/excel/day — single-day sales export as an .xlsx file.
    * Query parameters:
    *   - `date` (required) in `YYYY-MM-DD` form, interpreted in the server's local timezone.
-   *   - `event_id` (optional) — included only for symmetry / future filtering; the day
-   *     range is independent of the event boundaries.
+   * Deliberately not scoped to any event — the day range is independent of
+   * event boundaries (Task #95).
    */
-  app.get<{ Querystring: { date?: string; event_id?: string } }>('/excel/day', async (req, reply) => {
+  app.get<{ Querystring: { date?: string } }>('/excel/day', async (req, reply) => {
     if (!req.query.date) return reply.status(400).send({ error: 'Datum erforderlich (YYYY-MM-DD)' });
     const range = dayRange(req.query.date);
     if (!range) return reply.status(400).send({ error: 'Ungültiges Datum (erwartet YYYY-MM-DD)' });
@@ -294,15 +294,15 @@ export async function exportsAdminRoute(app: FastifyInstance): Promise<void> {
 
   /**
    * GET /api/admin/exports/invoices/event — one PDF per invoice issued
-   * during a Veranstaltung, packaged as a ZIP. Same scoping semantics as
-   * `/invoices/day` above, just windowed by the event's `[start, end)`.
-   * Query parameters: `event_id` (optional — defaults to current/last event).
+   * during the currently active event (Task #95), packaged as a ZIP. Same
+   * scoping semantics as `/invoices/day` above, just windowed by the
+   * event's `[start, end)` and further restricted to its own registers.
    */
-  app.get<{ Querystring: { event_id?: string } }>('/invoices/event', async (req, reply) => {
-    const ev = await resolveEvent(req.query.event_id);
+  app.get('/invoices/event', async (_req, reply) => {
+    const ev = await loadActiveEvent();
     if (!ev) return reply.status(404).send({ error: 'Keine Veranstaltung verfügbar' });
 
-    const invoiceIds = await loadInvoiceIdsInRange(ev.start, ev.end);
+    const invoiceIds = await loadInvoiceIdsInRange(ev.start, ev.end, ev.id);
     if (invoiceIds.length === 0) return reply.status(404).send({ error: 'Keine Rechnungen in dieser Veranstaltung' });
     const zip = await buildInvoicesZip(invoiceIds);
 

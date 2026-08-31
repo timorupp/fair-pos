@@ -19,6 +19,7 @@ import { generateReceiptToken } from '../../receipt/numbering.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../../receipt/format-receipt-number.js';
 import { signTseTransaction } from '../../tse/signing.js';
 import { buildKassenbelegProcessData, KASSENBELEG_PROCESS_TYPE } from '../../tse/processData.js';
+import { config } from '../../config.js';
 
 /** Body schema for `POST /api/admin/cancellations`. */
 interface CreateCancellationBody {
@@ -61,8 +62,8 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
 
     // Validate the reason: must exist and be a cancellation (not a free-of-charge entry).
     const reasonResult = await query<{ booking_type: 'cancellation' | 'free_of_charge'; is_active: boolean }>(
-      `SELECT booking_type, is_active FROM cancellation_reason WHERE id = $1`,
-      [cancellation_reason_id],
+      `SELECT booking_type, is_active FROM cancellation_reason WHERE id = $1 AND event_id = $2`,
+      [cancellation_reason_id, config.activeEventId],
     );
     const reason = reasonResult.rows[0];
     if (!reason) return reply.status(400).send({ error: 'Stornogrund nicht gefunden' });
@@ -73,7 +74,10 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       return reply.status(400).send({ error: 'Stornogrund ist deaktiviert' });
     }
 
-    const regResult = await query(`SELECT id FROM register WHERE id = $1`, [register_id]);
+    const regResult = await query(
+      `SELECT id FROM register WHERE id = $1 AND event_id = $2`,
+      [register_id, config.activeEventId],
+    );
     if (regResult.rows.length === 0) return reply.status(400).send({ error: 'Kasse nicht gefunden' });
 
     // Articles fetched once, up front — reused for the TSE snapshot and the order_item inserts.
@@ -87,8 +91,8 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
               c.name AS category_name, c.tax_rate
          FROM article a
          JOIN article_category c ON c.id = a.category_id
-        WHERE a.id = ANY($1)`,
-      [articleIds],
+        WHERE a.id = ANY($1) AND a.event_id = $2`,
+      [articleIds, config.activeEventId],
     );
     const articleById = new Map(articlesResult.rows.map((a) => [a.id, a]));
     for (const it of items) {

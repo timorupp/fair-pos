@@ -3,6 +3,7 @@
   import { api } from '$lib/api';
   import { copyToClipboard } from '$lib/clipboard';
   import Modal from '$lib/components/Modal.svelte';
+  import { adminUser } from '$lib/stores/user';
 
   // ── Read-only system status ────────────────────────────────────────────────
   let systemSerial = $state('');
@@ -232,44 +233,46 @@
     {/if}
   </section>
 
-  <!-- Server address (editable) ──────────────────────────────────────────────── -->
-  <section class="card">
-    <h2>Server-Adresse (QR-Code)</h2>
-    <p class="hint">
-      Lokale Netzwerkadresse des Servers. Wird in den QR-Code des Kassenbons eingebettet —
-      Kunden im selben WLAN scannen und sehen ihren Bon als PDF. Am besten mit Protokoll angeben
-      (<code>http://</code> oder <code>https://</code>) — welches Protokoll der Server tatsächlich
-      spricht, weißt du als Admin am besten. Ohne Angabe wird <code>http://</code> angenommen.
-    </p>
-    {#if editableLoading}
-      <p class="muted">Lade…</p>
-    {:else}
-      <div class="field">
-        <input
-          value={settings['server_address'] ?? ''}
-          oninput={(e) => { settings['server_address'] = e.currentTarget.value; saveSuccess = false; }}
-          placeholder="z. B. http://192.168.1.10 oder https://fairpos.local"
-          disabled={saving}
-        />
-      </div>
-      <button class="btn-ghost" onclick={() => (addressTestOpen = true)} disabled={!addressTestUrl}>
-        Testen
-      </button>
-    {/if}
-  </section>
+  {#if $adminUser?.is_admin}
+    <!-- Server address (editable) ──────────────────────────────────────────────── -->
+    <section class="card">
+      <h2>Server-Adresse (QR-Code)</h2>
+      <p class="hint">
+        Lokale Netzwerkadresse des Servers. Wird in den QR-Code des Kassenbons eingebettet —
+        Kunden im selben WLAN scannen und sehen ihren Bon als PDF. Am besten mit Protokoll angeben
+        (<code>http://</code> oder <code>https://</code>) — welches Protokoll der Server tatsächlich
+        spricht, weißt du als Admin am besten. Ohne Angabe wird <code>http://</code> angenommen.
+      </p>
+      {#if editableLoading}
+        <p class="muted">Lade…</p>
+      {:else}
+        <div class="field">
+          <input
+            value={settings['server_address'] ?? ''}
+            oninput={(e) => { settings['server_address'] = e.currentTarget.value; saveSuccess = false; }}
+            placeholder="z. B. http://192.168.1.10 oder https://fairpos.local"
+            disabled={saving}
+          />
+        </div>
+        <button class="btn-ghost" onclick={() => (addressTestOpen = true)} disabled={!addressTestUrl}>
+          Testen
+        </button>
+      {/if}
+    </section>
 
-  <!-- Manual database backup ───────────────────────────────────────────────── -->
-  <section class="card">
-    <h2>Datenbank-Backup</h2>
-    <p class="hint">
-      Kein automatisches Backup — der Server läuft nicht 24/7, ein zeitbasierter
-      Trigger würde regelmäßig verpasst. Stattdessen jederzeit auf Abruf: lädt ein
-      vollständiges Datenbank-Backup als ZIP herunter (z. B. direkt nach dem
-      Tagesabschluss, vor Updates, oder um es auf einen externen Datenträger
-      mitzunehmen).
-    </p>
-    <a class="btn-primary" href={api.admin.backup.downloadUrl()}>Backup herunterladen</a>
-  </section>
+    <!-- Manual database backup ───────────────────────────────────────────────── -->
+    <section class="card">
+      <h2>Datenbank-Backup</h2>
+      <p class="hint">
+        Kein automatisches Backup — der Server läuft nicht 24/7, ein zeitbasierter
+        Trigger würde regelmäßig verpasst. Stattdessen jederzeit auf Abruf: lädt ein
+        vollständiges Datenbank-Backup als ZIP herunter (z. B. direkt nach dem
+        Tagesabschluss, vor Updates, oder um es auf einen externen Datenträger
+        mitzunehmen).
+      </p>
+      <a class="btn-primary" href={api.admin.backup.downloadUrl()}>Backup herunterladen</a>
+    </section>
+  {/if}
 
   <!-- Shutdown ───────────────────────────────────────────────────────────────── -->
   <section class="card">

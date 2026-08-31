@@ -11,6 +11,7 @@ interface UserRow {
   id: string;
   name: string;
   is_admin: boolean;
+  is_event_admin: boolean;
   is_active: boolean;
   created_at: string;
 }
@@ -20,6 +21,19 @@ interface UserListRow extends UserRow {
   has_pin: boolean;
 }
 
+/**
+ * Looks up whether a user is a System-Administrator (Task #94) — used to
+ * guard PIN management so a Veranstaltungs-Administrator can't set/print a
+ * System-Administrator's PIN and effectively take over their account.
+ *
+ * @param id - The target user's id.
+ * @returns The user's `is_admin` flag, or `null` if no such user exists.
+ */
+async function isTargetSystemAdmin(id: string): Promise<boolean | null> {
+  const result = await query<{ is_admin: boolean }>('SELECT is_admin FROM "user" WHERE id = $1', [id]);
+  return result.rows[0]?.is_admin ?? null;
+}
+
 /** Admin routes for user management. All routes require admin privileges. */
 export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
@@ -27,7 +41,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
   /** GET /api/admin/users — list all users ordered by name. */
   app.get('/', async (_req, reply) => {
     const result = await query<UserListRow>(
-      `SELECT id, name, is_admin, is_active, created_at, (pin_hash IS NOT NULL) AS has_pin
+      `SELECT id, name, is_admin, is_event_admin, is_active, created_at, (pin_hash IS NOT NULL) AS has_pin
          FROM "user" ORDER BY name`,
     );
     return reply.send(result.rows);
@@ -48,21 +62,32 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    * none until an admin assigns one.
    */
   app.post('/', async (req, reply) => {
-    const body = req.body as { name?: string; password?: string; is_admin?: boolean; is_active?: boolean };
+    const body = req.body as {
+      name?: string; password?: string; is_admin?: boolean; is_event_admin?: boolean; is_active?: boolean;
+    };
     if (!body.name) {
       return reply.status(400).send({ error: 'Name erforderlich' });
     }
-    if (body.is_admin && !body.password) {
+    // Task #94: only a System-Administrator may grant System-Administrator
+    // rights — otherwise a Veranstaltungs-Administrator could create a new
+    // user with is_admin=true and hand themselves full access.
+    if (body.is_admin && !req.adminUser.is_admin) {
+      return reply.status(403).send({ error: 'Nur ein System-Administrator darf Systemadministrator-Rechte vergeben' });
+    }
+    // A password is required for either admin level — both need to pass the
+    // "Systemverwaltung" step-up (`POST /api/auth/admin/verify`), which
+    // checks the password, to ever reach an admin-gated route at all.
+    if ((body.is_admin || body.is_event_admin) && !body.password) {
       return reply.status(400).send({ error: 'Passwort erforderlich für Administrator' });
     }
 
     const hash = body.password ? await hashPassword(body.password) : null;
     try {
       const result = await query<UserRow>(
-        `INSERT INTO "user" (name, password_hash, is_admin, is_active)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, name, is_admin, is_active, created_at`,
-        [body.name, hash, body.is_admin ?? false, body.is_active ?? true],
+        `INSERT INTO "user" (name, password_hash, is_admin, is_event_admin, is_active)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, name, is_admin, is_event_admin, is_active, created_at`,
+        [body.name, hash, body.is_admin ?? false, body.is_event_admin ?? false, body.is_active ?? true],
       );
       return reply.status(201).send(result.rows[0]);
     } catch (e: unknown) {
@@ -92,7 +117,9 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    */
   app.put('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = req.body as { name?: string; password?: string; is_admin?: boolean; is_active?: boolean };
+    const body = req.body as {
+      name?: string; password?: string; is_admin?: boolean; is_event_admin?: boolean; is_active?: boolean;
+    };
 
     if (id === req.adminUser.id && body.is_active === false) {
       return reply.status(400).send({ error: 'Du kannst dich nicht selbst deaktivieren' });
@@ -100,8 +127,28 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
     if (id === req.adminUser.id && body.is_admin === false) {
       return reply.status(400).send({ error: 'Du kannst dir nicht selbst die Administratorrechte entziehen' });
     }
+    // Task #94: changing is_admin at all (grant or revoke) requires being a
+    // System-Administrator yourself — otherwise a Veranstaltungs-Administrator
+    // could promote themselves (or anyone) to full System-Administrator access.
+    if (body.is_admin !== undefined && !req.adminUser.is_admin) {
+      return reply.status(403).send({ error: 'Nur ein System-Administrator darf Systemadministrator-Rechte ändern' });
+    }
+    // Task #94: setting a NEW password for an existing System-Administrator
+    // also requires being one yourself — otherwise a Veranstaltungs-Administrator
+    // could take over a System-Administrator's account via a password reset,
+    // without ever touching is_admin directly.
+    if (body.password && !req.adminUser.is_admin) {
+      const targetIsSystemAdmin = await isTargetSystemAdmin(id);
+      if (targetIsSystemAdmin === null) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+      if (targetIsSystemAdmin) {
+        return reply.status(403).send({ error: 'Nur ein System-Administrator darf das Passwort eines System-Administrators ändern' });
+      }
+    }
 
-    if (body.is_admin && !body.password) {
+    // A password is required for either admin level (see the matching check
+    // in POST / above) — only relevant here when granting a level the user
+    // didn't already have a password for.
+    if ((body.is_admin || body.is_event_admin) && !body.password) {
       const existing = await query<{ password_hash: string | null }>(
         'SELECT password_hash FROM "user" WHERE id = $1',
         [id],
@@ -120,6 +167,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
 
     if (body.name !== undefined) { setClauses.push(`name = $${idx++}`); params.push(body.name); }
     if (body.is_admin !== undefined) { setClauses.push(`is_admin = $${idx++}`); params.push(body.is_admin); }
+    if (body.is_event_admin !== undefined) { setClauses.push(`is_event_admin = $${idx++}`); params.push(body.is_event_admin); }
     if (body.is_active !== undefined) { setClauses.push(`is_active = $${idx++}`); params.push(body.is_active); }
     if (body.password) {
       const hash = await hashPassword(body.password);
@@ -135,7 +183,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
     try {
       const result = await query<UserRow>(
         `UPDATE "user" SET ${setClauses.join(', ')} WHERE id = $${idx}
-         RETURNING id, name, is_admin, is_active, created_at`,
+         RETURNING id, name, is_admin, is_event_admin, is_active, created_at`,
         params,
       );
       if (result.rows.length === 0) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
@@ -158,12 +206,24 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    * (register assignments) and `session` (active logins) still reference the
    * user directly, and both are pure operational data with no audit value —
    * cleared explicitly here rather than requiring a logout first.
+   *
+   * Task #94: deleting a System-Administrator requires being one yourself —
+   * otherwise a Veranstaltungs-Administrator could remove every
+   * System-Administrator account and become the highest remaining authority.
    */
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
 
     if (id === req.adminUser.id) {
       return reply.status(400).send({ error: 'Du kannst deinen eigenen Benutzer nicht löschen' });
+    }
+
+    if (!req.adminUser.is_admin) {
+      const target = await query<{ is_admin: boolean }>('SELECT is_admin FROM "user" WHERE id = $1', [id]);
+      if (target.rows.length === 0) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+      if (target.rows[0]!.is_admin) {
+        return reply.status(403).send({ error: 'Nur ein System-Administrator darf einen System-Administrator löschen' });
+      }
     }
 
     const result = await withTransaction(async (client) => {
@@ -226,8 +286,11 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    */
   app.post('/:id/pin/generate', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const userCheck = await query('SELECT id FROM "user" WHERE id = $1', [id]);
-    if (userCheck.rows.length === 0) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+    const targetIsSystemAdmin = await isTargetSystemAdmin(id);
+    if (targetIsSystemAdmin === null) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+    if (targetIsSystemAdmin && !req.adminUser.is_admin) {
+      return reply.status(403).send({ error: 'Nur ein System-Administrator darf die PIN eines System-Administrators verwalten' });
+    }
 
     let candidate = generateRandomPin();
     for (let attempt = 0; attempt < 5 && (await pinHashInUse(hashPin(candidate), id)); attempt++) {
@@ -243,6 +306,12 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    */
   app.put('/:id/pin', async (req, reply) => {
     const { id } = req.params as { id: string };
+    const targetIsSystemAdmin = await isTargetSystemAdmin(id);
+    if (targetIsSystemAdmin === null) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+    if (targetIsSystemAdmin && !req.adminUser.is_admin) {
+      return reply.status(403).send({ error: 'Nur ein System-Administrator darf die PIN eines System-Administrators verwalten' });
+    }
+
     const body = req.body as { pin?: string };
     const normalized = normalizePin(body.pin ?? '');
     if (!isValidPinFormat(normalized)) {
@@ -276,9 +345,12 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'PIN muss aus 9 Zeichen (A-Z, 0-9) bestehen' });
     }
 
-    const userResult = await query<{ name: string }>('SELECT name FROM "user" WHERE id = $1', [id]);
+    const userResult = await query<{ name: string; is_admin: boolean }>('SELECT name, is_admin FROM "user" WHERE id = $1', [id]);
     const user = userResult.rows[0];
     if (!user) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
+    if (user.is_admin && !req.adminUser.is_admin) {
+      return reply.status(403).send({ error: 'Nur ein System-Administrator darf die PIN eines System-Administrators verwalten' });
+    }
 
     const printerResult = await query<{ id: string }>(
       `SELECT id FROM printer WHERE is_default = true LIMIT 1`,

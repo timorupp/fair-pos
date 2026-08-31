@@ -7,6 +7,7 @@
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../db/client.js';
+import { config } from '../config.js';
 import { truncateAllTables } from '../test/db-fixture.js';
 import { findPendingDaysForRegister } from './pending-db.js';
 
@@ -21,8 +22,8 @@ beforeEach(async () => {
   );
   printerId = printerResult.rows[0]!.id;
   const regResult = await pool.query<{ id: string }>(
-    `INSERT INTO register (name, type, printer_id) VALUES ('R1', 'receipt_register', $1) RETURNING id`,
-    [printerId],
+    `INSERT INTO register (name, type, printer_id, event_id) VALUES ('R1', 'receipt_register', $1, $2) RETURNING id`,
+    [printerId, config.activeEventId],
   );
   registerId = regResult.rows[0]!.id;
 });
@@ -99,8 +100,8 @@ describe('findPendingDaysForRegister (integration)', () => {
 
   it('isolates per-register: another register\'s activity does not surface here', async () => {
     const otherReg = await pool.query<{ id: string }>(
-      `INSERT INTO register (name, type, printer_id) VALUES ('R2', 'receipt_register', $1) RETURNING id`,
-      [printerId],
+      `INSERT INTO register (name, type, printer_id, event_id) VALUES ('R2', 'receipt_register', $1, $2) RETURNING id`,
+      [printerId, config.activeEventId],
     );
     await pool.query(
       `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)

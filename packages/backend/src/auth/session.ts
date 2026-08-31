@@ -41,6 +41,8 @@ export interface SessionWithUser {
   adminVerified: boolean;
   name: string;
   isAdmin: boolean;
+  /** Veranstaltungs-Administrator (Task #94) — independent of isAdmin. */
+  isEventAdmin: boolean;
   isActive: boolean;
 }
 
@@ -97,10 +99,10 @@ export function getSessionToken(request: FastifyRequest): string | null {
 export async function loadSession(token: string): Promise<SessionWithUser | null> {
   const result = await query<{
     session_id: string; user_id: string; admin_verified: boolean;
-    name: string; is_admin: boolean; is_active: boolean;
+    name: string; is_admin: boolean; is_event_admin: boolean; is_active: boolean;
   }>(
     `SELECT s.id AS session_id, s.user_id, s.admin_verified,
-            u.name, u.is_admin, u.is_active
+            u.name, u.is_admin, u.is_event_admin, u.is_active
        FROM session s
        JOIN "user" u ON u.id = s.user_id
       WHERE s.token = $1
@@ -111,7 +113,7 @@ export async function loadSession(token: string): Promise<SessionWithUser | null
   if (!row) return null;
   return {
     sessionId: row.session_id, userId: row.user_id, adminVerified: row.admin_verified,
-    name: row.name, isAdmin: row.is_admin, isActive: row.is_active,
+    name: row.name, isAdmin: row.is_admin, isEventAdmin: row.is_event_admin, isActive: row.is_active,
   };
 }
 

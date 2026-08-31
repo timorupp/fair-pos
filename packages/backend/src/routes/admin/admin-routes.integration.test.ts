@@ -60,6 +60,28 @@ describe('Admin categories', () => {
     });
     expect(dup.statusCode).toBe(409);
   });
+
+  it('scopes categories to the active event (Task #95): same name allowed in a different event, GET only shows the active one', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    await createTestCategory({ name: 'Getränke', eventId: otherEvent.rows[0]!.id });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/categories',
+      headers: { cookie: adminCookie },
+      payload: { name: 'Getränke', tax_rate: 19 },
+    });
+    expect(response.statusCode).toBe(201);
+
+    const list = await app.inject({
+      method: 'GET', url: '/api/admin/categories',
+      headers: { cookie: adminCookie },
+    });
+    const names = (list.json() as { name: string }[]).map((c) => c.name);
+    expect(names).toEqual(['Getränke']);
+  });
 });
 
 describe('Admin articles', () => {
@@ -75,6 +97,58 @@ describe('Admin articles', () => {
     const body = response.json();
     expect(body[0].category_name).toBe('C');
     expect(Number(body[0].tax_rate)).toBe(7);
+  });
+
+  it('scopes articles to the active event (Task #95): GET only shows the active event\'s articles', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    await createTestArticle({ name: 'Fremd', eventId: otherEvent.rows[0]!.id });
+    await createTestArticle({ name: 'Eigen' });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/articles',
+      headers: { cookie: adminCookie },
+    });
+    const names = (response.json() as { name: string }[]).map((a) => a.name);
+    expect(names).toEqual(['Eigen']);
+  });
+
+  it('rejects creating an article with a category from a different event', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreignCategory = await createTestCategory({ eventId: otherEvent.rows[0]!.id });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/articles',
+      headers: { cookie: adminCookie },
+      payload: { name: 'X', category_id: foreignCategory.id, price: 5 },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('does not update or delete an article belonging to a different event (404)', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreign = await createTestArticle({ name: 'Fremd', eventId: otherEvent.rows[0]!.id });
+
+    const app = await getTestApp();
+    const putResponse = await app.inject({
+      method: 'PUT', url: `/api/admin/articles/${foreign.id}`,
+      headers: { cookie: adminCookie },
+      payload: { name: 'Umbenannt' },
+    });
+    expect(putResponse.statusCode).toBe(404);
+
+    const deleteResponse = await app.inject({
+      method: 'DELETE', url: `/api/admin/articles/${foreign.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(deleteResponse.statusCode).toBe(404);
   });
 });
 
@@ -255,6 +329,98 @@ describe('Admin users', () => {
   });
 });
 
+describe('Admin users: Task #94 field-level guards (Veranstaltungs-Administrator vs. System-Administrator)', () => {
+  it('refuses a Veranstaltungs-Administrator creating a new System-Administrator', async () => {
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/users',
+      headers: { cookie: eventAdminCookie },
+      payload: { name: 'neu', password: 'pw', is_admin: true },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('lets a Veranstaltungs-Administrator create a new Veranstaltungs-Administrator', async () => {
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/users',
+      headers: { cookie: eventAdminCookie },
+      payload: { name: 'neu', password: 'pw', is_event_admin: true },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().is_event_admin).toBe(true);
+  });
+
+  it('refuses a Veranstaltungs-Administrator promoting an existing user to System-Administrator', async () => {
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const target = await createTestUser({ isAdmin: false });
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${target.id}`,
+      headers: { cookie: eventAdminCookie },
+      payload: { is_admin: true, password: 'pw' },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('refuses a Veranstaltungs-Administrator deleting an existing System-Administrator', async () => {
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const target = await createTestUser({ isAdmin: true, password: 'pw' });
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'DELETE', url: `/api/admin/users/${target.id}`,
+      headers: { cookie: eventAdminCookie },
+    });
+    expect(response.statusCode).toBe(403);
+
+    const stillThere = await pool.query('SELECT id FROM "user" WHERE id = $1', [target.id]);
+    expect(stillThere.rowCount).toBe(1);
+  });
+
+  it('lets a Veranstaltungs-Administrator delete a non-admin user', async () => {
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const target = await createTestUser({ isAdmin: false });
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'DELETE', url: `/api/admin/users/${target.id}`,
+      headers: { cookie: eventAdminCookie },
+    });
+    expect(response.statusCode).toBe(204);
+  });
+
+  it('refuses a Veranstaltungs-Administrator setting a new password for a System-Administrator', async () => {
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const target = await createTestUser({ isAdmin: true, password: 'old-pw' });
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/users/${target.id}`,
+      headers: { cookie: eventAdminCookie },
+      payload: { password: 'new-pw' },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('refuses a Veranstaltungs-Administrator generating a PIN for a System-Administrator', async () => {
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const target = await createTestUser({ isAdmin: true, password: 'pw' });
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/users/${target.id}/pin/generate`,
+      headers: { cookie: eventAdminCookie },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+});
+
 describe('Admin users: PIN management (Task #90)', () => {
   it('GET /api/admin/users reports has_pin without ever exposing the hash', async () => {
     const app = await getTestApp();
@@ -391,7 +557,8 @@ describe('Admin layouts', () => {
   it('removes out-of-bounds slots when the grid is shrunk', async () => {
     const app = await getTestApp();
     const layout = await pool.query<{ id: string }>(
-      `INSERT INTO register_layout (name, grid_cols, grid_rows) VALUES ('L', 4, 4) RETURNING id`,
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('L', 4, 4, $1) RETURNING id`,
+      [config.activeEventId],
     );
     const article = await createTestArticle();
     await pool.query(
@@ -415,7 +582,8 @@ describe('Admin layouts', () => {
   it('duplicates a layout including all slots, label and hidden included', async () => {
     const app = await getTestApp();
     const layout = await pool.query<{ id: string }>(
-      `INSERT INTO register_layout (name, grid_cols, grid_rows) VALUES ('Src', 3, 3) RETURNING id`,
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('Src', 3, 3, $1) RETURNING id`,
+      [config.activeEventId],
     );
     const article = await createTestArticle();
     await pool.query(
@@ -440,7 +608,8 @@ describe('Admin layouts', () => {
   it('saves label and hidden via PUT /:id/slots', async () => {
     const app = await getTestApp();
     const layout = await pool.query<{ id: string }>(
-      `INSERT INTO register_layout (name, grid_cols, grid_rows) VALUES ('L2', 2, 2) RETURNING id`,
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('L2', 2, 2, $1) RETURNING id`,
+      [config.activeEventId],
     );
     const article = await createTestArticle();
     const response = await app.inject({
@@ -454,6 +623,91 @@ describe('Admin layouts', () => {
       [layout.rows[0]!.id],
     );
     expect(slots.rows[0]).toEqual({ label: 'Weizen\nHell', hidden: true });
+  });
+
+  it('scopes layouts to the active event (Task #95): GET only shows the active event\'s layouts', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    await pool.query(
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('Fremd', 4, 4, $1)`,
+      [otherEvent.rows[0]!.id],
+    );
+    await pool.query(
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('Eigen', 4, 4, $1)`,
+      [config.activeEventId],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/layouts',
+      headers: { cookie: adminCookie },
+    });
+    const names = (response.json() as { name: string }[]).map((l) => l.name);
+    expect(names).toEqual(['Eigen']);
+  });
+
+  it('does not update, delete or duplicate a layout belonging to a different event (404)', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreign = await pool.query<{ id: string }>(
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('Fremd', 4, 4, $1) RETURNING id`,
+      [otherEvent.rows[0]!.id],
+    );
+    const foreignId = foreign.rows[0]!.id;
+
+    const app = await getTestApp();
+    const getResponse = await app.inject({
+      method: 'GET', url: `/api/admin/layouts/${foreignId}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(getResponse.statusCode).toBe(404);
+
+    const putResponse = await app.inject({
+      method: 'PUT', url: `/api/admin/layouts/${foreignId}`,
+      headers: { cookie: adminCookie },
+      payload: { name: 'Umbenannt' },
+    });
+    expect(putResponse.statusCode).toBe(404);
+
+    const duplicateResponse = await app.inject({
+      method: 'POST', url: `/api/admin/layouts/${foreignId}/duplicate`,
+      headers: { cookie: adminCookie },
+    });
+    expect(duplicateResponse.statusCode).toBe(404);
+
+    const slotsResponse = await app.inject({
+      method: 'PUT', url: `/api/admin/layouts/${foreignId}/slots`,
+      headers: { cookie: adminCookie },
+      payload: { slots: [] },
+    });
+    expect(slotsResponse.statusCode).toBe(404);
+
+    const deleteResponse = await app.inject({
+      method: 'DELETE', url: `/api/admin/layouts/${foreignId}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(deleteResponse.statusCode).toBe(404);
+  });
+
+  it('rejects a slot referencing an article from a different event', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreignArticle = await createTestArticle({ eventId: otherEvent.rows[0]!.id });
+    const layout = await pool.query<{ id: string }>(
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('L', 4, 4, $1) RETURNING id`,
+      [config.activeEventId],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/layouts/${layout.rows[0]!.id}/slots`,
+      headers: { cookie: adminCookie },
+      payload: { slots: [{ article_id: foreignArticle.id, grid_row: 0, grid_col: 0, color: '#abcdef' }] },
+    });
+    expect(response.statusCode).toBe(400);
   });
 });
 
@@ -493,6 +747,51 @@ describe('Admin tables (floor plan)', () => {
       headers: { cookie: adminCookie }, payload: { label: 'Z' },
     });
     expect(dup.statusCode).toBe(409);
+  });
+
+  it('scopes the floor plan to the active event (Task #95): a table of a different event does not appear in GET /', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [otherEvent.rows[0]!.id]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [otherEvent.rows[0]!.id]);
+    const foreign = await pool.query<{ id: string }>(
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('Fremd', 'A', '1', 'active', $1) RETURNING id`,
+      [otherEvent.rows[0]!.id],
+    );
+
+    const app = await getTestApp();
+    const list = await app.inject({
+      method: 'GET', url: '/api/admin/tables',
+      headers: { cookie: adminCookie },
+    });
+    expect((list.json() as { name: string }[]).some((t) => t.name === 'Fremd')).toBe(false);
+
+    const putResponse = await app.inject({
+      method: 'PUT', url: `/api/admin/tables/${foreign.rows[0]!.id}`,
+      headers: { cookie: adminCookie },
+      payload: { name: 'Umbenannt' },
+    });
+    expect(putResponse.statusCode).toBe(404);
+
+    const deleteResponse = await app.inject({
+      method: 'DELETE', url: `/api/admin/tables/${foreign.rows[0]!.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(deleteResponse.statusCode).toBe(404);
+
+    // The same column/row labels ('A'/'1') must be freely reusable in the active event, unaffected by the other event's rows.
+    const genResponse = await app.inject({
+      method: 'POST', url: '/api/admin/tables/generate',
+      headers: { cookie: adminCookie },
+      payload: {
+        cols: { count: 1, label_type: 'alpha', order: 'asc' },
+        rows: { count: 1, label_type: 'numeric', order: 'asc' },
+        replace: true,
+      },
+    });
+    expect(genResponse.statusCode).toBe(200);
   });
 });
 
@@ -724,6 +1023,107 @@ describe('POST /api/admin/system/shutdown', () => {
     delete process.env['SUDO_STUB_FAIL'];
     expect(response.statusCode).toBe(500);
     expect(response.json().error).toMatch(/Server konnte nicht heruntergefahren werden/);
+  });
+});
+
+describe('Aktive Veranstaltung (Task #95)', () => {
+  // truncateAllTables() wipes whatever event/active_event_id row exists
+  // (be it migration-seeded on a non-fresh DB, or none at all on a fresh
+  // one, see migration 0019) same as any other bootstrap data (see
+  // db-fixture.ts) — re-seed an active event per test, same pattern as
+  // seedReceiptCounter()/setSystemSetting() elsewhere in this file. Uses
+  // the name "Altbestand" here only because these specific tests assert
+  // on it, not because that name has any special meaning to the code.
+  let seededEventId: string;
+
+  beforeEach(async () => {
+    const seeded = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Altbestand', now() - interval '1 day', now()) RETURNING id`,
+    );
+    seededEventId = seeded.rows[0]!.id;
+    config.activeEventId = seededEventId;
+  });
+
+  afterAll(() => { config.activeEventId = null; });
+
+  it('GET /api/admin/system/active-event returns the seeded active event', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/system/active-event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().event.name).toBe('Altbestand');
+  });
+
+  it('is readable by a Veranstaltungs-Administrator too', async () => {
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/system/active-event',
+      headers: { cookie: eventAdminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('PUT /api/admin/system/active-event switches the active event (System-Administrator only)', async () => {
+    const newEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Sommerfest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/active-event',
+      headers: { cookie: adminCookie },
+      payload: { event_id: newEvent.rows[0]!.id },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().event.name).toBe('Sommerfest');
+
+    const stored = await pool.query<{ value: string }>(`SELECT value FROM system_setting WHERE key = 'active_event_id'`);
+    expect(stored.rows[0]!.value).toBe(newEvent.rows[0]!.id);
+  });
+
+  it('rejects a Veranstaltungs-Administrator switching the active event', async () => {
+    const newEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Sommerfest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/active-event',
+      headers: { cookie: eventAdminCookie },
+      payload: { event_id: newEvent.rows[0]!.id },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('rejects switching to a non-existent event', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/active-event',
+      headers: { cookie: adminCookie },
+      payload: { event_id: '00000000-0000-0000-0000-000000000000' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('PUT /api/admin/system/active-event/default-layouts is reachable by a Veranstaltungs-Administrator', async () => {
+    const layout = await pool.query<{ id: string }>(
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('L1', 4, 4, $1) RETURNING id`,
+      [config.activeEventId],
+    );
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: '/api/admin/system/active-event/default-layouts',
+      headers: { cookie: eventAdminCookie },
+      payload: { receipt_layout_id: layout.rows[0]!.id, service_layout_id: null },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().event.defaultReceiptRegisterLayoutId).toBe(layout.rows[0]!.id);
   });
 });
 
