@@ -2923,6 +2923,18 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     — separate, destruktive Funktion mit eigenen Vorbedingungen; erst
     angehen, wenn TSE-Speicherplatz tatsächlich eng wird.
 
+  **Nachtrag (2026-09-01): `factoryReset`/`deleteStoredData` direkt in
+  `tseCli.cpp` eingebaut, statt nur als Wegwerf-Snippet dokumentiert.**
+  Auf Nutzerwunsch — beide jetzt echte, mitgebaute `tseCli`-Befehle
+  (`factoryReset` ohne Argumente, `deleteStoredData <admin-pin>
+  <ausgabedatei>` mit dem vom SDK vorgeschriebenen Login→Zeit→Export→Löschen-
+  Ablauf), kein Selbstkompilieren gegen das SDK mehr nötig. **Weiterhin nie
+  von FairPOS selbst aufgerufen** — nur über die Kommandozeile erreichbar,
+  bewusst nicht ins Backend/die Admin-UI verdrahtet (s.o.). Build erfolgreich
+  gegen die reale (lokal vorhandene, gitignorte) SDK-Bibliothek getestet;
+  mangels physischer Entwickler-TSE nicht mit echter Hardware verifiziert.
+  Vollständig dokumentiert in `docs/TSE-CLI-Referenz.md` Abschnitt 2.
+
   **Zugriffsebene (für den `GET /export`-Endpunkt):** V+S (Nutzerbegründung:
   der TSE-Stick kann einer einzelnen Veranstaltung/einem Veranstalter
   gehören, nicht nur dem System-Administrator) — siehe

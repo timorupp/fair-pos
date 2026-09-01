@@ -34,6 +34,7 @@ kollidieren können (z.B. manche CDDL/EPL-Varianten), und bei jeglicher
 - `docs/SETUP.md` — Technisches Setup, Architektur, Deployment
 - `docs/Installationsanleitung.md` — Schritt-für-Schritt-Produktionsinstallation (native Ubuntu, kein Docker); Automatisierungsskripte in `scripts/install/`
 - `docs/TSE-Integration.md` — TSE-Architekturkonzept (CLI-Subprozess, Vendoring, Lifecycle, aktueller Umsetzungsstand)
+- `docs/TSE-CLI-Referenz.md` — vollständige Befehlsreferenz für `tseCli` zum direkten Kommandozeilen-Aufruf (Setup, Diagnose, Entwickler-TSE-Reset, Rohdaten-Löschung)
 - `docs/Rechtliche-Anforderungen.md` / `docs/Organisatorische-Anleitung.md` — KassenSichV-/GoBD-Vorgaben und Betriebsabläufe
 - `docs/Manueller-Testplan.md` — Checkliste für den manuellen Regressionstest (UI, TSE-Ausfallverhalten, DSFinV-K-Export)
 

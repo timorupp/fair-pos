@@ -323,12 +323,73 @@ int cmdExportTar(WormContext *ctx, int argc, char **argv) {
   return 0;
 }
 
+/** `factoryReset` — resets a *development-firmware* TSE to factory default
+ * (empties the TSE Store, resets PUK/all PINs, drops client registration).
+ * Not called by FairPOS itself — admin-only, for resetting a dev/test TSE
+ * between test cycles. `worm_tse_factoryReset` only works on development
+ * firmware by design and simply fails on a real/production TSE, so there is
+ * no separate safety check here — see docs/TSE-CLI-Referenz.md section 4.1. */
+int cmdFactoryReset(WormContext *ctx, int argc, char **argv) {
+  (void)argv;
+  if (argc != 0) return printUsageError("factoryReset takes no arguments");
+  WormError err = worm_tse_factoryReset(ctx);
+  if (err != WORM_ERROR_NOERROR) return printError(err, "worm_tse_factoryReset failed");
+  std::printf("{\"ok\":true,\"result\":{}}\n");
+  return 0;
+}
+
+/** `deleteStoredData <adminPin> <exportFile>` — deletes all TSE-stored log
+ * data. Not called by FairPOS itself — admin-only, for the rare case the
+ * TSE store actually fills up (see TASKS.md Task #103, "bewusst nicht
+ * umgesetzt"). Follows the exact sequence WormDLL.h documents as required:
+ * login as Admin, set the time, perform a full (unfiltered) export, only
+ * then delete — setting the time after exporting would itself create a new,
+ * not-yet-exported log entry that blocks the deletion. Aborts without
+ * deleting anything if the export step fails. See
+ * docs/TSE-CLI-Referenz.md section 4.2 for the full rationale. */
+int cmdDeleteStoredData(WormContext *ctx, int argc, char **argv) {
+  if (argc != 2) return printUsageError("deleteStoredData needs 2 arguments");
+  std::string adminPin(argv[0]);
+  const char *exportFile = argv[1];
+
+  int retries = 0;
+  WormError err = worm_user_login(ctx, WORM_USER_ADMIN,
+                                  (const unsigned char *)adminPin.data(),
+                                  (int)adminPin.size(), &retries);
+  if (err != WORM_ERROR_NOERROR) return printError(err, "Admin login failed");
+
+  err = worm_tse_updateTime(ctx, (worm_uint)time(nullptr));
+  if (err != WORM_ERROR_NOERROR) {
+    worm_user_logout(ctx, WORM_USER_ADMIN);
+    return printError(err, "worm_tse_updateTime failed");
+  }
+
+  std::FILE *f = std::fopen(exportFile, "wb");
+  if (f == nullptr) {
+    worm_user_logout(ctx, WORM_USER_ADMIN);
+    return printUsageError("failed to open export file");
+  }
+  err = worm_export_tar(ctx, fileWriteCallback, f);
+  std::fclose(f);
+  if (err != WORM_ERROR_NOERROR) {
+    worm_user_logout(ctx, WORM_USER_ADMIN);
+    return printError(err, "worm_export_tar failed (deletion aborted, TSE data unchanged)");
+  }
+
+  err = worm_export_deleteStoredData(ctx);
+  worm_user_logout(ctx, WORM_USER_ADMIN);
+  if (err != WORM_ERROR_NOERROR) return printError(err, "worm_export_deleteStoredData failed");
+
+  std::printf("{\"ok\":true,\"result\":{}}\n");
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
   if (argc < 3) {
     return printUsageError(
-        "usage: tseCli <mountPoint> <setup|maintain|start|update|finish|info|exportTar> [args...]");
+        "usage: tseCli <mountPoint> <setup|maintain|start|update|finish|info|exportTar|factoryReset|deleteStoredData> [args...]");
   }
   const char *mountPoint = argv[1];
   std::string command(argv[2]);
@@ -347,6 +408,8 @@ int main(int argc, char **argv) {
   else if (command == "finish") exitCode = cmdFinish(ctx, cmdArgc, cmdArgs);
   else if (command == "info") exitCode = cmdInfo(ctx);
   else if (command == "exportTar") exitCode = cmdExportTar(ctx, cmdArgc, cmdArgs);
+  else if (command == "factoryReset") exitCode = cmdFactoryReset(ctx, cmdArgc, cmdArgs);
+  else if (command == "deleteStoredData") exitCode = cmdDeleteStoredData(ctx, cmdArgc, cmdArgs);
   else exitCode = printUsageError("unknown command");
 
   worm_cleanup(ctx);

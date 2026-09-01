@@ -100,7 +100,11 @@ verbindliche, aktuelle Liste):**
 das ab, was FairPOS tatsächlich braucht — keine Firmware-Update-Befehle, keine
 Client-Verwaltung jenseits des einen registrierten Clients, kein LAN-TSE-Pfad.
 Swissbits eigenes Referenzbeispiel (`wormCli.cpp`, ~870 Zeilen) deckt deutlich
-mehr ab, als wir benötigen; unser Tool bleibt bewusst kleiner.
+mehr ab, als wir benötigen; unser Tool bleibt bewusst kleiner. Zwei bewusste
+Ausnahmen (`factoryReset`/`deleteStoredData`, siehe Tabelle) — nicht von
+FairPOS selbst gebraucht, aber als reine Admin-Werkzeuge für die
+Kommandozeile mit aufgenommen (Task #103), damit ein Administrator sie
+nicht selbst gegen das SDK kompilieren muss.
 
 **Befehle:**
 
@@ -113,6 +117,10 @@ mehr ab, als wir benötigen; unser Tool bleibt bewusst kleiner.
 | `finish <transactionNumber> <processData> <processType>` | `worm_transaction_finish` | pro Kassiervorgang / Bestellung / Storno |
 | `info` | TSE-Status als JSON (Self-Test-Status, verbleibende Signaturen, Zertifikatsablauf, Signaturalgorithmus, Zeitformat, Public Key, …) | Admin-Statusanzeige, Health-Checks, `tse/certificateInfo.ts` (QR-Code/`tse.csv`) |
 | `exportTar <file>` | Rohdaten-Export (TAR, TR-03153-konform) für Archivierung/DSFinV-K-Vorstufe | Backup-Dienst, vor Ort selten |
+| `factoryReset` | Entwickler-TSE auf Werkszustand zurücksetzen (`worm_tse_factoryReset`) | **nie von FairPOS** — reines Admin-CLI-Werkzeug (Task #103) |
+| `deleteStoredData <adminPin> <file>` | Gespeicherte Rohdaten löschen (Export + Löschen in einem, siehe `worm_export_deleteStoredData`) | **nie von FairPOS** — reines Admin-CLI-Werkzeug (Task #103) |
+
+Vollständige Aufrufsyntax und Praxisbeispiele — siehe `docs/TSE-CLI-Referenz.md`.
 
 **`start` bekommt immer leere `processData`/`processType`:** DSFinV-K v2.4
 Anhang I schreibt das für **jeden** Vorgangstyp so vor („Für alle

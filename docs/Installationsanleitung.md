@@ -355,7 +355,9 @@ sudo -u fairpos /opt/fairpos/packages/backend/native/tse-cli/vendor/bin/tseCli \
 
 `<mount-pfad>`/`<client-id>`/`<time-admin-pin>` entsprechen genau den Werten
 aus Abschnitt 8.3. Danach in der Admin-UI über "TSE testen" verifizieren
-(`hasPassedSelfTest: true` erwartet).
+(`hasPassedSelfTest: true` erwartet). Vollständige Befehlsreferenz für
+`tseCli` (alle Befehle, Fehlercodes, Entwickler-TSE-Reset):
+`docs/TSE-CLI-Referenz.md`.
 
 ---
 
