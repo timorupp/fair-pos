@@ -75,6 +75,16 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const SELF_TEST_TIMEOUT_MS = 60_000;
 
 /**
+ * Timeout for `exportTar` — reads the TSE's entire stored log archive over
+ * USB, which grows with usage and has no documented upper bound on duration.
+ * Generous on purpose, same reasoning as {@link SELF_TEST_TIMEOUT_MS}: this
+ * runs from an explicit, infrequent admin action (see
+ * `routes/admin/tse.ts`'s `GET /export`), never on a hot path. May need
+ * tuning upward once real-world export sizes/durations are known.
+ */
+const EXPORT_TIMEOUT_MS = 10 * 60_000;
+
+/**
  * Runs the TSE CLI with the given command and arguments, and parses its
  * single-line JSON response.
  *
@@ -274,6 +284,6 @@ export function setupTse(opts: {
 export function exportTar(outputFile: string): Promise<void> {
   return enqueueTseCall(async () => {
     const { mountPoint } = requireTseConfig();
-    await runCli<Record<string, never>>(mountPoint, 'exportTar', [outputFile]);
+    await runCli<Record<string, never>>(mountPoint, 'exportTar', [outputFile], EXPORT_TIMEOUT_MS);
   });
 }

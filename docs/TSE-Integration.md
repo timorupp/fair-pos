@@ -360,12 +360,30 @@ Swissbits Beispiel).
   `exports/dsfinvk/`, dokumentiert in `docs/Rechtliche-Anforderungen.md`
   Abschnitt 6. Nutzt die hier signierten `tse_*`-Felder direkt aus der DB
   (nicht `exportTar`) — der Rohdaten-TAR-Export (`worm_export_tar`, TR-03153-
-  konformes TSE-Archiv) bleibt eine separate, **weiterhin nicht gebaute**
-  Funktion. Task #25 wurde bewusst auf ein reines Datenbank-Backup
-  (`pg_dump`) verengt (siehe `docs/Anforderungen.md` "Backup-Konzept") — deckt
-  den `exportTar`-Anwendungsfall **nicht** ab. Falls eine TSE-Rohdatenarchivierung
-  separat vom Datenbank-Backup gebraucht wird, ist das ein eigener, aktuell
-  nicht in `TASKS.md` erfasster Bedarf.
+  konformes TSE-Archiv) ist ein separater Mechanismus. Task #25 wurde bewusst
+  auf ein reines Datenbank-Backup (`pg_dump`) verengt (siehe
+  `docs/Anforderungen.md` "Backup-Konzept") — deckt den `exportTar`-
+  Anwendungsfall **nicht** ab.
+  **✅ Task #103 umgesetzt (2026-09-01):** `GET /api/admin/tse/export`
+  (`routes/admin/tse.ts`) macht den in `tse/client.ts` bereits vorhandenen
+  `exportTar()`-Aufruf über einen Button auf der TSE-Einstellungsseite
+  erreichbar — schreibt in eine temporäre Datei, liefert sie als
+  TAR-Download aus, löscht sie danach. **Immer ein Vollexport, kein
+  Datumsfilter**: die SDK-Funktionen dafür (`worm_export_tar_filtered_time`/
+  `worm_export_tar_filtered_transaction`) sind laut `WormDLL.h` (Zeile
+  256-260) ab Firmware ≥ 2.0.0 abgeschaltet und schlagen immer fehl — laut
+  SDK-Dokumentation muss ein Aufrufer, der eine Filterung braucht, das TAR
+  selbst nachträglich filtern. Bewusst zurückgestellt: der inkrementelle
+  Export (`worm_export_tar_incremental`, würde einen persistierten
+  State-Token brauchen) und das Löschen der TSE-gespeicherten Rohdaten
+  (`worm_export_deleteStoredData`, destruktiv, eigene Vorbedingungen) — beide
+  nicht Teil von Task #103, siehe dort für die Begründung. Zugriffsebene V+S
+  (Nutzerentscheidung: der TSE-Stick kann einer einzelnen Veranstaltung/einem
+  Veranstalter gehören, nicht nur dem System-Administrator). Jeder Export
+  wird als `system_log`-Eintrag protokolliert (Kategorie `tse_export`, neu —
+  siehe `docs/Adminstufen-Matrix.txt`s Nachtrag zu `logs.ts`). Was inhaltlich
+  im TAR steht bzw. wie es sich gegen die FairPOS-DB abgleichen ließe, bleibt
+  offen — siehe `TASKS.md` Task #102.
 - Korrektur des `processData`-Formats für `Kassenbeleg-V1`/`Bestellung-V1`/
   `SonstigerVorgang` auf die von DSFinV-K Anhang I vorgeschriebene Struktur,
   inkl. TSE-Signaturalgorithmus/Zeitformat/Public-Key für den QR-Code —
@@ -377,6 +395,8 @@ Swissbits Beispiel).
   `TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung).
 - Fachliche Zuordnung, welcher Vorgang welchen `processType` bekommt — siehe
   `Anforderungen.md`.
-- Backup/Archivierungsstrategie der TSE-Rohdaten (`exportTar`) — weiterhin
-  ungeklärt, siehe Hinweis oben; nicht Teil des mit Task #25 umgesetzten
-  Datenbank-Backups.
+- Backup/Archivierungsstrategie der TSE-Rohdaten — der Download selbst ist
+  seit Task #103 möglich (siehe oben), aber was danach mit der TAR-Datei
+  passieren soll (regelmäßig ziehen? wo dauerhaft ablegen? je mit dem
+  Datenbank-Backup?) ist weiterhin nicht festgelegt; nicht Teil des mit
+  Task #25 umgesetzten Datenbank-Backups.

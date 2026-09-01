@@ -668,6 +668,15 @@ Beschreibung: TSE-Wartungsvorgang (Selbsttest/Zeit-Sync) ausloesen
 Vorschlag:    S
 Entscheidung: V
 
+ROUTE:        GET /export
+Beschreibung: Rohdaten-Export (TR-03153-TAR, Vollexport) herunterladen (Task #103)
+Vorschlag:    -
+Entscheidung: V+S (Nutzerentscheidung 2026-09-01: der TSE-Stick kann einer
+              einzelnen Veranstaltung/einem Veranstalter gehoeren, nicht nur
+              dem System-Administrator). Schreibt einen neuen system_log-
+              Eintrag (Kategorie tse_export) - siehe Nachtrag unten bei
+              LOGS.TS.
+
 ==============================================================================
 BACKUP.TS (/api/admin/backup) -- Datenbank-Backup
 ==============================================================================
@@ -695,6 +704,13 @@ Kategorie tse_health (siehe logSystemEvent-Aufrufstellen) - keine
 faktische Cross-Tenant-Leckage im heutigen Stand. Die urspruengliche Sorge
 bleibt aber grundsaetzlich richtig, falls spaeter eine sensiblere
 Kategorie dazukommt - dann diese Entscheidung erneut pruefen.
+
+NACHTRAG (2026-09-01): Zweite Kategorie tse_export dazugekommen (Task #103,
+GET /api/admin/tse/export protokolliert jeden Rohdaten-Download). Aendert
+nichts an obiger Einschaetzung, da /export selbst bereits V+S ist (siehe
+TSE.TS oben) - eine V-Administratorin sieht damit nur ein Protokoll ueber
+Aktionen, die sie ohnehin schon selbst ausloesen darf. Kein neuer
+Cross-Tenant-Bezug (TSE ist weiterhin global, nicht veranstaltungsgebunden).
 
 ROUTE:        GET /
 Beschreibung: Log-Eintraege (nach Schweregrad/Kategorie filterbar)

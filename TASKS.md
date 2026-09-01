@@ -2880,3 +2880,56 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   "reicht uns als manueller Gelegenheitscheck" bis zu einer eigenen
   Auswertungsseite/einem Abgleichsskript. Vor einer Umsetzung mit dem
   Nutzer klären, wie viel Automatisierung hier gewünscht/nötig ist.
+
+- [x] **#103** `exportTar`-Rohdaten-Export der TSE über die Admin-Oberfläche freigeben
+  Aufgekommen 2026-09-01, ursprünglich als niedrig priorisierter
+  Backlog-Eintrag angelegt (offene Frage: was man mit dem TAR-Inhalt
+  überhaupt anfangen kann) — noch am selben Tag konkretisiert und
+  umgesetzt, nachdem der Nutzer entschieden hat: **genau das, was das CLI
+  schon kann, 1:1 über die Admin-UI erreichbar machen**, keine Interpretation
+  des Inhalts einbauen.
+
+  **Kernfrage vorab geklärt: kein Datumsfilter möglich.** Die dafür
+  vorgesehenen SDK-Funktionen (`worm_export_tar_filtered_time`,
+  `worm_export_tar_filtered_transaction`) sind laut `WormDLL.h` (Zeile
+  256-260) ab TSE-Firmware ≥ 2.0.0 abgeschaltet und schlagen **immer** fehl —
+  SDK-Zitat: "If an ERS requires a filtered export, the ERS must filter the
+  TAR themselves." Es gibt nur noch Vollexport (`worm_export_tar`, das was
+  `native/tse-cli`s `exportTar`-Befehl bereits aufruft) oder inkrementellen
+  Export (`worm_export_tar_incremental`, bräuchte einen persistierten
+  State-Token).
+
+  **Umsetzung (2026-09-01):**
+  - `tse/client.ts`s `exportTar()` existierte bereits (unbenutzt) — bekam nur
+    einen eigenen, großzügigeren Timeout (`EXPORT_TIMEOUT_MS`, 10 Min. statt
+    der 15s-Standardvorgabe, da TSE-Speichergröße/Exportdauer unbekannt).
+  - Neue Route `GET /api/admin/tse/export` (`routes/admin/tse.ts`): schreibt
+    in eine temporäre Datei, liefert sie als TAR-Download aus, löscht sie
+    danach garantiert (`finally`). Protokolliert jeden Export als
+    `system_log`-Eintrag (neue Kategorie `tse_export`).
+  - Neuer Button "TSE-Rohdaten exportieren" auf der TSE-Einstellungsseite
+    (`admin/settings/tse/+page.svelte`), analog zum bestehenden
+    Backup-Download-Link.
+  - Integrationstests (`tse.integration.test.ts`): nicht konfiguriert → 400,
+    Erfolg gegen erweiterten CLI-Stub (liest echte Bytes zurück, prüft
+    Header/Log-Eintrag), V-Administrator hat ebenfalls Zugriff, kein Zugriff
+    ohne Session. `tseCliStub.sh` erweitert (`TSE_STUB_EXPORT_CONTENT`),
+    da `exportTar` seine Daten direkt in die Ausgabedatei schreibt, nicht in
+    die JSON-Hülle.
+
+  **Bewusst nicht ins Backend/die Admin-UI umgesetzt (Nutzerentscheidung):**
+  - Inkrementeller Export — Vollexport reicht für v1.
+  - Löschen der TSE-gespeicherten Rohdaten (`worm_export_deleteStoredData`)
+    — separate, destruktive Funktion mit eigenen Vorbedingungen; erst
+    angehen, wenn TSE-Speicherplatz tatsächlich eng wird.
+
+  **Zugriffsebene (für den `GET /export`-Endpunkt):** V+S (Nutzerbegründung:
+  der TSE-Stick kann einer einzelnen Veranstaltung/einem Veranstalter
+  gehören, nicht nur dem System-Administrator) — siehe
+  `docs/Adminstufen-Matrix.txt`.
+
+  **Weiterhin offen:** was inhaltlich im TAR steht und wie sich daraus ein
+  automatisierter Abgleich gegen die FairPOS-DB bauen ließe, bleibt
+  unbeantwortet — das war nicht Ziel dieser Umsetzung (reine
+  Downloadfunktion, keine Interpretation). Siehe Task #102 für die
+  übergeordnete "wie prüfen wir Vollständigkeit"-Frage.

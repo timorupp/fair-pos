@@ -196,3 +196,65 @@ describe('POST /api/admin/tse/maintain', () => {
     expect(response.statusCode).toBe(401);
   });
 });
+
+describe('GET /api/admin/tse/export (Task #103)', () => {
+  it('rejects when the TSE is not configured', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/export',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('downloads the raw TAR archive from the stub CLI and logs the export', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_EXPORT_CONTENT'] = 'FAKE-TSE-TAR-CONTENT';
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/export',
+      headers: { cookie: adminCookie },
+    });
+    delete process.env['TSE_STUB_EXPORT_CONTENT'];
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toBe('application/x-tar');
+    expect(response.headers['content-disposition']).toMatch(/attachment; filename="fairpos_tse_export_.*\.tar"/);
+    expect(response.body).toBe('FAKE-TSE-TAR-CONTENT');
+
+    const log = await pool.query(`SELECT severity, category FROM system_log`);
+    expect(log.rows).toEqual([{ severity: 'info', category: 'tse_export' }]);
+  });
+
+  it('allows a Veranstaltungs-Administrator too — the TSE may belong to their event', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_EXPORT_CONTENT'] = 'FAKE-TSE-TAR-CONTENT';
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/export',
+      headers: { cookie: eventAdminCookie },
+    });
+    delete process.env['TSE_STUB_EXPORT_CONTENT'];
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/tse/export' });
+    expect(response.statusCode).toBe(401);
+  });
+});

@@ -372,6 +372,13 @@ export const api = {
         request('POST', '/admin/tse/detect'),
       /** Manually runs self-test + time sync (Task #58/#64) — needed once after a fresh TSE setup, since nothing calls this automatically yet. */
       maintain: (): Promise<{ ok: true }> => request('POST', '/admin/tse/maintain'),
+      /**
+       * Raw TR-03153 TAR archive of everything currently stored on the TSE
+       * (Task #103) — always a full export, no date-range filter (the TSE's
+       * own filtered-export functions no longer work on firmware >= 2.0.0).
+       * FairPOS does not interpret the contents.
+       */
+      exportDownloadUrl: (): string => '/api/admin/tse/export',
     },
 
     closings: {

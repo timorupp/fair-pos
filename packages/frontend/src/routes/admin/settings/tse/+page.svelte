@@ -260,6 +260,20 @@
       {/if}
     {/if}
   </section>
+
+  <!-- Raw TSE data export (Task #103) ───────────────────────────────────────── -->
+  <section class="card">
+    <h2>TSE-Rohdatenexport</h2>
+    <p class="hint">
+      Lädt das komplette, bisher auf der TSE gespeicherte Log als rohes
+      TR-03153-Archiv (TAR) herunter — unabhängig von der FairPOS-Datenbank,
+      z. B. zum Abgleich oder zur Archivierung. Immer ein Vollexport: die TSE
+      unterstützt ab Firmware 2.0.0 keine Filterung nach Datum mehr, ein
+      Zeitraum müsste nachträglich selbst aus dem TAR herausgefiltert werden.
+      FairPOS interpretiert den Inhalt nicht.
+    </p>
+    <a class="btn-ghost" href={api.admin.tse.exportDownloadUrl()}>TSE-Rohdaten exportieren</a>
+  </section>
 </div>
 
 <style>

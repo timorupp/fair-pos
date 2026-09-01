@@ -1,10 +1,14 @@
 /** Admin routes for checking the configured TSE's live connection status. */
 
 import type { FastifyInstance } from 'fastify';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 import { query } from '../../db/client.js';
-import { getTseInfo, maintainTse } from '../../tse/client.js';
+import { exportTar, getTseInfo, maintainTse } from '../../tse/client.js';
 import { detectTse, listTseMountCandidates, type TseMountCandidate } from '../../tse/detect.js';
 import type { TseInfo } from '../../tse/types.js';
 import { describeTseError } from '../../tse/signing.js';
@@ -118,6 +122,44 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
       return reply.send({ ok: true });
     } catch (e) {
       return reply.status(502).send({ error: describeTseError(e) });
+    }
+  });
+
+  /**
+   * GET /api/admin/tse/export — downloads the TSE's complete stored log as a
+   * raw TR-03153 TAR archive (Task #103). Always a *full* export — the
+   * TSE's own filtered-export functions no longer work on firmware >= 2.0.0
+   * (see `docs/TSE-Integration.md` section 11), so there is no date-range
+   * parameter to accept here; a caller who needs a subset must filter the
+   * downloaded TAR themselves. FairPOS does not interpret the archive's
+   * contents in any way — this only makes the CLI's already-existing
+   * `exportTar` command reachable from the Admin UI instead of requiring
+   * direct server/SSH access. No deletion of TSE-stored data happens here
+   * (`worm_export_deleteStoredData` is a separate, destructive SDK call —
+   * deliberately not wired up, see Task #103).
+   */
+  app.get('/export', async (req, reply) => {
+    if (!config.tseMountPoint || !config.tseClientId) {
+      return reply.status(400).send({ error: 'TSE ist nicht konfiguriert.' });
+    }
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'fairpos-tse-export-'));
+    const outputFile = path.join(tmpDir, `${randomUUID()}.tar`);
+    try {
+      await exportTar(outputFile);
+      const tar = await readFile(outputFile);
+      const filename = `fairpos_tse_export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.tar`;
+      await logSystemEvent(
+        'info', 'tse_export',
+        `TSE-Rohdatenexport heruntergeladen (${req.adminUser.name}).`,
+      );
+      reply
+        .header('Content-Type', 'application/x-tar')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(tar);
+    } catch (e) {
+      return reply.status(502).send({ error: describeTseError(e) });
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
     }
   });
 }

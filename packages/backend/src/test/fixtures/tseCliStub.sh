@@ -23,8 +23,21 @@
 #                               EVERY `finish` call regardless of processType.
 #                               Lets tests exercise "the AVBelegabbruch cleanup
 #                               call also fails".
+#   TSE_STUB_EXPORT_CONTENT  - optional; when set and the command is
+#                               `exportTar`, writes this exact string to the
+#                               output-file argument, mirroring how the real
+#                               CLI writes TAR bytes there directly instead of
+#                               returning them via the JSON envelope.
 if [ -n "${TSE_STUB_LOG_FILE:-}" ]; then
   printf '%s\n' "$*" >> "$TSE_STUB_LOG_FILE"
+fi
+
+# exportTar writes its result directly to the output-file argument (arg 3:
+# mountPoint exportTar <outputFile>), not into the JSON envelope — the real
+# CLI streams TAR bytes there via a file-write callback (tseCli.cpp
+# cmdExportTar). Mirror that here so a test can read the file back.
+if [ "$2" = "exportTar" ] && [ -n "${TSE_STUB_EXPORT_CONTENT:-}" ]; then
+  printf '%s' "$TSE_STUB_EXPORT_CONTENT" > "$3"
 fi
 
 if [ -n "${TSE_STUB_FAIL_EXCEPT_ABORT:-}" ]; then
