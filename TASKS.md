@@ -1113,6 +1113,11 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   modernen Thermodruckern unterstützt), aber druckerabhängig und noch nicht
   untersucht, ob/wie zuverlässig das über alle in der Zielumgebung
   eingesetzten Druckermodelle funktioniert.
+  **Nachtrag 2026-09-01:** dieser Punkt ist Teil 1 der breiteren
+  PDF/Ausdruck-Abgleichs-Entscheidung in Task #101 — dort mit den übrigen
+  Detailabweichungen gebündelt, dort weiterverfolgen. Diese
+  Ursprungs-Einschätzung (kein Compliance-Problem, niedrige Priorität)
+  bleibt für die Entscheidung in #101 relevant.
 - [x] **#79** Druckauftrag „Abbrechen" soll auf Status „abgebrochen" statt Löschen umstellen
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26). Aktuell löscht
   „Abbrechen" den `print_job`-Datensatz komplett (`DELETE FROM print_job
@@ -1586,7 +1591,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `selectNoteLine()`/`changeNoteQuantity()`/`applyNoteEdit()`,
   `mergeOrInsertLine()`, `.note-select-item`-Kartenstil) existieren exakt
   wie dokumentiert.
-- [ ] **#89** Fehlende PWA-Artefakte nachrüsten (iOS + Android)
+- [x] **#89** Fehlende PWA-Artefakte nachrüsten (iOS + Android)
   Aufgekommen bei der Diskussion um den QR-Login (2026-08-27): geprüft,
   aktuell existiert **keine** echte PWA-Infrastruktur — kein
   `manifest.json`, kein Service Worker, keine Icons (selbst der in
@@ -1671,6 +1676,13 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Zertifikatswarnungen bzw. verweigern den Standalone-Modus. Wartet auf
   #92s finalen Live-Test (dieser wiederum auf neue Router-Hardware beim
   Nutzer, siehe dort).
+
+  **Live bestätigt und geschlossen (2026-09-01):** Nutzer hat „Zum
+  Home-Bildschirm hinzufügen" real auf **iOS** getestet — funktioniert gut
+  genug, Task auf Nutzerwunsch geschlossen. **Android nicht separat
+  getestet** — falls dort künftig Probleme auffallen (z. B. abweichendes
+  Verhalten von Chrome/`beforeinstallprompt` gegenüber Safari), neuen
+  Task anlegen statt hier wieder zu öffnen.
 - [x] **#90** Login-Neukonzeption: PIN-Login statt QR-Einmaltoken, serverseitige Sessions, vereinheitlichtes Admin/Kassen-Login
 
   **Ausgangsproblem (2026-08-27):** Das heutige QR-Einmaltoken-Login
@@ -2781,3 +2793,90 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   beibehalten wird, und falls ja, über welchen der obigen Wege — vor einer
   Umsetzung mit dem Nutzer klären, insbesondere Option 2 nicht ohne
   ausdrückliche Freigabe der API-Key-Frage angehen.
+
+- [ ] **#101** Entscheidung: PDF-Rechnung und Kassenbon-Ausdruck optisch/inhaltlich angleichen
+  Aufgekommen 2026-09-01 aus einer Nutzerbeobachtung. **Bündelt/erweitert
+  Task #78** (dort bereits als "kein Compliance-Problem, niedrige
+  Priorität" eingeschätzt) um die weiteren gefundenen Detailabweichungen.
+  Die PDF-Rechnung
+  (`receipt/pdf.ts`) und der physische ESC/POS-Ausdruck (`receipt/escpos-
+  receipt.ts`) sind nicht identisch, obwohl sie denselben Vorgang abbilden.
+
+  **Konkrete Abweichungen (per Code-Recherche bestätigt):**
+  1. **TSE-Block:** beide drucken dieselben Klartext-Felder (Kassen-
+     Seriennr., TSE-Seriennr., Transaktionsnr., Signaturzähler, Start/Ende,
+     Signatur — `pdf.ts:140-153`, `escpos-receipt.ts:98-110`). Die PDF
+     zeigt **zusätzlich** einen QR-Code (`pdf.ts:156-159`, über
+     `buildQrPayload`/`renderQrPng` aus `qr.ts`). Der Ausdruck hat **gar
+     keinen QR-Code** (kein `qr`/`QR`-Verweis, kein Raster-Kommando in
+     `print/` oder `escpos-receipt.ts`) — also nicht "einmal QR, einmal
+     Text", sondern "PDF hat QR+Text, Ausdruck nur Text".
+  2. Zeichensatz: PDF nutzt Helvetica/WinAnsi (volle Umlaut-Unterstützung),
+     der Ausdruck bewusst ASCII-only mit Ersatzdarstellung für Umlaute —
+     dokumentiert in `escpos-receipt.ts:33-36` ("die PDF ist das
+     kanonische Dokument"). Diese eine Abweichung ist also **bewusst**.
+  3. Layout: A6-Hochformat (PDF) vs. 42-Zeichen-Thermodruck (Ausdruck) —
+     medienbedingt.
+  4. Logo: PNG-Bild (PDF) vs. vorgerendertes ESC/POS-Raster (Ausdruck) —
+     formatbedingt.
+  5. Kleinere Beschriftungsabweichung: „Kassensystem-Seriennr." (PDF) vs.
+     „Kassen-Seriennr." (Ausdruck).
+  6. Storno-/Fehlerdarstellung: PDF nutzt rote Schrift (`#a00`) für
+     „STORNOBELEG"/TSE-Fehler; Ausdruck (keine Farbe möglich) nutzt
+     überdimensionierten Fettdruck und „! TSE Fehler !".
+
+  **Bewertung:** Punkte 2-6 sind medienbedingt oder ausdrücklich
+  dokumentierte Entscheidungen. **Der fehlende QR-Code auf dem Ausdruck
+  (Punkt 1) hat dagegen keinen Kommentar/keine Begründung im Code** — liest
+  sich wie organisch entstandene Abweichung (zwei getrennte Codepfade, nie
+  synchron gehalten), nicht wie eine bewusste Entscheidung.
+
+  **Zu entscheiden:** wie damit umgehen — Kandidaten:
+  a) QR-Code auch auf dem Ausdruck ergänzen (ESC/POS-Rasterbild aus
+     demselben `buildQrPayload`), damit beide Belegformen gleichwertig
+     scanbar sind (relevant auch für die QR-Prüf-App-Methode, siehe
+     Antwort zur TSE-Verifikation weiter oben in diesem Gespräch).
+  b) Bewusst so belassen (Ausdruck bleibt reiner Klartext-Beleg, PDF bleibt
+     das "digitale" Vollformat mit QR) — dann aber den fehlenden QR-Code
+     im Code kommentieren, damit es nicht wie ein Bug aussieht.
+  c) Weitere identifizierte Detailabweichungen (Beschriftung „Kassensystem-
+     Seriennr." vs. „Kassen-Seriennr.") unabhängig davon vereinheitlichen.
+  Vor einer Umsetzung mit dem Nutzer klären, welches Zielbild gewünscht ist.
+
+- [ ] **#102** Entscheidung: wie wird geprüft, dass alle Bestellungen korrekt an die TSE gemeldet und signiert werden
+  Aufgekommen 2026-09-01, Anschluss an [[DANGER.md]] `D-038-Fortsetzung`
+  (dort bereits vermerkt: "inhaltliche Korrektheit der signierten
+  Transaktionen ... wurde vom Nutzer noch nicht geprüft, nur dass überhaupt
+  eine Signatur erscheint"). Nutzerhinweis 2026-09-01: eine QR-/TSE-Prüf-
+  App-Kontrolle einzelner Belege (siehe TSE-Verifikations-Antwort weiter
+  oben) bestätigt nur, dass die Signatur eines konkreten, bereits
+  gedruckten Belegs kryptografisch gültig ist — sie deckt **nicht** ab, ob
+  wirklich **jede** Bestellung/jeder Vorgang tatsächlich an die TSE
+  gemeldet und dort signiert wurde (z. B. eine still fehlgeschlagene
+  Signierung, ein nicht gemeldetes Storno, oder eine falsch übermittelte
+  Positions-/Betragssumme). Das ist eine vollständigkeits-/mengenbezogene
+  Prüfung, keine Einzelbeleg-Prüfung.
+
+  **Bereits identifizierte Bausteine für eine solche Prüfung:**
+  1. Zähler-Plausibilität über `GET /api/admin/tse/status` (`info`-
+     Kommando: `startedTransactions`/`remainingSignatures`) — zeigt nur
+     grobe Mengen, keine inhaltliche Zuordnung zu einzelnen Bestellungen.
+  2. DSFinV-K-Export (`transactions_tse.csv`, `TSE_TANR`/`TSE_TA_SIG`) —
+     bereits gebaut, pro Vorgang befüllt; ein systematischer Abgleich
+     "jede Bestellung/jedes Storno in der DB hat eine passende Zeile mit
+     plausibler, lückenloser Transaktionsnummer" ist aber aktuell keine
+     gebaute Funktion, sondern müsste manuell (Excel/Skript) gemacht
+     werden.
+  3. TSE-eigener Rohdaten-Export (`exportTar`, TR-03153-Archiv) — härtester
+     unabhängiger Beweis (TSE-eigenes Log direkt, unabhängig von der
+     FairPOS-DB), aber wie in `docs/TSE-Integration.md` §11 dokumentiert
+     **nirgends in der Anwendung eingebunden**, nur als CLI-Befehl im
+     `tseCli`-Wrapper vorhanden — bräuchte manuellen Server-Zugriff und
+     eigene Auswertung.
+
+  **Zu entscheiden:** ob und welche dieser Bausteine zu einer regelmäßigen
+  (z. B. nach jedem Z-Bon-Abschluss) oder stichprobenartigen
+  Vollständigkeitsprüfung ausgebaut werden sollen — Kandidaten reichen von
+  "reicht uns als manueller Gelegenheitscheck" bis zu einer eigenen
+  Auswertungsseite/einem Abgleichsskript. Vor einer Umsetzung mit dem
+  Nutzer klären, wie viel Automatisierung hier gewünscht/nötig ist.
