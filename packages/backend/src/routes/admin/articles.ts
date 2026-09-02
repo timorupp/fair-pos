@@ -120,15 +120,35 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
     return reply.send(result.rows[0]);
   });
 
-  /** DELETE /api/admin/articles/:id — delete an article (of the active event) and its options. */
+  /**
+   * DELETE /api/admin/articles/:id — delete an article (of the active event)
+   * and its options.
+   *
+   * Blocked by Postgres (23503, foreign key violation) once the article has
+   * any order_item rows — those reference article(id) without ON DELETE
+   * CASCADE by design (a sold article must stay identifiable on past
+   * receipts). Caught here to surface a clear message pointing at the
+   * "Aktiv"-checkbox instead of a raw 500 (Task #84). The article delete
+   * runs before the product_option cleanup so a blocked delete doesn't
+   * leave the article's options gone while the article itself survives.
+   */
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
+    try {
+      const result = await query(
+        'DELETE FROM article WHERE id = $1 AND event_id = $2 RETURNING id',
+        [id, config.activeEventId],
+      );
+      if (result.rowCount === 0) return reply.status(404).send({ error: 'Artikel nicht gefunden' });
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code === '23503') {
+        return reply.status(409).send({
+          error: 'Artikel wurde bereits verkauft und kann nicht gelöscht werden — stattdessen über die "Aktiv"-Checkbox deaktivieren.',
+        });
+      }
+      throw e;
+    }
     await query('DELETE FROM product_option WHERE article_id = $1', [id]);
-    const result = await query(
-      'DELETE FROM article WHERE id = $1 AND event_id = $2 RETURNING id',
-      [id, config.activeEventId],
-    );
-    if (result.rowCount === 0) return reply.status(404).send({ error: 'Artikel nicht gefunden' });
     return reply.status(204).send();
   });
 
