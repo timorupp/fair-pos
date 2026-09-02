@@ -1,6 +1,6 @@
 /** Unit tests for the QR-code payload builder — see docs/Rechtliche-Anforderungen.md Abschnitt 6.5/8 for the field-order citation. */
 import { afterEach, describe, it, expect } from 'vitest';
-import { buildQrPayload, buildReceiptQrUrl } from './qr.js';
+import { buildQrPayload } from './qr.js';
 import type { ReceiptData, ReceiptPosition } from './types.js';
 import { config } from '../config.js';
 import { resetTseCertificateInfoCache } from '../tse/certificateInfo.js';
@@ -83,31 +83,5 @@ describe('buildQrPayload', () => {
   it('negates the processData amounts for a cancellation receipt', async () => {
     const parts = (await buildQrPayload(baseData({ isCancellation: true }))).split(';');
     expect(parts[3]).toBe('Beleg^-5.00_0.00_0.00_0.00_0.00^-5.00:Bar');
-  });
-});
-
-describe('buildReceiptQrUrl', () => {
-  it('defaults to http:// when the configured address has no protocol', () => {
-    expect(buildReceiptQrUrl('192.168.1.10', 'fallback', 'tok')).toBe('http://192.168.1.10/receipt/tok');
-  });
-
-  it('honors an explicit https:// prefix instead of overriding it', () => {
-    expect(buildReceiptQrUrl('https://fairpos.example', 'fallback', 'tok')).toBe('https://fairpos.example/receipt/tok');
-  });
-
-  it('honors an explicit http:// prefix as-is (case-insensitively)', () => {
-    expect(buildReceiptQrUrl('HTTP://192.168.1.10', 'fallback', 'tok')).toBe('HTTP://192.168.1.10/receipt/tok');
-  });
-
-  it('strips a trailing slash from an explicit protocol address to avoid a double slash', () => {
-    expect(buildReceiptQrUrl('https://fairpos.example/', 'fallback', 'tok')).toBe('https://fairpos.example/receipt/tok');
-  });
-
-  it('falls back to the request Host header when unconfigured', () => {
-    expect(buildReceiptQrUrl(null, '10.0.0.5:3000', 'tok')).toBe('http://10.0.0.5:3000/receipt/tok');
-  });
-
-  it('falls back to the request Host header when configured as an empty string', () => {
-    expect(buildReceiptQrUrl('', '10.0.0.5:3000', 'tok')).toBe('http://10.0.0.5:3000/receipt/tok');
   });
 });

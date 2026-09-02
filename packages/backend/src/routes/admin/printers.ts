@@ -3,9 +3,10 @@ import type { FastifyInstance } from 'fastify';
 import { query, withTransaction } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { probePrinter } from '../../print/tcp.js';
-import { buildTestPrint } from '../../print/escpos.js';
+import { buildTestPrintBlocks } from '../../print/escpos.js';
 import { loadCompanyLogo } from '../../logo/logo.js';
 import { enqueuePrintJob } from '../../print/enqueue.js';
+import { renderBlocksToEscPos } from '../../print/blocks.js';
 import { MAX_ATTEMPTS } from '../../print/worker.helpers.js';
 
 /** Registers /api/admin/printers routes. */
@@ -170,8 +171,8 @@ export async function printersAdminRoute(app: FastifyInstance): Promise<void> {
     // verify that the logo prints correctly. When no logo is uploaded the
     // test slip prints without one, as before.
     const logo = await loadCompanyLogo();
-    const payload = buildTestPrint(printer.name, new Date(), logo?.escposBytes ?? null);
-    const job = await enqueuePrintJob(id, 'test_print', payload);
+    const blocks = buildTestPrintBlocks(printer.name, new Date(), logo);
+    const job = await enqueuePrintJob(id, 'test_print', renderBlocksToEscPos(blocks), blocks);
     return reply.send({ print_job_id: job.id });
   });
 }

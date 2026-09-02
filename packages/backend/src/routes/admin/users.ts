@@ -3,8 +3,9 @@ import { query, withTransaction } from '../../db/client.js';
 import { hashPassword } from '../../auth/password.js';
 import { formatPinForDisplay, generateRandomPin, hashPin, isValidPinFormat, normalizePin } from '../../auth/pin.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
-import { buildPinSlip } from '../../print/escpos.js';
+import { buildPinSlipBlocks } from '../../print/escpos.js';
 import { enqueuePrintJob } from '../../print/enqueue.js';
+import { renderBlocksToEscPos } from '../../print/blocks.js';
 
 /** User row returned to the client — never includes password_hash/pin_hash. */
 interface UserRow {
@@ -358,8 +359,8 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
     const printer = printerResult.rows[0];
     if (!printer) return reply.status(400).send({ error: 'Kein Standarddrucker konfiguriert' });
 
-    const payload = buildPinSlip(user.name, formatPinForDisplay(normalized), new Date());
-    const job = await enqueuePrintJob(printer.id, 'pin_slip', payload);
+    const blocks = buildPinSlipBlocks(user.name, formatPinForDisplay(normalized), new Date());
+    const job = await enqueuePrintJob(printer.id, 'pin_slip', renderBlocksToEscPos(blocks), blocks);
     return reply.send({ print_job_id: job.id });
   });
 }

@@ -33,6 +33,20 @@ async function insertJob(status: string): Promise<string> {
   return result.rows[0]!.id;
 }
 
+/** Inserts a print_job row with a real, minimal block list (Task #105) so `/pdf`/`/reprint` have something to render. */
+async function insertJobWithBlocks(
+  type: string, printerIdOverride?: string | null,
+): Promise<string> {
+  const blocks = [{ kind: 'text', text: 'Hallo Welt' }];
+  const targetPrinterId = printerIdOverride === undefined ? printerId : printerIdOverride;
+  const result = await pool.query<{ id: string }>(
+    `INSERT INTO print_job (printer_id, type, content, blocks, status)
+     VALUES ($1, $2, 'x', $3, 'done') RETURNING id`,
+    [targetPrinterId, type, JSON.stringify(blocks)],
+  );
+  return result.rows[0]!.id;
+}
+
 describe('DELETE /api/admin/print-jobs/:id', () => {
   it('sets status to cancelled instead of removing the row', async () => {
     const jobId = await insertJob('pending');
@@ -161,5 +175,96 @@ describe('POST /api/admin/print-jobs/:id/retry', () => {
 
     const row = await pool.query<{ status: string }>(`SELECT status FROM print_job WHERE id = $1`, [jobId]);
     expect(row.rows[0]!.status).toBe('pending');
+  });
+});
+
+describe('GET /api/admin/print-jobs/:id/pdf (Task #105)', () => {
+  it.each(['receipt', 'daily_closing', 'order_slip', 'test_print'])(
+    'renders a PDF for a %s job from its persisted blocks',
+    async (type) => {
+      const jobId = await insertJobWithBlocks(type);
+      const app = await getTestApp();
+
+      const response = await app.inject({
+        method: 'GET', url: `/api/admin/print-jobs/${jobId}/pdf`,
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toBe('application/pdf');
+      expect(response.rawPayload.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+    },
+  );
+
+  it('refuses a PIN-slip job (security — the PIN is never stored anywhere else)', async () => {
+    const jobId = await insertJobWithBlocks('pin_slip');
+    const app = await getTestApp();
+
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/print-jobs/${jobId}/pdf`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('404s for an unknown job', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/print-jobs/00000000-0000-0000-0000-000000000000/pdf`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('POST /api/admin/print-jobs/:id/reprint (Task #105)', () => {
+  it('enqueues a new job with the same type/blocks, not the original id', async () => {
+    const jobId = await insertJobWithBlocks('order_slip');
+    const app = await getTestApp();
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/print-jobs/${jobId}/reprint`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const newJobId = response.json().print_job_id;
+    expect(newJobId).not.toBe(jobId);
+
+    const row = await pool.query<{ type: string; status: string; printer_id: string }>(
+      `SELECT type, status, printer_id FROM print_job WHERE id = $1`, [newJobId],
+    );
+    expect(row.rows[0]!.type).toBe('order_slip');
+    expect(row.rows[0]!.status).toBe('pending');
+    expect(row.rows[0]!.printer_id).toBe(printerId);
+  });
+
+  it('refuses a PIN-slip job (security)', async () => {
+    const jobId = await insertJobWithBlocks('pin_slip');
+    const app = await getTestApp();
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/print-jobs/${jobId}/reprint`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('refuses when the original printer was deleted (same rule as /retry)', async () => {
+    const jobId = await insertJobWithBlocks('test_print', null);
+    const app = await getTestApp();
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/print-jobs/${jobId}/reprint`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('404s for an unknown job', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/print-jobs/00000000-0000-0000-0000-000000000000/reprint`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(404);
   });
 });

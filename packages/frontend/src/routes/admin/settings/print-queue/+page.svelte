@@ -66,6 +66,36 @@
   }
 
   /**
+   * Enqueues a brand-new print job with the same content, regardless of the
+   * original job's status (Task #105) — distinct from "Wiederholen" above,
+   * which only resets an already-failed job back to `pending`. Not offered
+   * for `pin_slip` rows at all (see `typeAllowsPdfOrReprint`); the backend
+   * enforces the same restriction independently, this is only so the button
+   * isn't shown for something that would just 403.
+   *
+   * @param j - The job to reprint.
+   */
+  async function reprintJob(j: JobRow) {
+    try { await api.admin.printJobs.reprint(j.id); await load(); }
+    catch (e) { alert(e instanceof Error ? e.message : 'Fehler'); }
+  }
+
+  /**
+   * Whether the PDF-preview and "Erneut drucken" actions should be offered
+   * for this row. `pin_slip` is excluded (Nutzerentscheidung 2026-09-01,
+   * Sicherheit) — it's the only document type carrying a live credential
+   * (the PIN) that exists nowhere else in the system in plaintext. Hiding
+   * the button here is only a UX nicety; the actual enforcement is
+   * server-side (`routes/admin/print-jobs.ts` returns 403 for both actions
+   * on a `pin_slip` job even if called directly).
+   *
+   * @param t - The job type.
+   */
+  function typeAllowsPdfOrReprint(t: string): boolean {
+    return t !== 'pin_slip';
+  }
+
+  /**
    * Maps a `print_job.type` enum value to its German UI label.
    *
    * @param t - The job type.
@@ -162,8 +192,9 @@
             <td>{timeLabel(j.last_attempt_at)}</td>
             <td class="err-cell">{j.error_message ?? '—'}</td>
             <td class="actions">
-              {#if (j.type === 'receipt' || j.type === 'daily_closing') && j.reference_id}
+              {#if typeAllowsPdfOrReprint(j.type)}
                 <a class="btn-ghost" href={api.admin.printJobs.pdfUrl(j.id)} target="_blank" rel="noopener">PDF</a>
+                <button class="btn-ghost" onclick={() => reprintJob(j)}>Erneut drucken</button>
               {/if}
               {#if j.status === 'failed'}
                 <button class="btn-ghost" onclick={() => retryJob(j)}>Wiederholen</button>

@@ -1,12 +1,20 @@
 /** Admin endpoints for the system-wide print-queue page. */
 
 import type { FastifyInstance } from 'fastify';
+import type { PrintJobType } from '@fairpos/shared';
 import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
-import { loadReceiptById } from '../../receipt/data.js';
-import { renderReceiptPdf } from '../../receipt/pdf.js';
-import { loadClosingById } from '../../closing/load.js';
-import { renderZBonPdf } from '../../closing/pdf.js';
+import { enqueuePrintJob } from '../../print/enqueue.js';
+import { renderBlocksToEscPos, renderBlocksToPdf, type PrintBlock } from '../../print/blocks.js';
+
+/** German label per job type, used for the PDF preview's filename/title. */
+const TYPE_LABELS: Record<PrintJobType, string> = {
+  receipt: 'Rechnung',
+  daily_closing: 'Z-Bon',
+  order_slip: 'Bestellzettel',
+  test_print: 'Testdruck',
+  pin_slip: 'PIN-Zettel',
+};
 
 /**
  * Registers `/api/admin/print-jobs/*` routes for the print-queue overview UI.
@@ -117,46 +125,68 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
 
   /**
    * GET /api/admin/print-jobs/:id/pdf — PDF preview for a queued/done print
-   * job. Resolved per job-type:
-   *  - `receipt`        → re-renders the source invoice via `renderReceiptPdf`.
-   *  - `daily_closing`  → re-renders the persisted Z-Bon via `renderZBonPdf`.
-   *  - `order_slip`     → no structured source exists, 404.
-   *  - `test_print`     → no source data, 404.
+   * job, for every job type EXCEPT `pin_slip` (Task #105 — previously only
+   * `receipt`/`daily_closing`, re-rendered from their own structured source
+   * row; `order_slip`/`test_print`/`pin_slip` returned 404, "no structured
+   * source exists"). Now works generically off the job's own persisted
+   * `blocks` (the neutral document description it was originally built
+   * from) via the shared renderer — no per-type source reload needed, so no
+   * per-type gap either.
    *
-   * The job's `content` column holds raw ESC/POS bytes (Init / Cut / Bold /
-   * Mode selects) — that is *not* a document format and cannot be turned into
-   * a PDF generically. Each renderable type therefore has its own renderer
-   * working from the structured source row.
+   * `pin_slip` is deliberately excluded (Nutzerentscheidung 2026-09-01,
+   * security): it's the only document type carrying a live credential (the
+   * PIN itself) that exists nowhere else in the system in plaintext — a
+   * generic "view any past print job as PDF" feature must not become a way
+   * to read out a user's PIN after the fact.
    */
   app.get<{ Params: { id: string } }>('/:id/pdf', async (req, reply) => {
-    const row = await query<{ type: string; reference_id: string | null }>(
-      `SELECT type, reference_id FROM print_job WHERE id = $1`, [req.params.id],
+    const row = await query<{ type: PrintJobType; blocks: PrintBlock[] }>(
+      `SELECT type, blocks FROM print_job WHERE id = $1`, [req.params.id],
     );
     if (row.rows.length === 0) return reply.status(404).send({ error: 'Druckauftrag nicht gefunden' });
     const job = row.rows[0]!;
-    if (!job.reference_id) {
-      return reply.status(404).send({ error: 'PDF-Vorschau für diesen Druckauftrag nicht verfügbar' });
+    if (job.type === 'pin_slip') {
+      return reply.status(403).send({ error: 'PDF-Vorschau für PIN-Zettel ist aus Sicherheitsgründen nicht verfügbar.' });
     }
-    if (job.type === 'receipt') {
-      const data = await loadReceiptById(job.reference_id);
-      if (!data) return reply.status(404).send({ error: 'Rechnungsdaten nicht ladbar' });
-      const pdf = await renderReceiptPdf(data);
-      return reply
-        .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `inline; filename="${data.receiptNumber}.pdf"`)
-        .header('Cache-Control', 'no-store')
-        .send(pdf);
+    const label = TYPE_LABELS[job.type];
+    const pdf = await renderBlocksToPdf(job.blocks, label);
+    return reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `inline; filename="${label}-${req.params.id}.pdf"`)
+      .header('Cache-Control', 'no-store')
+      .send(pdf);
+  });
+
+  /**
+   * POST /api/admin/print-jobs/:id/reprint — re-queues a brand-new print job
+   * with the exact same content as an existing one, for every job type
+   * EXCEPT `pin_slip` (Task #105). Generic for the same reason as `/:id/pdf`
+   * above — works from the persisted `blocks`, not from reloading each
+   * type's own source data, which isn't even possible for every type (a PIN
+   * slip's PIN is never stored anywhere else, only in the blocks/content of
+   * the original job — precisely why it's excluded here too, see `/:id/pdf`
+   * for the full reasoning).
+   *
+   * Reprints to the job's *original* printer — refuses (409) if that printer
+   * was since deleted, same rule as `/:id/retry` above, rather than silently
+   * guessing a different one.
+   */
+  app.post<{ Params: { id: string } }>('/:id/reprint', async (req, reply) => {
+    const row = await query<{
+      type: PrintJobType; printer_id: string | null; blocks: PrintBlock[]; reference_id: string | null;
+    }>(
+      `SELECT type, printer_id, blocks, reference_id FROM print_job WHERE id = $1`, [req.params.id],
+    );
+    if (row.rows.length === 0) return reply.status(404).send({ error: 'Druckauftrag nicht gefunden' });
+    const job = row.rows[0]!;
+    if (job.type === 'pin_slip') {
+      return reply.status(403).send({ error: 'Erneutes Drucken von PIN-Zetteln ist aus Sicherheitsgründen nicht verfügbar.' });
     }
-    if (job.type === 'daily_closing') {
-      const stored = await loadClosingById(job.reference_id);
-      if (!stored) return reply.status(404).send({ error: 'Z-Bon-Daten nicht ladbar' });
-      const pdf = await renderZBonPdf(stored.ctx, stored.totals, stored.business_date, stored.logo);
-      return reply
-        .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `inline; filename="z-bon-${stored.ctx.z_number}.pdf"`)
-        .header('Cache-Control', 'no-store')
-        .send(pdf);
+    if (!job.printer_id) {
+      return reply.status(409).send({ error: 'Der Drucker dieses Auftrags wurde gelöscht — kann nicht erneut gedruckt werden.' });
     }
-    return reply.status(404).send({ error: 'PDF-Vorschau für diesen Druckauftragstyp nicht verfügbar' });
+    const bytes = renderBlocksToEscPos(job.blocks);
+    const newJob = await enqueuePrintJob(job.printer_id, job.type, bytes, job.blocks, job.reference_id);
+    return reply.send({ print_job_id: newJob.id });
   });
 }

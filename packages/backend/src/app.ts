@@ -30,7 +30,6 @@ import { exportsAdminRoute } from './routes/admin/exports.js';
 import { invoicesAdminRoute } from './routes/admin/invoices.js';
 import { cancellationsAdminRoute } from './routes/admin/cancellations.js';
 import { logoAdminRoute } from './routes/admin/logo.js';
-import { qrAdminRoute } from './routes/admin/qr.js';
 import { printJobsAdminRoute } from './routes/admin/print-jobs.js';
 import { tseAdminRoute } from './routes/admin/tse.js';
 import { backupAdminRoute } from './routes/admin/backup.js';
@@ -39,7 +38,6 @@ import { sessionsAdminRoute } from './routes/admin/sessions.js';
 import { tlsCertAdminRoute } from './routes/admin/tlsCert.js';
 import { healthChecksAdminRoute } from './routes/admin/healthChecks.js';
 import { dnsConfigAdminRoute } from './routes/admin/dnsConfig.js';
-import { receiptRoutes } from './routes/receipt.js';
 import { registerSessionRoutes } from './routes/register-session.js';
 
 /** Absolute path to the compiled frontend SPA. Resolved relative to dist/. */
@@ -78,10 +76,6 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorateRequest('adminUser', null as unknown as import('@fairpos/shared').User);
   app.decorateRequest('registerUser', null as unknown as import('@fairpos/shared').User);
 
-  // Public receipt PDF route — registered BEFORE the static-file plugin so the
-  // explicit `/receipt/:token` path is matched ahead of the SPA fallback.
-  await app.register(receiptRoutes);
-
   await app.register(fastifyStatic, {
     root: PUBLIC_DIR,
     prefix: '/',
@@ -110,7 +104,6 @@ export async function buildApp(): Promise<FastifyInstance> {
         await admin.register(invoicesAdminRoute, { prefix: '/invoices' });
         await admin.register(cancellationsAdminRoute, { prefix: '/cancellations' });
         await admin.register(logoAdminRoute, { prefix: '/logo' });
-        await admin.register(qrAdminRoute);
         await admin.register(printJobsAdminRoute, { prefix: '/print-jobs' });
         await admin.register(tseAdminRoute, { prefix: '/tse' });
         await admin.register(backupAdminRoute, { prefix: '/backup' });

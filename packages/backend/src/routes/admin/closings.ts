@@ -14,12 +14,13 @@ import { authenticateAdmin } from '../../middleware/authenticate.js';
 import {
   computeClosingTotals, type ClosingInvoice, type ClosingItem,
 } from '../../closing/totals.js';
-import { buildZBonEscPos } from '../../closing/escpos.js';
+import { buildZBonBlocks } from '../../closing/blocks.js';
 import { pendingClosingDays, localDateString } from '../../closing/pending.js';
 import { findPendingDaysForRegister } from '../../closing/pending-db.js';
 import { loadClosingById } from '../../closing/load.js';
 import { renderZBonPdf } from '../../closing/pdf.js';
 import { enqueuePrintJob } from '../../print/enqueue.js';
+import { renderBlocksToEscPos } from '../../print/blocks.js';
 import { resolvePrinterForRegister } from '../../print/resolve-printer.js';
 import { loadLogoFor } from '../../logo/visibility.js';
 
@@ -136,14 +137,14 @@ async function closeRegister(registerId: string, userName: string, date?: string
     // business_date carries the calendar day the Z-Bon belongs to. For a
     // catch-up it is the explicit `date` argument; for an in-day closing
     // it falls back to the database `current_date`, set via DEFAULT.
-    const closingInsert = await client.query<{ id: string }>(
+    const closingInsert = await client.query<{ id: string; business_date: string }>(
       `INSERT INTO daily_closing (
          register_id, z_number, created_by_name, is_zero_closing,
          total_gross, total_tax_standard, total_tax_reduced, total_tax_zero,
          total_cash, total_cancellations,
          business_date
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::date, current_date))
-       RETURNING id`,
+       RETURNING id, to_char(business_date, 'YYYY-MM-DD') AS business_date`,
       [
         registerId, nextZ, userName, totals.is_zero_closing,
         totals.total_gross, totals.total_tax_standard, totals.total_tax_reduced, totals.total_tax_zero,
@@ -152,6 +153,7 @@ async function closeRegister(registerId: string, userName: string, date?: string
       ],
     );
     const closingId = closingInsert.rows[0]!.id;
+    const businessDate = closingInsert.rows[0]!.business_date;
 
     // Link the aggregated invoices to the new closing.
     if (invoices.length > 0) {
@@ -176,15 +178,15 @@ async function closeRegister(registerId: string, userName: string, date?: string
     let printJobId: string | null = null;
     if (printerId) {
       const logo = await loadLogoFor('z_bon');
-      const bytes = buildZBonEscPos({
+      const blocks = buildZBonBlocks({
         company_name:  settings.get('company_name')  ?? '',
         register_name: register.name,
         system_serial: settings.get('system_serial') ?? '(noch nicht initialisiert)',
         z_number:      nextZ,
         created_at:    new Date(),
         zero_counter:  zeroCounter,
-      }, totals, logo?.escposBytes ?? null);
-      const job = await enqueuePrintJob(printerId, 'daily_closing', bytes, closingId);
+      }, totals, businessDate, logo);
+      const job = await enqueuePrintJob(printerId, 'daily_closing', renderBlocksToEscPos(blocks), blocks, closingId);
       printJobId = job.id;
     }
 
@@ -357,8 +359,8 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
         error: 'Kein Drucker verfügbar — der Kasse ist keiner zugeordnet und es ist kein Standarddrucker konfiguriert.',
       });
     }
-    const bytes = buildZBonEscPos(stored.ctx, stored.totals, stored.logo?.escposBytes ?? null);
-    const job = await enqueuePrintJob(printerId, 'daily_closing', bytes, stored.id);
+    const blocks = buildZBonBlocks(stored.ctx, stored.totals, stored.business_date, stored.logo);
+    const job = await enqueuePrintJob(printerId, 'daily_closing', renderBlocksToEscPos(blocks), blocks, stored.id);
     return reply.send({ print_job_id: job.id });
   });
 }

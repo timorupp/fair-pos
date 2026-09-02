@@ -496,14 +496,24 @@ export const api = {
       retry: (id: string): Promise<{ ok: true }> => request('POST', `/admin/print-jobs/${id}/retry`),
 
       /**
-       * Session-authenticated PDF URL for a print job (currently only meaningful
-       * for `receipt`-type jobs). Returns the URL string; the browser handles
-       * the actual fetch via `<a>` or `<iframe>`.
+       * Session-authenticated PDF URL for a print job — works for every job
+       * type except `pin_slip` (Task #105; excluded for security, see
+       * `routes/admin/print-jobs.ts`). Returns the URL string; the browser
+       * handles the actual fetch via `<a>` or `<iframe>`.
        *
        * @param id - The print-job primary key.
        * @returns Absolute URL path that the admin browser can navigate to.
        */
       pdfUrl: (id: string): string => `/api/admin/print-jobs/${id}/pdf`,
+
+      /**
+       * Re-queues a brand-new print job with the exact same content as an
+       * existing one (Task #105) — works for every job type except
+       * `pin_slip` (excluded for security, same reasoning as `pdfUrl`).
+       * Reprints to the job's original printer; fails if that printer was
+       * since deleted.
+       */
+      reprint: (id: string): Promise<{ print_job_id: string }> => request('POST', `/admin/print-jobs/${id}/reprint`),
     },
 
     logs: {
@@ -653,9 +663,6 @@ export const api = {
     /** Enqueues a print job for the given invoice on the register's assigned printer. */
     print: (invoiceId: string): Promise<{ print_job_id: string }> =>
       request('POST', `/register-session/invoices/${invoiceId}/print`),
-
-    /** URL of the QR-code PNG embedded by the checkout dialog. */
-    qrUrl: (invoiceId: string): string => `/api/register-session/invoices/${invoiceId}/qr.png`,
 
     /** Saalplan view: all visible tables annotated with their occupancy status. */
     floorPlan: (registerId: string): Promise<{

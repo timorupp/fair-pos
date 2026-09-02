@@ -1,6 +1,7 @@
-/** Unit tests for the ESC/POS builders. */
+/** Unit tests for the test-print and PIN-slip ESC/POS builders. */
 import { describe, it, expect } from 'vitest';
 import { buildPinSlip, buildTestPrint, formatGermanTimestamp } from './escpos.js';
+import type { CompanyLogo } from '../logo/logo.js';
 
 describe('formatGermanTimestamp', () => {
   it('formats day, month, year and time with zero-padded fields', () => {
@@ -32,10 +33,10 @@ describe('buildTestPrint', () => {
     expect(tail[2]).toBe(0x00);
   });
 
-  it('contains the printer name in the rendered body', () => {
+  it('contains the printer name in the rendered body, umlauts included (CP858, not dropped)', () => {
     const buf = buildTestPrint('Küche', ts);
-    // Buffer is ASCII-encoded, so 'ü' becomes a replacement; check the ASCII subset.
     expect(buf.toString('ascii')).toContain('Drucker:');
+    expect(buf.includes(Buffer.from([0x4b, 0x81, 0x63, 0x68, 0x65]))).toBe(true); // "Küche" in CP858
   });
 
   it('contains the formatted timestamp in the rendered body', () => {
@@ -49,11 +50,13 @@ describe('buildTestPrint', () => {
     expect(a.equals(b)).toBe(true);
   });
 
-  it('embeds the provided logo block when one is passed in', () => {
-    // Distinctive placeholder that wouldn't appear anywhere in the regular slip.
-    const logo = Buffer.from([0xCA, 0xFE, 0xBA, 0xBE]);
+  it('embeds the provided logo raster when one is passed in', () => {
+    const escposRaster = Buffer.from([0xca, 0xfe, 0xba, 0xbe]);
+    const logo: CompanyLogo = {
+      pdfPng: Buffer.from([1]), pdfWidth: 10, pdfHeight: 10, pdfWidthFactor: 1, escposBytes: escposRaster,
+    };
     const buf = buildTestPrint(printerName, ts, logo);
-    expect(buf.includes(logo)).toBe(true);
+    expect(buf.includes(escposRaster)).toBe(true);
   });
 
   it('omits the logo block when null is passed', () => {

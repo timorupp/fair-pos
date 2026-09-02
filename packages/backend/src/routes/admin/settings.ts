@@ -12,7 +12,7 @@ import { applyTseSettings, TSE_SETTING_KEYS } from '../../tse/settings.js';
 const ALLOWED_KEYS = new Set([
   'company_name', 'company_street', 'company_postal_code', 'company_city',
   'company_tax_number', 'company_vat_id', 'receipt_prefix', 'receipt_counter_start',
-  'vat_rate_deposit', 'server_address',
+  'vat_rate_deposit',
   // Per-document-type checkboxes for the company logo.
   'logo_on_receipt', 'logo_on_cancellation', 'logo_on_z_bon',
   'logo_on_order_slip', 'logo_on_pickup_slip', 'logo_on_deposit_slip',
@@ -27,11 +27,11 @@ const ALLOWED_KEYS = new Set([
  * Keys editable only by a System-Administrator (Task #94) — everything else
  * in `ALLOWED_KEYS` is editable by a Veranstaltungs-Administrator too. A
  * renting club needs to set its own company data/logo/TSE connection, but
- * must not touch the legally-sensitive global receipt numbering, the
- * statutory deposit VAT rate, or this server's own network address.
+ * must not touch the legally-sensitive global receipt numbering or the
+ * statutory deposit VAT rate.
  */
 const SYSTEM_ONLY_KEYS = new Set([
-  'receipt_prefix', 'receipt_counter_start', 'vat_rate_deposit', 'server_address',
+  'receipt_prefix', 'receipt_counter_start', 'vat_rate_deposit',
 ]);
 
 /** Admin routes for system settings (key-value store). */
@@ -104,6 +104,11 @@ export async function settingsAdminRoute(app: FastifyInstance): Promise<void> {
       logoWidth: logo?.pdfWidth ?? 0,
       logoHeight: logo?.pdfHeight ?? 0,
       logoWidthFactor: logo?.pdfWidthFactor ?? 0,
+      // Task #105: the shared block builder now needs the ESC/POS raster
+      // too (a receipt's logo block carries both representations), even
+      // though this endpoint only ever renders the PDF — without this, the
+      // logo image block was silently skipped entirely, PDF or not.
+      logoEscPos: logo?.escposBytes ?? null,
     });
     reply
       .header('Content-Type', 'application/pdf')

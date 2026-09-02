@@ -74,29 +74,3 @@ export async function buildQrPayload(data: ReceiptData): Promise<string> {
 export function renderQrPng(payload: string, sizePx: number = 220): Promise<Buffer> {
   return toBuffer(payload, { type: 'png', width: sizePx, margin: 1 });
 }
-
-/**
- * Builds the customer-facing URL for a receipt's "scan to view your PDF"
- * QR code from the configured `server_address` system setting.
- *
- * The admin may include an explicit `http://`/`https://` prefix (relevant
- * once Task #66 sets up TLS) — that choice is always honored as-is; a bare
- * host/IP without a prefix defaults to `http://` for backward compatibility
- * with existing configurations.
- *
- * @param configuredAddress - The `server_address` system-setting value, or
- *   `null`/empty if unset.
- * @param fallbackHost - Host to fall back to when unset (typically the
- *   inbound request's own `Host` header).
- * @param receiptToken - The receipt's public access token.
- * @returns The full URL to embed in the QR code.
- */
-export function buildReceiptQrUrl(
-  configuredAddress: string | null | undefined,
-  fallbackHost: string,
-  receiptToken: string,
-): string {
-  const host = configuredAddress || fallbackHost;
-  const base = /^https?:\/\//i.test(host) ? host.replace(/\/+$/, '') : `http://${host}`;
-  return `${base}/receipt/${receiptToken}`;
-}

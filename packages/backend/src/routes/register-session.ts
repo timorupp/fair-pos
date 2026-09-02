@@ -11,13 +11,13 @@ import { query, withTransaction } from '../db/client.js';
 import { authenticateRegister } from '../middleware/authenticate.js';
 import { generateReceiptToken } from '../receipt/numbering.js';
 import { nextReceiptNumber } from '../receipt/sequence.js';
-import { buildReceiptEscPos } from '../receipt/escpos-receipt.js';
+import { buildReceiptBlocks } from '../receipt/blocks.js';
 import { loadReceiptByToken } from '../receipt/data.js';
 import { enqueuePrintJob } from '../print/enqueue.js';
-import { renderQrPng, buildReceiptQrUrl } from '../receipt/qr.js';
+import { renderBlocksToEscPos } from '../print/blocks.js';
 import {
-  bucketItemsByPrinter, buildOrderSlipEscPos,
-  buildPickupSlipEscPos, buildDepositSlipEscPos,
+  bucketItemsByPrinter, buildOrderSlipBlocks,
+  buildPickupSlipBlocks, buildDepositSlipBlocks,
   type OrderSlipItem,
 } from '../print/order-slip.js';
 import { resolvePrinterForRegister } from '../print/resolve-printer.js';
@@ -365,21 +365,21 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           // Article slip: includes the deposit line only when there is a
           // deposit AND the article is NOT configured for a separate slip.
           const inlineDeposit = unit.separateDepositSlip ? null : unit.depositEuros;
-          const articleBytes = buildPickupSlipEscPos(
+          const articleBlocks = buildPickupSlipBlocks(
             { name: unit.name, priceEuros: unit.priceEuros, depositEuros: inlineDeposit },
             slipCtx,
-            pickupLogo?.escposBytes ?? null,
+            pickupLogo,
           );
-          await enqueuePrintJob(slipPrinterId, 'order_slip', articleBytes);
+          await enqueuePrintJob(slipPrinterId, 'order_slip', renderBlocksToEscPos(articleBlocks), articleBlocks);
           slipsEnqueued += 1;
 
           if (unit.separateDepositSlip && unit.depositEuros !== null) {
-            const depositBytes = buildDepositSlipEscPos(
+            const depositBlocks = buildDepositSlipBlocks(
               { depositEuros: unit.depositEuros },
               slipCtx,
-              depositLogo?.escposBytes ?? null,
+              depositLogo,
             );
-            await enqueuePrintJob(slipPrinterId, 'order_slip', depositBytes);
+            await enqueuePrintJob(slipPrinterId, 'order_slip', renderBlocksToEscPos(depositBlocks), depositBlocks);
             slipsEnqueued += 1;
           }
         }
@@ -423,31 +423,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const data = await loadReceiptByToken(inv.receipt_token);
     if (!data) return reply.status(404).send({ error: 'Rechnungsdaten nicht ladbar' });
 
-    const bytes = buildReceiptEscPos(data);
-    const job = await enqueuePrintJob(printerId, 'receipt', bytes, id);
+    const blocks = await buildReceiptBlocks(data);
+    const job = await enqueuePrintJob(printerId, 'receipt', renderBlocksToEscPos(blocks), blocks, id);
     return reply.send({ print_job_id: job.id });
-  });
-
-  /** GET /invoices/:id/qr.png — PNG QR-code carrying the public receipt URL for customer scanning. */
-  app.get<{ Params: { id: string } }>('/invoices/:id/qr.png', async (req, reply) => {
-    const { id } = req.params;
-    const result = await query<{ register_id: string; receipt_token: string | null }>(
-      `SELECT register_id, receipt_token FROM invoice WHERE id = $1`,
-      [id],
-    );
-    const inv = result.rows[0];
-    if (!inv) return reply.status(404).send({ error: 'Rechnung nicht gefunden' });
-    if (!(await userHasRegister(req.registerUser.id, inv.register_id))) {
-      return reply.status(403).send({ error: 'Keine Berechtigung für diese Kasse' });
-    }
-    if (!inv.receipt_token) return reply.status(500).send({ error: 'Rechnung ohne Token' });
-
-    const addr = await query<{ value: string }>(
-      `SELECT value FROM system_setting WHERE key = 'server_address'`,
-    );
-    const url = buildReceiptQrUrl(addr.rows[0]?.value, req.headers.host ?? 'localhost', inv.receipt_token);
-    const png = await renderQrPng(url, 320);
-    reply.header('Content-Type', 'image/png').header('Cache-Control', 'no-store').send(png);
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -726,10 +704,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     let enqueued = 0, skipped = 0;
     for (const bucket of buckets) {
       if (!bucket.printer_id) { skipped += bucket.lines.length; continue; }
-      const bytes = buildOrderSlipEscPos(bucket, {
+      const blocks = buildOrderSlipBlocks(bucket, {
         tableName, serverName: req.registerUser.name, createdAt: now,
-      }, orderLogo?.escposBytes ?? null);
-      await enqueuePrintJob(bucket.printer_id, 'order_slip', bytes);
+      }, orderLogo);
+      await enqueuePrintJob(bucket.printer_id, 'order_slip', renderBlocksToEscPos(blocks), blocks);
       enqueued += 1;
     }
 

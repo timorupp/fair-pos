@@ -1,7 +1,7 @@
 /**
  * Bridges the TSE connection settings between `system_setting` (source of
  * truth, editable via the admin Settings UI, same table/endpoints as
- * `server_address`) and `config` (in-memory values read synchronously on the
+ * `company_name`) and `config` (in-memory values read synchronously on the
  * hot checkout path — see config.ts).
  */
 import { query } from '../db/client.js';
