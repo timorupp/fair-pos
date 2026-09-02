@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { api } from '$lib/api';
+  import { api, type ActiveEvent } from '$lib/api';
 
   const REFRESH_INTERVAL_MS = 30_000;
 
@@ -38,8 +38,14 @@
   let todayRevenue = $state(0);
   let openPositionsTotal = $state(0);
 
-  /** Name of the currently active event (Task #95), or `null` if none is active. */
-  let activeEventName: string | null = $state(null);
+  /** The currently active event (Task #95), or `null` if none is active. */
+  let activeEvent: ActiveEvent | null = $state(null);
+  /** Whether the current (browser-local) time falls outside the active event's start/end window. */
+  let eventTimeWarning = $state(false);
+
+  /** Shutdown (Task #99) — moved here from Einstellungen → System so it's reachable from the dashboard's top-right corner. */
+  let shuttingDown = $state(false);
+  let shutdownError = $state('');
 
   let loading = $state(true);
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -124,8 +130,28 @@
   }
 
   async function loadActiveEvent() {
-    try { activeEventName = (await api.admin.system.getActiveEvent()).event?.name ?? null; }
-    catch { activeEventName = null; }
+    try {
+      activeEvent = (await api.admin.system.getActiveEvent()).event;
+      const now = Date.now();
+      eventTimeWarning = activeEvent !== null
+        && (now < new Date(activeEvent.startTime).getTime() || now > new Date(activeEvent.endTime).getTime());
+    } catch {
+      activeEvent = null;
+      eventTimeWarning = false;
+    }
+  }
+
+  /** Cleanly shuts the server down (Task #61/#99) — same confirm-then-call flow as the former Einstellungen → System location. */
+  async function requestShutdown() {
+    if (!confirm('Server jetzt wirklich herunterfahren? Das beendet den laufenden Kassenbetrieb sofort und der Server muss vor Ort wieder eingeschaltet werden.')) return;
+    shutdownError = ''; shuttingDown = true;
+    try {
+      await api.admin.system.shutdown();
+      // No further UI update expected — the server is going down.
+    } catch (e) {
+      shutdownError = e instanceof Error ? e.message : 'Fehler';
+      shuttingDown = false;
+    }
   }
 
   const fmtEuro = (n: number) => `${n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
@@ -149,7 +175,13 @@
 <div class="page">
   <div class="page-header">
     <h1>Dashboard</h1>
+    <div class="header-actions">
+      <button class="btn-ghost danger" onclick={requestShutdown} disabled={shuttingDown}>
+        {shuttingDown ? 'Fährt herunter…' : 'Server herunterfahren'}
+      </button>
+    </div>
   </div>
+  {#if shutdownError}<p class="error-text">{shutdownError}</p>{/if}
 
   {#if !loading}
     {@const showWarnings = (driftSeconds !== null && Math.abs(driftSeconds) > 30) || tseOutageOpen !== null}
@@ -173,26 +205,23 @@
       </div>
     {/if}
 
+    <h2 class="section-heading">Veranstaltung</h2>
     <div class="tiles">
-      <a class="tile" class:warn={activeEventName === null} href="/admin/events">
+      <a class="tile" class:warn={activeEvent === null || eventTimeWarning} href="/admin/events">
         <h2>Aktive Veranstaltung</h2>
-        {#if activeEventName}
-          <p class="tile-value">{activeEventName}</p>
-          <p class="tile-detail">Betrifft Artikel, Kassen, Layouts, Saalplan, Rechnungen, Bestellungen.</p>
+        {#if activeEvent}
+          <p class="tile-value">{activeEvent.name}</p>
+          {#if eventTimeWarning}
+            <p class="tile-detail warn-text">
+              ⚠ Aktuelle Systemzeit liegt außerhalb des Veranstaltungszeitraums
+              ({formatTime(activeEvent.startTime)} – {formatTime(activeEvent.endTime)}).
+            </p>
+          {:else}
+            <p class="tile-detail">Betrifft Artikel, Kassen, Layouts, Saalplan, Rechnungen, Bestellungen.</p>
+          {/if}
         {:else}
           <p class="tile-value muted">⚠ Keine aktiv</p>
           <p class="tile-detail">Veranstaltung anlegen und aktivieren, bevor Artikel/Kassen eingerichtet werden können.</p>
-        {/if}
-      </a>
-
-      <a class="tile" class:warn={tseHealth?.severity === 'warning'} href="/admin/settings/logs">
-        <h2>TSE-Zustand</h2>
-        {#if tseHealth}
-          <p class="tile-value">{tseHealth.severity === 'warning' ? '⚠ Auffällig' : '✓ Gesund'}</p>
-          <p class="tile-detail">{tseHealth.message}</p>
-        {:else}
-          <p class="tile-value muted">Kein Status verfügbar</p>
-          <p class="tile-detail">Noch keine Prüfung protokolliert.</p>
         {/if}
       </a>
 
@@ -207,6 +236,32 @@
         {:else}
           <p class="tile-value">✓ Keine</p>
           <p class="tile-detail">Alle Kassen sind aktuell.</p>
+        {/if}
+      </a>
+
+      <a class="tile" href="/admin/reports/cash-balance">
+        <h2>Tagesumsatz</h2>
+        <p class="tile-value">{fmtEuro(todayRevenue)}</p>
+        <p class="tile-detail">Alle heute gebuchten Einnahmen</p>
+      </a>
+
+      <a class="tile" href="/admin/reports/open-positions">
+        <h2>Offene Rechnungen</h2>
+        <p class="tile-value">{fmtEuro(openPositionsTotal)}</p>
+        <p class="tile-detail">Summe aller offenen Positionen an den Tischen</p>
+      </a>
+    </div>
+
+    <h2 class="section-heading">System</h2>
+    <div class="tiles">
+      <a class="tile" class:warn={tseHealth?.severity === 'warning'} href="/admin/settings/logs">
+        <h2>TSE-Zustand</h2>
+        {#if tseHealth}
+          <p class="tile-value">{tseHealth.severity === 'warning' ? '⚠ Auffällig' : '✓ Gesund'}</p>
+          <p class="tile-detail">{tseHealth.message}</p>
+        {:else}
+          <p class="tile-value muted">Kein Status verfügbar</p>
+          <p class="tile-detail">Noch keine Prüfung protokolliert.</p>
         {/if}
       </a>
 
@@ -233,18 +288,6 @@
         {/if}
         {#if resetLockoutsError}<p class="error-text">{resetLockoutsError}</p>{/if}
       </div>
-
-      <a class="tile" href="/admin/reports/cash-balance">
-        <h2>Tagesumsatz</h2>
-        <p class="tile-value">{fmtEuro(todayRevenue)}</p>
-        <p class="tile-detail">Alle heute gebuchten Einnahmen</p>
-      </a>
-
-      <a class="tile" href="/admin/reports/open-positions">
-        <h2>Offene Rechnungen</h2>
-        <p class="tile-value">{fmtEuro(openPositionsTotal)}</p>
-        <p class="tile-detail">Summe aller offenen Positionen an den Tischen</p>
-      </a>
     </div>
   {/if}
 </div>
@@ -252,6 +295,13 @@
 <style>
   .page-header { margin-bottom: 1.25rem; }
   h1 { font-size: 1.25rem; margin: 0; }
+  .header-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+  .section-heading {
+    font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--color-text-muted); margin: 0 0 0.6rem 0;
+  }
+  .section-heading:not(:first-of-type) { margin-top: 1.75rem; }
 
   .warnings { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
 
@@ -296,5 +346,6 @@
   .tile-value { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem 0; }
   .tile-value.muted { color: var(--color-text-muted); font-weight: 500; }
   .tile-detail { font-size: 0.8rem; color: var(--color-text-muted); margin: 0; }
+  .tile-detail.warn-text { color: #c87a00; }
   .tile-action { margin-top: 0.6rem; }
 </style>

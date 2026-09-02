@@ -137,22 +137,6 @@
     } finally { settingTimezone = false; }
   }
 
-  // ── Shutdown (Task #61) ──
-  let shuttingDown = $state(false);
-  let shutdownError = $state('');
-
-  async function requestShutdown() {
-    if (!confirm('Server jetzt wirklich herunterfahren? Das beendet den laufenden Kassenbetrieb sofort und der Server muss vor Ort wieder eingeschaltet werden.')) return;
-    shutdownError = ''; shuttingDown = true;
-    try {
-      await api.admin.system.shutdown();
-      // No further UI update expected — the server is going down.
-    } catch (e) {
-      shutdownError = e instanceof Error ? e.message : 'Fehler';
-      shuttingDown = false;
-    }
-  }
-
   function copySerial() {
     if (!systemSerial) return;
     copyToClipboard(systemSerial);
@@ -273,19 +257,6 @@
       <a class="btn-primary" href={api.admin.backup.downloadUrl()}>Backup herunterladen</a>
     </section>
   {/if}
-
-  <!-- Shutdown ───────────────────────────────────────────────────────────────── -->
-  <section class="card">
-    <h2>Server herunterfahren</h2>
-    <p class="hint">
-      Fährt den Server kontrolliert herunter, ohne dass jemand dafür auf die Shell muss.
-      Danach muss der Server vor Ort wieder eingeschaltet werden.
-    </p>
-    <button class="btn-ghost danger" onclick={requestShutdown} disabled={shuttingDown}>
-      {shuttingDown ? 'Fährt herunter…' : 'Server herunterfahren'}
-    </button>
-    {#if shutdownError}<p class="error-text">{shutdownError}</p>{/if}
-  </section>
 
   {#if saveError}<p class="error-text">{saveError}</p>{/if}
   {#if saveSuccess}<p class="success-text">Gespeichert.</p>{/if}
