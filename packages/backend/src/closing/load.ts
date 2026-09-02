@@ -1,7 +1,7 @@
 /** Loads a persisted daily closing for reprint / PDF rendering. */
 
 import { query } from '../db/client.js';
-import type { ClosingContext } from './escpos.js';
+import type { ClosingContext } from './blocks.js';
 import type { ClosingTotals } from './totals.js';
 import { loadLogoFor } from '../logo/visibility.js';
 import type { CompanyLogo } from '../logo/logo.js';

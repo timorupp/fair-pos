@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { query } from '../../db/client.js';
+import { query, isPgErrorCode } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 
@@ -141,7 +141,7 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
       );
       if (result.rowCount === 0) return reply.status(404).send({ error: 'Artikel nicht gefunden' });
     } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23503') {
+      if (isPgErrorCode(e, '23503')) {
         return reply.status(409).send({
           error: 'Artikel wurde bereits verkauft und kann nicht gelöscht werden — stattdessen über die "Aktiv"-Checkbox deaktivieren.',
         });

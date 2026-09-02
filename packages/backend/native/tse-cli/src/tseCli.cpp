@@ -137,6 +137,17 @@ void printTransactionResult(const WormTransactionResponse *rsp) {
       toHex(serial, serialLength).c_str());
 }
 
+/** Human-readable label for a `WormEntryType` — used only by `dumpProcessData`'s
+ * plain-text output, not by any of the JSON-emitting commands. */
+const char *entryTypeName(WormEntryType type) {
+  switch (type) {
+    case WORM_ENTRY_TYPE_TRANSACTION: return "TRANSACTION";
+    case WORM_ENTRY_TYPE_SYSTEM_LOG_MESSAGE: return "SYSTEM_LOG_MESSAGE";
+    case WORM_ENTRY_TYPE_SE_AUDIT_LOG_MESSAGE: return "SE_AUDIT_LOG_MESSAGE";
+    default: return "UNKNOWN";
+  }
+}
+
 // -- command handlers ---------------------------------------------------------
 
 /** `setup <clientId> <credentialSeed> <adminPuk> <adminPin> <timeAdminPin>`
@@ -384,12 +395,77 @@ int cmdDeleteStoredData(WormContext *ctx, int argc, char **argv) {
   return 0;
 }
 
+/** `dumpProcessData <ausgabedatei>` — admin-only testing helper (TASKS.md
+ * Task #102): walks every entry currently stored on the TSE via
+ * `worm_entry_iterate_*` and writes one tab-separated line per entry
+ * (`id`, entry type, processData length, decoded processData) to
+ * `<ausgabedatei>`. Lets an admin eyeball, during a manual test run, that
+ * every expected receipt/order actually reached the TSE with the right
+ * amounts — reads only `processData` (FairPOS's own DSFinV-K Anhang I wire
+ * format, plain UTF-8 text, see `tse/processData.ts`), never the signed
+ * Log Message envelope itself (undocumented in the vendored SDK headers,
+ * see docs/TSE-Integration.md Abschnitt 11). No login required — reading
+ * entries only fails while *TimeAdmin* is logged in (`WormDLL.h`'s "Export
+ * Changes" notes), which FairPOS never leaves active outside of `maintain`.
+ * Never called by FairPOS itself; deliberately not wired into the
+ * backend/admin UI — see docs/TSE-CLI-Referenz.md section 2. */
+int cmdDumpProcessData(WormContext *ctx, int argc, char **argv) {
+  if (argc != 1) return printUsageError("dumpProcessData needs 1 argument");
+  std::FILE *f = std::fopen(argv[0], "wb");
+  if (f == nullptr) return printUsageError("failed to open output file");
+
+  WormEntry *entry = worm_entry_new(ctx);
+  if (entry == nullptr) {
+    std::fclose(f);
+    return printError(WORM_ERROR_OUTOFMEM, "worm_entry_new failed");
+  }
+
+  WormError err = worm_entry_iterate_first(entry);
+  if (err != WORM_ERROR_NOERROR) {
+    worm_entry_free(entry);
+    std::fclose(f);
+    return printError(err, "worm_entry_iterate_first failed");
+  }
+
+  unsigned int count = 0;
+  std::vector<unsigned char> buf;
+  while (worm_entry_isValid(entry)) {
+    worm_uint len = worm_entry_processDataLength(entry);
+    buf.resize(len);
+    if (len > 0) {
+      WormError readErr = worm_entry_readProcessData(entry, 0, buf.data(), len);
+      if (readErr != WORM_ERROR_NOERROR) {
+        worm_entry_free(entry);
+        std::fclose(f);
+        return printError(readErr, "worm_entry_readProcessData failed");
+      }
+    }
+    std::fprintf(f, "%u\t%s\t%llu\t", worm_entry_id(entry),
+                 entryTypeName(worm_entry_type(entry)), (unsigned long long)len);
+    if (len > 0) std::fwrite(buf.data(), 1, len, f);
+    std::fputc('\n', f);
+    count++;
+
+    err = worm_entry_iterate_next(entry);
+    if (err != WORM_ERROR_NOERROR) {
+      worm_entry_free(entry);
+      std::fclose(f);
+      return printError(err, "worm_entry_iterate_next failed");
+    }
+  }
+
+  worm_entry_free(entry);
+  std::fclose(f);
+  std::printf("{\"ok\":true,\"result\":{\"entries\":%u}}\n", count);
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
   if (argc < 3) {
     return printUsageError(
-        "usage: tseCli <mountPoint> <setup|maintain|start|update|finish|info|exportTar|factoryReset|deleteStoredData> [args...]");
+        "usage: tseCli <mountPoint> <setup|maintain|start|update|finish|info|exportTar|factoryReset|deleteStoredData|dumpProcessData> [args...]");
   }
   const char *mountPoint = argv[1];
   std::string command(argv[2]);
@@ -410,6 +486,7 @@ int main(int argc, char **argv) {
   else if (command == "exportTar") exitCode = cmdExportTar(ctx, cmdArgc, cmdArgs);
   else if (command == "factoryReset") exitCode = cmdFactoryReset(ctx, cmdArgc, cmdArgs);
   else if (command == "deleteStoredData") exitCode = cmdDeleteStoredData(ctx, cmdArgc, cmdArgs);
+  else if (command == "dumpProcessData") exitCode = cmdDumpProcessData(ctx, cmdArgc, cmdArgs);
   else exitCode = printUsageError("unknown command");
 
   worm_cleanup(ctx);

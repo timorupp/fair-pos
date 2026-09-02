@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { query } from '../../db/client.js';
+import { query, isPgErrorCode } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 
@@ -148,7 +148,7 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
       if (result.rowCount === 0) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
       return reply.status(204).send();
     } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23503') {
+      if (isPgErrorCode(e, '23503')) {
         return reply.status(409).send({ error: 'Kasse hat bereits Transaktionen und kann nicht gelöscht werden' });
       }
       throw e;

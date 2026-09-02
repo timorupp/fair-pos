@@ -1,7 +1,14 @@
 /** Unit tests for the test-print and PIN-slip ESC/POS builders. */
 import { describe, it, expect } from 'vitest';
-import { buildPinSlip, buildTestPrint, formatGermanTimestamp } from './escpos.js';
+import { buildPinSlipBlocks, buildTestPrintBlocks, formatGermanTimestamp } from './escpos.js';
+import { renderBlocksToEscPos } from './blocks.js';
 import type { CompanyLogo } from '../logo/logo.js';
+
+/** Renders straight through the shared block model, same as every production call site. */
+const buildTestPrint = (...args: Parameters<typeof buildTestPrintBlocks>): Buffer =>
+  renderBlocksToEscPos(buildTestPrintBlocks(...args));
+const buildPinSlip = (...args: Parameters<typeof buildPinSlipBlocks>): Buffer =>
+  renderBlocksToEscPos(buildPinSlipBlocks(...args));
 
 describe('formatGermanTimestamp', () => {
   it('formats day, month, year and time with zero-padded fields', () => {

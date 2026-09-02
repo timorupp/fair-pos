@@ -1,10 +1,19 @@
 /** Tests for the kitchen-/bar-order-slip ESC/POS renderer and the routing helper. */
 import { describe, it, expect } from 'vitest';
 import {
-  bucketItemsByPrinter, buildOrderSlipEscPos,
-  buildPickupSlipEscPos, buildDepositSlipEscPos,
+  bucketItemsByPrinter, buildOrderSlipBlocks,
+  buildPickupSlipBlocks, buildDepositSlipBlocks,
   type OrderSlipItem,
 } from './order-slip.js';
+import { renderBlocksToEscPos } from './blocks.js';
+
+/** Renders straight through the shared block model, same as every production call site. */
+const buildOrderSlipEscPos = (...args: Parameters<typeof buildOrderSlipBlocks>): Buffer =>
+  renderBlocksToEscPos(buildOrderSlipBlocks(...args));
+const buildPickupSlipEscPos = (...args: Parameters<typeof buildPickupSlipBlocks>): Buffer =>
+  renderBlocksToEscPos(buildPickupSlipBlocks(...args));
+const buildDepositSlipEscPos = (...args: Parameters<typeof buildDepositSlipBlocks>): Buffer =>
+  renderBlocksToEscPos(buildDepositSlipBlocks(...args));
 
 const item = (overrides: Partial<OrderSlipItem> = {}): OrderSlipItem => ({
   name: 'Bier',

@@ -95,11 +95,11 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Zähler-Plausibilität (`GET /api/admin/tse/status`, `startedTransactions`
   vor/nach einer bekannten Anzahl Testverkäufe vergleichen), DSFinV-K-Export
   (`transactions_tse.csv`, `TSE_TANR`/`TSE_TA_SIG` pro Vorgang gegen die
-  tatsächlich getätigten Testbuchungen abgleichen). Falls dafür ein
-  Hilfsmittel gebraucht wird, ist das laut Nutzervorgabe ein **reiner
-  Testing-Helper** (z. B. ein Abgleichs-Skript für diesen einen Testlauf),
-  keine dauerhafte Produktivfunktion — entsprechend klein/wegwerfbar
-  halten, nicht Teil der eigentlichen Anwendung.
+  tatsächlich getätigten Testbuchungen abgleichen), sowie **(Werkzeug dafür
+  jetzt verfügbar, siehe Task #102)** `tseCli dumpProcessData` für den
+  direkten Beträge-Abgleich gegen die TSE selbst — Details/Aufruf in
+  `docs/TSE-CLI-Referenz.md` Abschnitt 2/3. Der eigentliche Abgleich selbst
+  ist Teil dieses Tasks (#47) und steht noch aus, **nicht** bereits erledigt.
 - [x] **#48** Docker-Cleanup: Produktions-Deployment auf native Ubuntu-Installation umstellen
   **Erledigt:** `docker-compose.yml` auf reines Dev-Postgres reduziert (Backend-Service,
   TSE-Volume-Kommentare entfernt); `docker-compose.dev.yml` und
@@ -2782,6 +2782,9 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   System vollständig entfernt (Bestätigungsdialog/Fehlerbehandlung 1:1
   übernommen). `api.admin.system.shutdown()` unverändert.
 
+  **Live bestätigt (2026-09-01):** Smoke-Test durch den Nutzer — Button
+  funktioniert an der neuen Stelle.
+
 - [x] **#100** Digitalen Kundenbeleg (QR-Code/PDF) für Gäste entfernen (Entscheidung: verwerfen)
   Aufgekommen 2026-08-31 aus einer Nutzerfrage zum bestehenden
   `GET /receipt/:token`-Mechanismus (Anforderungen.md, Entscheidung Punkt 2):
@@ -2962,6 +2965,10 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     0 Fehler), volle Backend-Unit-Testsuite (285 Tests) und voller
     Integrationstest-Lauf (28 Dateien, 270 Tests) grün.
 
+  **Live bestätigt (2026-09-01):** Smoke-Test durch den Nutzer — neue
+  Rechnungs-Bestätigungsseite ("Kunde wünscht keinen Beleg" statt QR-Code)
+  passt und funktioniert.
+
 - [x] **#101** Entscheidung: PDF-Rechnung und Kassenbon-Ausdruck optisch/inhaltlich angleichen
   Aufgekommen 2026-09-01 aus einer Nutzerbeobachtung. **Bündelt/erweitert
   Task #78** (dort bereits als "kein Compliance-Problem, niedrige
@@ -3024,13 +3031,29 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Logo-Format, Storno-/Fehlerdarstellung) sind medienbedingt bzw. bewusste
   Entscheidungen geblieben, nicht weiter vereinheitlicht.
 
-- [x] **#102** (aufgegangen in #47) Wie wird geprüft, dass alle Bestellungen korrekt an die TSE gemeldet und signiert werden
+- [x] **#102** Wie wird geprüft, dass alle Bestellungen korrekt an die TSE gemeldet und signiert werden
   Aufgekommen 2026-09-01, Anschluss an [[DANGER.md]] `D-038-Fortsetzung`.
-  **Umgeordnet (2026-09-01, Nutzereinordnung):** "gehört für mich zum
-  Testing" — kein separater Vorab-Entscheidungs-/Umsetzungs-Task mehr,
-  sondern ein Prüfschritt innerhalb des großen manuellen Regressionstests.
-  Volle Analyse (Bausteine: TSE-Zähler-Plausibilität, DSFinV-K-Abgleich,
-  `exportTar`-Rohdatenexport) jetzt bei **Task #47**.
+  **Zunächst umgeordnet (2026-09-01):** als Prüfschritt innerhalb von Task
+  #47 (großer manueller Regressionstest) statt eigenem Task geführt.
+
+  **Gelöst (2026-09-01):** Klärung, was im rohen TAR-Export (Task #103)
+  überhaupt steht — die vendorten SDK-Header (`WormDLL.h`) enthalten keine
+  Formatspezifikation für den signierten Log-Message-Envelope (TR-03153,
+  versioniert v1/v3), nur den C-API-Zugriff. Für die eigentliche Frage
+  ("kamen die richtigen Beträge auf der TSE an") ist das Envelope-Format
+  aber gar nicht nötig: die SDK-Funktion `worm_entry_readProcessData` liefert
+  pro TSE-Eintrag direkt `processData` — FairPOS' eigenes,
+  DSFinV-K-Anhang-I-Klartextformat (siehe `tse/processData.ts`), unabhängig
+  vom Envelope. Neuer `tseCli`-Befehl `dumpProcessData <ausgabedatei>`
+  (`native/tse-cli/src/tseCli.cpp`, `worm_entry_iterate_*` +
+  `worm_entry_readProcessData`) iteriert alle gespeicherten Einträge und
+  schreibt `id`/Typ/`processData` als Tab-getrennte Textdatei — vollständig
+  dokumentiert in `docs/TSE-CLI-Referenz.md` Abschnitt 2/3. **Bewusst nur
+  CLI, kein Backend-/Admin-UI-Anschluss** (Nutzervorgabe): reines
+  Diagnose-/Testing-Werkzeug für den manuellen Regressionstest (Task #47),
+  keine dauerhafte Produktivfunktion. Build erfolgreich gegen die reale
+  (lokal vorhandene, gitignorte) SDK-Bibliothek getestet; mangels
+  physischer Entwickler-TSE nicht mit echter Hardware verifiziert.
 
 - [x] **#103** `exportTar`-Rohdaten-Export der TSE über die Admin-Oberfläche freigeben
   Aufgekommen 2026-09-01, ursprünglich als niedrig priorisierter
@@ -3091,11 +3114,12 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   gehören, nicht nur dem System-Administrator) — siehe
   `docs/Adminstufen-Matrix.txt`.
 
-  **Weiterhin offen:** was inhaltlich im TAR steht und wie sich daraus ein
-  automatisierter Abgleich gegen die FairPOS-DB bauen ließe, bleibt
-  unbeantwortet — das war nicht Ziel dieser Umsetzung (reine
-  Downloadfunktion, keine Interpretation). Siehe Task #102 für die
-  übergeordnete "wie prüfen wir Vollständigkeit"-Frage.
+  **Weiterhin offen:** was inhaltlich im signierten TAR-Envelope selbst
+  steht (TR-03153-Log-Message-Format), bleibt unbeantwortet — das war nicht
+  Ziel dieser Umsetzung (reine Downloadfunktion, keine Interpretation). Für
+  die eigentliche "wie prüfen wir Vollständigkeit"-Frage siehe **Task #102
+  (gelöst)**: `tseCli dumpProcessData` liest die Beträge direkt von der
+  lebenden TSE, ohne den Envelope zu parsen.
 
 - [x] **#104** Dashboard-Kacheln in "Veranstaltung"/"System" gruppieren, Zeitfenster-Warnung ergänzen
   Nutzerwunsch 2026-09-01, direkt umgesetzt.
@@ -3117,6 +3141,9 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
 
   Keine Backend-Änderung — reine Frontend-Umsortierung + ein zusätzlicher
   clientseitiger Vergleich.
+
+  **Live bestätigt (2026-09-01):** Smoke-Test durch den Nutzer — Gruppierung
+  passt.
 
 - [x] **#105** Gemeinsames Zwischenformat für alle Belege (Rechnung, Z-Bon, Bestellzettel, Testdruck, PIN-Zettel)
   Nutzeridee 2026-09-01 (Anschluss an Task #101): warum nicht jeden Beleg
@@ -3387,3 +3414,6 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Architektur-Beschreibung in `docs/Anforderungen.md` (SSE-Behauptung bei
   "Echtzeit") war schon vorher veraltet (tatsächlich Client-Polling) —
   nicht Teil von Task #105, nur am Rand bemerkt.
+
+  **Live bestätigt (2026-09-01):** Smoke-Test durch den Nutzer — Druck von
+  Bons an echter Hardware funktioniert.

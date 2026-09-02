@@ -53,22 +53,3 @@ export async function loadLogoFor(target: LogoTarget): Promise<CompanyLogo | nul
   if (!(await isLogoEnabledFor(target))) return null;
   return loadCompanyLogo();
 }
-
-/**
- * Reads all six flags in one round-trip. Used by the settings UI to populate
- * the checkboxes.
- *
- * @returns A record mapping every target to its flag value.
- */
-export async function loadAllLogoFlags(): Promise<Record<LogoTarget, boolean>> {
-  const result = await query<{ key: string; value: string }>(
-    `SELECT key, value FROM system_setting WHERE key = ANY($1)`,
-    [Object.values(LOGO_FLAG_KEYS)],
-  );
-  const map = new Map(result.rows.map((r) => [r.key, r.value === 'true']));
-  const out = {} as Record<LogoTarget, boolean>;
-  for (const [target, key] of Object.entries(LOGO_FLAG_KEYS) as [LogoTarget, string][]) {
-    out[target] = map.get(key) ?? false;
-  }
-  return out;
-}

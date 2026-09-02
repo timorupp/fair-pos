@@ -6,15 +6,14 @@
  * (same article + same options) are merged into one line with a quantity.
  *
  * Byte-level rendering goes through the shared block model (Task #105, see
- * `print/blocks.ts`) — these three `build*EscPos` functions are thin
- * wrappers, kept only so existing call sites don't need to change; the
- * `build*Blocks` functions are what's actually new here and what gets
- * persisted on the `print_job` row for the admin UI's PDF preview / reprint.
+ * `print/blocks.ts`) — callers build blocks here and render them via
+ * `renderBlocksToEscPos`/`renderBlocksToPdf` themselves; the blocks are also
+ * what gets persisted on the `print_job` row for the admin UI's PDF preview /
+ * reprint.
  */
 
 import type { CompanyLogo } from '../logo/logo.js';
 import type { PrintBlock } from './blocks.js';
-import { renderBlocksToEscPos } from './blocks.js';
 
 /** A single ordered unit destined for one printer. */
 export interface OrderSlipItem {
@@ -120,15 +119,6 @@ export function buildOrderSlipBlocks(
   return blocks;
 }
 
-/** Renders one printer's bucket as a complete ESC/POS slip. */
-export function buildOrderSlipEscPos(
-  bucket: OrderSlipBucket,
-  context: { tableName: string; serverName: string; createdAt: Date },
-  logo: CompanyLogo | null = null,
-): Buffer {
-  return renderBlocksToEscPos(buildOrderSlipBlocks(bucket, context, logo));
-}
-
 /**
  * Builds the block list for a single Bonkasse "Selbstabholerbon" (one
  * article-unit per slip, optionally with a deposit line if the article has a
@@ -138,8 +128,8 @@ export function buildOrderSlipEscPos(
  * Use this when `article.print_deposit_receipt === false` for an article with
  * a non-zero deposit_price, or when there is no deposit at all. For articles
  * with `print_deposit_receipt === true` AND a non-zero deposit, call
- * `buildDepositSlipBlocks`/`buildDepositSlipEscPos` in addition to emit a
- * second slip just for the deposit.
+ * `buildDepositSlipBlocks` in addition to emit a second slip just for the
+ * deposit.
  *
  * @param item - Article info. `priceEuros` is the per-unit gross article
  *   price; `depositEuros` is the per-unit deposit (null/0 → no Pfand line).
@@ -171,15 +161,6 @@ export function buildPickupSlipBlocks(
   });
 
   return blocks;
-}
-
-/** Renders a single Bonkasse "Selbstabholerbon" as a complete ESC/POS slip. */
-export function buildPickupSlipEscPos(
-  item: { name: string; priceEuros: number; depositEuros: number | null },
-  context: { registerName: string; serverName: string; createdAt: Date },
-  logo: CompanyLogo | null = null,
-): Buffer {
-  return renderBlocksToEscPos(buildPickupSlipBlocks(item, context, logo));
 }
 
 /**
@@ -215,15 +196,6 @@ export function buildDepositSlipBlocks(
   });
 
   return blocks;
-}
-
-/** Renders a standalone "Pfandbon" for one article-unit as a complete ESC/POS slip. */
-export function buildDepositSlipEscPos(
-  item: { depositEuros: number },
-  context: { registerName: string; serverName: string; createdAt: Date },
-  logo: CompanyLogo | null = null,
-): Buffer {
-  return renderBlocksToEscPos(buildDepositSlipBlocks(item, context, logo));
 }
 
 /** Formats a euro amount with the German thousand-grouping convention. Kept as its own local helper — this document type has always used a plain period-decimal format, unlike the comma-decimal used elsewhere; not unified further, that's a wording choice outside Task #105's scope. */

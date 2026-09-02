@@ -1,13 +1,29 @@
 /**
  * Builds the neutral print-block list (Task #105) for a Z-Bon (daily
- * closing) — consumed by both `renderBlocksToEscPos` and `renderBlocksToPdf`,
- * replacing the two previously-independent renderers in `escpos.ts`/`pdf.ts`.
+ * closing) — consumed by both `renderBlocksToEscPos` and `renderBlocksToPdf`
+ * (see `closing/pdf.ts`), replacing what used to be two independent
+ * renderers.
  */
 
 import type { PrintBlock } from '../print/blocks.js';
 import type { CompanyLogo } from '../logo/logo.js';
-import type { ClosingContext } from './escpos.js';
 import type { ClosingTotals } from './totals.js';
+
+/** Context surrounding the closing — company data, identifying numbers, timestamp. */
+export interface ClosingContext {
+  /** Company name printed at the top. */
+  company_name: string;
+  /** Display name of the register this Z-Bon belongs to. */
+  register_name: string;
+  /** Cash-register-system serial (FairPOS-{year}-{10}). */
+  system_serial: string;
+  /** Sequential Z-Bon number for this register. */
+  z_number: number;
+  /** When the closing was created. */
+  created_at: Date;
+  /** Number of closings that have ever been printed for this register (Nullstellungszähler). */
+  zero_counter: number;
+}
 
 /** Formats a euro amount as German `1.234,56`. Local copy, matches the pre-migration renderers' own wording (` EUR`, not `€` — kept as-is, not unified with the receipt's `€` symbol; that's a separate wording choice, not part of Task #105's scope). */
 function formatEuro(amount: number): string {

@@ -23,6 +23,21 @@ export async function query<T extends pg.QueryResultRow>(
 }
 
 /**
+ * Checks whether a caught error is a Postgres error with the given SQLSTATE
+ * code (e.g. `23503` foreign-key violation, `23505` unique violation) — the
+ * `pg` driver attaches `code` to the thrown error but doesn't type it, so
+ * every route that wants to turn a specific constraint violation into a
+ * clean 409 instead of a raw 500 needs this same cast.
+ *
+ * @param e - The caught value (from a `catch` block, hence `unknown`).
+ * @param code - The Postgres SQLSTATE code to check for.
+ * @returns `true` if `e` is a Postgres error with exactly this code.
+ */
+export function isPgErrorCode(e: unknown, code: string): boolean {
+  return (e as { code?: string }).code === code;
+}
+
+/**
  * Runs a callback inside a database transaction. Automatically `COMMIT`s on
  * success or `ROLLBACK`s if the callback throws. The pooled client is always
  * released back to the pool, even on error.

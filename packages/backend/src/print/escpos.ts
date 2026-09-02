@@ -2,17 +2,16 @@
  * Builds print jobs for the printer test page and PIN slips.
  *
  * Byte-level rendering goes through the shared block model (Task #105, see
- * `print/blocks.ts`) — `buildTestPrint`/`buildPinSlip` are thin wrappers,
- * kept only so existing call sites don't need to change. Both now use CP858
- * like every other document type (previously ASCII-only here specifically,
- * dropping umlauts in printer/user names — an artifact of this file
- * predating the project-wide CP858 switch, not a deliberate choice, so not
- * preserved).
+ * `print/blocks.ts`) — callers build blocks here and render them via
+ * `renderBlocksToEscPos`/`renderBlocksToPdf` themselves. Both document types
+ * use CP858 like every other document type (previously ASCII-only here
+ * specifically, dropping umlauts in printer/user names — an artifact of this
+ * file predating the project-wide CP858 switch, not a deliberate choice, so
+ * not preserved).
  */
 
 import type { CompanyLogo } from '../logo/logo.js';
 import type { PrintBlock } from './blocks.js';
-import { renderBlocksToEscPos } from './blocks.js';
 
 /**
  * Formats a Date as a German-style `DD.MM.YYYY HH:MM:SS` timestamp string.
@@ -61,22 +60,6 @@ export function buildTestPrintBlocks(
 }
 
 /**
- * Builds an ESC/POS test-print payload as a raw byte buffer.
- *
- * @param printerName - Name of the printer (printed on the slip for confirmation).
- * @param timestamp - Date the slip was generated (printed on the slip).
- * @param logo - Optional logo (both target-format variants pre-rendered), or `null` to omit.
- * @returns Raw bytes ready to send via TCP or enqueue as a print job.
- */
-export function buildTestPrint(
-  printerName: string,
-  timestamp: Date,
-  logo: CompanyLogo | null = null,
-): Buffer {
-  return renderBlocksToEscPos(buildTestPrintBlocks(printerName, timestamp, logo));
-}
-
-/**
  * Builds the block list for a PIN slip (Task #90 follow-up) — the "PIN
  * drucken" action in the user management's PIN dialog.
  *
@@ -96,16 +79,4 @@ export function buildPinSlipBlocks(userName: string, pin: string, timestamp: Dat
     { kind: 'blank' },
     { kind: 'text', text: formatGermanTimestamp(timestamp) },
   ];
-}
-
-/**
- * Builds an ESC/POS PIN-slip payload.
- *
- * @param userName - Name of the user the PIN belongs to.
- * @param pin - The PIN in its hyphen-grouped display form, e.g. `ABC-DEF-GHJ`.
- * @param timestamp - Date the slip was generated (printed on the slip).
- * @returns Raw bytes ready to send via TCP or enqueue as a print job.
- */
-export function buildPinSlip(userName: string, pin: string, timestamp: Date): Buffer {
-  return renderBlocksToEscPos(buildPinSlipBlocks(userName, pin, timestamp));
 }

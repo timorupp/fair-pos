@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { query } from '../../db/client.js';
+import { query, isPgErrorCode } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 
@@ -32,7 +32,7 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
       );
       return reply.status(201).send(result.rows[0]);
     } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23505') {
+      if (isPgErrorCode(e, '23505')) {
         return reply.status(409).send({ error: `Artikelgruppenname „${body.name}" ist bereits vergeben` });
       }
       throw e;
@@ -55,7 +55,7 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
       if (result.rows.length === 0) return reply.status(404).send({ error: 'Artikelgruppe nicht gefunden' });
       return reply.send(result.rows[0]);
     } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23505') {
+      if (isPgErrorCode(e, '23505')) {
         return reply.status(409).send({ error: `Artikelgruppenname „${body.name}" ist bereits vergeben` });
       }
       throw e;

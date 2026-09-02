@@ -10,7 +10,7 @@ und mit echter (oder simulierter) TSE-Hardware.
 komplett durchgehen. Zwischendurch reicht der jeweils betroffene Abschnitt.
 Gefundene Probleme in `DANGER.md` eintragen, nicht nur hier abhaken.
 
-**Stand:** August 2026. Bei neuen Features diese Liste ergänzen (siehe
+**Stand:** September 2026. Bei neuen Features diese Liste ergänzen (siehe
 Abschnitt „Diese Liste aktuell halten" am Ende).
 
 ---
@@ -64,6 +64,12 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
   - [ ] Mit funktionierender TSE: zeigt Self-Test-Status, Seriennummer, Zertifizierungs-ID, Restsignaturen, Zertifikatsablauf
   - [ ] „Rohdaten (JSON)"-Aufklapper + Kopieren-Button funktionieren
 - [ ] **Zeit synchronisieren**-Button (Task #64) läuft ohne Fehler, wenn die TSE erreichbar ist
+- [ ] **TSE-Rohdaten exportieren**-Button (Task #103) liefert einen TAR-Download; Export wird als `system_log`-Eintrag (Kategorie `tse_export`) protokolliert; ohne konfigurierte TSE erscheint eine Fehlermeldung statt Absturz
+
+### Dashboard (Task #104)
+- [ ] Kacheln sind in zwei Abschnitte gruppiert: „Veranstaltung" (Aktive Veranstaltung, Ausstehende Tagesabschlüsse, Tagesumsatz, Offene Rechnungen) und „System" (TSE-Zustand, Druckwarteschlange, Aktive Sitzungen, PIN-Login: IP-Sperren)
+- [ ] „Aktive Veranstaltung"-Kachel zeigt eine orangene Zeitfenster-Warnung (inkl. `warn`-Kachelrand), wenn die aktuelle Systemzeit außerhalb `startTime`/`endTime` der aktiven Veranstaltung liegt — keine Warnung, wenn die Systemzeit innerhalb liegt
+- [ ] „Server herunterfahren"-Button steht oben rechts im Dashboard-Header (nicht mehr unter Einstellungen → System), Bestätigungsdialog + Shutdown-Aufruf funktionieren unverändert
 
 ### Zwei-Stufen-Admin (Task #94)
 - [ ] Veranstaltungs-Administrator-Konto: Menüpunkte „Veranstaltungen" und „Backup" sind nicht sichtbar/erreichbar (403 bei direktem Aufruf der jeweiligen Route) — „Systemprotokoll" dagegen bewusst sichtbar (seit 2026-08-31, siehe Task #94-Revision), da die Dashboard-Kachel „TSE-Zustand" für beide Adminstufen davon abhängt
@@ -77,6 +83,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 - [ ] **Artikelgruppen:** anlegen, Steuersatz ändern, löschen (nur wenn keine Artikel mehr zugeordnet)
 - [ ] **Artikel:** anlegen mit Preis/Pfand/Belegtext, Produktoptionen hinzufügen, Drucker zuordnen, deaktivieren/aktivieren
+  - [ ] Löschen eines bereits verkauften Artikels zeigt klare Fehlermeldung („wurde bereits verkauft… über die 'Aktiv'-Checkbox deaktivieren") statt „Internal Server Error" (Task #84)
 - [ ] **Drucker:** anlegen (IP/Port), Standarddrucker setzen (genau einer aktiv), Testdruck auslösen
   - [ ] Löschen eines noch zugeordneten Druckers zeigt klare Fehlermeldung statt Absturz (Task #57)
   - [ ] Drucker ohne Zuordnung erfolgreich löschen (Task #96)
@@ -110,6 +117,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] Pfandartikel: Pfandbon wird korrekt gedruckt (separat oder inline, je Artikelkonfiguration)
 - [ ] Kassieren funktioniert weiterhin, wenn kein Drucker zugeordnet ist — `slip_printer_missing`-Hinweis sichtbar
 - [ ] **TSE konfiguriert + funktionsfähig:** keine Warnung, Beleg trägt TSE-Transaktionsnummer/-Signatur (in Admin-Rechnungsansicht prüfbar)
+- [ ] **QR-Code auf dem physischen Ausdruck (Task #101/#105):** gedruckter Kassenbon zeigt denselben TSE-Prüf-QR-Code wie die PDF-Rechnung (vorher nur auf der PDF), Beschriftung „Kassensystem-Seriennr." identisch auf beiden Formaten
 - [ ] **TSE nicht konfiguriert oder nicht erreichbar:** Verkauf wird **trotzdem abgeschlossen**, orange Warnung erscheint im Kassierdialog, Beleg hat keine TSE-Felder
 
 ---
@@ -123,7 +131,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] **TSE-Warnung bei Bestellung:** wie oben — erscheint als Alert, Bestellung wird trotzdem angelegt (AVBestellung)
 - [ ] Zurück zur Tischaktionsauswahl, mehrere Bestellrunden am selben Tisch möglich
 - [ ] **Kassieren (Split):** offene Positionen laden, Teilmenge auswählen, kassieren → korrekte Restmenge bleibt offen
-- [ ] Kassieren-Dialog zeigt QR-Code + Drucken-Button wie Bonkasse
+- [ ] Kassieren-Dialog: „Drucken"-Button und „Kunde wünscht keinen Beleg"-Button (Task #100 — ersetzt die frühere QR-Code-Anzeige, identisch zur Bonkasse)
 - [ ] **TSE-Warnung beim Kassieren:** Kassenbeleg-V1-Signierung fehlgeschlagen/nicht konfiguriert → inline sichtbar im Kassierdialog, Zahlung trotzdem abgeschlossen
 - [ ] **Stornieren:** Positionen auswählen, Stornogrund wählen, bestätigen → Positionen als storniert markiert
 - [ ] **Kostenfrei:** wie oben mit `booking_type=free_of_charge`
@@ -189,6 +197,7 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 - [ ] Erfolgreiche Signierung: Beleg trägt korrekte TSE-Transaktionsnummer, Signaturzähler, Signatur, Start-/Endzeit
 - [ ] `maintain` (Self-Test + Zeit-Sync) läuft ohne Fehler, sofern/wenn ein periodischer Job existiert
 - [ ] AVBelegabbruch-Pfad: TSE-Verbindung mitten in einem Vorgang trennen (z. B. USB-Stick kurz abziehen) — Vorgang wird per Zweit-`finish` als `AVBelegabbruch` geschlossen, kein dauerhaft offener Vorgang auf der TSE (`info`-Abruf zeigt `startedTransactions` zurück auf 0 statt aufsteigend hängen)
+- [ ] **Inhaltliche Vollständigkeitsprüfung (Task #47/#102):** vor einer Serie von Testbuchungen `info`s `startedTransactions` notieren, danach erneut abfragen — Differenz muss der Anzahl der Testbuchungen entsprechen. Zusätzlich `tseCli dumpProcessData <ausgabedatei>` ausführen (siehe `docs/TSE-CLI-Referenz.md` Abschnitt 2/3) und die `processData`-Spalte jeder `TRANSACTION`-Zeile gegen die tatsächlich getätigten Testbuchungen (Beträge, Zahlart) abgleichen
 
 ---
 

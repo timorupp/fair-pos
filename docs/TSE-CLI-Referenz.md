@@ -14,6 +14,10 @@ die die Admin-UI nicht abdeckt:
 3. **Löschen der auf der TSE gespeicherten Rohdaten** (`deleteStoredData`) —
    von FairPOS bewusst nicht ins Backend/die Admin-UI gebaut (siehe Task
    #103 in `TASKS.md`), nur über die CLI erreichbar, siehe Abschnitt 2.
+4. **Inhaltliche Prüfung der auf der TSE gespeicherten Vorgänge**
+   (`dumpProcessData`) — reiner Testing-Helfer für den manuellen
+   Regressionstest (siehe Task #47/#102 in `TASKS.md`), nie von FairPOS
+   selbst aufgerufen, nur über die CLI erreichbar, siehe Abschnitt 2.
 
 ---
 
@@ -61,11 +65,11 @@ führendes Leerzeichen vor dem Befehl), siehe
 
 ## 2. Von `tseCli.cpp` implementierte Befehle
 
-Diese neun Befehle implementiert `native/tse-cli/src/tseCli.cpp` bereits
+Diese zehn Befehle implementiert `native/tse-cli/src/tseCli.cpp` bereits
 vollständig. Sieben davon ruft das Backend im laufenden Betrieb auch selbst
-auf (`packages/backend/src/tse/client.ts`) — `setup` und `deleteStoredData`
-sind die Ausnahmen, siehe dort. Manueller Aufruf ist für die Diagnose oder
-für die drei oben genannten Sonderfälle gedacht.
+auf (`packages/backend/src/tse/client.ts`) — `setup`, `deleteStoredData` und
+`dumpProcessData` sind die Ausnahmen, siehe dort. Manueller Aufruf ist für
+die Diagnose oder für die vier oben genannten Sonderfälle gedacht.
 
 ### `setup` — Einmalige Hardware-Inbetriebnahme
 
@@ -173,6 +177,41 @@ mit eigenen Vorbedingungen, nur relevant, sobald der TSE-Speicher tatsächlich
 eng wird). Vor dem Löschen unbedingt `<ausgabedatei>` prüfen/sichern — der
 Export ist die einzige Kopie der Daten, sobald gelöscht wurde.
 
+### `dumpProcessData` — Gespeicherte Vorgänge inhaltlich prüfen
+
+```bash
+tseCli <mount-pfad> dumpProcessData <ausgabedatei>
+```
+Wraps `worm_entry_iterate_first`/`worm_entry_iterate_next` +
+`worm_entry_readProcessData`. Liest **jeden aktuell auf der TSE
+gespeicherten Eintrag** (nicht nur exportierte) und schreibt pro Eintrag
+eine Tab-getrennte Zeile nach `<ausgabedatei>`:
+```
+<id>	<TRANSACTION|SYSTEM_LOG_MESSAGE|SE_AUDIT_LOG_MESSAGE>	<processData-Länge>	<processData als Text>
+```
+`processData` ist FairPOS' eigenes DSFinV-K-Anhang-I-Klartextformat (siehe
+`tse/processData.ts`, z. B. `Beleg^19.00_0.00_0_0_0.00^19.00:Bar` für einen
+Kassenbeleg) — kein Envelope-/Signatur-Parsing nötig, kein Login
+erforderlich.
+
+**Zweck: prüfen, ob wirklich jede Testbuchung mit den richtigen Beträgen auf
+der TSE ankam** — Task #102/#47 (`TASKS.md`). Ersetzt die zuvor
+vorgesehene, dauerhaft eigene Testing-Helper-Idee: die Prüfung braucht
+lediglich diesen einen `tseCli`-Befehl plus Diff/Grep von Hand, kein
+separates Skript.
+
+**Grenzen:** liefert nur `processData` (Beträge, Positionen), nicht die
+Transaktionsnummer oder Signatur des Eintrags — ein Abgleich gegen eine
+konkrete FairPOS-Rechnung läuft daher über Betrag/Reihenfolge, nicht über
+eine eindeutige ID. Für die Zähler-Plausibilität (stimmt die *Anzahl* der
+Vorgänge) weiterhin `info`s `startedTransactions` vorher/nachher vergleichen.
+Funktioniert nur, solange die Daten noch nicht per `deleteStoredData`
+gelöscht wurden — danach bleibt nur noch der raue TAR-Export (Abschnitt 1
+der Übersicht in `docs/TSE-Integration.md` Abschnitt 11).
+
+**Nie von FairPOS aufgerufen** — reines Diagnose-/Testing-Werkzeug, bewusst
+nicht ins Backend/die Admin-UI eingebaut.
+
 ### `start` / `update` / `finish` — Fiskaltransaktionen
 
 ```bash
@@ -212,11 +251,22 @@ untersucht wird — `worm_init` schlägt sonst mit einem irreführenden Fehler
 fehl, der wie ein TSE-Problem aussieht, aber nur "Pfad existiert nicht"
 bedeutet.
 
+**"Wurden bei diesem Testlauf wirklich alle Verkäufe/Bestellungen korrekt
+signiert?"** (Task #47/#102) — vor dem Testlauf `info`s `startedTransactions`
+notieren, nach dem Testlauf erneut abfragen und die Differenz gegen die
+Anzahl der getätigten Testbuchungen prüfen, dann inhaltlich:
+```bash
+sudo -u fairpos tseCli /media/fairpos/TSE_XXXX dumpProcessData /tmp/dump.txt
+cat /tmp/dump.txt
+```
+und die `processData`-Spalte jeder `TRANSACTION`-Zeile gegen die tatsächlich
+getätigten Testbuchungen (Beträge, Zahlart) abgleichen — siehe Abschnitt 2.
+
 ---
 
 ## 4. Weitere SDK-Funktionen (nicht in `tseCli.cpp` eingebaut)
 
-`native/tse-cli/src/tseCli.cpp` implementiert bewusst nur die neun oben
+`native/tse-cli/src/tseCli.cpp` implementiert bewusst nur die zehn oben
 genannten Befehle (siehe Datei-Kopfkommentar: "no autopilot, no LAN-TSE
 support, no firmware update, no multi-client management"). Der volle
 Funktionsumfang steht in `vendor/include/WormDLL/WormDLL.h` (gitignort,

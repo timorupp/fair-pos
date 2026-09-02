@@ -1,7 +1,7 @@
 /** End-to-end test for the Z-Bon PDF renderer (Task #105 — did not exist as a dedicated test file before). */
 import { describe, it, expect } from 'vitest';
 import { renderZBonPdf } from './pdf.js';
-import type { ClosingContext } from './escpos.js';
+import type { ClosingContext } from './blocks.js';
 import type { ClosingTotals } from './totals.js';
 
 const ctx: ClosingContext = {

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { query, withTransaction } from '../../db/client.js';
+import { query, withTransaction, isPgErrorCode } from '../../db/client.js';
 import { hashPassword } from '../../auth/password.js';
 import { formatPinForDisplay, generateRandomPin, hashPin, isValidPinFormat, normalizePin } from '../../auth/pin.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
@@ -92,7 +92,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
       );
       return reply.status(201).send(result.rows[0]);
     } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23505') {
+      if (isPgErrorCode(e, '23505')) {
         return reply.status(409).send({ error: `Benutzername „${body.name}" ist bereits vergeben` });
       }
       throw e;
@@ -190,7 +190,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
       if (result.rows.length === 0) return reply.status(404).send({ error: 'Benutzer nicht gefunden' });
       return reply.send(result.rows[0]);
     } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23505') {
+      if (isPgErrorCode(e, '23505')) {
         return reply.status(409).send({ error: `Benutzername „${body.name}" ist bereits vergeben` });
       }
       throw e;

@@ -8,9 +8,8 @@
  */
 
 import type { CompanyLogo } from '../logo/logo.js';
-import type { ClosingContext } from './escpos.js';
 import type { ClosingTotals } from './totals.js';
-import { buildZBonBlocks } from './blocks.js';
+import { buildZBonBlocks, type ClosingContext } from './blocks.js';
 import { renderBlocksToPdf } from '../print/blocks.js';
 
 /**

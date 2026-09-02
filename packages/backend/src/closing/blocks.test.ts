@@ -1,6 +1,12 @@
-/** Tests for the Z-Bon ESC/POS renderer. See `print/escpos-encoding.test.ts` for `twoColumn`. */
+/**
+ * Tests for the Z-Bon block builder, rendered through the real ESC/POS path
+ * (`renderBlocksToEscPos`) — same as every production call site
+ * (`routes/admin/closings.ts`). See `print/escpos-encoding.test.ts` for
+ * `twoColumn`, `closing/pdf.test.ts` for the PDF rendering path.
+ */
 import { describe, it, expect } from 'vitest';
-import { buildZBonEscPos, type ClosingContext } from './escpos.js';
+import { buildZBonBlocks, type ClosingContext } from './blocks.js';
+import { renderBlocksToEscPos } from '../print/blocks.js';
 import type { ClosingTotals } from './totals.js';
 
 const ctx: ClosingContext = {
@@ -24,16 +30,21 @@ const totals: ClosingTotals = {
 
 const businessDate = '2026-06-24';
 
-describe('buildZBonEscPos', () => {
+/** Renders straight through the shared block model, same as every production call site. */
+function buildZBonEscPos(...args: Parameters<typeof buildZBonBlocks>): Buffer {
+  return renderBlocksToEscPos(buildZBonBlocks(...args));
+}
+
+describe('buildZBonBlocks (rendered as ESC/POS)', () => {
   it('starts with ESC @ and ends with GS V 0 (cut)', () => {
-    const buf = buildZBonEscPos(ctx, totals, businessDate);
+    const buf = buildZBonEscPos(ctx, totals, businessDate, null);
     expect(buf[0]).toBe(0x1b); expect(buf[1]).toBe(0x40);
     const tail = buf.subarray(buf.length - 3);
     expect(tail[0]).toBe(0x1d); expect(tail[1]).toBe(0x56); expect(tail[2]).toBe(0x00);
   });
 
   it('contains Z-Bon header and identifying numbers', () => {
-    const ascii = buildZBonEscPos(ctx, totals, businessDate).toString('ascii');
+    const ascii = buildZBonEscPos(ctx, totals, businessDate, null).toString('ascii');
     expect(ascii).toContain('Z-BON');
     expect(ascii).toContain('Z-Nr.: 42');
     expect(ascii).toContain('Nullstellungen: 5');
@@ -41,7 +52,7 @@ describe('buildZBonEscPos', () => {
   });
 
   it('prints the creation timestamp and the business date, both in German format', () => {
-    const buf = buildZBonEscPos(ctx, totals, businessDate);
+    const buf = buildZBonEscPos(ctx, totals, businessDate, null);
     expect(buf.toString('ascii')).toContain('24.06.2026 22:30:00');
     // "Geschäftstag" contains ä (CP858, not ASCII) — match around it instead of via toString('ascii').
     expect(buf.includes(Buffer.from('Gesch', 'ascii'))).toBe(true);
@@ -49,7 +60,7 @@ describe('buildZBonEscPos', () => {
   });
 
   it('includes all three VAT-rate buckets and the gross total', () => {
-    const ascii = buildZBonEscPos(ctx, totals, businessDate).toString('ascii');
+    const ascii = buildZBonEscPos(ctx, totals, businessDate, null).toString('ascii');
     expect(ascii).toContain('19 %');
     expect(ascii).toContain('7 %');
     expect(ascii).toContain('0 %');
@@ -60,14 +71,14 @@ describe('buildZBonEscPos', () => {
   });
 
   it('shows the cash total under "Zahlungsarten"', () => {
-    const ascii = buildZBonEscPos(ctx, totals, businessDate).toString('ascii');
+    const ascii = buildZBonEscPos(ctx, totals, businessDate, null).toString('ascii');
     expect(ascii).toContain('Zahlungsarten');
     expect(ascii).toContain('Bar');
     expect(ascii).toContain('235,00 EUR');
   });
 
   it('shows cancellation total under "Stornos"', () => {
-    const ascii = buildZBonEscPos(ctx, totals, businessDate).toString('ascii');
+    const ascii = buildZBonEscPos(ctx, totals, businessDate, null).toString('ascii');
     expect(ascii).toContain('Stornos');
     expect(ascii).toContain('15,00 EUR');
   });
@@ -77,14 +88,14 @@ describe('buildZBonEscPos', () => {
       total_gross: 0, total_tax_standard: 0, total_tax_reduced: 0, total_tax_zero: 0,
       total_cash: 0, total_cancellations: 0, is_zero_closing: true,
     };
-    const ascii = buildZBonEscPos(ctx, zeroTotals, businessDate).toString('ascii');
+    const ascii = buildZBonEscPos(ctx, zeroTotals, businessDate, null).toString('ascii');
     expect(ascii).toContain('Nullabschluss');
   });
 
   it('encodes umlauts in inputs as CP858 bytes (no transliteration)', () => {
     const buf = buildZBonEscPos(
       { ...ctx, company_name: 'Käse Müllers Großverein', register_name: 'Foyer-Süd' },
-      totals, businessDate,
+      totals, businessDate, null,
     );
     // "Käse Müllers Großverein" in CP858: K(0x4b) ä(0x84) s(0x73) e(0x65) ...
     // Match a distinctive substring so the test is robust against changes.
@@ -95,7 +106,7 @@ describe('buildZBonEscPos', () => {
   });
 
   it('emits the CP858 code-page selector at the top of the stream', () => {
-    const buf = buildZBonEscPos(ctx, totals, businessDate);
+    const buf = buildZBonEscPos(ctx, totals, businessDate, null);
     // ESC @ + ESC t 19 — printer reset followed by CP858 select.
     expect(buf.subarray(0, 5).equals(Buffer.from([0x1b, 0x40, 0x1b, 0x74, 0x13]))).toBe(true);
   });

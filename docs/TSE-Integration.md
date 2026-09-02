@@ -390,8 +390,15 @@ Swissbits Beispiel).
   Veranstalter gehören, nicht nur dem System-Administrator). Jeder Export
   wird als `system_log`-Eintrag protokolliert (Kategorie `tse_export`, neu —
   siehe `docs/Adminstufen-Matrix.txt`s Nachtrag zu `logs.ts`). Was inhaltlich
-  im TAR steht bzw. wie es sich gegen die FairPOS-DB abgleichen ließe, bleibt
-  offen — siehe `TASKS.md` Task #102.
+  im TAR selbst steht (Log-Message-Format v1/v3, TR-03153-Envelope inkl.
+  Signatur) bleibt weiterhin unklar — die vendorten SDK-Header enthalten dafür
+  keine Formatspezifikation. Für den eigentlichen Zweck ("kam wirklich jede
+  Buchung mit den richtigen Beträgen auf der TSE an") ist das aber nicht
+  nötig: `dumpProcessData` (neuer `tseCli`-Befehl, siehe
+  `docs/TSE-CLI-Referenz.md` Abschnitt 2) liest `processData` — FairPOS'
+  eigenes, bereits bekanntes DSFinV-K-Klartextformat — direkt von der
+  lebenden TSE, ohne den Envelope zu parsen. Löst damit Task #102, siehe
+  `TASKS.md`.
 - Korrektur des `processData`-Formats für `Kassenbeleg-V1`/`Bestellung-V1`/
   `SonstigerVorgang` auf die von DSFinV-K Anhang I vorgeschriebene Struktur,
   inkl. TSE-Signaturalgorithmus/Zeitformat/Public-Key für den QR-Code —
