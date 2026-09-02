@@ -222,7 +222,7 @@ werden** — das sind Zugangsdaten des Betreibers, nicht des Software-Hersteller
 **Umgesetzt (August 2026):** Mount-Pfad, Client-ID und TimeAdmin-PIN sind über
 Einstellungen → System konfigurierbar, gespeichert als `tse_mount_point` /
 `tse_client_id` / `tse_time_admin_pin` in `system_setting` (gleiche Tabelle wie
-`server_address`). `tse/settings.ts` spiegelt Mount-Pfad und
+`company_name`). `tse/settings.ts` spiegelt Mount-Pfad und
 Client-ID beim Start und nach jedem Speichern synchron in `config` (siehe
 config.ts), damit der heiße Kassierpfad weiterhin ohne DB-Zugriff auskommt.
 Admin-PIN/PUK/Credential-Seed werden bewusst NICHT über die UI abgefragt — die

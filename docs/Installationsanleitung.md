@@ -464,14 +464,14 @@ sudo systemctl restart fairpos
 
 ## 13. Optionale privilegierte Admin-Aktionen (Sudoers)
 
-Drei Funktionen in der Admin-UI (Einstellungen → System) brauchen
-Root-Rechte, die der `fairpos`-Service-User bewusst nicht hat (Abschnitt 4):
-Systemzeit und Zeitzone manuell setzen (Task #60) und Server herunterfahren
-(Task #61). Alle drei Endpunkte sind bereits implementiert und rufen `sudo`
-auf — ohne die folgende `sudoers`-Regel schlagen sie mit einer klaren
-Fehlermeldung fehl, statt etwas Unerwartetes zu tun. Ohne diesen Abschnitt
-funktioniert der Rest von FairPOS unverändert — alle drei Funktionen sind
-rein optional.
+Drei Funktionen in der Admin-UI brauchen Root-Rechte, die der
+`fairpos`-Service-User bewusst nicht hat (Abschnitt 4): Systemzeit und
+Zeitzone manuell setzen (Task #60, Einstellungen → System) und Server
+herunterfahren (Task #61, Button oben rechts im Dashboard, siehe Task #99).
+Alle drei Endpunkte sind bereits implementiert und rufen `sudo` auf — ohne
+die folgende `sudoers`-Regel schlagen sie mit einer klaren Fehlermeldung
+fehl, statt etwas Unerwartetes zu tun. Ohne diesen Abschnitt funktioniert
+der Rest von FairPOS unverändert — alle drei Funktionen sind rein optional.
 
 ### 13.1 Voraussetzung: NTP deaktivieren
 

@@ -427,7 +427,7 @@ Table cancellation_reason {
 }
 
 // Generic key-value store for system-wide settings
-// (e.g. server_address, active_event_id, receipt_prefix).
+// (e.g. company_name, active_event_id, receipt_prefix).
 Table system_setting {
   key        varchar(100) [pk]
   value      text         [not null]

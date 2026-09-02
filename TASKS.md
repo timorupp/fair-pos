@@ -87,6 +87,19 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
 - [x] **#45** TSE: AVBelegabbruch bei Fehlschlag zwischen start und finish
 - [x] **#46** TSE: processData-Format für Kassenbeleg-V1 auf DSFinV-K-Vorgabe umstellen
 - [ ] **#47** Vollen manuellen Regressionstest durchführen (inkl. DSFinV-K)
+  **Umfasst auch Task #102** (2026-09-01 dorthin verschoben, Nutzereinordnung:
+  "gehört für mich zum Testing"): prüfen, dass wirklich **jede**
+  Bestellung/jeder Vorgang der Test-Veranstaltung korrekt an die TSE
+  gemeldet und signiert wurde — nicht nur, dass irgendeine Signatur
+  erscheint (siehe `DANGER.md` D-038-Fortsetzung). Bausteine dafür:
+  Zähler-Plausibilität (`GET /api/admin/tse/status`, `startedTransactions`
+  vor/nach einer bekannten Anzahl Testverkäufe vergleichen), DSFinV-K-Export
+  (`transactions_tse.csv`, `TSE_TANR`/`TSE_TA_SIG` pro Vorgang gegen die
+  tatsächlich getätigten Testbuchungen abgleichen). Falls dafür ein
+  Hilfsmittel gebraucht wird, ist das laut Nutzervorgabe ein **reiner
+  Testing-Helper** (z. B. ein Abgleichs-Skript für diesen einen Testlauf),
+  keine dauerhafte Produktivfunktion — entsprechend klein/wegwerfbar
+  halten, nicht Teil der eigentlichen Anwendung.
 - [x] **#48** Docker-Cleanup: Produktions-Deployment auf native Ubuntu-Installation umstellen
   **Erledigt:** `docker-compose.yml` auf reines Dev-Postgres reduziert (Backend-Service,
   TSE-Volume-Kommentare entfernt); `docker-compose.dev.yml` und
@@ -1101,7 +1114,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   dupliziert (mit Kommentar, warum die Duplizierung nötig ist statt
   eine geteilte Stelle). Über den Build-Output verifiziert: die neue Farbe
   landet jetzt auch im `register`-Chunk. **Live bestätigt (2026-08-26).**
-- [ ] **#78** (Low Prio) QR-Code auch auf den Bondrucker-Ausdruck bringen
+- [x] **#78** (aufgegangen in #101/#105) QR-Code auch auf den Bondrucker-Ausdruck bringen
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26): der PDF-Beleg
   zeigt einen QR-Code (DSFinV-K Anhang I, `receipt/qr.ts`), der physische
   Bon-Ausdruck über den Thermodrucker (`escpos-receipt.ts`) nicht — kein
@@ -1115,9 +1128,12 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   eingesetzten Druckermodelle funktioniert.
   **Nachtrag 2026-09-01:** dieser Punkt ist Teil 1 der breiteren
   PDF/Ausdruck-Abgleichs-Entscheidung in Task #101 — dort mit den übrigen
-  Detailabweichungen gebündelt, dort weiterverfolgen. Diese
-  Ursprungs-Einschätzung (kein Compliance-Problem, niedrige Priorität)
-  bleibt für die Entscheidung in #101 relevant.
+  Detailabweichungen gebündelt. Diese Ursprungs-Einschätzung (kein
+  Compliance-Problem, niedrige Priorität) blieb für die Entscheidung in
+  #101 relevant. **Entschieden und aufgegangen:** #101 hat entschieden, den
+  QR-Code doch zu ergänzen; die technische Umsetzung läuft über Task #105
+  (gemeinsames Belegformat, QR wird dort einfach ein Bild-Block für beide
+  Renderer). Kein eigener Umsetzungsaufwand über #105 hinaus.
 - [x] **#79** Druckauftrag „Abbrechen" soll auf Status „abgebrochen" statt Löschen umstellen
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26). Aktuell löscht
   „Abbrechen" den `print_job`-Datensatz komplett (`DELETE FROM print_job
@@ -1164,7 +1180,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Job wurde bewusst **nicht** live getestet (Zeitfenster zu knapp, seltener
   Fall) — Nutzerentscheidung, auf die bestehende automatisierte Testabdeckung
   zu vertrauen.
-- [ ] **#80** (Low Prio) Server-Adresse-Testfunktion (Task #73) prüft die falsche Sache — Konzept überarbeiten
+- [x] **#80** (aufgelöst durch #100) Server-Adresse-Testfunktion (Task #73) prüft die falsche Sache — Konzept überarbeiten
   Beim Nutzer-Review von Task #73 aufgefallen (2026-08-26): der neue
   „Testen"-Button in den Systemeinstellungen zeigt einen QR-Code + Link zu
   `<server_address>/` — das ist die Login-Seite des Backends. Die
@@ -1177,15 +1193,13 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   umgekehrt), auch wenn beide vom selben Fastify-Prozess bedient werden —
   ungeklärt, ob Admins durch den Test etwas anderes bestätigt bekommen, als
   sie eigentlich prüfen wollen.
-  **Zu klären, bevor implementiert wird:** Wie sieht ein Test aus, der
-  wirklich den `/receipt/:token`-Pfad abbildet, wenn beim Testen (noch)
-  keine echte Rechnung/kein echter Token existiert? Optionen zum Abwägen:
-  ein eigener, dedizierter Test-Endpunkt, der wie `/receipt/:token`
-  aussieht/sich verhält, aber keinen echten Token braucht; ein Hinweistext,
-  der ehrlich sagt, was der Test tatsächlich zeigt (reine
-  Netzwerk-Erreichbarkeit des Servers) statt zu suggerieren, der komplette
-  Rechnungs-Abruf sei geprüft; oder etwas anderes — noch keine Entscheidung
-  getroffen.
+
+  **Aufgelöst durch Entscheidung, nicht durch Fix (2026-09-01):** Task #100
+  entfernt die gesamte digitale Gästebeleg-Funktion inkl. der
+  `server_address`-Einstellung und ihres Test-Buttons — damit erübrigt sich
+  die Frage, ob der Test das Richtige prüft, weil es die zu testende
+  Funktion nach Umsetzung von #100 gar nicht mehr gibt. Kein eigener
+  Umsetzungsaufwand über #100 hinaus.
 - [x] **#81** Checkout-/Bestell-Tabellen-Overflow (D-039) — Nachbesserung
   Der erste Fix (`.line-name` mit `min-width: 0` + Ellipsis auf der
   Bestellansicht, `table-layout: fixed` mit festen Spaltenbreiten auf der
@@ -1253,7 +1267,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   unverändert — dort steht „Summe" als Tabellen-Zellwert unter einer
   gleichnamigen Spaltenüberschrift, ein anderer, nicht vom Nutzer
   angesprochener Kontext. **Noch nicht live durch den Nutzer bestätigt.**
-- [ ] **#84** (Low Prio) Artikel löschen, das bereits verkauft wurde → „Internal Server Error" statt klarer Fehlermeldung
+- [x] **#84** (Low Prio) Artikel löschen, das bereits verkauft wurde → „Internal Server Error" statt klarer Fehlermeldung
   Aufgekommen beim Hardware-Test (2026-08-26). Bestätigt: `DELETE
   /api/admin/articles/:id` (`routes/admin/articles.ts`) fängt anders als die
   Endpunkte für Kassen/Benutzer/Drucker (Task #54/#56/#57) keine
@@ -1273,6 +1287,27 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   (Fehlermeldung verweist auf die „Aktiv"-Checkbox statt nur generisch
   „wird noch verwendet"), kein Migrations- oder Frontend-Aufwand absehbar.
   Nicht in dieser Session umgesetzt, nur als Task angelegt wie gewünscht.
+
+  **Entschieden (2026-09-01):** benutzerfreundliche Fehlermeldung
+  implementieren (wie oben skizziert: `23503`→409-Fang analog #54/#57,
+  Meldung verweist auf die „Aktiv"-Checkbox) — keine Änderung an
+  `is_active`/Migration/Frontend nötig, bleibt ein kleiner Task.
+
+  **Erledigt (2026-09-01):** `DELETE /api/admin/articles/:id` fängt jetzt
+  `23503` ab (409, „Artikel wurde bereits verkauft und kann nicht gelöscht
+  werden — stattdessen über die 'Aktiv'-Checkbox deaktivieren."). Dabei
+  gleich die Reihenfolge korrigiert: der Artikel-Löschversuch läuft jetzt
+  **vor** dem `DELETE FROM product_option` — vorher wurden die Optionen
+  schon gelöscht, bevor der (dann fehlschlagende) Artikel-Löschversuch kam,
+  was bei einem blockierten Löschen einen verwaisten Zustand hinterlassen
+  hätte (Artikel bleibt, Optionen weg). Neue Datei
+  `articles.integration.test.ts` (gab es vorher gar nicht für diese Route):
+  3 Tests — unbenutzten Artikel löschen, 404 bei nicht existentem Artikel,
+  409 bei bereits verkauftem Artikel inkl. Prüfung, dass nichts teilweise
+  gelöscht wurde. Kleine Korrektur nebenbei: die ursprüngliche
+  Task-Beschreibung oben behauptete `order_item.article_id` sei `NOT NULL`
+  — tatsächlich ist die Spalte nullable (nur die FK-Referenz ohne `ON
+  DELETE CASCADE` ist relevant, `NOT NULL` war nie der Fall).
 - [x] **#85** „Halten statt Tippen" (Long-Press) für kritische Kassieren-/Bestellen-Buttons
   Aufgekommen beim Hardware-Test (2026-08-26): versehentliches Antippen von
   „Kassieren"/„Bestellen" sollte verhindert werden. Nutzerfrage: sowas wie
@@ -2024,7 +2059,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     `is_default` existieren im echten Schema gar nicht) — nur die für
     diese Änderung direkt relevanten Felder (`label`, `hidden`) ergänzt,
     größere Doku-Bereinigung als eigenständige Aufgabe noch offen.
-- [ ] **#92** DNS-Masquerading für Split-Horizon-DNS (aus Task #66 ausgelagert)
+- [x] **#92** DNS-Masquerading für Split-Horizon-DNS (aus Task #66 ausgelagert)
   Herausgelöst aus Task #66 (2026-08-29, Nutzerwunsch: eigener Task). Ziel:
   Bedienungen mit eigenen Geräten das Installieren eines eigenen
   CA-Zertifikats ersparen, indem FairPOS ein öffentlich validiertes
@@ -2130,10 +2165,11 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Neustart-Fehler dnsmasq mit der neuen, kaputten Config stehen lassen
   statt beim alten funktionierenden Zustand zu bleiben.
 
-  **Noch offen:** finaler Live-Test — der Nutzer hat noch keinen neuen
-  Router, der DHCP-Option 6 (DNS-Server) auf die eigene IP dieses Servers
-  umstellen kann; bis dahin bleibt dieser Task offen, auch wenn die
-  Implementierung vollständig ist.
+  **Live bestätigt und geschlossen (2026-09-01):** finaler Live-Test mit
+  neuem Router/Access-Point durchgeführt — DHCP-Option 6 verteilt die
+  eigene IP als DNS-Server, Geräte lösen die konfigurierte Domain korrekt
+  auf. Der zuvor einzige offene Punkt (fehlende passende Router-Hardware)
+  ist damit erledigt.
 - [x] **#93** Geschäftszahlen auf der Admin-Startseite (Folgeaufgabe aus #63)
   Herausgelöst aus Task #63 (2026-08-29, Nutzerentscheidung: Fokus dort
   zunächst nur auf Systemzustand/Fehler). Idee: zusätzliche Kennzahlen-
@@ -2732,20 +2768,21 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Refactorings (#94, #95, #96, #97) abgeschlossen sind — sonst müsste
   dieselbe Doku-Prüfung später für die durch diese Tasks neu entstandenen
   Änderungen wiederholt werden.
-- [ ] **#99** "Herunterfahren"-Funktion an prominentere Stelle verschieben
+- [x] **#99** "Herunterfahren"-Funktion an prominentere Stelle verschieben
   Aufgekommen 2026-08-30: die Herunterfahren-Funktion (Task #61,
-  `POST /api/admin/system/shutdown`) liegt aktuell unter Einstellungen →
-  System (`admin/settings/system/+page.svelte`), zusammen mit
-  Systemzeit/Zeitzone/IP-Lockout-Reset — für eine vergleichsweise häufig
-  gebrauchte Funktion (Veranstaltungsende) muss man sie dort erst suchen.
+  `POST /api/admin/system/shutdown`) lag unter Einstellungen → System
+  (`admin/settings/system/+page.svelte`), zusammen mit Systemzeit/Zeitzone/
+  IP-Lockout-Reset — für eine vergleichsweise häufig gebrauchte Funktion
+  (Veranstaltungsende) musste man sie dort erst suchen.
 
-  **Noch zu entscheiden (Nutzervorgabe: Ziel-Ort erst bei der Umsetzung
-  festlegen):** wohin genau — Kandidaten wären z. B. ein eigener Button im
-  Admin-Dashboard, ein permanent sichtbares Element in der Admin-Sidebar/
-  Kopfzeile, oder eine eigene Seite. Design/Platzierung vor der Umsetzung
-  klären.
+  **Erledigt (2026-09-01):** Button "Server herunterfahren" jetzt oben
+  rechts im Dashboard-Seitenkopf (`admin/+page.svelte`, `.header-actions`
+  neben dem "Dashboard"-Titel) — Nutzerentscheidung, gefallen im Zuge der
+  Dashboard-Kacheln-Neustrukturierung (siehe unten). Aus Einstellungen →
+  System vollständig entfernt (Bestätigungsdialog/Fehlerbehandlung 1:1
+  übernommen). `api.admin.system.shutdown()` unverändert.
 
-- [ ] **#100** Entscheidung: digitalen Kundenbeleg (QR-Code/PDF) für Gäste beibehalten oder verwerfen
+- [x] **#100** Digitalen Kundenbeleg (QR-Code/PDF) für Gäste entfernen (Entscheidung: verwerfen)
   Aufgekommen 2026-08-31 aus einer Nutzerfrage zum bestehenden
   `GET /receipt/:token`-Mechanismus (Anforderungen.md, Entscheidung Punkt 2):
   der digitale Beleg wurde ursprünglich eingeführt, damit unter der
@@ -2789,12 +2826,143 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
      (Belegausgabepflicht verlangt aktives Anbieten in nutzbarer Form,
      keine bestimmte Ausgabeform), kein zusätzlicher technischer Aufwand.
 
-  **Zu entscheiden:** ob die digitale Beleg-Funktion für Gäste überhaupt
-  beibehalten wird, und falls ja, über welchen der obigen Wege — vor einer
-  Umsetzung mit dem Nutzer klären, insbesondere Option 2 nicht ohne
-  ausdrückliche Freigabe der API-Key-Frage angehen.
+  **Entschieden (2026-09-01): Option 3 — Funktion entfernen, Papierbon
+  bleibt die einzige Ausgabeform.** Belegausgabepflicht wird künftig
+  ausschließlich über aktives Anbieten des Papierbons erfüllt — rechtlich
+  bereits ausreichend (`Rechtliche-Anforderungen.md` Abschnitt 2 verlangt
+  aktives Anbieten in nutzbarer Form, keine bestimmte Ausgabeform).
+  **PDF-Rechnungen bleiben erhalten** — nur nicht mehr für Gäste per
+  QR-Code/eigenes Gerät, sondern weiterhin als Admin-Funktion zum Download
+  (Reprint/Export, siehe unten). Noch nicht umgesetzt — Umsetzung gebündelt
+  mit den übrigen Entscheidungen dieser Session (siehe Task-Historie
+  2026-09-01), Nutzervorgabe: "Zuerst alle Entscheidungen dokumentieren.
+  Umsetzung dann später am Stück."
 
-- [ ] **#101** Entscheidung: PDF-Rechnung und Kassenbon-Ausdruck optisch/inhaltlich angleichen
+  **Umsetzungsplan (recherchiert, noch nicht umgesetzt) — sauber getrennt
+  von der TSE-Signatur-QR-Funktion auf dem Bon (Task #78/#101), die von
+  dieser Änderung überhaupt nicht betroffen ist:**
+
+  *Entfernen:*
+  - `packages/backend/src/routes/receipt.ts` — komplette Datei (`GET
+    /receipt/:token`, der öffentliche, nicht-authentifizierte
+    PDF-Endpunkt).
+  - `receipt/qr.ts`s `buildReceiptQrUrl()` — **nur diese eine Funktion**,
+    nicht die Datei. `buildQrPayload()`/`renderQrPng()` (TSE-Signatur-QR,
+    Task #78/#101) bleiben unverändert; `renderQrPng()` wird auch vom
+    Admin-QR-Renderer weiterverwendet (s.u.), bleibt daher als Funktion
+    bestehen.
+  - `register-session.ts`s `GET /invoices/:id/qr.png` (nutzt
+    `buildReceiptQrUrl`) — der benachbarte `POST /invoices/:id/print`
+    (physischer Druckerpfad, nutzt zwar auch `receipt_token`/
+    `loadReceiptByToken`, aber für den Bondrucker) **bleibt unverändert**.
+  - `server_address`-Einstellung komplett: Allow-List-Einträge in
+    `routes/admin/settings.ts`, die komplette Karte "Server-Adresse
+    (QR-Code)" samt Test-Modal in `admin/settings/system/+page.svelte`
+    (löst damit Task #80 durch Wegfall, nicht durch Konzept-Fix).
+  - `routes/admin/qr.ts` (`GET /api/admin/qr.png`) — verifiziert einziger
+    verbleibender Aufrufer ist das Server-Adresse-Test-Modal (das alte
+    QR-Login-Link-Muster auf der Benutzerseite wurde bereits durch Task #90
+    PIN-Login ersetzt) → wird mit entfernbar.
+  - `packages/frontend/src/lib/api.ts`: `qrUrl()` und die zugehörigen
+    `receipt_token`-Typfelder, die nur für die QR-Anzeige im
+    Bedienungskasse-UI existieren.
+
+  **Nutzervorgabe (2026-09-01) zu den zwei Rechnungs-Bestätigungsseiten**
+  (`register/[id]/receipt/+page.svelte` — Bonkasse, `register/[id]/tables/
+  [tableId]/checkout/receipt/+page.svelte` — Bedienung; identisches Muster
+  in beiden): `.qr-wrap`-Block (QR-Bild via `api.registerSession.qrUrl()` +
+  Hinweistext „Vom Kunden mit dem Smartphone scannen") entfernen. Der
+  Button „Rechnung per QR Code gescannt" (ruft nur `finish()` auf — Bon
+  ohne Druck abschließen, `onclick={finish}` bleibt unverändert) wird
+  **nicht ersatzlos gestrichen**, sondern umbenannt zu „Kunde wünscht
+  keinen Beleg" — der Button wird weiterhin gebraucht, um den Vorgang ohne
+  Belegdruck abzuschließen, nur der bisherige Anlass (QR gescannt) entfällt.
+  Gilt identisch für beide Seiten.
+
+  *Bleibt unverändert (bewusst, nicht Teil dieser Entfernung):*
+  - `invoice.receipt_token`-Spalte (Migration 0001) und
+    `receipt/data.ts`s `loadReceiptByToken()` — werden intern von
+    `admin/invoices.ts` (`POST /:id/reprint`), `admin/reports.ts`,
+    `admin/cancellations.ts` weiterverwendet, sind nicht gästeexklusiv.
+  - PDF-Erzeugung selbst (`receipt/pdf.ts`) — bleibt vollständig für den
+    Admin-Reprint/-Download nutzbar.
+
+  *Docs zu aktualisieren:* `docs/Anforderungen.md` (Navigationsbaum +
+  Feature-Beschreibung, inkl. der bestehenden "Entschieden: URL zum lokalen
+  FairPOS-Server"-Passage, die die jetzige Kehrtwende dokumentieren muss),
+  `docs/Manueller-Testplan.md` (drei Stellen zu Server-Adresse/QR-Kundenbeleg),
+  `docs/TSE-Integration.md` (eine beiläufige `server_address`-Erwähnung).
+  `docs/Rechtliche-Anforderungen.md` Abschnitt 2 bleibt inhaltlich korrekt
+  (Papier/QR/elektronisch weiterhin als rechtlich gleichwertig beschrieben)
+  — keine Änderung nötig, stützt im Gegenteil die jetzige
+  Papierbon-Entscheidung. `docs/Dictionary.md` auf ein
+  `receipt_token`/Server-Adresse-Begriffspaar prüfen (noch nicht
+  verifiziert).
+
+  *Tests, die berührt werden könnten (noch nicht im Detail geprüft):*
+  `register-session.integration.test.ts`, `admin-routes.integration.test.ts`,
+  `exports.invoices-zip.integration.test.ts`, `reports.integration.test.ts`
+  — referenzieren `receipt_token` als Daten, nicht die entfernten Routen
+  selbst; vermutlich nur minimale Anpassungen nötig.
+
+  **Erledigt (2026-09-01) — Umsetzung folgte exakt dem obigen Plan:**
+  - `routes/receipt.ts` gelöscht, Registrierung + Import in `app.ts`
+    entfernt.
+  - `receipt/qr.ts`s `buildReceiptQrUrl()` entfernt (samt zugehörigem
+    `describe`-Block in `qr.test.ts`); `buildQrPayload()`/`renderQrPng()`
+    unverändert.
+  - `register-session.ts`s `GET /invoices/:id/qr.png` entfernt (Route +
+    ungenutzt gewordener `renderQrPng`/`buildReceiptQrUrl`-Import);
+    zugehöriger `describe`-Block in `register-session.integration.test.ts`
+    entfernt. `POST /invoices/:id/print` unverändert.
+  - `server_address` aus `ALLOWED_KEYS`/`SYSTEM_ONLY_KEYS` in
+    `routes/admin/settings.ts` entfernt.
+  - `routes/admin/qr.ts` (`GET /api/admin/qr.png`) komplett gelöscht —
+    verifiziert einziger Aufrufer war das jetzt ebenfalls entfernte
+    Server-Adresse-Test-Modal.
+  - `admin/settings/system/+page.svelte`: komplette "Server-Adresse
+    (QR-Code)"-Karte + Test-Modal entfernt: das machte auch den
+    generischen `settings.get()`/`.save()`-Speicherpfad dieser Seite
+    (`loadSettings`/`save`/den "Speichern"-Footer-Button) obsolet, da
+    `server_address` die einzige über diese Seite editierbare Einstellung
+    war — mit entfernt, inkl. toter CSS-Klassen (`.token-box`/`.token-qr`/
+    `.token-url`/`.form-footer`) und des jetzt ungenutzten `Modal`-Imports.
+  - `frontend/src/lib/api.ts`: `qrUrl()` entfernt. Die reinen
+    `receipt_token`-Typfelder in anderen Response-Typen (Checkout,
+    Stornierung, …) bewusst **nicht** angefasst — die beschreiben weiterhin
+    akkurat, was das Backend tatsächlich zurückgibt (die Spalte existiert
+    ja weiter), waren nur nie von echtem Frontend-Code gelesen worden;
+    Entfernen hätte Risiko/Umfang erhöht ohne funktionalen Nutzen.
+  - Beide Rechnungs-Bestätigungsseiten (`register/[id]/receipt/+page.svelte`
+    — Bonkasse, `.../tables/[tableId]/checkout/receipt/+page.svelte` —
+    Bedienung): `.qr-wrap`-Block + zugehörige CSS entfernt, Button „Rechnung
+    per QR Code gescannt" → „Kunde wünscht keinen Beleg" (gleiches
+    `onclick={finish}`, wie vom Nutzer vorgegeben).
+  - Neue Integrationstest-Datei `articles.integration.test.ts` (Task #84,
+    im selben Zug entstanden) unberührt von #100.
+  - Doku aktualisiert: `docs/Anforderungen.md` (Navigationsbaum,
+    Systemeinstellungen-Liste, PDF-Endpunkt-Abschnitt neu gefasst,
+    Kassieren-Button-Beschreibung, „Entschieden"-Passage um eine
+    „Revidiert"-Ergänzung erweitert statt gelöscht), `docs/Manueller-
+    Testplan.md` (3 Stellen entfernt/angepasst, ganze Sektion „12.
+    Kundenansicht (Rechnung online)" gestrichen, Folgesektionen 13/14 auf
+    12/13 umnummeriert), `docs/TSE-Integration.md` und
+    `docs/Datenmodell.dbml` (je ein stehengebliebenes `server_address`-
+    Beispiel in einem Kommentar korrigiert), `admin/invoices.ts`s
+    Docstrings (zwei Stellen, verwiesen noch auf den entfernten
+    öffentlichen Endpunkt bzw. den alten Button-Namen). `docs/Dictionary.md`
+    geprüft — enthielt gar keinen `receipt_token`/Server-Adresse-Eintrag,
+    nichts zu tun.
+  - Bewusst **nicht** angefasst: `invoice.receipt_token`-Spalte,
+    `receipt/data.ts`s `loadReceiptByToken()`, `receipt/pdf.ts` — wie
+    geplant weiterhin intern von `admin/invoices.ts`
+    (`POST /:id/reprint`, `GET /:id/pdf`), `admin/reports.ts`,
+    `admin/cancellations.ts` genutzt.
+  - Backend-Typecheck, Frontend-Typecheck (`svelte-check`, 450 Dateien,
+    0 Fehler), volle Backend-Unit-Testsuite (285 Tests) und voller
+    Integrationstest-Lauf (28 Dateien, 270 Tests) grün.
+
+- [x] **#101** Entscheidung: PDF-Rechnung und Kassenbon-Ausdruck optisch/inhaltlich angleichen
   Aufgekommen 2026-09-01 aus einer Nutzerbeobachtung. **Bündelt/erweitert
   Task #78** (dort bereits als "kein Compliance-Problem, niedrige
   Priorität" eingeschätzt) um die weiteren gefundenen Detailabweichungen.
@@ -2811,10 +2979,15 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
      keinen QR-Code** (kein `qr`/`QR`-Verweis, kein Raster-Kommando in
      `print/` oder `escpos-receipt.ts`) — also nicht "einmal QR, einmal
      Text", sondern "PDF hat QR+Text, Ausdruck nur Text".
-  2. Zeichensatz: PDF nutzt Helvetica/WinAnsi (volle Umlaut-Unterstützung),
+  2. ~~Zeichensatz: PDF nutzt Helvetica/WinAnsi (volle Umlaut-Unterstützung),
      der Ausdruck bewusst ASCII-only mit Ersatzdarstellung für Umlaute —
-     dokumentiert in `escpos-receipt.ts:33-36` ("die PDF ist das
-     kanonische Dokument"). Diese eine Abweichung ist also **bewusst**.
+     dokumentiert in `escpos-receipt.ts:33-36`.~~ **Korrektur (2026-09-01):
+     falsch recherchiert.** Der tatsächliche Code importiert
+     `SELECT_CP858`/`escposLine` aus `print/escpos-encoding.ts` und druckt
+     echte Umlaute über CP858 — identisch zu Z-Bon/Bestellzettel. Nur der
+     Kommentar direkt über `buildReceiptEscPos()` war veraltet (Rest einer
+     früheren ASCII-only-Version) und wurde korrigiert. **Keine Abweichung
+     an dieser Stelle — beide Formate stellen Umlaute korrekt dar.**
   3. Layout: A6-Hochformat (PDF) vs. 42-Zeichen-Thermodruck (Ausdruck) —
      medienbedingt.
   4. Logo: PNG-Bild (PDF) vs. vorgerendertes ESC/POS-Raster (Ausdruck) —
@@ -2831,55 +3004,33 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   sich wie organisch entstandene Abweichung (zwei getrennte Codepfade, nie
   synchron gehalten), nicht wie eine bewusste Entscheidung.
 
-  **Zu entscheiden:** wie damit umgehen — Kandidaten:
-  a) QR-Code auch auf dem Ausdruck ergänzen (ESC/POS-Rasterbild aus
-     demselben `buildQrPayload`), damit beide Belegformen gleichwertig
-     scanbar sind (relevant auch für die QR-Prüf-App-Methode, siehe
-     Antwort zur TSE-Verifikation weiter oben in diesem Gespräch).
-  b) Bewusst so belassen (Ausdruck bleibt reiner Klartext-Beleg, PDF bleibt
-     das "digitale" Vollformat mit QR) — dann aber den fehlenden QR-Code
-     im Code kommentieren, damit es nicht wie ein Bug aussieht.
-  c) Weitere identifizierte Detailabweichungen (Beschriftung „Kassensystem-
-     Seriennr." vs. „Kassen-Seriennr.") unabhängig davon vereinheitlichen.
-  Vor einer Umsetzung mit dem Nutzer klären, welches Zielbild gewünscht ist.
+  **Entschieden (2026-09-01):**
+  a) QR-Code kommt auch auf den Ausdruck — beide Belegformen sollen
+     gleichwertig scanbar/prüfbar sein (relevant auch für die
+     QR-Prüf-App-Methode aus der TSE-Verifikations-Antwort weiter oben in
+     diesem Gespräch).
+  c) Die Beschriftungsabweichung („Kassensystem-Seriennr." vs.
+     „Kassen-Seriennr.") wird mit vereinheitlicht.
+  **Umsetzungsweg:** nicht als Einzel-Patch, sondern im Rahmen der
+  größeren Architekturentscheidung **Task #105** (gemeinsames
+  Zwischenformat für alle Belege) — dort wird der QR-Code einfach ein
+  Bild-Block, den beide Renderer bekommen, statt eine Einzellösung nur
+  für den Ausdruck zu bauen.
 
-- [ ] **#102** Entscheidung: wie wird geprüft, dass alle Bestellungen korrekt an die TSE gemeldet und signiert werden
-  Aufgekommen 2026-09-01, Anschluss an [[DANGER.md]] `D-038-Fortsetzung`
-  (dort bereits vermerkt: "inhaltliche Korrektheit der signierten
-  Transaktionen ... wurde vom Nutzer noch nicht geprüft, nur dass überhaupt
-  eine Signatur erscheint"). Nutzerhinweis 2026-09-01: eine QR-/TSE-Prüf-
-  App-Kontrolle einzelner Belege (siehe TSE-Verifikations-Antwort weiter
-  oben) bestätigt nur, dass die Signatur eines konkreten, bereits
-  gedruckten Belegs kryptografisch gültig ist — sie deckt **nicht** ab, ob
-  wirklich **jede** Bestellung/jeder Vorgang tatsächlich an die TSE
-  gemeldet und dort signiert wurde (z. B. eine still fehlgeschlagene
-  Signierung, ein nicht gemeldetes Storno, oder eine falsch übermittelte
-  Positions-/Betragssumme). Das ist eine vollständigkeits-/mengenbezogene
-  Prüfung, keine Einzelbeleg-Prüfung.
+  **Erledigt (2026-09-01) — via Task #105:** QR-Code erscheint jetzt auch
+  auf dem physischen Ausdruck (`receipt/blocks.ts`, siehe #105 für Details).
+  Beschriftung vereinheitlicht: „Kassensystem-Seriennr." auf beiden
+  Formaten. Restliche in Punkt 3-6 identifizierte Abweichungen (Layout,
+  Logo-Format, Storno-/Fehlerdarstellung) sind medienbedingt bzw. bewusste
+  Entscheidungen geblieben, nicht weiter vereinheitlicht.
 
-  **Bereits identifizierte Bausteine für eine solche Prüfung:**
-  1. Zähler-Plausibilität über `GET /api/admin/tse/status` (`info`-
-     Kommando: `startedTransactions`/`remainingSignatures`) — zeigt nur
-     grobe Mengen, keine inhaltliche Zuordnung zu einzelnen Bestellungen.
-  2. DSFinV-K-Export (`transactions_tse.csv`, `TSE_TANR`/`TSE_TA_SIG`) —
-     bereits gebaut, pro Vorgang befüllt; ein systematischer Abgleich
-     "jede Bestellung/jedes Storno in der DB hat eine passende Zeile mit
-     plausibler, lückenloser Transaktionsnummer" ist aber aktuell keine
-     gebaute Funktion, sondern müsste manuell (Excel/Skript) gemacht
-     werden.
-  3. TSE-eigener Rohdaten-Export (`exportTar`, TR-03153-Archiv) — härtester
-     unabhängiger Beweis (TSE-eigenes Log direkt, unabhängig von der
-     FairPOS-DB), aber wie in `docs/TSE-Integration.md` §11 dokumentiert
-     **nirgends in der Anwendung eingebunden**, nur als CLI-Befehl im
-     `tseCli`-Wrapper vorhanden — bräuchte manuellen Server-Zugriff und
-     eigene Auswertung.
-
-  **Zu entscheiden:** ob und welche dieser Bausteine zu einer regelmäßigen
-  (z. B. nach jedem Z-Bon-Abschluss) oder stichprobenartigen
-  Vollständigkeitsprüfung ausgebaut werden sollen — Kandidaten reichen von
-  "reicht uns als manueller Gelegenheitscheck" bis zu einer eigenen
-  Auswertungsseite/einem Abgleichsskript. Vor einer Umsetzung mit dem
-  Nutzer klären, wie viel Automatisierung hier gewünscht/nötig ist.
+- [x] **#102** (aufgegangen in #47) Wie wird geprüft, dass alle Bestellungen korrekt an die TSE gemeldet und signiert werden
+  Aufgekommen 2026-09-01, Anschluss an [[DANGER.md]] `D-038-Fortsetzung`.
+  **Umgeordnet (2026-09-01, Nutzereinordnung):** "gehört für mich zum
+  Testing" — kein separater Vorab-Entscheidungs-/Umsetzungs-Task mehr,
+  sondern ein Prüfschritt innerhalb des großen manuellen Regressionstests.
+  Volle Analyse (Bausteine: TSE-Zähler-Plausibilität, DSFinV-K-Abgleich,
+  `exportTar`-Rohdatenexport) jetzt bei **Task #47**.
 
 - [x] **#103** `exportTar`-Rohdaten-Export der TSE über die Admin-Oberfläche freigeben
   Aufgekommen 2026-09-01, ursprünglich als niedrig priorisierter
@@ -2945,3 +3096,294 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   unbeantwortet — das war nicht Ziel dieser Umsetzung (reine
   Downloadfunktion, keine Interpretation). Siehe Task #102 für die
   übergeordnete "wie prüfen wir Vollständigkeit"-Frage.
+
+- [x] **#104** Dashboard-Kacheln in "Veranstaltung"/"System" gruppieren, Zeitfenster-Warnung ergänzen
+  Nutzerwunsch 2026-09-01, direkt umgesetzt.
+
+  **Zeitfenster-Warnung:** die "Aktive Veranstaltung"-Kachel (`admin/+page.svelte`)
+  vergleicht jetzt bei jedem Reload die browserlokale Uhrzeit gegen
+  `activeEvent.startTime`/`endTime` (beide bereits Teil der `ActiveEvent`-
+  API-Antwort, Task #95 — keine Backend-Änderung nötig) und zeigt eine
+  orangene Warnung samt `warn`-Kachelrand, wenn die aktuelle Systemzeit
+  außerhalb des Veranstaltungszeitraums liegt — z. B. wenn eine alte
+  Veranstaltung nach ihrem Ende versehentlich aktiv bleibt.
+
+  **Kachel-Gruppierung:** zwei Abschnitte mit Überschrift statt einem
+  einzigen Grid:
+  - **Veranstaltung** (zuerst): Aktive Veranstaltung, Ausstehende
+    Tagesabschlüsse, Tagesumsatz, Offene Rechnungen.
+  - **System**: TSE-Zustand, Druckwarteschlange, Aktive Sitzungen,
+    PIN-Login: IP-Sperren.
+
+  Keine Backend-Änderung — reine Frontend-Umsortierung + ein zusätzlicher
+  clientseitiger Vergleich.
+
+- [x] **#105** Gemeinsames Zwischenformat für alle Belege (Rechnung, Z-Bon, Bestellzettel, Testdruck, PIN-Zettel)
+  Nutzeridee 2026-09-01 (Anschluss an Task #101): warum nicht jeden Beleg
+  in einem neutralen Format erzeugen und erst am Ende in ESC/POS, PDF oder
+  Bildschirmanzeige umwandeln, statt für jede Kombination aus Belegtyp und
+  Zielformat eigenen Code zu pflegen?
+
+  **Ist-Stand (recherchiert, korrigiert 2026-09-01):** tatsächlich
+  **5 Belegtypen**, nicht 4 wie zuerst recherchiert — `print_job.type`
+  kennt seit Migration `0012_print_job_pin_slip.sql` auch `pin_slip`
+  (PIN-Zettel bei Benutzer-PIN-Vergabe, `admin/users.ts` `POST
+  /:id/pin/print`, Inhalt über `buildPinSlip()`). Zusammen: Rechnung
+  (`receipt/`), Z-Bon (`closing/`), Bestellzettel (`print/order-slip.ts`,
+  nur ESC/POS, internes Dokument), Testdruck (`print/escpos.ts`, nur
+  ESC/POS), PIN-Zettel (nur ESC/POS). Jede Kombination Typ×Ziel ist
+  unabhängig implementiert, einziger geteilter Code sind drei kleine
+  Encoding-Helfer (`print/escpos-encoding.ts`). Die ESC/POS-Konstanten
+  (`ESC`, `GS`, `INIT`, `CUT`, …) sind **mehrfach wortgleich dupliziert**
+  über die Renderer-Dateien hinweg. "Bildschirmanzeige" ist heute kein
+  eigener Renderer, sondern der Browser zeigt schlicht die fertigen
+  PDF-Bytes an (`<embed>`).
+
+  **Nutzervorgabe (2026-09-01): gilt für ALLE Ausdrucke im System** —
+  also ausdrücklich auch Bestellzettel und PIN-Zettel, nicht nur
+  Rechnung/Z-Bon. Löst die zuvor offene Frage "ob/wie `order-slip.ts` ins
+  Modell passt" — es passt hinein wie jeder andere Typ auch.
+
+  **Grundidee bewertet: richtig, etabliertes Muster.** Genau das Prinzip
+  (Dokumentbeschreibung getrennt vom Renderer) nutzen reale
+  Kassen-/Reporting-Systeme (z. B. `node-thermal-printer`/`escpos`-artige
+  Encoder-Bibliotheken, JasperReports). Dass FairPOS aktuell vier
+  unabhängige PDF/ESC-POS-Paare hat, ist der unübliche Zustand, nicht die
+  Idee selbst.
+
+  **Geprüfter und verworfener Alternativweg: "ESC/POS bleibt primäres
+  Format, PDF wird daraus zurückkonvertiert".** Nutzeridee, dafür eine
+  fertige Bibliothek zu nutzen — der dafür vorgelegte Code-Schnipsel
+  (`escpos-buffer` mit `Parser`/`CanvasAdapter`/`toBuffer('application/pdf')`)
+  **existiert nicht** — das reale npm-Paket `escpos-buffer`
+  (github.com/grandchef/escpos-buffer) exportiert nur `Printer`/
+  `InMemory`/`WebUSB`/`Model` und baut ESC/POS-Befehle, liest sie nicht
+  zurück (vermutlich eine KI-Halluzination, egal woher der Schnipsel kam).
+  Recherchierte reale Alternativen für "ESC/POS-Bytes parsen → rendern":
+  - `npos` (github.com/taoyuan/npos) — hat sogar ein Beispiel
+    `receipt-to-pdf.js` (ESC/POS → AST → PDFKit) und beweist damit, dass
+    der Ansatz technisch funktioniert. Aber: letzter Commit 23.08.2017,
+    Version 0.1.19, veraltete Abhängigkeiten (`bluebird`) — praktisch tot,
+    nicht vertretbar als Abhängigkeit für ein KassenSichV-relevantes
+    Dokument.
+  - `escpos-tools` (github.com/receipt-print-hq/escpos-tools) — **PHP**,
+    nicht Node, nicht auf npm, bräuchte Composer/Imagick auf dem Server —
+    passt nicht zum Stack.
+  **Warum der Round-Trip technisch ohnehin die schlechtere Wahl ist,
+  unabhängig von der Bibliotheksfrage:** FairPOS erzeugt die ESC/POS-Bytes
+  selbst aus eigenem Code. Diese Bytes hinterher wieder zurückzuparsen, um
+  daraus ein PDF zu bauen, bedeutet einen Parser für das eigene Format zu
+  schreiben — zusätzlicher Aufwand und Risiko (Encoding-Rückweg,
+  Informationsverlust beim Serialisieren) ohne Vorteil gegenüber der
+  einfacheren Alternative unten.
+
+  **Entschiedene Architektur: gemeinsame Zwischenstruktur, VOR der
+  Serialisierung.** Die vier Beleg-Erzeuger schreiben ihre Inhalte einmal
+  als kleine Liste von Blöcken (Textzeile mit Ausrichtung/Fett/Größe,
+  Trennlinie, zwei-/dreispaltige Zeile mit rechtsbündigen Zahlen, Bild,
+  Schnittmarke) — noch bevor daraus ESC/POS-Bytes oder PDF entstehen. Zwei
+  dünne Renderer (`renderToEscPos(blocks)`, `renderToPdf(blocks)`)
+  konsumieren dieselbe Struktur. Kein Rückweg durch Bytes, keine
+  Fremdbibliothek. Bildschirmvorschau bleibt wie heute (PDF-Bytes via
+  `<embed>`) — kein dritter Renderer nötig, das funktioniert bereits.
+
+  **Nutzervorgabe: PDF soll aussehen wie der Bon, keine Farben nötig.**
+  Vereinfacht das Modell zusätzlich: der PDF-Renderer nutzt dieselbe
+  Spalten-Arithmetik (feste Zeichenbreite, monospace-artige Schrift,
+  z. B. Courier) wie der ESC/POS-Renderer, statt eigener proportionaler
+  Positionierung — beide Renderer werden sich dadurch strukturell
+  ähnlicher. Die bisherige Rot-Schrift/Fettdruck-Unterscheidung
+  (STORNOBELEG/TSE-Fehler) entfällt als Sonderfall, wenn PDF ebenfalls
+  keine Farbe mehr nutzt — eine einzige "Betonung"-Stufe pro Block reicht
+  dann für beide Renderer.
+
+  **Umlaute (Nutzerfrage 2026-09-01): keine Sonderbehandlung nötig.**
+  Klargestellt im Zuge dieser Diskussion: `receipt/escpos-receipt.ts`
+  druckt entgegen einem veralteten, mittlerweile korrigierten Kommentar
+  bereits heute echte Umlaute über CP858 (siehe Korrektur bei Task #101
+  Punkt 2) — identisch zu Z-Bon/Bestellzettel. PDF nutzt ohnehin
+  Helvetica/WinAnsi mit voller Umlaut-Unterstützung. Im Blockmodell tragen
+  Blöcke normale Unicode-Strings, jeder Renderer kodiert selbst passend
+  (CP858 für ESC/POS, native Unicode-Schrift fürs PDF) — keine
+  ASCII-Rücksicht im Modell nötig.
+
+  **Bilder:** PDF will das Original-Bild, ESC/POS braucht ein vorab
+  gerastertes Bild. Lösungsansatz für die Umsetzung: ein Bild-Block trägt
+  beide Repräsentationen (`{ png, escposRaster }`), einmal erzeugt (z. B.
+  beim Logo-Upload), nicht bei jedem Druck neu — noch nicht im Detail
+  ausgearbeitet, ob sich das für den QR-Code (wird zur Druckzeit erzeugt,
+  nicht vorab hochgeladen) genauso handhaben lässt oder dort anders
+  gelöst werden muss.
+
+  **Nebeneffekt, den die Nutzervorgabe ausdrücklich mitnehmen will:** eine
+  PDF-Variante des Z-Bons, die wirklich wie der gedruckte Z-Bon aussieht
+  (zur Archivierung) — `closing/pdf.ts` existiert zwar bereits, wird aber
+  durch denselben Renderer wie die Rechnung automatisch layoutgleich zum
+  Ausdruck, was heute nicht garantiert ist.
+
+  **Timing-Entscheidung: jetzt, vor Release 1 — nicht danach.** Erste
+  Einschätzung (Sub-Agent-Recherche) war, das auf nach Release 1 zu
+  verschieben (Risiko einer Regression genau vor dem großen manuellen
+  Testlauf). Nutzergegenargument, das diese Einschätzung kippt: der große
+  manuelle Testaufwand steht ohnehin an — der Druck-Code wird so oder so
+  Teil davon, ein Umbau jetzt bedeutet also **keinen zusätzlichen
+  Testdurchlauf**, nur einen anderen Code-Stand zum Testzeitpunkt.
+  Zusätzlich werden dabei gleich zwei echte Probleme mitgelöst (Task #101s
+  QR-Divergenz, Z-Bon-PDF-Bildtreue), statt sie separat nachzuziehen.
+
+  **Zusätzliche Anforderung (2026-09-01): PDF-Button + "Erneut drucken"
+  für ALLE Druckaufträge in der Admin-UI (Einstellungen → Monitoring →
+  Druckwarteschlange).** Ist-Stand recherchiert:
+  - `GET /api/admin/print-jobs/:id/pdf` existiert bereits, aber **nur**
+    für `receipt`/`daily_closing` (lädt per `reference_id` die
+    Ursprungsdaten neu und rendert sie — `order_slip`/`test_print`/
+    `pin_slip` liefern 404, laut Kommentar dort ausdrücklich weil "raw
+    ESC/POS bytes... is not a document format and cannot be turned into a
+    PDF generically").
+  - Frontend (`admin/settings/print-queue/+page.svelte`) zeigt den
+    "PDF"-Button aktuell nur `{#if (j.type === 'receipt' || j.type ===
+    'daily_closing') && j.reference_id}` — für alle Typen verfügbar
+    machen heißt, diese Einschränkung fallen zu lassen.
+  - "Erneut drucken" ist etwas anderes als der bestehende
+    "Wiederholen"-Button (nur bei `status === 'failed'`, setzt denselben
+    Job auf `pending` zurück). Vorbild existiert bereits für Rechnungen:
+    `admin/invoices.ts`s `POST /:id/reprint` — lädt die Rechnung neu,
+    rendert frisch, legt einen **neuen** `print_job` an, unabhängig vom
+    Status des alten. Das müsste als generischer
+    `POST /api/admin/print-jobs/:id/reprint`-Endpunkt für alle Typen
+    nachgebaut und der Button in der Druckwarteschlangen-UI ergänzt
+    werden (dort bisher gar nicht vorhanden, nur auf der
+    Rechnungs-Reportseite).
+
+  **Dabei aufgefallenes echtes Problem, das die Architektur klärt:**
+  `receipt`/`daily_closing` können aus einer persistenten Quelle (Rechnung/
+  Z-Bon-Zeile) jederzeit neu gerendert werden — `order_slip`/`test_print`
+  haben aber gar keine `reference_id` (wird beim Anlegen nie gesetzt), und
+  bei `pin_slip` ist eine "Neuladen aus der Quelle"-Logik **grundsätzlich
+  unmöglich**: die PIN wird laut Task #90 nur gehasht gespeichert, der
+  Klartext existiert nirgends außer in den bereits erzeugten Druckbytes.
+  **Lösung:** `print_job` bekommt eine neue Spalte für die erzeugten
+  Blöcke selbst (z. B. `blocks JSONB`), zusätzlich zum bisherigen
+  `content` (weiterhin die daraus vorgerenderten ESC/POS-Bytes, die der
+  Print-Worker unverändert versendet — kein Eingriff in den Sendepfad
+  nötig). PDF-Button und "Erneut drucken" arbeiten dann einheitlich über
+  `renderToPdf(job.blocks)` bzw. `renderToEscPos(job.blocks)` **für jeden
+  Belegtyp gleich**, ganz ohne `reference_id`/Live-Neuladen — löst damit
+  auch das PIN-Zettel-Problem, weil die historischen Blöcke (inkl. der
+  damaligen PIN) im Job selbst erhalten bleiben. Offene Sicherheitsfrage
+  für die Umsetzung: ob "Erneut drucken" für `pin_slip` überhaupt erlaubt
+  sein soll (Klartext-PIN-Wiederholdruck Tage später) — noch nicht
+  entschieden, separat klären.
+
+  **Keine Datenmigration nötig (Nutzervorgabe 2026-09-01):** vor Release 1,
+  bestehende `print_job`-Zeilen müssen nicht ins neue Format migriert
+  werden — die Tabelle kann beim Umstieg auf das neue Format einfach
+  geleert werden (z. B. `TRUNCATE TABLE print_job` in der Migration, statt
+  eines Backfill-Skripts).
+
+  **Erledigt (2026-09-01):**
+
+  **Block-Modell** (`print/blocks.ts`, neu): `PrintBlock` — `text`
+  (Zeile, `align`/`bold`/`size`), `row` (zweispaltig, links/rechts —
+  ersetzt sowohl ESC/POS' `twoColumn` als auch PDFs bisherige eigene
+  Spaltenpositionierung), `hr`, `blank`, `image` (trägt PNG **und**
+  ESC/POS-Raster gleichzeitig, siehe Bild-Frage unten). Zwei Renderer,
+  beide arbeiten auf derselben Blockliste:
+  - `renderBlocksToEscPos()` — eigene, aus den fünf vorherigen Renderern
+    zusammengeführte ESC/POS-Konstanten (`ESC`/`GS`/`CUT`/…, vorher
+    vierfach dupliziert), Größen-Stufen (`normal`/`large`/`xlarge`) über
+    `ESC !`-Modi.
+  - `renderBlocksToPdf()` — `pdfkit`, **Courier (Monospace) statt
+    Helvetica, keine Farbe** (Nutzervorgabe: "PDF soll aussehen wie der
+    Bon") — dieselben Größen-Stufen als Punktgrößen.
+
+  **Bild-Frage gelöst:** `ImageBlock` trägt `pngBase64`+`pngWidth`+
+  `pngHeight` (fürs PDF) **und** `escposRasterBase64` (fertig vorgerendert
+  fürs ESC/POS) gleichzeitig — kein Renderer muss zur Druckzeit konvertieren.
+  Für den Firmen-Logo (bereits vorgerendert beim Upload, `logo/logo.ts`,
+  unverändert) passt das direkt. Für den QR-Code (wird pro Beleg neu
+  erzeugt) neues Modul `print/raster.ts` (`pngToEscposRaster()`, `sharp`-
+  basiert, eigene Kopie der Raster-Pack-Logik aus `logo.ts` — bewusst nicht
+  geteilt, um die beiden Anwendungsfälle nicht zu koppeln).
+
+  **Alle fünf Belegtypen migriert**, jeweils ein `*Blocks()`-Builder +
+  dünner `*EscPos()`-Wrapper (Funktionsnamen/Signaturen an den
+  Aufrufstellen möglichst stabil gehalten, siehe unten für die
+  Ausnahmen):
+  - `receipt/blocks.ts` — **Rechnung bekommt jetzt auch auf dem Ausdruck
+    einen QR-Code** (löst Task #101, siehe dort). `buildReceiptEscPos()`
+    ist jetzt `async` (QR-Rendering) — beide Aufrufstellen
+    (`register-session.ts`, `admin/invoices.ts`) angepasst.
+  - `closing/blocks.ts` — Z-Bon-PDF bekommt dabei zwei bisher fehlende
+    Zeilen (`Geschäftstag: …`, `--- Ende Z-Bon ---`), die vorher nur der
+    Ausdruck hatte. `buildZBonEscPos()`/`renderZBonPdf()` haben jetzt beide
+    dieselbe Signatur (`ctx, totals, businessDate, logo: CompanyLogo|null`)
+    — vorher nahm die ESC/POS-Variante nur `logoEscPos: Buffer|null` ohne
+    `businessDate`. `admin/closings.ts`s Creation-Pfad liest `business_date`
+    jetzt per `RETURNING to_char(business_date, 'YYYY-MM-DD')` aus der
+    INSERT-Query statt es zu approximieren.
+  - `print/order-slip.ts` — alle drei Varianten (Bestellzettel,
+    Selbstabholer, Pfand) migriert; Tisch-Header schrumpft von 3×3
+    (`GS !`-Skalierung) auf 2×2 (`ESC !`-Modus, wie in Abschnitt "large" vs.
+    "xlarge" oben) — kleine, bewusst in Kauf genommene Vereinfachung.
+  - `print/escpos.ts` (Testdruck, PIN-Zettel) — **Nebenbei-Fix:** beide
+    druckten vorher nur ASCII (Kommentar behauptete das sei nötig, war ein
+    Überbleibsel von vor der projektweiten CP858-Umstellung); jetzt wie
+    alle anderen Belegtypen CP858, Umlaute in Drucker-/Benutzernamen gehen
+    nicht mehr verloren.
+
+  **`print_job.blocks`** (Migration `0027_print_job_blocks.sql`, neue
+  `JSONB NOT NULL DEFAULT '[]'`-Spalte) — `enqueuePrintJob()` bekommt einen
+  neuen Pflichtparameter `blocks: PrintBlock[]`, alle neun Aufrufstellen
+  (`register-session.ts` ×4, `admin/closings.ts` ×2, `admin/invoices.ts`,
+  `admin/printers.ts`, `admin/users.ts`) angepasst — jede baut jetzt einmal
+  die Blöcke, leitet `content` per `renderBlocksToEscPos()` lokal davon ab,
+  übergibt beides. **Keine Datenmigration** (Nutzervorgabe): Migration
+  truncatet `print_job` zuerst, da vor Release 1.
+
+  **Admin-Endpunkte generalisiert** (`routes/admin/print-jobs.ts`):
+  - `GET /:id/pdf` — vorher nur `receipt`/`daily_closing` (eigene
+    Nachlade-Logik je Typ), jetzt jeder Typ generisch über
+    `renderBlocksToPdf(job.blocks, …)`.
+  - `POST /:id/reprint` (neu) — legt einen neuen Druckauftrag mit
+    identischen Blöcken auf demselben Drucker an, unabhängig vom Status des
+    Original-Auftrags (anders als das bestehende `/retry`, das nur einen
+    fehlgeschlagenen Auftrag zurücksetzt). Verweigert mit 409, wenn der
+    Original-Drucker inzwischen gelöscht wurde (gleiche Regel wie
+    `/retry`).
+  - **PIN-Zettel explizit gesperrt** (Nutzerentscheidung 2026-09-01,
+    Sicherheit): beide obigen Endpunkte liefern `403` für `type ===
+    'pin_slip'` — einzige Ausnahme von der Generalisierung, weil eine PIN
+    nirgends sonst im Klartext gespeichert ist und eine generische
+    "beliebigen alten Druckauftrag ansehen/erneut drucken"-Funktion sonst
+    zum nachträglichen PIN-Auslesen würde. **Durchsetzung serverseitig**,
+    nicht nur ausgeblendeter Button (Nutzervorgabe: "damit man es auch
+    nicht per URL Parameter umgehen kann").
+  - Frontend (`admin/settings/print-queue/+page.svelte`): PDF-Button ohne
+    Typ-Einschränkung mehr, neuer "Erneut drucken"-Button, beide für
+    `pin_slip`-Zeilen ausgeblendet (reine UX, Durchsetzung ist serverseitig).
+
+  **Tests:** neue Dateien `print/raster.test.ts`, `print/blocks.test.ts`,
+  `print/escpos-encoding.test.ts` (dorthin verschobene, vorher pro Datei
+  duplizierte `twoColumn`-Tests), `closing/pdf.test.ts` (gab es vorher gar
+  nicht). Bestehende Test-Dateien für alle fünf Belegtypen laufen
+  unverändert grün (Byte-Level-Fidelity verifiziert, keine ungewollte
+  Verhaltensänderung durch den Umbau) bis auf die bewusst dokumentierten
+  Abweichungen oben. Neue Integrationstests für `/:id/pdf`/`/:id/reprint`
+  in `print-jobs.integration.test.ts` (alle Typen + PIN-Zettel-Sperre +
+  gelöschter-Drucker-Fall). Backend-Typecheck, Frontend-Typecheck
+  (`svelte-check`), volle Backend-Unit-Testsuite (303 Tests), Frontend-Build
+  und Backend-Build alle grün. **Voller Integrationstest-Lauf grün** (28
+  Dateien, 280 Tests) — hat dabei einen echten Regressionsbug aufgedeckt und
+  sofort behoben, siehe `DANGER.md` D-053: `GET /api/admin/settings/
+  receipt-preview` baute sein `ReceiptData` manuell zusammen und vergaß
+  `logoEscPos` zu setzen (der neue Block-Builder verlangt für den Logo-Block
+  jetzt beide Bild-Repräsentationen gleichzeitig) — Logo verschwand
+  dadurch komplett aus der Bon-Vorschau, obwohl konfiguriert. Ein-Zeilen-Fix
+  in `routes/admin/settings.ts`, vom bereits vorhandenen Regressionstest
+  sofort aufgedeckt.
+
+  **Bewusst nicht umgesetzt / nicht Teil dieser Änderung:** die generelle
+  Architektur-Beschreibung in `docs/Anforderungen.md` (SSE-Behauptung bei
+  "Echtzeit") war schon vorher veraltet (tatsächlich Client-Polling) —
+  nicht Teil von Task #105, nur am Rand bemerkt.

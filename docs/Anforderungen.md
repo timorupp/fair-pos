@@ -84,7 +84,7 @@ Administrator
 │   └── DSFinV-K-Export
 │
 ├── Einstellungen
-│   ├── System (Zeitzone, Uhrzeit, TSE-Status, Seriennummer, Server-Adresse [S], Backup-Download [S])
+│   ├── System (Zeitzone, Uhrzeit, TSE-Status, Seriennummer, Backup-Download [S])
 │   ├── Drucker
 │   ├── TSE
 │   ├── SSL-Zertifikat
@@ -291,7 +291,6 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
   - **Datum und Uhrzeit** — manuelle Einstellung oder Synchronisation mit NTP-Server
   - **TSE-Verbindung + Status** — Mount-Pfad, Client-ID und TimeAdmin-PIN der Swissbit USB-TSE sind manuell konfigurierbar (wirkt sofort, kein Neustart nötig); ein „TSE testen"-Button ruft den aktuellen Status live ab (Self-Test bestanden, Seriennummer, BSI-Zertifizierungs-ID, Restsignaturen, Zertifikatsablauf) — implementiert, siehe docs/TSE-Integration.md
   - **Kassensystem-Seriennummer** — automatisch generiert beim ersten Serverstart; nur angezeigt, nicht bearbeitbar; Format: `FairPOS-{Jahr}-{10-stellig, Großbuchstaben + Ziffern}`
-  - **Server-Adresse (QR-Code)** — lokale Netzwerkadresse des Servers (z.B. `192.168.1.10` oder `fairpos.local`); wird für die Bon-URL im QR-Code verwendet; manuell konfigurierbar
   - **Datenbank-Backup** — manueller Download eines vollständigen Datenbank-Backups als ZIP (kein automatischer/geplanter Backup-Job, siehe „Backup-Konzept" weiter unten, Task #25)
 
 - **Veranstaltungsverwaltung (Task #95):** Veranstaltung ist eine echte Hierarchieebene, keine reine Auswertungszeitspanne — Artikel, Artikelgruppen, Kassen, Kassenlayouts, der komplette Saalplan und Stornogründe gehören jeweils genau einer Veranstaltung an; Rechnungen/Bestellungen ordnen sich transitiv über ihre Kasse zu (eine Kasse wechselt nie ihre Veranstaltung). Eine neue Veranstaltung anzulegen bedeutet: Artikel/Kassen/Layouts/Saalplan/Stornogründe starten für sie komplett leer — kein automatisches Kopieren von einer vorherigen Veranstaltung.
@@ -566,7 +565,7 @@ Es gibt 3 BSI-zertifizierte Cloud-TSE-Anbieter (Stand Mai 2026); alle erfordern 
 | Frontend | SvelteKit + TypeScript (SPA) | PWA-Unterstützung, schlanke Bundle-Größe, schnell auf Mobilgeräten; als statische Dateien gebaut (`adapter-static`), von Fastify ausgeliefert — kein separater Frontend-Server |
 | Datenbank | PostgreSQL | Robust, open source, ACID-transaktionssicher, komplexe Abfragen für DSFinV-K |
 | Echtzeit | Server-Sent Events (SSE) | Einweg-Push vom Server zum Browser reicht für alle Anwendungsfälle (Tischstatus, Druckwarteschlange); kein bidirektionaler Kanal nötig; keine Bibliothek erforderlich |
-| Druckdienst | Node.js Worker-Prozess | ESC/POS über TCP/IP via `@node-escpos/core`; via PostgreSQL LISTEN/NOTIFY getriggert |
+| Druckdienst | Node.js Worker-Prozess | ESC/POS über TCP/IP, selbst geschriebene Byte-Erzeugung (kein `@node-escpos/core` o. ä. — siehe Abschnitt "Belegformat-Renderer" unten); via PostgreSQL LISTEN/NOTIFY getriggert |
 | TSE-Adapter | Swissbit-SDK, eigener CLI-Subprozess (`native/tse-cli`) | Ursprünglich fiskaltrust Middleware vorgesehen — **verworfen (August 2026, zu teuer)**. Stattdessen minimaler, selbst geschriebener C++-Wrapper um das offizielle Swissbit-SDK, vom Backend per `child_process.execFile` aufgerufen; kein separater Container/Dienst. Details: docs/TSE-Integration.md |
 | Deployment | Native Ubuntu-Installation | **Kein Docker in Produktion** (Entscheidung August 2026, revidiert gegenüber der ursprünglichen Docker-Compose-Planung) — der einzige Grund für Container (die USB-TSE) hätte Bind-Mount-Propagation für Hot-Plug-Hardware benötigt, ohne echten Nutzen auf einem einzelnen dedizierten Server. Details: docs/SETUP.md → "Production-Deployment", docs/Installationsanleitung.md. Docker bleibt nur für die lokale Entwicklung (PostgreSQL). |
 | Projektstruktur | Monorepo | `packages/frontend`, `packages/backend`, `packages/shared` (gemeinsame TypeScript-Typen); ein Repository |
@@ -619,28 +618,39 @@ Es gibt 3 BSI-zertifizierte Cloud-TSE-Anbieter (Stand Mai 2026); alle erfordern 
   - Ist beim Artikel ein Drucker angegeben → Bestellung wird auf diesem Drucker gedruckt
   - Ist kein Drucker angegeben → Bestellung wird auf dem Standarddrucker gedruckt
 
-### Receipt-Renderer
-Rechnungsdaten werden einmal strukturiert gespeichert und von zwei unabhängigen Renderern ausgegeben:
+### Belegformat-Renderer (Task #105, 2026-09-01)
+
+Alle fünf Belegtypen (Rechnung, Z-Bon, Bestellzettel/Selbstabholer/Pfand,
+Testdruck, PIN-Zettel) werden einmal als neutrale, formatunabhängige
+Blockliste beschrieben (Textzeile, zweispaltige Zeile, Trennlinie, Bild,
+Leerzeile) und von **zwei gemeinsamen Renderern** ausgegeben:
 
 ```
-Rechnungsdaten (strukturiertes Objekt)
+Beleg-Blöcke (neutrale Liste: Text/Zeile/Trennlinie/Bild)
         │
-        ├──► ESC/POS-Renderer → Bondrucker (via Print Worker)
+        ├──► renderBlocksToEscPos → Bondrucker (via Print Worker)
         │
-        └──► PDF-Renderer    → QR-Code / UI-Vorschau / Export
+        └──► renderBlocksToPdf   → Admin-UI-Vorschau / Reprint-Quelle
 ```
 
-- **ESC/POS-Renderer:** erzeugt Druckbefehle für den Bondrucker (`@node-escpos/core`)
-- **PDF-Renderer:** erzeugt ein PDF aus einem HTML-Template (`puppeteer` oder `pdfkit`); wird verwendet für den QR-Code auf dem Kassierungsdialog, die UI-Vorschau sowie zukünftige Export-Funktionen
-- Beide Renderer arbeiten auf denselben Quelldaten — Layout und Inhalt eines Bons müssen nur einmal definiert werden
+- **ESC/POS-Renderer** (`print/blocks.ts`): erzeugt die Druckbefehle selbst geschrieben, keine externe ESC/POS-Bibliothek.
+- **PDF-Renderer** (`print/blocks.ts`, `pdfkit`): rendert mit einer Monospace-Schrift (Courier) und ohne Farbe, damit das PDF optisch dem Ausdruck entspricht, statt eigenständig zu driften (das war vor Task #105 der Fall — siehe TASKS.md Task #101).
+- Vorher hatte jeder Belegtyp zwei unabhängige, eigenständig gepflegte Renderer (nur die Rechnung hatte überhaupt beide Formate — die anderen vier Typen hatten gar keine PDF-Variante). Jetzt schreibt jeder Belegtyp seine Blöcke nur einmal (`receipt/blocks.ts`, `closing/blocks.ts`, `print/order-slip.ts`, `print/escpos.ts`).
+- Jeder `print_job` speichert seine Blöcke mit (`print_job.blocks`, JSONB) — das macht die Admin-Druckwarteschlange generisch: PDF-Vorschau und "Erneut drucken" funktionieren für **jeden** Auftragstyp, ohne die Quelldaten neu laden zu müssen (bei einem PIN-Zettel z. B. gar nicht möglich, da die PIN sonst nirgends im Klartext gespeichert ist). Einzige Ausnahme: PIN-Zettel selbst — dort sind PDF-Vorschau und Reprint aus Sicherheitsgründen bewusst gesperrt (Nutzerentscheidung 2026-09-01).
 
-#### Zwei getrennte PDF-Endpunkte (Kunde vs. Admin)
+#### PDF-Endpunkte (nur Admin — Task #100, 2026-09-01)
 
-Die PDF-Auslieferung ist bewusst in zwei Endpunkte aufgeteilt, weil sie zwei verschiedene Konsumenten mit unterschiedlichen Zugriffsmodellen bedienen:
+Früher gab es zusätzlich einen öffentlichen, token-authentisierten `GET
+/receipt/:token`-Endpunkt für Gäste (QR-Code auf dem Kassierungsdialog,
+siehe Entscheidung weiter unten unter „Kassieren"). **Entfernt (Task #100,
+2026-09-01)** — die digitale Gästebeleg-Funktion wurde ersatzlos verworfen,
+Belegausgabepflicht wird jetzt ausschließlich über aktives Anbieten des
+Papierbons erfüllt. `receipt_token`/`loadReceiptByToken` bleiben in der DB
+bzw. im Code, werden aber nur noch intern von den Admin-Endpunkten unten
+verwendet, nicht mehr von außen erreicht.
 
-- **`GET /receipt/:token`** — *öffentlich, token-authentisiert.* Das ist der Pfad, den der Kunde aus dem QR-Code aufruft. Die URL kann hinter einem externen Reverse-Proxy enden (damit Kundengeräte ohne WLAN-Beitritt darauf zugreifen können); die Server-Adresse für den QR-Code ist daher in den Systemeinstellungen konfigurierbar. Schutz: der Token ist zufällig und einmalig pro Rechnung.
-- **`GET /api/admin/invoices/:id/pdf`** — *Admin-Session-geschützt.* Das ist der Pfad, den die Admin-UI für „PDF anzeigen" in der Rechnungs-Auswertung verwendet. Adressiert wird per Invoice-ID; Zugriffsschutz ist die Admin-Session, nicht ein Token. **Wichtig:** die Admin-UI darf den Token-Pfad **nicht** verwenden, weil dieser unter Umständen einen anderen Hostnamen / Proxy hat als die Admin-API.
-- **`GET /api/admin/print-jobs/:id/pdf`** — *Admin-Session-geschützt, nur für `receipt`-Jobs.* Bietet eine PDF-Vorschau direkt aus der Druckwarteschlange; löst über `reference_id` die Quell-Rechnung auf. Für Bestellbons / Z-Bon / Testdrucke gibt es derzeit keine PDF-Vorschau.
+- **`GET /api/admin/invoices/:id/pdf`** — *Admin-Session-geschützt.* Das ist der Pfad, den die Admin-UI für „PDF anzeigen" in der Rechnungs-Auswertung verwendet. Adressiert wird per Invoice-ID; Zugriffsschutz ist die Admin-Session.
+- **`GET /api/admin/print-jobs/:id/pdf`** — *Admin-Session-geschützt, nur für `receipt`-Jobs.* Bietet eine PDF-Vorschau direkt aus der Druckwarteschlange; löst über `reference_id` die Quell-Rechnung auf. Für Bestellbons / Z-Bon / Testdrucke gibt es derzeit keine PDF-Vorschau (siehe Task #105).
 
 ### Druckwarteschlange
 - Druckaufträge werden in der PostgreSQL-Datenbank in einer Tabelle `print_jobs` gespeichert
@@ -771,7 +781,7 @@ Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — una
 - **„Zurücksetzen"-Button** setzt alle Mengen auf 0 — damit kann die Bedienung gezielt einzelne Artikel per + hinzufügen
 - Damit können Bestellungen auf mehrere Rechnungen aufgeteilt werden (z.B. von 3 Bier nur 2 kassieren; 1 bleibt offen am Tisch)
 - Zwei Aktions-Buttons nach der Positionsauswahl:
-  - **„Kassieren"** — Buchung + Öffnen des Zahlungsdialogs (QR-Code + „Rechnung drucken"); die ausgewählten Artikel werden am Tisch als bezahlt markiert
+  - **„Kassieren"** — Buchung + Öffnen des Zahlungsdialogs („Rechnung drucken" / „Kunde wünscht keinen Beleg"); die ausgewählten Artikel werden am Tisch als bezahlt markiert
   - **„Stornieren / Kostenfrei"** — öffnet den Stornodialog (siehe unten); die Buchungsentscheidung erfolgt vor der Verbuchung
 - Nach Schließen des Dialogs kehrt die Bedienung zur Tischaktionsauswahl (Schritt 2b) zurück
 - Sind alle Positionen eines Tisches bezahlt oder storniert, wird der Tisch im Saalplan automatisch als frei angezeigt
@@ -789,7 +799,8 @@ Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — una
 
 1. ~~**TSE-Technologie**~~ — **Entschieden (August 2026):** Hardware-TSE (USB), nicht Cloud-TSE (laufende Kosten). fiskaltrust verworfen (zu teuer, bestätigt durch Angebot). Gewählte Lösung: **Swissbit USB-TSE + direkte CLI-Subprozess-Integration** über das echte Swissbit-SDK (`wormCli`, verifiziert — royalty-free lizenziert, vorkompiliert für Linux x64, lokal über Dateisystem-Mount, keine Middleware, kein Netzwerkprotokoll). Details und Umsetzungsplan siehe TSE-Optionen-Abschnitt oben. Epson-natives Protokoll war Zwischenoption, nicht weiterverfolgt.
 
-2. ~~**QR-Code auf dem Kassierungsdialog**~~ — **Entschieden:** URL zum lokalen FairPOS-Server. Format: `http://{server-adresse}/receipt/{token}` — der Token ist ein zufälliger, einmaliger Wert pro Rechnung (schwer zu erraten, kein separater Login nötig). Der Endpunkt liefert die Rechnung als PDF. Voraussetzung: Kundengerät ist im selben WLAN wie der Server. Server-Adresse wird manuell in den Systemeinstellungen konfiguriert.
+2. ~~**QR-Code auf dem Kassierungsdialog**~~ — **Ursprünglich entschieden:** URL zum lokalen FairPOS-Server. Format: `http://{server-adresse}/receipt/{token}` — der Token ist ein zufälliger, einmaliger Wert pro Rechnung (schwer zu erraten, kein separater Login nötig). Der Endpunkt liefert die Rechnung als PDF. Voraussetzung: Kundengerät ist im selben WLAN wie der Server. Server-Adresse wird manuell in den Systemeinstellungen konfiguriert.
+   **Revidiert (Task #100, 2026-09-01):** Funktion komplett verworfen. Netzwerktechnisches Kernproblem, das nie sauber lösbar war: Gäste hätten ins private WLAN des Vereins gemusst (oder ein separates Gäste-WLAN mit eigenem IP-Pool, was normale Haushaltsrouter nicht bieten). Belegausgabepflicht (§ 146a Abs. 1/2 AO, § 6 KassenSichV) wird stattdessen ausschließlich über aktives Anbieten des Papierbons erfüllt — rechtlich bereits ausreichend, kein QR-Code/keine elektronische Ausgabeform nötig. `GET /receipt/:token`, die „Server-Adresse"-Einstellung und der zugehörige Test-Button wurden entfernt; PDF-Rechnungen bleiben als Admin-Funktion (Download/Reprint) erhalten.
 
 3. ~~**Authentifizierung**~~ — **Entschieden (2026-08-27, Task #90 — löst die ursprüngliche QR-Token-Entscheidung ab):** Ein gemeinsames Login für alle (Admin wie Bedienung) über eine dauerhafte, vom Administrator vergebene PIN (`XXX-XXX-XXX`, A–Z+0–9 ohne verwechselbare Zeichen) — identifiziert und authentifiziert in einem Schritt, kein Benutzername nötig. Landet immer auf der Kassenauswahl; ein Administrator sieht dort zusätzlich einen „Systemverwaltung"-Button, der einmalig pro Sitzung das bestehende Passwort abfragt (Stufenauth). Grund für die Ablösung des QR-Tokens: unhandlich, sobald die App als PWA/Homescreen-Bookmark läuft (feste URL statt Einmallink). Sessions sind serverseitig verwaltet (Tabelle `session`), laufen nach 4h Inaktivität ab, verlängern sich bei Nutzung. IP-Sperre nach 3 Fehlversuchen (15 Min.) statt Kontosperre, da die PIN allein keinen Benutzernamen preisgibt.
 

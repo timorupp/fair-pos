@@ -54,7 +54,6 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 ### System (Einstellungen → System, `/admin/settings/system`)
 - [ ] Kassensystem-Seriennummer wird angezeigt (nicht editierbar), Kopieren-Button funktioniert
 - [ ] Zeitzone + laufende Serverzeit werden angezeigt und aktualisieren sich
-- [ ] Server-Adresse speichern — QR-Code auf Kundenbon zeigt danach korrekt auf diese Adresse — **System-Administrator-exklusiv** (Task #94)
 - [ ] **Datenbank-Backup:** „Backup herunterladen" liefert ein ZIP mit SQL-Dump + Wiederherstellungs-README — **System-Administrator-exklusiv** (Task #94)
 
 ### TSE (Einstellungen → TSE, `/admin/settings/tse`)
@@ -69,7 +68,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 ### Zwei-Stufen-Admin (Task #94)
 - [ ] Veranstaltungs-Administrator-Konto: Menüpunkte „Veranstaltungen" und „Backup" sind nicht sichtbar/erreichbar (403 bei direktem Aufruf der jeweiligen Route) — „Systemprotokoll" dagegen bewusst sichtbar (seit 2026-08-31, siehe Task #94-Revision), da die Dashboard-Kachel „TSE-Zustand" für beide Adminstufen davon abhängt
 - [ ] Veranstaltungs-Administrator kann `is_admin` bei keinem Benutzer setzen, keinen System-Administrator löschen oder dessen Passwort/PIN ändern
-- [ ] Veranstaltungs-Administrator sieht in den Einstellungen keine System-exklusiven Felder (Belegnummer-Präfix/-Start, Pfand-USt-Satz, Server-Adresse)
+- [ ] Veranstaltungs-Administrator sieht in den Einstellungen keine System-exklusiven Felder (Belegnummer-Präfix/-Start, Pfand-USt-Satz)
 - [ ] Veranstaltungs-Administrator sieht die aktive Veranstaltung auf dem Dashboard und in der Veranstaltungsliste, hat aber keinen „Aktivieren"-Button
 
 ---
@@ -105,8 +104,8 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] Artikel per Tap zur Bestellliste hinzufügen, Menge ändern, Position entfernen
 - [ ] Negative/leere Bestellliste wird beim Kassieren-Versuch abgelehnt
 - [ ] Kassieren erzeugt Beleg mit korrekter, fortlaufender Belegnummer
-- [ ] QR-Code im Kassierdialog zeigt auf den Kundenbeleg (siehe Abschnitt 13)
 - [ ] „Rechnung drucken" enqueued einen Druckauftrag
+- [ ] „Kunde wünscht keinen Beleg" schließt den Dialog ohne Druckauftrag (Task #100 — ersetzt die frühere QR-Code-Anzeige)
 - [ ] Selbstabholerbon wird pro Artikel-Einheit am Kassendrucker gedruckt (nicht am Standarddrucker der Bedienung)
 - [ ] Pfandartikel: Pfandbon wird korrekt gedruckt (separat oder inline, je Artikelkonfiguration)
 - [ ] Kassieren funktioniert weiterhin, wenn kein Drucker zugeordnet ist — `slip_printer_missing`-Hinweis sichtbar
@@ -228,18 +227,21 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 - [ ] Fehlgeschlagener Job (Drucker offline) kann erneut versucht werden
 - [ ] Job kann abgebrochen/gelöscht werden
 - [ ] Testdruck vom Drucker-Einstellungsbildschirm funktioniert
+- [ ] **PDF-Button (Task #105):** für jeden Auftragstyp außer PIN-Zettel
+      verfügbar (Rechnung, Z-Bon, Bestellzettel, Testdruck) — öffnet eine
+      PDF-Vorschau, die optisch wie der Ausdruck aussieht (Monospace, keine
+      Farbe)
+- [ ] **"Erneut drucken" (Task #105):** für jeden Auftragstyp außer
+      PIN-Zettel verfügbar, unabhängig vom Status — legt einen neuen
+      Druckauftrag mit identischem Inhalt auf demselben Drucker an
+- [ ] **PIN-Zettel-Sperre (Task #105, Sicherheit):** weder PDF-Button noch
+      "Erneut drucken" erscheinen bei einem PIN-Zettel-Auftrag; direkter
+      Aufruf der Endpunkte (`GET/POST .../pin-zettel-id/pdf` bzw.
+      `/reprint`) liefert `403`, nicht nur ausgeblendet im UI
 
 ---
 
-## 12. Kundenansicht (Rechnung online)
-
-- [ ] QR-Code vom Kassierdialog scannen (oder URL manuell öffnen) → öffentliche Rechnungsseite lädt ohne Login
-- [ ] Rechnungs-PDF zeigt dieselben Daten wie der gedruckte Bon (inkl. TSE-Block, auch wenn leer)
-- [ ] Ungültiger/abgelaufener Token liefert 404, keine Serverfehler-Seite
-
----
-
-## 13. Rand- und Fehlerfälle
+## 12. Rand- und Fehlerfälle
 
 - [ ] Doppeltes Anlegen (Artikelgruppe, Benutzername, Tisch-Label) wird mit 409 abgelehnt, nicht mit 500
 - [ ] Sehr lange Texteingaben (Artikelname, Notiz) werden ohne Absturz verarbeitet oder sinnvoll begrenzt
@@ -249,7 +251,7 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 
 ---
 
-## 14. Touch-/Mobile-Bedienung
+## 13. Touch-/Mobile-Bedienung
 
 - [ ] Bonkasse- und Bedienungskasse-UI auf einem Tablet/Touch-Gerät im Querformat getestet
 - [ ] Buttons groß genug für Touch-Bedienung (kein versehentliches Doppel-Tap-Auslösen)
