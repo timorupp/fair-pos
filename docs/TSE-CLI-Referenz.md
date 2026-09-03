@@ -194,6 +194,15 @@ eine Tab-getrennte Zeile nach `<ausgabedatei>`:
 Kassenbeleg) — kein Envelope-/Signatur-Parsing nötig, kein Login
 erforderlich.
 
+**Steuerzeichen werden escaped** (`\r` → `\r`-Literal, `\n` → `\n`-Literal,
+`\t` → `\t`-Literal): `Bestellung-V1` trennt mehrere Bestellzeilen laut
+Anhang I mit einem rohen `\r` (`buildAvBestellungProcessData`) — roh
+geschrieben würde ein Terminal/Pager das als "Cursor an Zeilenanfang"
+interpretieren und den Zeilenanfang (`id`/Typ/Länge) optisch überschreiben,
+was wie eine kaputte TSE-Aufzeichnung aussieht, obwohl die Daten auf der
+TSE unversehrt sind — nur die Dump-Datei hätte es falsch dargestellt.
+Gefunden und behoben 2026-09-02 beim ersten echten Testlauf.
+
 **Zweck: prüfen, ob wirklich jede Testbuchung mit den richtigen Beträgen auf
 der TSE ankam** — Task #102/#47 (`TASKS.md`). Ersetzt die zuvor
 vorgesehene, dauerhaft eigene Testing-Helper-Idee: die Prüfung braucht

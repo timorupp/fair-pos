@@ -148,6 +148,27 @@ const char *entryTypeName(WormEntryType type) {
   }
 }
 
+/** Writes `processData` bytes to a dump file with control characters
+ * escaped as `\r`/`\n`/`\t` literals. Needed because `Bestellung-V1`
+ * (`tse/processData.ts`'s `buildAvBestellungProcessData`) joins multiple
+ * order lines with a bare `\r` per DSFinV-K Anhang I — written raw, a
+ * terminal/pager renders that `\r` as "cursor back to column 0", visually
+ * overwriting the start of the very line it's part of (id/type/length)
+ * with the second half of the content, looking like data corruption even
+ * though the underlying TSE data is intact. Also guards against a tab or
+ * newline ever appearing in a free-text field (article/Bezeichnung),
+ * which would otherwise be indistinguishable from `dumpProcessData`'s own
+ * column separator. */
+void writeEscaped(std::FILE *f, const unsigned char *data, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    unsigned char c = data[i];
+    if (c == '\r') std::fputs("\\r", f);
+    else if (c == '\n') std::fputs("\\n", f);
+    else if (c == '\t') std::fputs("\\t", f);
+    else std::fputc(c, f);
+  }
+}
+
 // -- command handlers ---------------------------------------------------------
 
 /** `setup <clientId> <credentialSeed> <adminPuk> <adminPin> <timeAdminPin>`
@@ -398,13 +419,14 @@ int cmdDeleteStoredData(WormContext *ctx, int argc, char **argv) {
 /** `dumpProcessData <ausgabedatei>` — admin-only testing helper (TASKS.md
  * Task #102): walks every entry currently stored on the TSE via
  * `worm_entry_iterate_*` and writes one tab-separated line per entry
- * (`id`, entry type, processData length, decoded processData) to
- * `<ausgabedatei>`. Lets an admin eyeball, during a manual test run, that
- * every expected receipt/order actually reached the TSE with the right
- * amounts — reads only `processData` (FairPOS's own DSFinV-K Anhang I wire
- * format, plain UTF-8 text, see `tse/processData.ts`), never the signed
- * Log Message envelope itself (undocumented in the vendored SDK headers,
- * see docs/TSE-Integration.md Abschnitt 11). No login required — reading
+ * (`id`, entry type, processData length, decoded processData, control
+ * characters escaped — see `writeEscaped`) to `<ausgabedatei>`. Lets an
+ * admin eyeball, during a manual test run, that every expected
+ * receipt/order actually reached the TSE with the right amounts — reads
+ * only `processData` (FairPOS's own DSFinV-K Anhang I wire format, plain
+ * UTF-8 text, see `tse/processData.ts`), never the signed Log Message
+ * envelope itself (undocumented in the vendored SDK headers, see
+ * docs/TSE-Integration.md Abschnitt 11). No login required — reading
  * entries only fails while *TimeAdmin* is logged in (`WormDLL.h`'s "Export
  * Changes" notes), which FairPOS never leaves active outside of `maintain`.
  * Never called by FairPOS itself; deliberately not wired into the
@@ -442,7 +464,7 @@ int cmdDumpProcessData(WormContext *ctx, int argc, char **argv) {
     }
     std::fprintf(f, "%u\t%s\t%llu\t", worm_entry_id(entry),
                  entryTypeName(worm_entry_type(entry)), (unsigned long long)len);
-    if (len > 0) std::fwrite(buf.data(), 1, len, f);
+    if (len > 0) writeEscaped(f, buf.data(), len);
     std::fputc('\n', f);
     count++;
 
