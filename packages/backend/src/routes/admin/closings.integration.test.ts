@@ -53,8 +53,8 @@ async function insertPaidInvoice(date: string, gross: number): Promise<string> {
   await pool.query(
     `INSERT INTO order_item (
        invoice_id, register_id, article_name, article_category_name,
-       tax_rate, price, deposit_price, status, created_at
-     ) VALUES ($1, $2, 'Bier', 'Getränke', 19, $3, NULL, 'paid', $4)`,
+       tax_rate, tax_category, price, deposit_price, status, created_at
+     ) VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', $3, NULL, 'paid', $4)`,
     [inv.rows[0]!.id, registerId, gross, date],
   );
   return inv.rows[0]!.id;
@@ -70,8 +70,9 @@ describe('POST /api/admin/registers/:id/closings', () => {
     });
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.z_number).toBe(1);
-    expect(body.is_zero_closing).toBe(false);
+    expect(body.closings).toHaveLength(1);
+    expect(body.closings[0].z_number).toBe(1);
+    expect(body.closings[0].is_zero_closing).toBe(false);
   });
 
   it('increments z_number per register', async () => {
@@ -83,7 +84,7 @@ describe('POST /api/admin/registers/:id/closings', () => {
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
       headers: { cookie: adminCookie },
     });
-    expect(r2.json().z_number).toBe(2);
+    expect(r2.json().closings[0].z_number).toBe(2);
   });
 
   it('produces a zero closing when there is no turnover', async () => {
@@ -92,7 +93,9 @@ describe('POST /api/admin/registers/:id/closings', () => {
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
       headers: { cookie: adminCookie },
     });
-    expect(response.json().is_zero_closing).toBe(true);
+    const body = response.json();
+    expect(body.closings).toHaveLength(1);
+    expect(body.closings[0].is_zero_closing).toBe(true);
   });
 
   it('links the closed invoices to the new closing (daily_closing_id set)', async () => {
@@ -102,7 +105,7 @@ describe('POST /api/admin/registers/:id/closings', () => {
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
       headers: { cookie: adminCookie },
     });
-    const closingId = response.json().closing_id;
+    const closingId = response.json().closings[0].closing_id;
     const inv = await pool.query<{ daily_closing_id: string | null }>(
       `SELECT daily_closing_id FROM invoice WHERE id = $1`, [invoiceId],
     );
@@ -116,9 +119,43 @@ describe('POST /api/admin/registers/:id/closings', () => {
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
       headers: { cookie: adminCookie },
     });
-    expect(response.json().print_job_id).toBeTruthy();
+    expect(response.json().closings[0].print_job_id).toBeTruthy();
     const jobs = await pool.query(`SELECT * FROM print_job WHERE type = 'daily_closing'`);
     expect(jobs.rowCount).toBe(1);
+  });
+
+  // Task #106: a register with unassigned invoices from more than one
+  // calendar day used to get a single Z-Bon lump-stamped with today's date
+  // — the older day's revenue was silently misattributed and the day stayed
+  // marked "offen" forever. Each distinct day must now get its own,
+  // correctly dated Z-Bon.
+  it('produces one correctly dated Z-Bon per distinct calendar day (not one lump closing stamped as today)', async () => {
+    const app = await getTestApp();
+    const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    await insertPaidInvoice(`${fmt(yesterday)} 12:00:00`, 10); // an old, never-closed day
+    await insertPaidInvoice('2026-06-24 09:00:00', 5);         // a second, distinct day
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const closings = response.json().closings;
+    expect(closings).toHaveLength(2);
+
+    const stored = await pool.query<{ business_date: string; total_gross: string }>(
+      `SELECT to_char(business_date, 'YYYY-MM-DD') AS business_date, total_gross::text
+         FROM daily_closing WHERE register_id = $1 ORDER BY z_number`,
+      [registerId],
+    );
+    // z_number order follows chronological day order (closeAllPendingDays
+    // processes days ascending), not insertion order — 2026-06-24 predates
+    // "yesterday" so it gets the lower z_number.
+    expect(stored.rows[0]!.business_date).toBe('2026-06-24');
+    expect(Number(stored.rows[0]!.total_gross)).toBe(5);
+    expect(stored.rows[1]!.business_date).toBe(fmt(yesterday));
+    expect(Number(stored.rows[1]!.total_gross)).toBe(10);
   });
 
   it('rejects unauthenticated requests with 401', async () => {
@@ -219,9 +256,10 @@ describe('POST /api/admin/registers/:id/close-pending', () => {
       headers: { cookie: adminCookie },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().print_job_id).not.toBeNull();
+    const printJobId = response.json().closings[0].print_job_id;
+    expect(printJobId).not.toBeNull();
     const job = await pool.query<{ printer_id: string }>(
-      `SELECT printer_id FROM print_job WHERE id = $1`, [response.json().print_job_id],
+      `SELECT printer_id FROM print_job WHERE id = $1`, [printJobId],
     );
     expect(job.rows[0]!.printer_id).toBe(defaultP.id);
   });

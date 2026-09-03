@@ -16,20 +16,22 @@
  * see `tse/certificateInfo.ts`.
  */
 
+import type { TaxCategory } from '@fairpos/shared';
+
 /** The three DSFinV-K tax-rate slots FairPOS ever populates for `<Brutto-Steuerumsätze>` — the other two (Durchschnittssätze §24 UStG) are always `0.00`, FairPOS has no Landwirtschaft/Forstwirtschaft turnover. */
 interface TaxSlotTotals {
-  /** Allgemeiner Steuersatz (19 %). */
+  /** Allgemeiner Steuersatz. */
   allgemein: number;
-  /** Ermäßigter Steuersatz (7 %). */
+  /** Ermäßigter Steuersatz. */
   ermaessigt: number;
   /** 0 % / steuerfrei. */
   steuerfrei: number;
 }
 
-/** Maps a percent tax rate to its `<Brutto-Steuerumsätze>` slot (Anhang I: fixed order, only the rates FairPOS actually uses). */
-function taxSlot(ratePercent: number): keyof TaxSlotTotals {
-  if (Math.abs(ratePercent - 19) < 0.01) return 'allgemein';
-  if (Math.abs(ratePercent - 7) < 0.01) return 'ermaessigt';
+/** Maps a VAT category to its `<Brutto-Steuerumsätze>` slot (Anhang I: fixed order). Category-based rather than a percentage comparison (Task #110) — stays correct across any future Regelsteuersatz change instead of silently falling into `steuerfrei` for an unrecognised number. */
+function taxSlot(category: TaxCategory): keyof TaxSlotTotals {
+  if (category === 'standard') return 'allgemein';
+  if (category === 'reduced') return 'ermaessigt';
   return 'steuerfrei';
 }
 
@@ -55,8 +57,10 @@ export const SONSTIGER_VORGANG_PROCESS_TYPE = 'SonstigerVorgang';
 export interface KassenbelegPosition {
   quantity: number;
   unitPriceEuros: number;
+  /** Positive = Pfand aufgeschlagen, negative = Leergutrückgabe, null/0 = kein Pfand. Always taxed at `standard` regardless of `taxCategory` (Task #113 — Pfand unterliegt immer dem Regelsteuersatz). */
   depositPriceEuros: number | null;
-  taxRatePercent: number;
+  /** VAT category of the article itself — does NOT apply to `depositPriceEuros`, see above. */
+  taxCategory: TaxCategory;
 }
 
 /** Everything about a completed sale (or Bonstorno) that gets signed as `Kassenbeleg-V1`. */
@@ -84,9 +88,18 @@ export function buildKassenbelegProcessData(snapshot: KassenbelegSnapshot): Buff
   const totals: TaxSlotTotals = { allgemein: 0, ermaessigt: 0, steuerfrei: 0 };
   let totalBrutto = 0;
   for (const pos of snapshot.positions) {
-    const brutto = sign * pos.quantity * (pos.unitPriceEuros + (pos.depositPriceEuros ?? 0));
-    totals[taxSlot(pos.taxRatePercent)] += brutto;
-    totalBrutto += brutto;
+    // Article and deposit are bucketed separately — the deposit always goes
+    // to `allgemein` (Regelsteuersatz) regardless of the article's own
+    // category (Task #113), so the two must never be summed before bucketing.
+    const articleBrutto = sign * pos.quantity * pos.unitPriceEuros;
+    totals[taxSlot(pos.taxCategory)] += articleBrutto;
+    totalBrutto += articleBrutto;
+
+    if (pos.depositPriceEuros) {
+      const depositBrutto = sign * pos.quantity * pos.depositPriceEuros;
+      totals.allgemein += depositBrutto;
+      totalBrutto += depositBrutto;
+    }
   }
 
   // "Zahlungen von 0.00 müssen entfallen" — omit the payment entirely rather

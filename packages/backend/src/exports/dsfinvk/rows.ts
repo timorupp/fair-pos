@@ -13,6 +13,7 @@ import type {
 import {
   KASSENBELEG_PROCESS_TYPE, BESTELLUNG_PROCESS_TYPE, SONSTIGER_VORGANG_PROCESS_TYPE,
 } from '../../tse/processData.js';
+import type { TaxCategory } from '@fairpos/shared';
 
 /** Maps a DSFinV-K `BON_TYP` to the literal TSE `processType` FairPOS actually signed it with — these are two distinct vocabularies (see tse/processData.ts), and Anhang E defines `TSE_TA_VORGANGSART` as the latter. */
 function tseProcessTypeFor(bonTyp: SourceVorgang['bonTyp']): string {
@@ -36,11 +37,15 @@ export interface SourceLineItem {
   articleId: string | null;
   articleName: string;
   categoryName: string;
-  /** Percent, e.g. 19, 7, 0. */
+  /** Percent, e.g. 19, 7, 0 — the article's own rate (excludes any deposit). */
   taxRate: number;
+  /** VAT category `taxRate` belongs to (Task #110) — used for `UST_SCHLUESSEL` instead of re-guessing it from the raw percentage. */
+  taxCategory: TaxCategory;
   priceEuros: number;
   /** Positive = Pfand aufgeschlagen, negative = Leergutrückgabe, null/0 = kein Pfand. */
   depositPriceEuros: number | null;
+  /** Percent the deposit portion was taxed at — always the Regelsteuersatz in effect at booking time (Task #113), independent of `taxCategory`. `null` unless `depositPriceEuros` is set. */
+  depositTaxRate: number | null;
 }
 
 /** One fiscal Vorgang — an invoice (Kassenbeleg-V1/Beleg), a service_order (AVBestellung), or an order_cancellation (AVSonstige). */
@@ -91,16 +96,16 @@ export interface DsfinvkSource {
     taxNumber: string;
     vatId: string | null;
   };
-  /** Distinct active tax rates, e.g. [{rate: 19, description: 'Allgemeiner Steuersatz'}, ...]. */
-  taxRates: { rate: number; description: string }[];
+  /** Distinct active tax rates, e.g. [{category: 'standard', rate: 19, description: 'Allgemeiner Steuersatz'}, ...]. */
+  taxRates: { category: TaxCategory; rate: number; description: string }[];
   vorgaenge: SourceVorgang[];
 }
 
-/** Maps a percent tax rate to its DSFinV-K UST_SCHLUESSEL (Stamm_USt, Abschnitt 6.4). Only the rates FairPOS actually uses. */
-function ustSchluessel(ratePercent: number): number {
-  if (Math.abs(ratePercent - 19) < 0.01) return 1;
-  if (Math.abs(ratePercent - 7) < 0.01) return 2;
-  return 5; // 0 % / steuerfrei
+/** Maps a VAT category to its DSFinV-K UST_SCHLUESSEL (Stamm_USt, Abschnitt 6.4). Category-based rather than a percentage comparison (Task #110) — stays correct across any future Regelsteuersatz change. */
+function ustSchluessel(category: TaxCategory): number {
+  if (category === 'standard') return 1;
+  if (category === 'reduced') return 2;
+  return 5; // zero / steuerfrei
 }
 
 /** Formats a euro amount with exactly two decimal places, dot as separator, no thousands separator (per Anhang I formatting rules, also applied to CSV amounts here for consistency). */
@@ -173,7 +178,7 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
 
   const vat: VatRow[] = source.taxRates.map((t) => ({
     ...schluessel,
-    UST_SCHLUESSEL: ustSchluessel(t.rate),
+    UST_SCHLUESSEL: ustSchluessel(t.category),
     UST_SATZ: t.rate.toFixed(2),
     UST_BESCHR: t.description,
   }));
@@ -243,7 +248,7 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     const vatBuckets = new Map<number, { brutto: number; netto: number; ust: number }>();
     let posZeile = 0;
     for (const it of v.items) {
-      const key = ustSchluessel(it.taxRate);
+      const key = ustSchluessel(it.taxCategory);
       const sign = v.isStornoBeleg ? -1 : 1;
 
       // Article line (GV_TYP = Umsatz).
@@ -265,11 +270,15 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
       addToVatBucket(vatBuckets, key, articleBrutto, articleNetto);
       addToBusinesscase(businesscaseTotals, 'Umsatz', key, articleBrutto, articleNetto);
 
-      // Separate Pfand / PfandRueckzahlung line, if this position carries a deposit.
+      // Separate Pfand / PfandRueckzahlung line, if this position carries a
+      // deposit — always taxed at `standard` (Task #113: Pfand unterliegt
+      // immer dem Regelsteuersatz), independent of the article's own `key`.
       if (it.depositPriceEuros !== null && it.depositPriceEuros !== 0) {
         posZeile += 1;
+        const depositKey = ustSchluessel('standard');
+        const depositRate = it.depositTaxRate ?? 0;
         const depositBrutto = sign * it.depositPriceEuros;
-        const depositNetto = depositBrutto / (1 + it.taxRate / 100);
+        const depositNetto = depositBrutto / (1 + depositRate / 100);
         const gvTyp = it.depositPriceEuros > 0 ? 'Pfand' : 'PfandRueckzahlung';
         lines.push({
           ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
@@ -280,11 +289,11 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
         });
         linesVat.push({
           ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
-          UST_SCHLUESSEL: key, POS_BRUTTO: euro(depositBrutto), POS_NETTO: euro(depositNetto),
+          UST_SCHLUESSEL: depositKey, POS_BRUTTO: euro(depositBrutto), POS_NETTO: euro(depositNetto),
           POS_UST: euro(depositBrutto - depositNetto),
         });
-        addToVatBucket(vatBuckets, key, depositBrutto, depositNetto);
-        addToBusinesscase(businesscaseTotals, gvTyp, key, depositBrutto, depositNetto);
+        addToVatBucket(vatBuckets, depositKey, depositBrutto, depositNetto);
+        addToBusinesscase(businesscaseTotals, gvTyp, depositKey, depositBrutto, depositNetto);
       }
     }
     for (const [key, sums] of vatBuckets) {

@@ -311,17 +311,27 @@
         {#if testPrintFeedback}<p class="hint">{testPrintFeedback}</p>{/if}
       </section>
 
-      {#if $adminUser?.is_admin}
-        <section>
-          <h2>Pfand</h2>
+      <section>
+        <h2>Umsatzsteuersätze</h2>
+        <p class="hint">
+          Gelten für Artikelgruppen mit Steuersatz "Regelsteuersatz"/"Ermäßigt" sowie für Pfand
+          (immer Regelsteuersatz, unabhängig vom Steuersatz des Artikels).
+        </p>
+        <div class="field-row">
           <div class="field field-short">
-            <label for="s-vat-deposit">Umsatzsteuersatz Pfand (%)</label>
-            <input id="s-vat-deposit" inputmode="decimal" value={settings['vat_rate_deposit'] ?? ''}
-                   oninput={(e) => { settings['vat_rate_deposit'] = e.currentTarget.value; success = false; }}
+            <label for="s-vat-standard">Regelsteuersatz (%)</label>
+            <input id="s-vat-standard" inputmode="decimal" value={settings['vat_rate_standard'] ?? ''}
+                   oninput={(e) => { settings['vat_rate_standard'] = e.currentTarget.value; success = false; }}
                    disabled={saving} placeholder="z. B. 19" />
           </div>
-        </section>
-      {/if}
+          <div class="field field-short">
+            <label for="s-vat-reduced">Ermäßigter Steuersatz (%)</label>
+            <input id="s-vat-reduced" inputmode="decimal" value={settings['vat_rate_reduced'] ?? ''}
+                   oninput={(e) => { settings['vat_rate_reduced'] = e.currentTarget.value; success = false; }}
+                   disabled={saving} placeholder="z. B. 7" />
+          </div>
+        </div>
+      </section>
 
       {#if error}<p class="error-text">{error}</p>{/if}
       {#if success}<p class="success-text">Gespeichert.</p>{/if}

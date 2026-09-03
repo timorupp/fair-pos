@@ -1,5 +1,7 @@
 /** Structured receipt data: the single source of truth consumed by both the PDF and ESC/POS renderers. */
 
+import type { TaxCategory } from '@fairpos/shared';
+
 /** One aggregated line on the receipt. Multiple identical order items are merged into one position with a quantity. */
 export interface ReceiptPosition {
   /** Display name (the article's name). */
@@ -10,8 +12,12 @@ export interface ReceiptPosition {
   unitPrice: number;
   /** Per-unit gross deposit in euro (positive = Pfand aufgeschlagen, negative = Leergutrückgabe). Null if no deposit. */
   unitDeposit: number | null;
-  /** VAT rate of the article (e.g. 19, 7, 0). */
+  /** VAT rate of the article itself, excluding any deposit (e.g. 19, 7, 0). */
   taxRate: number;
+  /** VAT category `taxRate` belongs to (Task #110) — needed to recompute the exact same TSE `processData` for the QR code (`receipt/qr.ts`), which takes a category, not a raw percentage. */
+  taxCategory: TaxCategory;
+  /** VAT rate the deposit portion was taxed at — always the Regelsteuersatz in effect at booking time (Task #113), independent of `taxRate`. `null` unless `unitDeposit` is set. */
+  depositTaxRate: number | null;
   /** Total gross for the line: `(unitPrice + unitDeposit) * quantity`. */
   lineGross: number;
 }

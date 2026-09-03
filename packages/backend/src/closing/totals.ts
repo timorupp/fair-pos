@@ -1,13 +1,15 @@
 /** Pure aggregation for daily-closing (Z-Bon) totals. */
 
+import type { TaxCategory } from '@fairpos/shared';
+
 /** One order item, as it contributes to the closing aggregate. */
 export interface ClosingItem {
   status: 'paid' | 'free' | 'cancelled' | 'open';
-  /** VAT rate in percent (e.g. 19, 7, 0). */
-  tax_rate: number;
-  /** Per-unit gross price. */
+  /** VAT category of the article itself (Task #110) — does NOT apply to `deposit_price`, see below. */
+  tax_category: TaxCategory;
+  /** Per-unit gross price (article only, excludes deposit). */
   price: number;
-  /** Per-unit gross deposit; null when absent. */
+  /** Per-unit gross deposit; null when absent. Always taxed at `standard` regardless of `tax_category` (Task #113 — Pfand unterliegt immer dem Regelsteuersatz). */
   deposit_price: number | null;
 }
 
@@ -64,7 +66,8 @@ export function computeClosingTotals(invoices: ClosingInvoice[]): ClosingTotals 
   for (const inv of invoices) {
     let invoiceGross = 0;
     for (const item of inv.items) {
-      const lineGross = item.price + (item.deposit_price ?? 0);
+      const depositGross = item.deposit_price ?? 0;
+      const lineGross = item.price + depositGross;
 
       if (item.status === 'cancelled' || item.status === 'free') {
         total_cancellations += lineGross;
@@ -73,9 +76,13 @@ export function computeClosingTotals(invoices: ClosingInvoice[]): ClosingTotals 
 
       if (inv.receipt_type === 'sales_receipt') {
         total_gross += lineGross;
-        if (item.tax_rate >= 18.5) total_tax_standard += lineGross;
-        else if (item.tax_rate >= 6.5) total_tax_reduced += lineGross;
-        else total_tax_zero += lineGross;
+        // Article and deposit are bucketed separately — the deposit always
+        // counts toward `total_tax_standard` (Task #113), independent of
+        // the article's own category.
+        if (item.tax_category === 'standard') total_tax_standard += item.price;
+        else if (item.tax_category === 'reduced') total_tax_reduced += item.price;
+        else total_tax_zero += item.price;
+        total_tax_standard += depositGross;
       }
       invoiceGross += lineGross;
     }

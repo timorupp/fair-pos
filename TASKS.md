@@ -3055,6 +3055,23 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   (lokal vorhandene, gitignorte) SDK-Bibliothek getestet; mangels
   physischer Entwickler-TSE nicht mit echter Hardware verifiziert.
 
+  **Live verifiziert und nachgebessert (2026-09-02):** Nutzer hat den
+  Befehl gegen echte Hardware laufen lassen — Inhalte (Kassenbeleg-V1,
+  Bestellung-V1, Kostenfreie-Abgabe-/Storno-Texte aus `SonstigerVorgang`)
+  stimmten mit den tatsächlichen Testbuchungen überein. Dabei außerdem
+  bestätigt: die TSE vergibt Eintrags-IDs ausnahmslos ungerade (17, 19,
+  21 … über alle drei Eintragstypen hinweg, auch `SE_AUDIT_LOG_MESSAGE`)
+  — reine Nummerierungskonvention der Hardware, keine Lücke, keine
+  Bedeutung für die Auswertung. **Gefundener und behobener Bug:**
+  `Bestellung-V1`-Einträge mit mehreren Zeilen (getrennt durch rohes `\r`
+  laut Anhang I) wurden unescaped in die Dump-Datei geschrieben — ein
+  Terminal/Pager interpretiert das `\r` als "Cursor an Zeilenanfang" und
+  überschreibt optisch `id`/Typ/Länge, sieht wie eine korrupte
+  TSE-Aufzeichnung aus, obwohl die TSE-Daten unversehrt waren (reiner
+  Anzeigefehler der Dump-Datei). `writeEscaped()` ergänzt (`\r`/`\n`/`\t`
+  werden jetzt als Literal ausgegeben statt roh geschrieben) — siehe
+  `docs/TSE-CLI-Referenz.md` Abschnitt 2.
+
 - [x] **#103** `exportTar`-Rohdaten-Export der TSE über die Admin-Oberfläche freigeben
   Aufgekommen 2026-09-01, ursprünglich als niedrig priorisierter
   Backlog-Eintrag angelegt (offene Frage: was man mit dem TAR-Inhalt
@@ -3417,3 +3434,491 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
 
   **Live bestätigt (2026-09-01):** Smoke-Test durch den Nutzer — Druck von
   Bons an echter Hardware funktioniert.
+
+- [x] **#106** "Alle Kassen abschließen"/Sofort-Abschließen stempelt Z-Bon mit falschem Buchungstag bei nachgeholten Rechnungen
+  **Klassifikation: Bug (hoch).** Nutzerbeobachtung 2026-09-02, Ursache per
+  Code-Recherche gefunden — siehe `DANGER.md` D-054 für die vollständige
+  Analyse.
+
+  **Kurzfassung der Ursache:** `closeRegister()` (`routes/admin/
+  closings.ts`) aggregiert ohne übergebenes `date`-Argument ALLE noch
+  unzugeordneten Rechnungen einer Kasse unabhängig davon, an welchem
+  Kalendertag sie gebucht wurden — stempelt den entstehenden
+  `daily_closing`-Eintrag aber immer mit `business_date = current_date`
+  statt mit dem tatsächlichen Rechnungsdatum. Betroffen: `POST /api/admin/
+  closings/close-all` (Alle-Kassen-Button) **und** `POST /api/admin/
+  registers/:id/closings` (Kasse-jetzt-abschließen-Button) — beide rufen
+  `closeRegister()` ohne `date` auf. **Nicht** betroffen: die dedizierte
+  "Tag nachholen"-Funktion (`close-pending`), die pro offenem Tag ein
+  explizites `date` übergibt und daher korrekt stempelt.
+
+  **Sichtbare/fachliche Folgen:**
+  - Ein eigentlich noch offener Tag zeigt sich danach weiterhin als
+    "offen" — der Pending-Tracker (`findPendingDaysForRegister`) prüft nur,
+    ob für den Kalendertag ein `daily_closing`-Eintrag mit passendem
+    `business_date` existiert, nicht ob die Rechnungen zugeordnet wurden.
+  - Ein späterer "Tag nachholen"-Versuch für genau diesen Tag findet keine
+    Rechnungen mehr (schon einem anderen, falsch datierten Z-Bon
+    zugeordnet) und erzeugt fälschlich einen zusätzlichen echten
+    Nullabschluss.
+  - Schwerwiegender als nur die UI-Anzeige: der tatsächliche Umsatz landet
+    dadurch fiskalisch auf dem falschen Kalendertag statt dem echten
+    Buchungstag — relevant für DSFinV-K-Export und alle
+    tagesbasierten Auswertungen.
+
+  **Reproduktion:** Kasse mit unzugeordneten Rechnungen von einem
+  vergangenen Tag (z. B. weil damals kein Z-Bon gemacht wurde) → "Alle
+  Kassen abschließen" oder "Kasse jetzt abschließen" klicken → Z-Bon wird
+  mit dem heutigen statt dem tatsächlichen Rechnungsdatum erstellt, der
+  ursprüngliche Tag bleibt als "offen" markiert.
+
+  **Entscheidung (2026-09-03, Nutzervorgabe): eigener Z-Bon pro Tag.**
+  "Alle Kassen abschließen"/"Kasse jetzt abschließen" erzeugen künftig
+  automatisch **einen separaten Z-Bon je Kalendertag**, an dem die Kasse
+  unzugeordnete Rechnungen hat — analog zu `close-pending`, aber
+  zusätzlich inklusive des **heutigen** Tages (den `close-pending`
+  bewusst ausklammert, da für reine Backlog-Nachholung gedacht — hier
+  aber ist "heute abschließen" der Hauptzweck der beiden Buttons, nicht
+  nur Nachholen).
+
+  **Umsetzungsskizze (grob, nicht final):** statt `closeRegister(id, name)`
+  einmalig ohne `date` aufzurufen, pro Kasse zuerst die Menge der
+  **tatsächlich vorkommenden** Kalendertage unter den unzugeordneten
+  Rechnungen ermitteln (`DISTINCT created_at::date`), dann chronologisch
+  aufsteigend je einen `closeRegister(id, name, day)`-Aufruf pro Tag.
+  **Sonderfall Nullabschluss bleibt erhalten:** hat eine Kasse gar keine
+  unzugeordneten Rechnungen (komplett inaktiv), entsteht weiterhin
+  genau ein Nullabschluss wie bisher (`closeRegister(id, name)` ohne
+  `date`) — kein Rückwärts-Auffüllen mit Nullabschlüssen für jeden
+  ungenutzten Tag seit der letzten Aktivität, das bleibt Aufgabe von
+  `close-pending`s bestehender Logik, falls dort mal gewünscht.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe).**
+
+- [x] **#107** Druckerwarteschlange: Button "Alle abbrechen" für wartende Druckaufträge
+  **Klassifikation: Verbesserung.** Nutzerwunsch 2026-09-02.
+
+  **Anforderung:** neuer Button "Alle abbrechen" auf der
+  Druckwarteschlange-Seite (`admin/settings/print-queue`), Position oben
+  neben "Aktualisieren" (im `.page-header`, nicht pro Tabellenzeile).
+  Bricht alle wartenden Druckaufträge ab.
+
+  **Entscheidung (2026-09-03, Nutzervorgabe):**
+  - **Nur `status=pending`**, `failed` bleibt ausgenommen. Zweck des
+    Buttons: verhindern, dass beim Wiedereinschalten eines Druckers eine
+    Flut alter, längst nicht mehr relevanter Aufträge (z. B. aus
+    vorherigen Testläufen) plötzlich losdruckt — dafür zählt nur, was
+    tatsächlich noch losgehen würde (`pending`), nicht was schon
+    fehlgeschlagen ist. `printing` war ohnehin schon durch das bestehende
+    Einzel-Abbrechen ausgeschlossen (409).
+  - **Wirklich alle `pending`-Aufträge systemweit**, unabhängig vom
+    aktuell gesetzten Status-Filter der Seite.
+
+  **Umsetzungsskizze (grob, nicht final):** neuer Bulk-Endpunkt (z. B.
+  `POST /api/admin/print-jobs/cancel-all`), setzt `status = 'cancelled'`
+  für alle Zeilen mit `status = 'pending'` in einer Query statt N
+  Einzel-Requests vom Frontend. Bestätigungsdialog analog zum
+  bestehenden Einzel-Abbrechen sinnvoll, da nicht rückgängig machbar.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe — Komfort fürs Testing, geringes Risiko).**
+
+- [x] **#108** "Erneut drucken" mit Drucker-Auswahl-Dialog statt fest auf den Original-Drucker
+  **Klassifikation: Verbesserung.** Nutzerwunsch 2026-09-02.
+
+  **Anforderung:** der "Erneut drucken"-Button in der Druckwarteschlange
+  soll vor dem erneuten Drucken einen Dialog zur Druckerauswahl zeigen
+  (z. B. weil der ursprüngliche Drucker offline ist oder der Beleg auf
+  einem anderen Drucker gebraucht wird), mit dem bisherigen Drucker
+  vorausgewählt.
+
+  **Ist-Stand (Code-Recherche):** `POST /api/admin/print-jobs/:id/reprint`
+  (`routes/admin/print-jobs.ts`) druckt aktuell immer fest auf
+  `job.printer_id`, den ursprünglichen Drucker — kein Parameter für einen
+  abweichenden Zieldrucker vorhanden. Liefert sogar `409` ("Der Drucker
+  dieses Auftrags wurde gelöscht — kann nicht erneut gedruckt werden"),
+  wenn der Original-Drucker inzwischen gelöscht wurde — ein
+  Auswahl-Dialog würde diesen Sackgassen-Fall gleich mitlösen (Admin
+  könnte dann einfach einen anderen Drucker wählen statt komplett
+  blockiert zu sein).
+
+  **Umsetzungsskizze (grob, nicht final):** Backend — `reprint`-Route um
+  optionalen Body-Parameter `printer_id` erweitern (fällt ohne Angabe auf
+  `job.printer_id` zurück, abwärtskompatibel zu jedem anderen Aufrufer).
+  Frontend — Klick auf "Erneut drucken" öffnet ein kleines Modal
+  (bestehende `Modal.svelte` wiederverwenden) mit Drucker-Dropdown (aus
+  der bestehenden Drucker-Liste, `api.admin.printers.list()`),
+  vorausgewählt der Drucker aus `j.printer_id`; ein "Drucken"-Button im
+  Dialog löst den eigentlichen Reprint-Call mit der Auswahl aus.
+
+  **Entscheidung (2026-09-03, Nutzervorgabe):** wenn der ursprüngliche
+  Drucker gelöscht wurde (kein `printer_id` mehr), wird stattdessen der
+  aktuelle **Standarddrucker** (`printer.is_default = true`) vorausgewählt
+  — löst damit auch gleich die bisherige harte 409-Ablehnung ab. Gibt es
+  gar keinen Drucker im System (auch keinen Standarddrucker), ist Erneut-
+  Drucken ohnehin nicht möglich — kein Sonderfall nötig, der Dialog zeigt
+  dann schlicht keine Auswahlmöglichkeit.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe — Komfort fürs Testing, geringes Risiko).**
+
+- [ ] **#109** Schutz gegen zu häufige TSE-Zeitsynchronisation (`worm_tse_updateTime`)
+  **Klassifikation: Bug (Schwere: mittel bis hoch — kein akutes Problem im
+  Normalbetrieb, aber ein von der SDK-Doku ausdrücklich als schädlich
+  beschriebenes Szenario ohne jede Absicherung im Code).** Gefunden
+  2026-09-02 bei einer Nutzerfrage zu `dumpProcessData`-Testdaten — siehe
+  `DANGER.md` D-055 für die vollständige Analyse.
+
+  **Kurzfassung:** `tse/healthJob.ts`s minütlicher `tick()` ruft bei jedem
+  "TSE ungesund"-Snapshot erneut `maintainTse()` auf (Selbsttest +
+  `worm_tse_updateTime`) — ohne Backoff/Cooldown über das
+  60-Sekunden-Ticksintervall hinaus. Der SDK-Header (`WormDLL.h`, Abschnitt
+  "Common Issues" → "Update Time Frequency") warnt ausdrücklich: nicht
+  signifikant öfter aufrufen als `worm_info_maxTimeSynchronizationDelay"
+  vorsieht; die TSE ist für maximal **150.000** `updateTime`-Aufrufe
+  über ihre gesamte Lebensdauer spezifiziert — "if the time gets
+  synchronized more often than that, the TSE might get damaged." Bei
+  einem dauerhaft "ungesund" gemeldeten Zustand (Bug, Wackelkontakt,
+  Fehlkonfiguration) würde das Limit bei einem Aufruf pro Minute in ca.
+  104 Tagen aufgebraucht.
+
+  **Ausdrücklich noch offen — Entscheidung über die beste Lösung steht
+  noch aus, hier bewusst nicht vorweggenommen.** Denkbare Ansätze (nicht
+  abschließend, nicht bewertet):
+  - Exponentielles Backoff zwischen aufeinanderfolgenden
+    `maintainTse()`-Versuchen statt fixem 60s-Takt.
+  - Fester Mindestabstand zwischen zwei `updateTime`-Aufrufen (z. B.
+    orientiert an `worm_info_maxTimeSynchronizationDelay`), unabhängig vom
+    Health-Job-Takt.
+  - Tageslimit/Gesamtzähler für automatische Maintain-Versuche, danach nur
+    noch manuelles Eingreifen (Admin-Alarm statt Dauerschleife).
+  - Kombination aus den obigen.
+
+  Vor der Umsetzung: Nutzerentscheidung, welcher Ansatz (oder welche
+  Kombination) gewünscht ist.
+
+- [x] **#110** USt-Sätze als Einstellung statt Freitext — schließt die Regelsteuersatz-Änderungslücke
+  **Klassifikation: Bug (Ursache), Umsetzung als Verbesserung/Refactoring.**
+  Nutzerfrage 2026-09-02 ("wie geht das Kassenbeleg-V1-Format mit einer
+  künftigen USt-Erhöhung um"), Ursache gefunden und Lösungsansatz auf
+  Nutzerwunsch geprüft — siehe `DANGER.md` D-056 für die vollständige
+  Fehleranalyse. **Priorisierung bewusst noch offen**, siehe unten.
+
+  **Gefundenes Problem (Kurzfassung):** drei unabhängige Stellen im Code
+  vergleichen hart gegen die aktuell gültigen Sätze 19/7 und ordnen jeden
+  nicht erkannten Satz stillschweigend "steuerfrei" zu — `tse/
+  processData.ts::taxSlot()` (signierte TSE-`processData`), `exports/
+  dsfinvk/rows.ts::ustSchluessel()` (DSFinV-K-Export), `closing/
+  totals.ts::computeClosingTotals()` (Z-Bon-Summen, hier als
+  Schwellenwert `>= 18.5`/`>= 6.5`, dadurch für eine reine Erhöhung
+  zufällig noch treffsicher). Zusätzlich druckt `closing/blocks.ts` die
+  Z-Bon-Zeilen mit fest einprogrammiertem Text "19 %"/"7 %". `tax_rate`
+  liegt technisch auf `article_category` (Artikelgruppe), nicht auf dem
+  einzelnen Artikel — ein frei editierbares `DECIMAL(5,2)`-Feld, nichts
+  hindert einen Admin heute schon daran, z. B. `20.00` einzutragen.
+
+  **Nutzervorschlag (2026-09-02), geprüft — Ansatz ist tragfähig:** die
+  beiden echten Sätze (Regelsteuersatz, ermäßigter Steuersatz) als
+  Einstellung hinterlegen (analog zum bereits bestehenden Muster
+  `vat_rate_deposit` in `routes/admin/settings.ts`, System-
+  Administrator-exklusiv), Artikelgruppen wählen dann nur noch zwischen
+  drei Kategorien (0 % / ermäßigt / Regelsatz) statt einen freien
+  Prozentwert einzutippen.
+
+  **Wichtige Ergänzung aus der Prüfung, über den ursprünglichen Vorschlag
+  hinaus:** nur die Artikelgruppen-Eingabe auf eine Kategorie-Auswahl
+  umzustellen würde das eigentliche Problem **nicht** vollständig lösen —
+  `order_item.tax_rate` speichert schon heute zu Recht eine
+  **Momentaufnahme** des zum Verkaufszeitpunkt gültigen Prozentsatzes
+  (muss bei einer späteren Satzänderung unverändert bleiben, sonst wären
+  alte Bons/Auswertungen rückwirkend falsch). Die drei oben genannten
+  Funktionen (`taxSlot`, `ustSchluessel`, `computeClosingTotals`) lesen
+  aber genau diesen historischen Prozentwert und raten daraus die
+  Kategorie — das bliebe auch mit Kategorie-Auswahl auf Artikelgruppen-
+  Ebene fragil. Sauberer: zusätzlich zum Prozentwert auch die
+  **Kategorie** (`zero`/`reduced`/`standard`) auf `order_item` mit
+  einfrieren, damit die drei genannten Funktionen direkt nach Kategorie
+  statt nach geratener Zahl verzweigen können — dauerhaft robust gegen
+  jede künftige Satzänderung, nicht nur die nächste.
+
+  **Umsetzungsskizze (grob, nicht final, keine Entscheidung):**
+  - Migration: zwei neue `system_setting`-Schlüssel (z. B.
+    `vat_rate_standard`, `vat_rate_reduced`); `article_category` bekommt
+    eine neue Spalte `tax_category` (`zero`/`reduced`/`standard`),
+    Backfill aus dem bisherigen `tax_rate`-Wert; `order_item` bekommt
+    dieselbe neue Spalte, ebenfalls beim Verkauf mit eingefroren.
+  - `taxSlot()`/`ustSchluessel()`/`computeClosingTotals()` verzweigen
+    nach `tax_category` statt nach Prozentwert-Vergleich.
+  - `closing/blocks.ts`: Zeilenbeschriftung liest den aktuellen Satz aus
+    den Einstellungen statt fest "19 %"/"7 %" zu drucken.
+  - `admin/categories.ts` + zugehöriges Frontend: Freitext-Eingabe durch
+    Drei-Optionen-Auswahl ersetzen; neue Einstellungs-Sektion
+    (vermutlich Unternehmensdaten) für die zwei Prozentsätze.
+
+  **Zugriffsebene-Korrektur (2026-09-03, Nutzervorgabe):** `vat_rate_standard`/
+  `vat_rate_reduced` sind **nicht** System-Administrator-exklusiv, anders
+  als ursprünglich in der Umsetzungsskizze angenommen (das war an
+  `vat_rate_deposit`s altem, jetzt entfallenem Zugriffslevel orientiert).
+  Der Veranstaltungs-Administrator muss beide Sätze selbst anpassen
+  können — nicht in `SYSTEM_ONLY_KEYS` (`routes/admin/settings.ts`)
+  aufnehmen, nur in `ALLOWED_KEYS`. Zugriffsebene damit V+S, siehe
+  `docs/Adminstufen-Matrix.txt`.
+
+  **Backfill-Entscheidung (2026-09-03, Nutzervorgabe):** ein bei der
+  Migration nicht sauber auf eine der drei Kategorien passender
+  `tax_rate`-Wert wird automatisch auf `zero` (steuerfrei) abgebildet,
+  ohne Sonderbehandlung — aktuell nur Testdaten im System, kein
+  Produktivrisiko.
+
+  **Gemeinsame Umsetzung mit Task #113 (2026-09-03, Nutzervorgabe):**
+  beide Tasks werden in einem Zug umgesetzt, nicht nacheinander — Task
+  #113s Pfand-Steuersatz-Fix baut direkt auf diesem Umbau auf
+  (`order_item.tax_category` + `deposit_tax_rate`, siehe dortige
+  Umsetzungsskizze).
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe).** Wird zusammen mit weiteren, noch folgenden, gleich
+  markierten Tasks gesammelt und danach in einem Stück umgesetzt — siehe
+  TASKS.md-weite Suche nach "Umsetzungszeitpunkt: vor dem nächsten
+  QA-Lauf" für die vollständige Sammlung.
+
+- [x] **#111** Stornogrund-Umbenennung widerspricht der TSE-signierten `processData` im DSFinV-K-Export
+  **Klassifikation: Bug (hoch).** Nutzerauftrag 2026-09-02 ("stelle sicher,
+  dass für Bestellungen und Rechnungen die notwendigen Daten
+  festgeschrieben werden"), Fund per Code-Recherche bestätigt — siehe
+  `DANGER.md` D-057 für die vollständige Analyse. Von zwei parallelen
+  Audits zum Thema GoBD-Unveränderbarkeit; siehe auch Task #112 für den
+  zweiten Fund.
+
+  **Kurzfassung:** `PUT /api/admin/cancellation-reasons/:id` erlaubt
+  jederzeit ein Umbenennen, ohne zu prüfen, ob der Stornogrund bereits
+  verwendet wurde (`DELETE` prüft das korrekt, `PUT` nicht). Der Name wird
+  aber zum Stornierungszeitpunkt fest in die TSE-signierte
+  `AVSonstige`-`processData` eingebrannt (`register-session.ts`,
+  `buildAvSonstigeProcessData({ cancellationReasonName: reason.name })`)
+  — unveränderlich. Der DSFinV-K-Export liest den Namen für denselben
+  Vorgang aber später live über einen JOIN nach (`exports/dsfinvk/
+  load.ts`). Nach einer Umbenennung zeigen signierter Beleg und
+  Export-Datei für **denselben** Vorgang unterschiedliche Texte — ein bei
+  einer Prüfung auffindbarer Widerspruch.
+
+  **Fehlendes Muster im Vergleich zu Task #97:** `order_cancellation.
+  cancelled_by_name` ist bereits ein Text-Schnappschuss (analog für
+  löschbare Benutzer) — für den Stornogrund-Namen fehlt die exakt
+  gleichwertige Spalte einfach.
+
+  **Backfill-Entscheidung (2026-09-03, Nutzervorgabe):** die
+  Backfill-Ungenauigkeit bei bereits umbenannten Stornogründen ist nicht
+  relevant — aktuell ausschließlich Testdaten im System. Wird jetzt
+  umgesetzt, kein weiterer Aufschub.
+
+  **Zusätzlicher Fund bei erneuter Prüfung (2026-09-03) — korrigiert die
+  ursprüngliche "Redundanz"-Einschätzung:** `admin/reports.ts:274` liest
+  den Stornogrund-Namen ebenfalls live, aber **nicht** redundant zum
+  DSFinV-K-Export, sondern für einen echt anderen Fall. Es gibt zwei
+  komplett getrennte Storno-Mechanismen in FairPOS:
+  1. **Admin-Bonstorno** (`admin/cancellations.ts`) — legt eine normale
+     `invoice`+`order_item`-Zeile an (TSE-signiert als regulärer "Beleg"
+     mit umgekehrtem Vorzeichen, kein `AVSonstige`). Erzeugt **keine**
+     `order_cancellation`-Zeile. Der Stornogrund existiert hier
+     ausschließlich als `order_item.cancellation_reason_id`.
+  2. **Bedienungskasse Stornieren/Kostenfrei** (`register-session.ts`) —
+     legt eine `order_cancellation`-"Vorgangs"-Zeile an (TSE-signiert als
+     `AVSonstige`, siehe Task #111s Kernfund) und verlinkt betroffene
+     `order_item`-Zeilen sowohl über `order_cancellation_id` als auch
+     (parallel) direkt über `cancellation_reason_id`.
+
+  `admin/reports.ts:274` wertet Stornos **über beide Mechanismen
+  hinweg** aus — genau deshalb liest es `order_item.cancellation_reason_id`
+  direkt, das ist der einzige Weg, der bei Admin-Bonstorno-Zeilen
+  überhaupt funktioniert (die haben kein `order_cancellation_id`). Die
+  beiden ID-Spalten sind also **keine echte, auflösbare Redundanz** —
+  `order_item.cancellation_reason_id` bleibt nötig.
+
+  **Entscheidung (2026-09-03, Nutzervorgabe: Empfehlung übernommen).**
+  Nutzer bestätigt die fachliche Unterscheidung: Bedienungskasse-Stornieren/
+  Kostenfrei ist das Storno **einer Bestellung vor der Abrechnung** (noch
+  kein Beleg), Admin-Bonstorno ist das echte **Belegstorno einer bereits
+  erfolgten Abrechnung** — beides fachlich unterschiedliche Vorgänge, die
+  zu Recht unterschiedliche Signatur-Typen und Tabellen verwenden, keine
+  Redundanz. Umsetzung: genau dasselbe, bereits im Schema etablierte Muster wie
+  bei `cancelled_by_name` anwenden (`0017_user_deletable.sql` hat exakt
+  diese Text-Snapshot-Spalte bereits unabhängig auf **beiden** Tabellen
+  ergänzt: `order_item.cancelled_by_name` UND
+  `order_cancellation.cancelled_by_name`). Analog für den Stornogrund:
+  - `order_item.cancellation_reason_name` TEXT (neu) — deckt beide
+    Storno-Mechanismen ab, da beide Schreibpfade (`register-session.ts`,
+    `admin/cancellations.ts`) den Grund-Namen bereits zur Schreibzeit
+    kennen. `admin/reports.ts` liest danach diese Spalte direkt, kein
+    JOIN mehr nötig.
+  - `order_cancellation.cancellation_reason_name` TEXT (neu) — für den
+    `AVSonstige`-Vorgang auf Event-Ebene, deckt `exports/dsfinvk/
+    load.ts`s Bedarf ab (ein Export-Datensatz pro Vorgang, nicht pro
+    Zeile).
+  - Beide bestehenden `cancellation_reason_id`-Spalten bleiben unverändert
+    erhalten (weiterhin nützlich, z. B. für eine mögliche künftige
+    Detailansicht) — es wird nichts entfernt, nur um die fehlenden
+    Snapshot-Spalten ergänzt.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe).**
+
+- [ ] **#112** Firmendaten/Logo auf Rechnungs-PDF und Reprint werden live geladen statt zum Verkaufszeitpunkt eingefroren
+  **Klassifikation: Bug (niedrig-mittel).** Nutzerauftrag 2026-09-02,
+  Fund per Code-Recherche bestätigt — siehe `DANGER.md` D-058. Von
+  zwei parallelen Audits zum Thema GoBD-Unveränderbarkeit; siehe auch
+  Task #111 für den ersten Fund.
+
+  **Kurzfassung:** `receipt/data.ts`s `loadReceiptWhere()` (genutzt von
+  sowohl `GET /:id/pdf` als auch `POST /:id/reprint` in `admin/
+  invoices.ts`) lädt Firmenname/-adresse/-steuernummer/USt-IdNr. sowie
+  das Firmenlogo bei **jedem** Aufruf frisch aus `system_setting`/dem
+  aktuellen Logo — kein Snapshot auf `invoice` oder anderswo. Ändert ein
+  Admin später diese Stammdaten, zeigt eine alte Rechnung beim erneuten
+  Ansehen/Reprint die **neuen** Daten statt der zum Verkaufszeitpunkt
+  gültigen.
+
+  **Wichtige Einordnung (geringere Dringlichkeit als Task #111):** die
+  eigentlich TSE-/fiskalisch relevanten Felder (Beträge,
+  Steueraufschlüsselung, Transaktionsnummer, Signatur, Belegnummer,
+  Zeitstempel) kommen aus echten Snapshot-Spalten auf `invoice`/
+  `order_item` und sind **nicht** betroffen — nur der "Briefkopf"
+  (Name/Adresse/Logo) driftet. Trotzdem ein GoBD-relevanter
+  Wiedergabetreue-Aspekt: ein Reprint sollte idealerweise exakt wie das
+  Original aussehen.
+
+  **Umsetzungsskizze (grob, nicht final, keine Entscheidung):** entweder
+  (a) einen Firmendaten-/Logo-Snapshot beim Erstellen der Rechnung auf
+  `invoice` persistieren und beim Laden bevorzugt daraus lesen, oder (b)
+  den beim ursprünglichen Verkauf bereits erzeugten `print_job`-Datensatz
+  (mit seinen historisch korrekten `blocks`) für Reprints wiederverwenden
+  statt die Belegblöcke komplett neu zu bauen — Variante (b) deckt sich
+  mit dem in Task #105 eingeführten Block-Modell (`print_job.blocks`
+  existiert dafür bereits) und wäre vermutlich der kleinere Eingriff.
+
+  **Offene Frage:** wie schwer wiegt dieser Fall fachlich wirklich —
+  ändert sich der Firmenname/die Adresse in der Praxis überhaupt jemals
+  bei einem laufenden Verein, oder ist das ein seltenes Ereignis, bei dem
+  ein manueller Hinweis ("Reprint zeigt aktuelle Stammdaten") ausreicht
+  statt eines vollen Snapshot-Umbaus? Nutzerentscheidung vor Umsetzung.
+
+- [x] **#113** Pfand wird mit dem falschen USt-Satz verrechnet (Regelsteuersatz statt Artikel-Steuersatz)
+  **Klassifikation: Bug (hoch, fiskalrelevant).** Nutzerhinweis
+  2026-09-02: "Bei Speisen mit ermäßigtem Satz muss Pfand trotzdem mit
+  19% abgerechnet werden." Vollständige Analyse siehe `DANGER.md` D-060
+  (korrigiert außerdem die ursprüngliche Fehleinschätzung von D-059, das
+  fälschlich als "totes Feld, niedrige Schwere" eingestuft war).
+
+  **Kurzfassung:** Pfand unterliegt in Deutschland immer dem
+  Regelsteuersatz, unabhängig vom Steuersatz des verkauften Artikels.
+  FairPOS verrechnet Pfand aber überall mit dem **Artikel-eigenen**
+  Steuersatz — an vier unabhängigen Stellen: `tse/processData.ts`
+  (TSE-signierte `processData` selbst!), `closing/totals.ts` (Z-Bon-
+  Summen), `receipt/format.ts` (gedruckte USt-Aufschlüsselung auf dem
+  Bon), `exports/dsfinvk/rows.ts` (Pfand-Zeile trägt denselben
+  `UST_SCHLUESSEL` wie die Artikel-Zeile statt fest Schlüssel 1). Bei
+  Speisen (7 %) mit Pfand-Gebinde wird das Pfand also fälschlich mit 7 %
+  statt 19 % gemeldet — signiert, exportiert, gedruckt.
+
+  **Bereits signierte Altdaten nicht mehr korrigierbar:** die TSE-
+  `processData` ist unveränderlich — dieser Fix wirkt nur für zukünftige
+  Verkäufe, nicht rückwirkend.
+
+  **Nutzervorgabe zur Umsetzung (2026-09-02):** keine eigene, frei
+  konfigurierbare Pfand-Steuersatz-Einstellung nötig — Pfand entspricht
+  immer exakt dem Regelsteuersatz. **Eng verzahnt mit Task #110:** sobald
+  dort die Einstellung für den aktuellen Regelsteuersatz existiert, kann
+  Pfand einfach denselben Wert verwenden, statt eine eigene Einstellung
+  zu pflegen (löst `vat_rate_deposit` als eigenständiges Setting ab, statt
+  es nachträglich zu verdrahten). Beide Tasks sollten daher zusammen
+  geplant/umgesetzt werden — Task #110s Snapshot-Umbau
+  (`tax_category` auf `order_item`) müsste ohnehin auch die
+  Pfand-Steuerkategorie mit einfrieren, nicht nur die Artikel-Kategorie.
+
+  **Umsetzungsskizze (grob, nicht final):** `order_item` bekommt (im
+  Rahmen von Task #110s Umbau) ein eigenes Steuersatz-/Kategorie-Feld für
+  den Pfand-Anteil, beim Verkauf fest auf "Regelsteuersatz" gesetzt statt
+  vom Artikel geerbt. Alle vier oben genannten Stellen lesen dann den
+  Pfand-Anteil separat mit diesem Feld statt ihn mit dem Artikelpreis zu
+  vermengen.
+
+  **Gemeinsame Umsetzung mit Task #110, konkretisiertes Konzept
+  (2026-09-03):** `order_item` bekommt konkret die neue Spalte
+  `deposit_tax_rate` (DECIMAL, nullable, nur gesetzt wenn `deposit_price`
+  gesetzt ist) — die zugehörige Kategorie ist per Definition immer
+  `standard`, braucht daher keine eigene Spalte. Keine eigene
+  `vat_rate_deposit`-Einstellung mehr (wird im Zuge von Task #110
+  entfernt) — der Pfand-Betrag verwendet beim Verkauf direkt den
+  aktuellen Wert von `vat_rate_standard`.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe).** Zusammen mit Task #110 und weiteren, noch folgenden,
+  gleich markierten Tasks gesammelt und danach in einem Stück umgesetzt.
+
+- [x] **#114** Pfandrückgabe-Bon zeigt keine Pfand-Angabe + neue "Selbstabholerbon nicht drucken"-Option
+  **Klassifikation: Bug (Kernfund) + Verbesserung (neue Option).**
+  Nutzerbericht 2026-09-02, konzipiert und entschieden 2026-09-03 — als
+  relevant fürs erste echte Event eingestuft. Vollständige Ursachenanalyse
+  siehe `DANGER.md` D-061 (dort **präzisiert**, siehe Korrektur unten —
+  der eigentliche Fehler liegt eine Ebene höher als ursprünglich notiert).
+
+  **Kernfund:** Kauf eines Artikels mit positivem Pfand funktioniert
+  korrekt (Selbstabholerbon **und** Rechnung zeigen das Pfand richtig).
+  Für eine Pfandrückgabe (0 € Preis, negativer Pfandbetrag) ist die
+  Modellierung selbst korrekt und bereits vorgesehen (Admin-UI-Label
+  "Pfandbetrag (€, optional; negativ für Leergutrückgabe)";
+  `receipt/types.ts`/`exports/dsfinvk/rows.ts` kennen
+  `GV_TYP=PfandRueckzahlung` explizit) — nur der Ausdruck ist kaputt.
+
+  **Präzisierte Ursache (2026-09-03, korrigiert gegenüber D-061):** der
+  eigentliche Bug sitzt bereits im Bonkasse-Checkout selbst
+  (`register-session.ts`, Zeile ~337-343), **nicht erst** in
+  `print/order-slip.ts`s `buildPickupSlipBlocks()`. Dort wird
+  `depositEuros: depositRaw > 0 ? depositRaw : null` gesetzt — ein
+  negativer Pfandbetrag wird also schon **vor** dem Slip-Aufbau zu `null`
+  verworfen; die spätere `item.depositEuros > 0`-Prüfung in
+  `buildPickupSlipBlocks()` bekommt den negativen Wert nie zu Gesicht.
+  Dieselbe Filterung betrifft auch `separateDepositSlip: depositRaw > 0
+  && article.print_deposit_receipt` — ein für "separater Pfandbon"
+  konfigurierter Artikel würde bei einer Rückgabe trotzdem stillschweigend
+  auf den (dann leeren) Inline-Pfad zurückfallen.
+
+  **Umsetzung Stufe 1 (Pflicht-Fix, behebt den Bug):**
+  - `register-session.ts`: `depositRaw > 0` → `depositRaw !== 0` an
+    beiden Stellen (Zeile ~341 und ~342).
+  - `print/order-slip.ts`s `buildPickupSlipBlocks()`/
+    `buildDepositSlipBlocks()`: Bedingung `> 0` → `!== 0`; Beschriftung
+    vorzeichen-abhängig — positiv weiterhin "+ Pfand: 2,00 €", negativ neu
+    "Pfand-Rückgabe: 2,00 €" (Absolutbetrag, kein verwirrendes doppeltes
+    Minus).
+
+  **Umsetzung Stufe 2 (Verbesserung, mit umgesetzt):** wenn ein Artikel
+  eindeutig als reine Rückgabe erkennbar ist (`priceEuros === 0 &&
+  depositEuros < 0`), druckt der Selbstabholerbon die Überschrift
+  **"PFANDRÜCKGABE"** statt "SELBSTABHOLER" — reine Erkennungsregel
+  anhand vorhandener Werte, kein neues Setting nötig.
+
+  **Neue Funktion (2026-09-03, Nutzervorgabe): Artikel-Checkbox
+  "Selbstabholerbon nicht drucken".** Neue Spalte auf `article` (Vorschlag:
+  `skip_pickup_slip BOOLEAN NOT NULL DEFAULT false`, direkt
+  checkbox-passend, kein Invertieren im Frontend nötig). Admin-UI
+  (`admin/articles/+page.svelte`, neben dem bereits bestehenden
+  `print_deposit_receipt`-Feld): Checkbox mit Label "Selbstabholerbon
+  nicht drucken", Erklärungstext **"Hat nur Auswirkung für die Bonkasse.
+  Verwendung z. B. für Artikel zur Direktmitnahme oder für
+  Pfand-Rückgabe."** (Wortlaut vom Nutzer vorgegeben). Wirkung: in
+  `register-session.ts`s Bonkasse-Checkout wird für eine Artikel-Einheit
+  mit `skip_pickup_slip = true` gar nicht erst in `slipUnits` aufgenommen
+  — kein Druckauftrag für den Selbstabholerbon dieser Einheit, sonst
+  bleibt alles unverändert (Rechnung/Beleg selbst ist unberührt). Bewusst
+  **nur Bonkasse** — Bedienungskasse nutzt einen komplett anderen
+  Druckpfad (`buildOrderSlipBlocks`, Küchenbon), von dieser Option nicht
+  berührt, genau wie vom Nutzer vorgegeben. Ein separat konfigurierter
+  Pfandbon (`print_deposit_receipt=true`) bleibt von dieser Checkbox
+  unberührt und würde weiterhin gedruckt, falls beide Flags gleichzeitig
+  gesetzt sind — eigenständiger, unabhängiger Druckauftrag.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe) — als für den Echtbetrieb beim ersten Event relevant
+  eingestuft.**

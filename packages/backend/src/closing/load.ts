@@ -5,6 +5,7 @@ import type { ClosingContext } from './blocks.js';
 import type { ClosingTotals } from './totals.js';
 import { loadLogoFor } from '../logo/visibility.js';
 import type { CompanyLogo } from '../logo/logo.js';
+import { loadTaxRates } from '../tax/rates.js';
 
 /** Read-only view of one stored closing, sufficient for re-rendering. */
 export interface StoredClosing {
@@ -64,6 +65,7 @@ export async function loadClosingById(id: string): Promise<StoredClosing | null>
     [COMPANY_SETTING_KEYS as unknown as string[]],
   );
   const settings = new Map(settingsResult.rows.map((r) => [r.key, r.value]));
+  const taxRates = await loadTaxRates();
 
   const ctx: ClosingContext = {
     company_name:  settings.get('company_name')  ?? '',
@@ -72,6 +74,8 @@ export async function loadClosingById(id: string): Promise<StoredClosing | null>
     z_number:      Number(row.z_number),
     created_at:    row.created_at,
     zero_counter:  zeroCounter,
+    vat_rate_standard: taxRates.standard,
+    vat_rate_reduced:  taxRates.reduced,
   };
   const totals: ClosingTotals = {
     total_gross:         Number(row.total_gross),

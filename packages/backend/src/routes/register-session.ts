@@ -6,7 +6,8 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import type { Article, RegisterType } from '@fairpos/shared';
+import type { Article, RegisterType, TaxCategory } from '@fairpos/shared';
+import { loadTaxRates, percentFor } from '../tax/rates.js';
 import { query, withTransaction } from '../db/client.js';
 import { authenticateRegister } from '../middleware/authenticate.js';
 import { generateReceiptToken } from '../receipt/numbering.js';
@@ -172,10 +173,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       }
     }
 
-    const articles = await query<Article & { category_name: string; tax_rate: string }>(
+    const articles = await query<Article & { category_name: string; tax_category: TaxCategory }>(
       `SELECT a.id, a.category_id, a.name, a.price, a.deposit_price,
-              a.print_deposit_receipt, a.printer_id, a.is_active, a.created_at,
-              c.name AS category_name, c.tax_rate
+              a.print_deposit_receipt, a.skip_pickup_slip, a.printer_id, a.is_active, a.created_at,
+              c.name AS category_name, c.tax_category
          FROM article a
          JOIN article_category c ON c.id = a.category_id
         WHERE a.is_active = true AND a.event_id = $1`,
@@ -243,7 +244,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // `depositEuros` carries the per-unit deposit if any; `separateDepositSlip`
       // mirrors `article.print_deposit_receipt` and decides whether the deposit
       // is printed as an extra slip or as an extra line on the article slip.
-      const slipUnits: { name: string; priceEuros: number; depositEuros: number | null; separateDepositSlip: boolean }[] = [];
+      const slipUnits: {
+        name: string; priceEuros: number; depositEuros: number | null;
+        separateDepositSlip: boolean; skipPickupSlip: boolean;
+      }[] = [];
       let registerName = '';
 
       // Articles are fetched once, up front, so the same snapshot can be used
@@ -252,13 +256,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       const articleIds = [...new Set(positions.map((p) => p.article_id))];
       const articlesResult = await query<{
         id: string; name: string; price: string;
-        deposit_price: string | null; print_deposit_receipt: boolean;
+        deposit_price: string | null; print_deposit_receipt: boolean; skip_pickup_slip: boolean;
         printer_id: string | null;
-        category_name: string; tax_rate: string;
+        category_name: string; tax_category: TaxCategory;
       }>(
         `SELECT a.id, a.name, a.price, a.deposit_price,
-                a.print_deposit_receipt, a.printer_id,
-                c.name AS category_name, c.tax_rate
+                a.print_deposit_receipt, a.skip_pickup_slip, a.printer_id,
+                c.name AS category_name, c.tax_category
            FROM article a
            JOIN article_category c ON c.id = a.category_id
           WHERE a.id = ANY($1) AND a.event_id = $2`,
@@ -270,6 +274,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           return reply.status(400).send({ error: `Artikel ${pos.article_id} nicht gefunden` });
         }
       }
+      // Article's own tax_category resolves to a concrete percentage
+      // (order_item snapshot); a deposit is always taxed at `standard`
+      // regardless of the article (Task #113).
+      const taxRates = await loadTaxRates();
 
       // TSE-Signierung (Kassenbeleg-V1) läuft VOR der DB-Transaktion. `signTseTransaction`
       // blockiert den Kassiervorgang nicht — siehe docs/TSE-Integration.md Abschnitt 8.1
@@ -283,7 +291,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             quantity: p.quantity,
             unitPriceEuros: Number(article.price),
             depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
-            taxRatePercent: Number(article.tax_rate),
+            taxCategory: article.tax_category,
           };
         }),
       });
@@ -321,25 +329,34 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         for (const pos of positions) {
           const article = articleById.get(pos.article_id)!;
           const displayName = article.name;
+          const articleTaxRate = percentFor(article.tax_category, taxRates);
+          const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
+          // Deposit is always taxed at the Regelsteuersatz (Task #113),
+          // frozen here at booking time independent of the article's own rate.
+          const depositTaxRate = depositRaw !== 0 ? taxRates.standard : null;
           for (let i = 0; i < pos.quantity; i++) {
             await client.query(
               `INSERT INTO order_item (
                  invoice_id, register_id, user_name, article_id,
-                 article_name, article_category_name, tax_rate, price, deposit_price,
+                 article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
                  status
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'paid')`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'paid')`,
               [
                 invoiceId, registerId, req.registerUser.name, article.id,
                 displayName, article.category_name,
-                article.tax_rate, article.price, article.deposit_price,
+                articleTaxRate, article.tax_category, article.price, article.deposit_price, depositTaxRate,
               ],
             );
-            const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
             slipUnits.push({
               name: displayName,
               priceEuros: Number(article.price),
-              depositEuros: depositRaw > 0 ? depositRaw : null,
-              separateDepositSlip: depositRaw > 0 && article.print_deposit_receipt,
+              // `!== 0` (not `> 0`) so a Pfandrückgabe (negative deposit)
+              // reaches the slip builder instead of being silently dropped
+              // here (Task #114 — this was the actual root cause, one level
+              // above the slip builder's own now-also-fixed `> 0` check).
+              depositEuros: depositRaw !== 0 ? depositRaw : null,
+              separateDepositSlip: depositRaw !== 0 && article.print_deposit_receipt,
+              skipPickupSlip: article.skip_pickup_slip,
             });
           }
         }
@@ -362,16 +379,21 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       let slipsEnqueued = 0;
       if (slipPrinterId) {
         for (const unit of slipUnits) {
-          // Article slip: includes the deposit line only when there is a
-          // deposit AND the article is NOT configured for a separate slip.
-          const inlineDeposit = unit.separateDepositSlip ? null : unit.depositEuros;
-          const articleBlocks = buildPickupSlipBlocks(
-            { name: unit.name, priceEuros: unit.priceEuros, depositEuros: inlineDeposit },
-            slipCtx,
-            pickupLogo,
-          );
-          await enqueuePrintJob(slipPrinterId, 'order_slip', renderBlocksToEscPos(articleBlocks), articleBlocks);
-          slipsEnqueued += 1;
+          // Task #114: articles flagged "Selbstabholerbon nicht drucken"
+          // (e.g. direct-takeaway items, Pfandrückgabe) skip the pickup slip
+          // entirely — but a separately configured deposit slip still prints.
+          if (!unit.skipPickupSlip) {
+            // Article slip: includes the deposit line only when there is a
+            // deposit AND the article is NOT configured for a separate slip.
+            const inlineDeposit = unit.separateDepositSlip ? null : unit.depositEuros;
+            const articleBlocks = buildPickupSlipBlocks(
+              { name: unit.name, priceEuros: unit.priceEuros, depositEuros: inlineDeposit },
+              slipCtx,
+              pickupLogo,
+            );
+            await enqueuePrintJob(slipPrinterId, 'order_slip', renderBlocksToEscPos(articleBlocks), articleBlocks);
+            slipsEnqueued += 1;
+          }
 
           if (unit.separateDepositSlip && unit.depositEuros !== null) {
             const depositBlocks = buildDepositSlipBlocks(
@@ -617,10 +639,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const articlesResult = await query<{
       id: string; name: string; price: string;
       deposit_price: string | null; printer_id: string | null;
-      category_name: string; tax_rate: string;
+      category_name: string; tax_category: TaxCategory;
     }>(
       `SELECT a.id, a.name, a.price, a.deposit_price, a.printer_id,
-              c.name AS category_name, c.tax_rate
+              c.name AS category_name, c.tax_category
          FROM article a
          JOIN article_category c ON c.id = a.category_id
         WHERE a.id = ANY($1) AND a.event_id = $2`,
@@ -632,6 +654,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         return reply.status(400).send({ error: `Artikel ${pos.article_id} nicht gefunden` });
       }
     }
+    const taxRates = await loadTaxRates();
 
     // One Bestellung-V1 signature per Bestellvorgang, not per position — see
     // docs/Anforderungen.md → "Zu signierende Vorgänge in FairPOS".
@@ -672,17 +695,20 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       for (const pos of positions) {
         const article = articleById.get(pos.article_id)!;
         const options = pos.options?.trim() ? pos.options.trim() : null;
+        const articleTaxRate = percentFor(article.tax_category, taxRates);
+        const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
+        const depositTaxRate = depositRaw !== 0 ? taxRates.standard : null;
         for (let i = 0; i < pos.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (
                service_order_id, dining_table_id, register_id, user_name, article_id,
-               article_name, article_category_name, tax_rate, price, deposit_price,
+               article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
                options, status
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'open')`,
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'open')`,
             [
               serviceOrderId, tableId, registerId, req.registerUser.name, article.id,
               article.name, article.category_name,
-              article.tax_rate, article.price, article.deposit_price,
+              articleTaxRate, article.tax_category, article.price, article.deposit_price, depositTaxRate,
               options,
             ],
           );
@@ -766,9 +792,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
     const open = await query<{
       id: string; article_id: string | null; article_name: string; options: string | null;
-      tax_rate: string; price: string; deposit_price: string | null; created_at: Date;
+      tax_category: TaxCategory; price: string; deposit_price: string | null; created_at: Date;
     }>(
-      `SELECT id, article_id, article_name, options, tax_rate, price, deposit_price, created_at
+      `SELECT id, article_id, article_name, options, tax_category, price, deposit_price, created_at
          FROM order_item
         WHERE dining_table_id = $1 AND status = 'open'`,
       [tableId],
@@ -788,7 +814,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           quantity: 1,
           unitPriceEuros: Number(item.price),
           depositPriceEuros: item.deposit_price === null ? null : Number(item.deposit_price),
-          taxRatePercent: Number(item.tax_rate),
+          taxCategory: item.tax_category,
         };
       }),
     });
@@ -950,14 +976,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // by this call reference the same cancellation.
       const cancellationResult = await client.query<{ id: string }>(
         `INSERT INTO order_cancellation (
-           register_id, cancellation_reason_id, cancelled_by_name,
+           register_id, cancellation_reason_id, cancellation_reason_name, cancelled_by_name,
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
         [
-          registerId, cancellation_reason_id, req.registerUser.name,
+          registerId, cancellation_reason_id, reason.name, req.registerUser.name,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
         ],
@@ -968,11 +994,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         `UPDATE order_item
             SET status = $1,
                 cancellation_reason_id = $2,
-                cancelled_by_name = $3,
+                cancellation_reason_name = $3,
+                cancelled_by_name = $4,
                 cancelled_at = now(),
-                order_cancellation_id = $5
-          WHERE id = ANY($4)`,
-        [nextStatus, cancellation_reason_id, req.registerUser.name, ids, cancellationId],
+                order_cancellation_id = $6
+          WHERE id = ANY($5)`,
+        [nextStatus, cancellation_reason_id, reason.name, req.registerUser.name, ids, cancellationId],
       );
 
       return { items_cancelled: ids.length, booking_type: reason.booking_type };

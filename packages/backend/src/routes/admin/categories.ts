@@ -1,7 +1,11 @@
 import type { FastifyInstance } from 'fastify';
+import type { TaxCategory } from '@fairpos/shared';
 import { query, isPgErrorCode } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
+
+/** The only valid `tax_category` values (Task #110) — free-text `tax_rate` was replaced by this fixed set so an admin can never enter a rate the rest of the system doesn't recognise. */
+const TAX_CATEGORIES: readonly TaxCategory[] = ['zero', 'reduced', 'standard'];
 
 /** Admin routes for article category management. Scoped to the active event (Task #95). */
 export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> {
@@ -10,7 +14,7 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
   /** GET /api/admin/categories — list categories of the active event, ordered by name. */
   app.get('/', async (_req, reply) => {
     const result = await query(
-      'SELECT id, name, tax_rate, created_at FROM article_category WHERE event_id = $1 ORDER BY name',
+      'SELECT id, name, tax_category, created_at FROM article_category WHERE event_id = $1 ORDER BY name',
       [config.activeEventId],
     );
     return reply.send(result.rows);
@@ -18,17 +22,20 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
 
   /** POST /api/admin/categories — create a category in the active event. */
   app.post('/', async (req, reply) => {
-    const body = req.body as { name?: string; tax_rate?: number };
-    if (!body.name || body.tax_rate === undefined) {
+    const body = req.body as { name?: string; tax_category?: TaxCategory };
+    if (!body.name || body.tax_category === undefined) {
       return reply.status(400).send({ error: 'Name und Steuersatz erforderlich' });
+    }
+    if (!TAX_CATEGORIES.includes(body.tax_category)) {
+      return reply.status(400).send({ error: 'Ungültige Steuerkategorie' });
     }
 
     try {
       const result = await query(
-        `INSERT INTO article_category (name, tax_rate, event_id)
+        `INSERT INTO article_category (name, tax_category, event_id)
          VALUES ($1, $2, $3)
-         RETURNING id, name, tax_rate, created_at`,
-        [body.name, body.tax_rate, config.activeEventId],
+         RETURNING id, name, tax_category, created_at`,
+        [body.name, body.tax_category, config.activeEventId],
       );
       return reply.status(201).send(result.rows[0]);
     } catch (e: unknown) {
@@ -42,15 +49,18 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
   /** PUT /api/admin/categories/:id — update a category of the active event. */
   app.put('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = req.body as { name?: string; tax_rate?: number };
+    const body = req.body as { name?: string; tax_category?: TaxCategory };
+    if (body.tax_category !== undefined && !TAX_CATEGORIES.includes(body.tax_category)) {
+      return reply.status(400).send({ error: 'Ungültige Steuerkategorie' });
+    }
 
     try {
       const result = await query(
         `UPDATE article_category
-         SET name = COALESCE($1, name), tax_rate = COALESCE($2, tax_rate)
+         SET name = COALESCE($1, name), tax_category = COALESCE($2, tax_category)
          WHERE id = $3 AND event_id = $4
-         RETURNING id, name, tax_rate, created_at`,
-        [body.name ?? null, body.tax_rate ?? null, id, config.activeEventId],
+         RETURNING id, name, tax_category, created_at`,
+        [body.name ?? null, body.tax_category ?? null, id, config.activeEventId],
       );
       if (result.rows.length === 0) return reply.status(404).send({ error: 'Artikelgruppe nicht gefunden' });
       return reply.send(result.rows[0]);

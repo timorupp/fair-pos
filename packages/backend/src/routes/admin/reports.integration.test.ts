@@ -52,12 +52,13 @@ async function insertPaidInvoice(
      VALUES ($1, $2, 'sales_receipt', $3, now() - interval '1 hour', $4) RETURNING id`,
     [registerId, receiptNumber, payment, `tok-${receiptNumber}`],
   );
+  const taxCategory = taxRate === 19 ? 'standard' : taxRate === 7 ? 'reduced' : 'zero';
   await pool.query(
     `INSERT INTO order_item (
        invoice_id, register_id, article_name, article_category_name,
-       tax_rate, price, status, created_at
-     ) VALUES ($1, $2, 'Bier', 'Getränke', $3, $4, $5, now() - interval '1 hour')`,
-    [inv.rows[0]!.id, registerId, taxRate, gross, status],
+       tax_rate, tax_category, price, status, created_at
+     ) VALUES ($1, $2, 'Bier', 'Getränke', $3, $4, $5, $6, now() - interval '1 hour')`,
+    [inv.rows[0]!.id, registerId, taxRate, taxCategory, gross, status],
   );
   return inv.rows[0]!.id;
 }
@@ -194,8 +195,8 @@ describe('GET /api/admin/reports/cancellations', () => {
       await pool.query(
         `INSERT INTO order_item (
            invoice_id, register_id, article_name, article_category_name,
-           tax_rate, price, status, cancellation_reason_id, cancelled_by_name, cancelled_at, created_at
-         ) VALUES ($1, $2, 'X', 'Y', 19, 5, 'cancelled', $3, $4, now() - interval '30 minutes', now() - interval '1 hour')`,
+           tax_rate, tax_category, price, status, cancellation_reason_id, cancelled_by_name, cancelled_at, created_at
+         ) VALUES ($1, $2, 'X', 'Y', 19, 'standard', 5, 'cancelled', $3, $4, now() - interval '30 minutes', now() - interval '1 hour')`,
         [inv.rows[0]!.id, registerId, reason.rows[0]!.id, user.name],
       );
     }
@@ -225,8 +226,8 @@ describe('GET /api/admin/reports/open-positions', () => {
     await pool.query(
       `INSERT INTO order_item (
          dining_table_id, register_id, article_name, article_category_name,
-         tax_rate, price, status, created_at
-       ) VALUES ($1, $2, 'Bier', 'Getränke', 19, 5, 'open', now())`,
+         tax_rate, tax_category, price, status, created_at
+       ) VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', 5, 'open', now())`,
       [t.rows[0]!.id, registerId],
     );
     const response = await app.inject({

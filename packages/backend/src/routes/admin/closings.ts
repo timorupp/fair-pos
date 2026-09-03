@@ -23,6 +23,7 @@ import { enqueuePrintJob } from '../../print/enqueue.js';
 import { renderBlocksToEscPos } from '../../print/blocks.js';
 import { resolvePrinterForRegister } from '../../print/resolve-printer.js';
 import { loadLogoFor } from '../../logo/visibility.js';
+import { loadTaxRates } from '../../tax/rates.js';
 
 /** Settings keys read for the Z-Bon header. */
 const COMPANY_SETTING_KEYS = ['company_name', 'system_serial'] as const;
@@ -97,9 +98,9 @@ async function closeRegister(registerId: string, userName: string, date?: string
       const ids = invResult.rows.map((r) => r.id);
       const itemsResult = await client.query<{
         invoice_id: string; status: ClosingItem['status'];
-        tax_rate: string; price: string; deposit_price: string | null;
+        tax_category: ClosingItem['tax_category']; price: string; deposit_price: string | null;
       }>(
-        `SELECT invoice_id, status, tax_rate::text, price::text, deposit_price::text
+        `SELECT invoice_id, status, tax_category, price::text, deposit_price::text
            FROM order_item
           WHERE invoice_id = ANY($1)`,
         [ids],
@@ -109,7 +110,7 @@ async function closeRegister(registerId: string, userName: string, date?: string
         const list = itemsByInvoice.get(row.invoice_id) ?? [];
         list.push({
           status: row.status,
-          tax_rate: Number(row.tax_rate),
+          tax_category: row.tax_category,
           price: Number(row.price),
           deposit_price: row.deposit_price === null ? null : Number(row.deposit_price),
         });
@@ -178,6 +179,7 @@ async function closeRegister(registerId: string, userName: string, date?: string
     let printJobId: string | null = null;
     if (printerId) {
       const logo = await loadLogoFor('z_bon');
+      const taxRates = await loadTaxRates();
       const blocks = buildZBonBlocks({
         company_name:  settings.get('company_name')  ?? '',
         register_name: register.name,
@@ -185,6 +187,8 @@ async function closeRegister(registerId: string, userName: string, date?: string
         z_number:      nextZ,
         created_at:    new Date(),
         zero_counter:  zeroCounter,
+        vat_rate_standard: taxRates.standard,
+        vat_rate_reduced:  taxRates.reduced,
       }, totals, businessDate, logo);
       const job = await enqueuePrintJob(printerId, 'daily_closing', renderBlocksToEscPos(blocks), blocks, closingId);
       printJobId = job.id;
@@ -201,6 +205,46 @@ async function closeRegister(registerId: string, userName: string, date?: string
 }
 
 /**
+ * Closes a register for every distinct calendar day it currently has
+ * unassigned invoices for — one Z-Bon per day, oldest first, INCLUDING
+ * today (unlike `findPendingDaysForRegister`, which deliberately excludes
+ * today since it exists only to catch up old backlog). Used by both "Alle
+ * Kassen abschließen" and the single-register "Kasse jetzt abschließen"
+ * button (Task #106): closing without this split used to stamp every
+ * unassigned invoice — regardless of which day it actually belongs to —
+ * with today's date, leaving a genuinely open older day permanently marked
+ * "offen" even though its revenue had already been swept into a
+ * wrong-dated Z-Bon.
+ *
+ * A register with NO unassigned invoices at all (fully idle) still gets
+ * exactly one (zero) closing, stamped with today via `closeRegister`'s own
+ * `current_date` fallback — preserves the pre-existing auto-zero-closing
+ * behaviour for idle registers without backfilling a Nullabschluss for
+ * every day of inactivity.
+ *
+ * @param registerId - The register to close.
+ * @param userName - Name of the administrator performing the closing.
+ * @returns One `CloseResult` per produced Z-Bon, oldest day first.
+ */
+async function closeAllPendingDays(registerId: string, userName: string): Promise<CloseResult[]> {
+  const daysResult = await query<{ day: string }>(
+    `SELECT DISTINCT created_at::date::text AS day
+       FROM invoice
+      WHERE register_id = $1 AND daily_closing_id IS NULL
+      ORDER BY day`,
+    [registerId],
+  );
+  if (daysResult.rows.length === 0) {
+    return [await closeRegister(registerId, userName)];
+  }
+  const results: CloseResult[] = [];
+  for (const row of daysResult.rows) {
+    results.push(await closeRegister(registerId, userName, row.day));
+  }
+  return results;
+}
+
+/**
  * Registers `/api/admin/closings/*` and `/api/admin/registers/:id/closings/*`.
  *
  * @param app - The Fastify scope under which to register the routes.
@@ -209,14 +253,17 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
   /**
-   * POST /api/admin/registers/:id/closings — closes the day for one register.
-   * Returns the new closing id, Z-number, zero-closing flag, and print job id.
+   * POST /api/admin/registers/:id/closings — closes the register: one Z-Bon
+   * per distinct calendar day it has unassigned invoices for (Task #106),
+   * not a single lump closing stamped with today's date regardless of which
+   * day the invoices actually belong to. Returns one entry per produced
+   * Z-Bon (closing id, Z-number, zero-closing flag, print job id).
    */
   app.post<{ Params: { id: string } }>('/registers/:id/closings', async (req, reply) => {
     const { id } = req.params;
     try {
-      const result = await closeRegister(id, req.adminUser.name);
-      return reply.send(result);
+      const closings = await closeAllPendingDays(id, req.adminUser.name);
+      return reply.send({ closings });
     } catch (err) {
       const e = err as Error & { httpStatus?: number };
       if (e.httpStatus) return reply.status(e.httpStatus).send({ error: e.message });
@@ -262,17 +309,19 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * POST /api/admin/closings/close-all — system-wide shortcut: closes every register
-   * that has at least one unassigned invoice OR (per Anforderungen) no prior closing
-   * for the calendar day. The simple implementation here closes ALL registers, which
-   * lets the auto-zero-closing requirement reuse the same code path.
+   * POST /api/admin/closings/close-all — system-wide shortcut: closes every
+   * register that has at least one unassigned invoice OR (per Anforderungen)
+   * no prior closing for the calendar day. Closes ALL registers, which lets
+   * the auto-zero-closing requirement reuse the same code path. Each
+   * register produces one Z-Bon per distinct calendar day it has unassigned
+   * invoices for (Task #106), not a single lump closing per register.
    */
   app.post('/closings/close-all', async (req, reply) => {
     const regs = await query<{ id: string }>(`SELECT id FROM register ORDER BY name`);
     const closings: CloseResult[] = [];
     for (const r of regs.rows) {
       try {
-        closings.push(await closeRegister(r.id, req.adminUser.name));
+        closings.push(...await closeAllPendingDays(r.id, req.adminUser.name));
       } catch (err) {
         const e = err as Error & { httpStatus?: number };
         // If a register cannot be closed (deleted mid-loop etc.) we skip it but keep going.

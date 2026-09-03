@@ -143,12 +143,25 @@ export function buildPickupSlipBlocks(
   logo: CompanyLogo | null = null,
 ): PrintBlock[] {
   const blocks: PrintBlock[] = [...logoBlock(logo)];
-  blocks.push({ kind: 'text', text: 'SELBSTABHOLER', align: 'center', bold: true, size: 'xlarge' });
+
+  // A 0-€-article with a negative deposit is unmistakably a pure Pfandrückgabe
+  // (Task #114) — "SELBSTABHOLER" would be misleading (nothing is being
+  // picked up), so the header calls it what it is.
+  const isPureReturn = item.priceEuros === 0 && item.depositEuros !== null && item.depositEuros < 0;
+  blocks.push({
+    kind: 'text', text: isPureReturn ? 'PFANDRÜCKGABE' : 'SELBSTABHOLER',
+    align: 'center', bold: true, size: 'xlarge',
+  });
   blocks.push({ kind: 'hr' });
 
   blocks.push({ kind: 'row', left: `1x ${item.name}`, right: `${formatEuros(item.priceEuros)} €`, size: 'large' });
-  if (item.depositEuros !== null && item.depositEuros > 0) {
-    blocks.push({ kind: 'row', left: '  + Pfand', right: `${formatEuros(item.depositEuros)} €` });
+  // `!== 0` (not `> 0`) so a Pfandrückgabe (negative deposit) still shows a
+  // line instead of being silently dropped (Task #114). Wording is
+  // sign-aware: "+ Pfand" for a charge, "Pfand-Rückgabe" (absolute amount,
+  // no confusing double-minus) for a refund.
+  if (item.depositEuros !== null && item.depositEuros !== 0) {
+    const label = item.depositEuros > 0 ? '  + Pfand' : '  Pfand-Rückgabe';
+    blocks.push({ kind: 'row', left: label, right: `${formatEuros(Math.abs(item.depositEuros))} €` });
   }
 
   // Footer: timestamp + register + operator on one line, slash-separated to
@@ -185,9 +198,16 @@ export function buildDepositSlipBlocks(
   logo: CompanyLogo | null = null,
 ): PrintBlock[] {
   const blocks: PrintBlock[] = [...logoBlock(logo)];
-  blocks.push({ kind: 'text', text: 'PFAND', align: 'center', bold: true, size: 'xlarge' });
+  const isReturn = item.depositEuros < 0;
+  blocks.push({
+    kind: 'text', text: isReturn ? 'PFANDRÜCKGABE' : 'PFAND',
+    align: 'center', bold: true, size: 'xlarge',
+  });
   blocks.push({ kind: 'hr' });
-  blocks.push({ kind: 'row', left: '1x Pfand', right: `${formatEuros(item.depositEuros)} €`, size: 'large' });
+  blocks.push({
+    kind: 'row', left: isReturn ? '1x Pfand-Rückgabe' : '1x Pfand',
+    right: `${formatEuros(Math.abs(item.depositEuros))} €`, size: 'large',
+  });
 
   blocks.push({ kind: 'hr' });
   blocks.push({

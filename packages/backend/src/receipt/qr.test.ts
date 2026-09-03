@@ -7,7 +7,8 @@ import { resetTseCertificateInfoCache } from '../tse/certificateInfo.js';
 
 function position(overrides: Partial<ReceiptPosition> = {}): ReceiptPosition {
   return {
-    name: 'Bier', quantity: 1, unitPrice: 5, unitDeposit: null, taxRate: 19, lineGross: 5,
+    name: 'Bier', quantity: 1, unitPrice: 5, unitDeposit: null,
+    taxRate: 19, taxCategory: 'standard', depositTaxRate: null, lineGross: 5,
     ...overrides,
   };
 }

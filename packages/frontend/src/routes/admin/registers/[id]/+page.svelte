@@ -38,7 +38,8 @@
 
   let closing = $state(false);
   let closingError = $state('');
-  let lastClosing: { z_number: number; is_zero_closing: boolean; print_job_id: string | null } | null = $state(null);
+  /** One entry per Z-Bon produced by the last "jetzt abschließen" click — usually one, but more than one when the register had unassigned invoices from more than one calendar day (Task #106: one Z-Bon per day, not a single lump closing wrongly dated as today). */
+  let lastClosings: { z_number: number; is_zero_closing: boolean; print_job_id: string | null }[] = $state([]);
 
   /** Past calendar days that still need a Z-Bon (oldest first). */
   let pendingDays: string[] = $state([]);
@@ -107,14 +108,10 @@
    */
   async function closeDay() {
     if (!confirm('Tagesabschluss jetzt durchführen?')) return;
-    closing = true; closingError = ''; lastClosing = null;
+    closing = true; closingError = ''; lastClosings = [];
     try {
       const result = await api.admin.closings.closeRegister(id);
-      lastClosing = {
-        z_number: result.z_number,
-        is_zero_closing: result.is_zero_closing,
-        print_job_id: result.print_job_id,
-      };
+      lastClosings = result.closings;
       await load();
     } catch (e) {
       closingError = e instanceof Error ? e.message : 'Fehler';
@@ -242,9 +239,14 @@
       {/if}
     </div>
     {#if closingError}<p class="error-text">{closingError}</p>{/if}
-    {#if lastClosing}
+    {#if lastClosings.length === 1}
       <p class="success-text small">
-        ✓ Z-Bon Nr. {lastClosing.z_number} erstellt{lastClosing.is_zero_closing ? ' (Nullabschluss)' : ''}{lastClosing.print_job_id ? ' und in Druckwarteschlange gestellt' : ''}.
+        ✓ Z-Bon Nr. {lastClosings[0]!.z_number} erstellt{lastClosings[0]!.is_zero_closing ? ' (Nullabschluss)' : ''}{lastClosings[0]!.print_job_id ? ' und in Druckwarteschlange gestellt' : ''}.
+      </p>
+    {:else if lastClosings.length > 1}
+      <p class="success-text small">
+        ✓ {lastClosings.length} Z-Bons erstellt (Nr. {lastClosings.map((c) => c.z_number).join(', ')}) —
+        die Kasse hatte unzugeordnete Rechnungen von mehr als einem Kalendertag, jeder Tag hat jetzt seinen eigenen Z-Bon.
       </p>
     {/if}
 

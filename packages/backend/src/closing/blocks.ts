@@ -23,6 +23,10 @@ export interface ClosingContext {
   created_at: Date;
   /** Number of closings that have ever been printed for this register (Nullstellungszähler). */
   zero_counter: number;
+  /** Regelsteuersatz in percent (`vat_rate_standard` setting), for the tax-breakdown row label (Task #110 — was hardcoded "19 %"). */
+  vat_rate_standard: number;
+  /** Ermäßigter Steuersatz in percent (`vat_rate_reduced` setting), for the tax-breakdown row label (Task #110 — was hardcoded "7 %"). */
+  vat_rate_reduced: number;
 }
 
 /** Formats a euro amount as German `1.234,56`. Local copy, matches the pre-migration renderers' own wording (` EUR`, not `€` — kept as-is, not unified with the receipt's `€` symbol; that's a separate wording choice, not part of Task #105's scope). */
@@ -82,8 +86,8 @@ export function buildZBonBlocks(
   blocks.push({ kind: 'hr' });
 
   blocks.push({ kind: 'text', text: 'Brutto nach MwSt.-Satz', bold: true });
-  blocks.push({ kind: 'row', left: '  19 %', right: `${formatEuro(totals.total_tax_standard)} EUR` });
-  blocks.push({ kind: 'row', left: '   7 %', right: `${formatEuro(totals.total_tax_reduced)} EUR` });
+  blocks.push({ kind: 'row', left: `  ${ctx.vat_rate_standard} %`, right: `${formatEuro(totals.total_tax_standard)} EUR` });
+  blocks.push({ kind: 'row', left: `   ${ctx.vat_rate_reduced} %`, right: `${formatEuro(totals.total_tax_reduced)} EUR` });
   blocks.push({ kind: 'row', left: '   0 %', right: `${formatEuro(totals.total_tax_zero)} EUR` });
   blocks.push({ kind: 'row', left: '  Gesamt', right: `${formatEuro(totals.total_gross)} EUR`, bold: true });
   blocks.push({ kind: 'hr' });

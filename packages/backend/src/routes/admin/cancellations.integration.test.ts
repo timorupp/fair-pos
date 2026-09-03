@@ -50,7 +50,7 @@ beforeEach(async () => {
   const reg = await createTestRegister({ type: 'receipt_register', printerId: printer.id });
   registerId = reg.id;
 
-  const art = await createTestArticle({ name: 'Bier', price: 4, taxRate: 19 });
+  const art = await createTestArticle({ name: 'Bier', price: 4, taxCategory: 'standard' });
   articleId = art.id;
 
   const cancelReason = await pool.query<{ id: string }>(
@@ -110,8 +110,8 @@ describe('POST /api/admin/cancellations', () => {
       `SELECT id FROM invoice WHERE receipt_number = 100`,
     );
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, article_id, article_name, article_category_name, tax_rate, price, status)
-       VALUES ($1, $2, $3, 'X', 'C', 19, 10, 'paid')`,
+      `INSERT INTO order_item (invoice_id, register_id, article_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, $3, 'X', 'C', 19, 'standard', 10, 'paid')`,
       [sale.rows[0]!.id, registerId, articleId],
     );
 
@@ -132,13 +132,13 @@ describe('POST /api/admin/cancellations', () => {
     }>(`SELECT id, payment_method, receipt_type FROM invoice WHERE register_id = $1`, [registerId]);
     const allItems = await pool.query<{
       invoice_id: string; status: ClosingItem['status'];
-      tax_rate: string; price: string; deposit_price: string | null;
-    }>(`SELECT invoice_id, status, tax_rate::text, price::text, deposit_price::text
+      tax_category: ClosingItem['tax_category']; price: string; deposit_price: string | null;
+    }>(`SELECT invoice_id, status, tax_category, price::text, deposit_price::text
           FROM order_item WHERE register_id = $1`, [registerId]);
     const itemsByInvoice = new Map<string, ClosingItem[]>();
     for (const r of allItems.rows) {
       const list = itemsByInvoice.get(r.invoice_id) ?? [];
-      list.push({ status: r.status, tax_rate: Number(r.tax_rate), price: Number(r.price),
+      list.push({ status: r.status, tax_category: r.tax_category, price: Number(r.price),
                   deposit_price: r.deposit_price ? Number(r.deposit_price) : null });
       itemsByInvoice.set(r.invoice_id, list);
     }

@@ -8,6 +8,16 @@
 /** Type of a cash register, determines which UI is shown to the operator. */
 export type RegisterType = 'receipt_register' | 'service_register';
 
+/**
+ * VAT category an article/order line belongs to (Task #110) — used instead
+ * of a raw percentage so that a future change to the legal rates (e.g. a
+ * Regelsteuersatz increase) can never silently misclassify a line as
+ * `zero`. The actual percentage for `reduced`/`standard` is looked up from
+ * the `vat_rate_reduced`/`vat_rate_standard` system settings; `zero` is
+ * always exactly 0 %, no setting needed.
+ */
+export type TaxCategory = 'zero' | 'reduced' | 'standard';
+
 /** Lifecycle status of a single order item. */
 export type OrderItemStatus = 'open' | 'paid' | 'free' | 'cancelled';
 
@@ -52,11 +62,11 @@ export interface Register {
   created_at: string;
 }
 
-/** Groups articles by type and carries the applicable VAT rate. */
+/** Groups articles by type and carries the applicable VAT category (Task #110 — was a free percentage, now one of the three legally possible categories). */
 export interface ArticleCategory {
   id: string;
   name: string;
-  tax_rate: number;
+  tax_category: TaxCategory;
   created_at: string;
 }
 
@@ -68,6 +78,8 @@ export interface Article {
   price: number;
   deposit_price: number | null;
   print_deposit_receipt: boolean;
+  /** Skips the Bonkasse self-pickup slip for this article entirely (Task #114) — e.g. for direct-takeaway items or Pfandrückgabe, where nothing needs to be "picked up". No effect on the Bedienungskasse, which never prints this slip type. */
+  skip_pickup_slip: boolean;
   printer_id: string | null;
   is_active: boolean;
   created_at: string;
@@ -116,12 +128,19 @@ export interface OrderItem {
   article_id: string | null;
   article_name: string;
   article_category_name: string;
+  /** Percent, snapshotted at booking time (e.g. 19, 7, 0) — the article's own rate, not including any deposit. */
   tax_rate: number;
+  /** VAT category the article's `tax_rate` belonged to at booking time (Task #110), snapshotted alongside `tax_rate` so downstream code never has to re-guess a category from a raw percentage. */
+  tax_category: TaxCategory;
   price: number;
   deposit_price: number | null;
+  /** Percent the deposit portion of `deposit_price` was taxed at, snapshotted at booking time (Task #113) — always the Regelsteuersatz in effect then, independent of the article's own `tax_rate`. `null` when `deposit_price` is null. */
+  deposit_tax_rate: number | null;
   options: string | null;
   status: OrderItemStatus;
   cancellation_reason_id: string | null;
+  /** Name of the cancellation reason, snapshotted at cancellation time (Task #111) — not a live reference, survives a later rename of the reason. `null` unless `cancellation_reason_id` is set. */
+  cancellation_reason_name: string | null;
   /** Name of the user who cancelled the item, snapshotted at cancellation time (Task #97). */
   cancelled_by_name: string | null;
   created_at: string;

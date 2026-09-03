@@ -3,10 +3,15 @@
 
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import type { Article, ArticleCategory, Printer, ProductOption } from '@fairpos/shared';
+  import type { Article, ArticleCategory, Printer, ProductOption, TaxCategory } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
-  type ArticleRow = Article & { category_name: string; tax_rate: number };
+  type ArticleRow = Article & { category_name: string; tax_category: TaxCategory };
+
+  /** German label per tax category, used in the category-selection dropdown. */
+  const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
+    zero: 'steuerfrei', reduced: 'ermäßigt', standard: 'Regelsteuersatz',
+  };
 
   let articles: ArticleRow[] = $state([]);
   let categories: ArticleCategory[] = $state([]);
@@ -23,6 +28,7 @@
   let formPrintDepositReceipt = $state(false);
   let formPrinterId = $state('');
   let formActive = $state(true);
+  let formSkipPickupSlip = $state(false);
   let formError = $state('');
   let saving = $state(false);
   let deleting = $state(false);
@@ -56,7 +62,7 @@
     editing = null;
     formName = ''; formCategoryId = categories[0]?.id ?? '';
     formPrice = ''; formDepositPrice = ''; formPrintDepositReceipt = false;
-    formPrinterId = ''; formActive = true; formError = '';
+    formPrinterId = ''; formActive = true; formSkipPickupSlip = false; formError = '';
     options = []; newOptionName = '';
     modalOpen = true;
   }
@@ -70,6 +76,7 @@
     formPrintDepositReceipt = a.print_deposit_receipt;
     formPrinterId = a.printer_id ?? '';
     formActive = a.is_active;
+    formSkipPickupSlip = a.skip_pickup_slip;
     formError = '';
     newOptionName = '';
     modalOpen = true;
@@ -130,6 +137,7 @@
         print_deposit_receipt: formPrintDepositReceipt,
         printer_id: formPrinterId || null,
         is_active: formActive,
+        skip_pickup_slip: formSkipPickupSlip,
       };
       if (editing) { await api.admin.articles.update(editing.id, data); }
       else { await api.admin.articles.create(data); }
@@ -196,7 +204,7 @@
       <label for="art-cat">Artikelgruppe</label>
       <select id="art-cat" bind:value={formCategoryId} required disabled={saving || deleting}>
         {#each categories as c}
-          <option value={c.id}>{c.name} ({c.tax_rate.toLocaleString('de-DE')} %)</option>
+          <option value={c.id}>{c.name} ({TAX_CATEGORY_LABELS[c.tax_category]})</option>
         {/each}
       </select>
     </div>
@@ -227,6 +235,13 @@
       <input type="checkbox" id="art-active" bind:checked={formActive} disabled={saving || deleting} />
       <label for="art-active">Aktiv</label>
     </div>
+    <div class="field-check">
+      <input type="checkbox" id="art-skip-pickup-slip" bind:checked={formSkipPickupSlip} disabled={saving || deleting} />
+      <label for="art-skip-pickup-slip">Selbstabholerbon nicht drucken</label>
+    </div>
+    <p class="hint">
+      Hat nur Auswirkung für die Bonkasse. Verwendung z.B. für Artikel zur Direktmitnahme oder für Pfand-Rückgabe.
+    </p>
 
     {#if editing}
       <section class="options-section">

@@ -14,7 +14,7 @@ describe('buildKassenbelegProcessData', () => {
     const out = buildKassenbelegProcessData({
       paymentMethod: 'cash',
       receiptType: 'sales_receipt',
-      positions: [{ quantity: 1, unitPriceEuros: 100, depositPriceEuros: null, taxRatePercent: 19 }],
+      positions: [{ quantity: 1, unitPriceEuros: 100, depositPriceEuros: null, taxCategory: 'standard' }],
     });
     expect(text(out)).toBe('Beleg^100.00_0.00_0.00_0.00_0.00^100.00:Bar');
   });
@@ -24,8 +24,8 @@ describe('buildKassenbelegProcessData', () => {
       paymentMethod: 'card',
       receiptType: 'sales_receipt',
       positions: [
-        { quantity: 1, unitPriceEuros: 50, depositPriceEuros: null, taxRatePercent: 19 },
-        { quantity: 1, unitPriceEuros: 50, depositPriceEuros: null, taxRatePercent: 7 },
+        { quantity: 1, unitPriceEuros: 50, depositPriceEuros: null, taxCategory: 'standard' },
+        { quantity: 1, unitPriceEuros: 50, depositPriceEuros: null, taxCategory: 'reduced' },
       ],
     });
     expect(text(out)).toBe('Beleg^50.00_50.00_0.00_0.00_0.00^100.00:Unbar');
@@ -35,25 +35,35 @@ describe('buildKassenbelegProcessData', () => {
     const out = buildKassenbelegProcessData({
       paymentMethod: 'cash',
       receiptType: 'sales_receipt',
-      positions: [{ quantity: 3, unitPriceEuros: 2, depositPriceEuros: null, taxRatePercent: 19 }],
+      positions: [{ quantity: 3, unitPriceEuros: 2, depositPriceEuros: null, taxCategory: 'standard' }],
     });
     expect(text(out)).toBe('Beleg^6.00_0.00_0.00_0.00_0.00^6.00:Bar');
   });
 
-  it('folds a positive deposit into the same tax-rate bucket as the article', () => {
+  it('folds a positive deposit into the standard-rate bucket when the article itself is also standard', () => {
     const out = buildKassenbelegProcessData({
       paymentMethod: 'cash',
       receiptType: 'sales_receipt',
-      positions: [{ quantity: 1, unitPriceEuros: 5, depositPriceEuros: 2, taxRatePercent: 19 }],
+      positions: [{ quantity: 1, unitPriceEuros: 5, depositPriceEuros: 2, taxCategory: 'standard' }],
     });
     expect(text(out)).toBe('Beleg^7.00_0.00_0.00_0.00_0.00^7.00:Bar');
+  });
+
+  it('buckets the deposit into standard even when the article itself is reduced-rate (Task #113 — Pfand ist immer Regelsteuersatz)', () => {
+    const out = buildKassenbelegProcessData({
+      paymentMethod: 'cash',
+      receiptType: 'sales_receipt',
+      positions: [{ quantity: 1, unitPriceEuros: 5, depositPriceEuros: 2, taxCategory: 'reduced' }],
+    });
+    // 5.00 reduced (article) + 2.00 standard (deposit) — NOT 7.00 all in one bucket.
+    expect(text(out)).toBe('Beleg^2.00_5.00_0.00_0.00_0.00^7.00:Bar');
   });
 
   it('buckets a 0% position into the fifth (steuerfrei) slot', () => {
     const out = buildKassenbelegProcessData({
       paymentMethod: 'cash',
       receiptType: 'sales_receipt',
-      positions: [{ quantity: 1, unitPriceEuros: 10, depositPriceEuros: null, taxRatePercent: 0 }],
+      positions: [{ quantity: 1, unitPriceEuros: 10, depositPriceEuros: null, taxCategory: 'zero' }],
     });
     expect(text(out)).toBe('Beleg^0.00_0.00_0.00_0.00_10.00^10.00:Bar');
   });
@@ -62,7 +72,7 @@ describe('buildKassenbelegProcessData', () => {
     const out = buildKassenbelegProcessData({
       paymentMethod: 'cash',
       receiptType: 'cancellation',
-      positions: [{ quantity: 1, unitPriceEuros: 20, depositPriceEuros: null, taxRatePercent: 19 }],
+      positions: [{ quantity: 1, unitPriceEuros: 20, depositPriceEuros: null, taxCategory: 'standard' }],
     });
     expect(text(out)).toBe('Beleg^-20.00_0.00_0.00_0.00_0.00^-20.00:Bar');
   });

@@ -12,7 +12,10 @@ import { applyTseSettings, TSE_SETTING_KEYS } from '../../tse/settings.js';
 const ALLOWED_KEYS = new Set([
   'company_name', 'company_street', 'company_postal_code', 'company_city',
   'company_tax_number', 'company_vat_id', 'receipt_prefix', 'receipt_counter_start',
-  'vat_rate_deposit',
+  // USt-Sätze (Task #110) — Regelsteuersatz/ermäßigter Steuersatz. Pfand
+  // (Task #113) verwendet direkt `vat_rate_standard`, braucht kein eigenes
+  // Setting mehr (löst das frühere, nie verdrahtete `vat_rate_deposit` ab).
+  'vat_rate_standard', 'vat_rate_reduced',
   // Per-document-type checkboxes for the company logo.
   'logo_on_receipt', 'logo_on_cancellation', 'logo_on_z_bon',
   'logo_on_order_slip', 'logo_on_pickup_slip', 'logo_on_deposit_slip',
@@ -27,11 +30,14 @@ const ALLOWED_KEYS = new Set([
  * Keys editable only by a System-Administrator (Task #94) — everything else
  * in `ALLOWED_KEYS` is editable by a Veranstaltungs-Administrator too. A
  * renting club needs to set its own company data/logo/TSE connection, but
- * must not touch the legally-sensitive global receipt numbering or the
- * statutory deposit VAT rate.
+ * must not touch the legally-sensitive global receipt numbering. The USt-
+ * Sätze (`vat_rate_standard`/`vat_rate_reduced`) are deliberately NOT
+ * System-Administrator-exklusiv (Nutzervorgabe 2026-09-03) — a
+ * Veranstaltungs-Administrator must be able to react to a legal rate change
+ * for their own event without depending on the System-Administrator.
  */
 const SYSTEM_ONLY_KEYS = new Set([
-  'receipt_prefix', 'receipt_counter_start', 'vat_rate_deposit',
+  'receipt_prefix', 'receipt_counter_start',
 ]);
 
 /** Admin routes for system settings (key-value store). */

@@ -28,7 +28,8 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
   app.get('/', async (_req, reply) => {
     const result = await query(`
       SELECT a.id, a.name, a.price, a.deposit_price, a.print_deposit_receipt,
-             a.is_active, a.created_at, a.category_id, ac.name AS category_name, ac.tax_rate,
+             a.skip_pickup_slip,
+             a.is_active, a.created_at, a.category_id, ac.name AS category_name, ac.tax_category,
              a.printer_id
       FROM article a
       JOIN article_category ac ON ac.id = a.category_id
@@ -46,6 +47,7 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
       price?: number;
       deposit_price?: number | null;
       print_deposit_receipt?: boolean;
+      skip_pickup_slip?: boolean;
       printer_id?: string | null;
       is_active?: boolean;
     };
@@ -58,15 +60,16 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
     }
 
     const result = await query(
-      `INSERT INTO article (name, category_id, price, deposit_price, print_deposit_receipt, printer_id, is_active, event_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, printer_id, is_active, created_at`,
+      `INSERT INTO article (name, category_id, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, event_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, created_at`,
       [
         body.name,
         body.category_id,
         body.price,
         body.deposit_price ?? null,
         body.print_deposit_receipt ?? false,
+        body.skip_pickup_slip ?? false,
         body.printer_id ?? null,
         body.is_active ?? true,
         config.activeEventId,
@@ -84,6 +87,7 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
       price?: number;
       deposit_price?: number | null;
       print_deposit_receipt?: boolean;
+      skip_pickup_slip?: boolean;
       printer_id?: string | null;
       is_active?: boolean;
     };
@@ -99,16 +103,18 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
            price                = COALESCE($3, price),
            deposit_price        = $4,
            print_deposit_receipt = COALESCE($5, print_deposit_receipt),
-           printer_id           = $6,
-           is_active            = COALESCE($7, is_active)
-       WHERE id = $8 AND event_id = $9
-       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, printer_id, is_active, created_at`,
+           skip_pickup_slip     = COALESCE($6, skip_pickup_slip),
+           printer_id           = $7,
+           is_active            = COALESCE($8, is_active)
+       WHERE id = $9 AND event_id = $10
+       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, created_at`,
       [
         body.name ?? null,
         body.category_id ?? null,
         body.price ?? null,
         body.deposit_price !== undefined ? body.deposit_price : null,
         body.print_deposit_receipt !== undefined ? body.print_deposit_receipt : null,
+        body.skip_pickup_slip !== undefined ? body.skip_pickup_slip : null,
         body.printer_id !== undefined ? body.printer_id : null,
         body.is_active !== undefined ? body.is_active : null,
         id,

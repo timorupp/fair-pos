@@ -65,7 +65,7 @@ async function loadReceiptWhere(whereClause: string, params: unknown[]): Promise
   const row = inv.rows[0]!;
 
   const items = await query<RawOrderItem>(`
-    SELECT article_name, tax_rate, price, deposit_price, options
+    SELECT article_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate, options
       FROM order_item
      WHERE invoice_id = $1 AND status IN ('paid', 'free')
      ORDER BY created_at

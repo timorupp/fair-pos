@@ -40,8 +40,8 @@ describe('DELETE /api/admin/articles/:id', () => {
     const article = await createTestArticle();
     const register = await createTestRegister();
     await pool.query(
-      `INSERT INTO order_item (register_id, article_id, article_name, article_category_name, tax_rate, price, status)
-       VALUES ($1, $2, $3, 'Getränke', 19, 5, 'paid')`,
+      `INSERT INTO order_item (register_id, article_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, $3, 'Getränke', 19, 'standard', 5, 'paid')`,
       [register.id, article.id, article.name],
     );
 

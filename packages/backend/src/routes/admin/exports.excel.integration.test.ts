@@ -45,8 +45,8 @@ describe('GET /api/admin/exports/excel/event', () => {
       [foreignRegister.id],
     );
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, price, status, created_at)
-       SELECT id, register_id, 'Bier', 'Getränke', 19, 5, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Bier', 'Getränke', 19, 'standard', 5, 'paid', created_at FROM invoice WHERE register_id = $1`,
       [foreignRegister.id],
     );
 
@@ -57,8 +57,8 @@ describe('GET /api/admin/exports/excel/event', () => {
       [ownRegister.id],
     );
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, price, status, created_at)
-       SELECT id, register_id, 'Wein', 'Getränke', 19, 7, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Wein', 'Getränke', 19, 'standard', 7, 'paid', created_at FROM invoice WHERE register_id = $1`,
       [ownRegister.id],
     );
 
@@ -94,8 +94,8 @@ describe('GET /api/admin/exports/excel/event', () => {
       [ownRegister.id],
     );
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, price, status, created_at)
-       SELECT id, register_id, 'Radler', 'Getränke', 19, 4, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Radler', 'Getränke', 19, 'standard', 4, 'paid', created_at FROM invoice WHERE register_id = $1`,
       [ownRegister.id],
     );
 

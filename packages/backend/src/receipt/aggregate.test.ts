@@ -5,8 +5,10 @@ import { aggregatePositions, type RawOrderItem } from './aggregate.js';
 const item = (overrides: Partial<RawOrderItem> = {}): RawOrderItem => ({
   article_name: 'Bier',
   tax_rate: 19,
+  tax_category: 'standard',
   price: 5,
   deposit_price: null,
+  deposit_tax_rate: null,
   options: null,
   ...overrides,
 });

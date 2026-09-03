@@ -16,6 +16,8 @@ const ctx: ClosingContext = {
   z_number: 42,
   created_at: new Date(2026, 5, 24, 22, 30, 0),
   zero_counter: 5,
+  vat_rate_standard: 19,
+  vat_rate_reduced: 7,
 };
 
 const totals: ClosingTotals = {

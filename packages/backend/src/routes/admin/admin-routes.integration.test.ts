@@ -42,7 +42,7 @@ describe('Admin categories', () => {
     const response = await app.inject({
       method: 'POST', url: '/api/admin/categories',
       headers: { cookie: adminCookie },
-      payload: { name: 'Getränke', tax_rate: 19 },
+      payload: { name: 'Getränke', tax_category: 'standard' },
     });
     expect(response.statusCode).toBe(201);
     expect(response.json().name).toBe('Getränke');
@@ -52,11 +52,11 @@ describe('Admin categories', () => {
     const app = await getTestApp();
     await app.inject({
       method: 'POST', url: '/api/admin/categories',
-      headers: { cookie: adminCookie }, payload: { name: 'X', tax_rate: 19 },
+      headers: { cookie: adminCookie }, payload: { name: 'X', tax_category: 'standard' },
     });
     const dup = await app.inject({
       method: 'POST', url: '/api/admin/categories',
-      headers: { cookie: adminCookie }, payload: { name: 'X', tax_rate: 19 },
+      headers: { cookie: adminCookie }, payload: { name: 'X', tax_category: 'standard' },
     });
     expect(dup.statusCode).toBe(409);
   });
@@ -71,7 +71,7 @@ describe('Admin categories', () => {
     const response = await app.inject({
       method: 'POST', url: '/api/admin/categories',
       headers: { cookie: adminCookie },
-      payload: { name: 'Getränke', tax_rate: 19 },
+      payload: { name: 'Getränke', tax_category: 'standard' },
     });
     expect(response.statusCode).toBe(201);
 
@@ -85,9 +85,9 @@ describe('Admin categories', () => {
 });
 
 describe('Admin articles', () => {
-  it('lists articles with category name + tax rate joined', async () => {
+  it('lists articles with category name + tax category joined', async () => {
     const app = await getTestApp();
-    const cat = await createTestCategory({ name: 'C', taxRate: 7 });
+    const cat = await createTestCategory({ name: 'C', taxCategory: 'reduced' });
     await createTestArticle({ name: 'A', price: 5, categoryId: cat.id });
     const response = await app.inject({
       method: 'GET', url: '/api/admin/articles',
@@ -96,7 +96,7 @@ describe('Admin articles', () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body[0].category_name).toBe('C');
-    expect(Number(body[0].tax_rate)).toBe(7);
+    expect(body[0].tax_category).toBe('reduced');
   });
 
   it('scopes articles to the active event (Task #95): GET only shows the active event\'s articles', async () => {

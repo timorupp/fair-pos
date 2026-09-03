@@ -2,12 +2,16 @@
 import { query } from '../../db/client.js';
 import { config } from '../../config.js';
 import { getTseCertificateInfo } from '../../tse/certificateInfo.js';
+import { loadTaxRates, percentFor } from '../../tax/rates.js';
 import type { DsfinvkSource, SourceLineItem, SourceVorgang, TseSignatureSource } from './rows.js';
+import type { TaxCategory } from '@fairpos/shared';
 
-const TAX_RATE_DESCRIPTIONS: Record<number, string> = {
-  19: 'Allgemeiner Steuersatz',
-  7: 'Ermäßigter Steuersatz',
-  0: 'Steuerfrei',
+/** Display order/description for `vat.csv` rows (Task #110 — category-based, not a raw percentage lookup). */
+const CATEGORY_ORDER: TaxCategory[] = ['standard', 'reduced', 'zero'];
+const CATEGORY_DESCRIPTIONS: Record<TaxCategory, string> = {
+  standard: 'Allgemeiner Steuersatz',
+  reduced: 'Ermäßigter Steuersatz',
+  zero: 'Steuerfrei',
 };
 
 /** Raw order_item columns shared by every Vorgang type (invoice/service_order/order_cancellation positions). */
@@ -16,8 +20,10 @@ interface RawItemRow {
   article_name: string;
   article_category_name: string;
   tax_rate: string;
+  tax_category: TaxCategory;
   price: string;
   deposit_price: string | null;
+  deposit_tax_rate: string | null;
 }
 
 function toLineItem(row: RawItemRow): SourceLineItem {
@@ -26,8 +32,10 @@ function toLineItem(row: RawItemRow): SourceLineItem {
     articleName: row.article_name,
     categoryName: row.article_category_name,
     taxRate: Number(row.tax_rate),
+    taxCategory: row.tax_category,
     priceEuros: Number(row.price),
     depositPriceEuros: row.deposit_price === null ? null : Number(row.deposit_price),
+    depositTaxRate: row.deposit_tax_rate === null ? null : Number(row.deposit_tax_rate),
   };
 }
 
@@ -105,7 +113,8 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   );
 
   const invoiceItemsResult = await query<RawItemRow & { invoice_id: string }>(
-    `SELECT invoice_id, article_id, article_name, article_category_name, tax_rate::text, price::text, deposit_price::text
+    `SELECT invoice_id, article_id, article_name, article_category_name,
+            tax_rate::text, tax_category, price::text, deposit_price::text, deposit_tax_rate::text
        FROM order_item
       WHERE invoice_id = ANY($1)`,
     [invoicesResult.rows.map((r) => r.id)],
@@ -165,7 +174,8 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     [closing.register_id, closing.business_date],
   );
   const orderItemsResult = await query<RawItemRow & { service_order_id: string }>(
-    `SELECT service_order_id, article_id, article_name, article_category_name, tax_rate::text, price::text, deposit_price::text
+    `SELECT service_order_id, article_id, article_name, article_category_name,
+            tax_rate::text, tax_category, price::text, deposit_price::text, deposit_tax_rate::text
        FROM order_item
       WHERE service_order_id = ANY($1)`,
     [ordersResult.rows.map((r) => r.id)],
@@ -199,16 +209,16 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     tse_start_time: Date | null; tse_end_time: Date | null;
   }>(
     `SELECT oc.id, oc.created_at, oc.cancelled_by_name,
-            cr.name AS cancellation_reason_name,
+            oc.cancellation_reason_name,
             oc.tse_transaction_number::text, oc.tse_signature_counter::text, oc.tse_signature,
             oc.tse_start_time, oc.tse_end_time
        FROM order_cancellation oc
-       JOIN cancellation_reason cr ON cr.id = oc.cancellation_reason_id
       WHERE oc.register_id = $1 AND oc.created_at::date = $2::date`,
     [closing.register_id, closing.business_date],
   );
   const cancellationItemsResult = await query<RawItemRow & { order_cancellation_id: string }>(
-    `SELECT order_cancellation_id, article_id, article_name, article_category_name, tax_rate::text, price::text, deposit_price::text
+    `SELECT order_cancellation_id, article_id, article_name, article_category_name,
+            tax_rate::text, tax_category, price::text, deposit_price::text, deposit_tax_rate::text
        FROM order_item
       WHERE order_cancellation_id = ANY($1)`,
     [cancellationsResult.rows.map((r) => r.id)],
@@ -237,9 +247,17 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   const vorgaenge = [...invoiceVorgaenge, ...orderVorgaenge, ...cancellationVorgaenge]
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
-  const usedTaxRates = [...new Set(
-    [...invoiceItemsResult.rows, ...orderItemsResult.rows, ...cancellationItemsResult.rows].map((r) => Number(r.tax_rate)),
-  )].sort((a, b) => a - b);
+  // Distinct VAT categories actually present in this closing (Task #110) —
+  // a deposit always counts as `standard` (Task #113) even when every sold
+  // article itself is `reduced`/`zero`, so `vat.csv` doesn't end up missing
+  // the Regelsteuersatz row whenever that happens.
+  const allItemRows = [...invoiceItemsResult.rows, ...orderItemsResult.rows, ...cancellationItemsResult.rows];
+  const usedCategories = new Set<TaxCategory>();
+  for (const row of allItemRows) {
+    usedCategories.add(row.tax_category);
+    if (row.deposit_price !== null && Number(row.deposit_price) !== 0) usedCategories.add('standard');
+  }
+  const taxRates = await loadTaxRates();
 
   const tseSerial = [...invoicesResult.rows].map((r) => r.tse_serial_number).find((s) => s !== null) ?? null;
   // Best-effort — getTseCertificateInfo() never throws, returns null when the
@@ -269,7 +287,11 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
       taxNumber: settings.get('company_tax_number') ?? '',
       vatId: settings.get('company_vat_id') ?? null,
     },
-    taxRates: usedTaxRates.map((rate) => ({ rate, description: TAX_RATE_DESCRIPTIONS[rate] ?? `Steuersatz ${rate}%` })),
+    taxRates: CATEGORY_ORDER
+      .filter((category) => usedCategories.has(category))
+      .map((category) => ({
+        category, rate: percentFor(category, taxRates), description: CATEGORY_DESCRIPTIONS[category],
+      })),
     vorgaenge,
   };
 }

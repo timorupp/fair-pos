@@ -58,7 +58,10 @@ export function formatTaxRate(rate: number): string {
 /**
  * Aggregates a list of positions into one row per VAT rate.
  *
- * - `gross` is summed across positions of the same rate.
+ * - `gross` is summed across positions of the same rate — the article price
+ *   and any deposit are bucketed separately (Task #113: a deposit is always
+ *   taxed at the Regelsteuersatz, independent of the article's own rate),
+ *   even though they print as one combined line on the receipt itself.
  * - `net` is computed via `gross / (1 + rate/100)` and rounded to the cent.
  * - `tax` is `gross - net` so the rows always reconcile back to the gross total.
  *
@@ -68,7 +71,10 @@ export function formatTaxRate(rate: number): string {
 export function computeTaxBreakdown(positions: ReceiptPosition[]): TaxBreakdownRow[] {
   const byRate = new Map<number, number>();
   for (const p of positions) {
-    byRate.set(p.taxRate, (byRate.get(p.taxRate) ?? 0) + p.lineGross);
+    byRate.set(p.taxRate, (byRate.get(p.taxRate) ?? 0) + p.unitPrice * p.quantity);
+    if (p.unitDeposit && p.depositTaxRate !== null) {
+      byRate.set(p.depositTaxRate, (byRate.get(p.depositTaxRate) ?? 0) + p.unitDeposit * p.quantity);
+    }
   }
 
   const rows: TaxBreakdownRow[] = [];

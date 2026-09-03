@@ -70,6 +70,23 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
   );
 
   /**
+   * POST /api/admin/print-jobs/cancel-all — bulk-cancels every job currently
+   * `pending` (Task #107), regardless of the queue page's active status
+   * filter. Purpose: let an admin clear out stale queued jobs (e.g. leftover
+   * test prints) in one click before switching a printer back on, instead of
+   * having it blast through a backlog of no-longer-relevant jobs. Scoped to
+   * `pending` only — `failed` jobs stay as-is (nothing would print anyway
+   * without an explicit retry), `printing` can't be cancelled here either,
+   * same rule as the single-job `DELETE /:id` below.
+   *
+   * @returns The number of jobs cancelled.
+   */
+  app.post('/cancel-all', async (_req, reply) => {
+    const result = await query(`UPDATE print_job SET status = 'cancelled' WHERE status = 'pending'`);
+    return reply.send({ cancelled: result.rowCount ?? 0 });
+  });
+
+  /**
    * DELETE /api/admin/print-jobs/:id — cancels a queued or terminally-failed
    * job by setting its status to `cancelled` (Task #79). Refuses a job
    * currently being printed. Previously deleted the row outright — now kept
@@ -167,26 +184,41 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
    * the original job — precisely why it's excluded here too, see `/:id/pdf`
    * for the full reasoning).
    *
-   * Reprints to the job's *original* printer — refuses (409) if that printer
-   * was since deleted, same rule as `/:id/retry` above, rather than silently
-   * guessing a different one.
+   * Reprints to the job's *original* printer by default — or, with Task
+   * #108's optional `printer_id` body field, to an explicitly chosen one
+   * (e.g. because the original printer is offline, or the original printer
+   * was since deleted, which previously hit a hard 409 dead end here).
    */
-  app.post<{ Params: { id: string } }>('/:id/reprint', async (req, reply) => {
-    const row = await query<{
-      type: PrintJobType; printer_id: string | null; blocks: PrintBlock[]; reference_id: string | null;
-    }>(
-      `SELECT type, printer_id, blocks, reference_id FROM print_job WHERE id = $1`, [req.params.id],
-    );
-    if (row.rows.length === 0) return reply.status(404).send({ error: 'Druckauftrag nicht gefunden' });
-    const job = row.rows[0]!;
-    if (job.type === 'pin_slip') {
-      return reply.status(403).send({ error: 'Erneutes Drucken von PIN-Zetteln ist aus Sicherheitsgründen nicht verfügbar.' });
-    }
-    if (!job.printer_id) {
-      return reply.status(409).send({ error: 'Der Drucker dieses Auftrags wurde gelöscht — kann nicht erneut gedruckt werden.' });
-    }
-    const bytes = renderBlocksToEscPos(job.blocks);
-    const newJob = await enqueuePrintJob(job.printer_id, job.type, bytes, job.blocks, job.reference_id);
-    return reply.send({ print_job_id: newJob.id });
-  });
+  app.post<{ Params: { id: string }; Body: { printer_id?: string } | undefined }>(
+    '/:id/reprint',
+    async (req, reply) => {
+      const row = await query<{
+        type: PrintJobType; printer_id: string | null; blocks: PrintBlock[]; reference_id: string | null;
+      }>(
+        `SELECT type, printer_id, blocks, reference_id FROM print_job WHERE id = $1`, [req.params.id],
+      );
+      if (row.rows.length === 0) return reply.status(404).send({ error: 'Druckauftrag nicht gefunden' });
+      const job = row.rows[0]!;
+      if (job.type === 'pin_slip') {
+        return reply.status(403).send({ error: 'Erneutes Drucken von PIN-Zetteln ist aus Sicherheitsgründen nicht verfügbar.' });
+      }
+
+      const requestedPrinterId = req.body?.printer_id;
+      let targetPrinterId: string | null;
+      if (requestedPrinterId) {
+        const printerExists = await query('SELECT 1 FROM printer WHERE id = $1', [requestedPrinterId]);
+        if (printerExists.rowCount === 0) return reply.status(400).send({ error: 'Drucker nicht gefunden' });
+        targetPrinterId = requestedPrinterId;
+      } else {
+        targetPrinterId = job.printer_id;
+      }
+      if (!targetPrinterId) {
+        return reply.status(409).send({ error: 'Der Drucker dieses Auftrags wurde gelöscht — bitte einen Drucker auswählen.' });
+      }
+
+      const bytes = renderBlocksToEscPos(job.blocks);
+      const newJob = await enqueuePrintJob(targetPrinterId, job.type, bytes, job.blocks, job.reference_id);
+      return reply.send({ print_job_id: newJob.id });
+    },
+  );
 }

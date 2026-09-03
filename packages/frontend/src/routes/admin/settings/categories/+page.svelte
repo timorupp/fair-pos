@@ -3,17 +3,21 @@
 
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import type { ArticleCategory } from '@fairpos/shared';
+  import type { ArticleCategory, TaxCategory } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
   let categories: ArticleCategory[] = $state([]);
   let loading = $state(true);
   let error = $state('');
 
+  /** Currently configured percentages, used only to annotate the select options. */
+  let vatRateStandard = $state('19');
+  let vatRateReduced = $state('7');
+
   let modalOpen = $state(false);
   let editing: ArticleCategory | null = $state(null);
   let formName = $state('');
-  let formTaxRate = $state('');
+  let formTaxCategory: TaxCategory = $state('standard');
   let formError = $state('');
   let saving = $state(false);
   let deleting = $state(false);
@@ -22,32 +26,45 @@
 
   async function load() {
     loading = true;
-    try { categories = await api.admin.categories.list(); }
-    catch (e) { error = e instanceof Error ? e.message : 'Fehler'; }
+    try {
+      const [cats, settings] = await Promise.all([api.admin.categories.list(), api.admin.settings.get()]);
+      categories = cats;
+      vatRateStandard = settings['vat_rate_standard'] ?? '19';
+      vatRateReduced = settings['vat_rate_reduced'] ?? '7';
+    } catch (e) { error = e instanceof Error ? e.message : 'Fehler'; }
     finally { loading = false; }
   }
 
+  /**
+   * German label for a tax category, annotated with the currently configured
+   * percentage (0% for `zero`, since that one is fixed by law).
+   *
+   * @param cat - The tax category to label.
+   * @returns Display label, e.g. "Regelsteuersatz (19 %)".
+   */
+  function taxCategoryLabel(cat: TaxCategory): string {
+    if (cat === 'standard') return `Regelsteuersatz (${vatRateStandard} %)`;
+    if (cat === 'reduced') return `Ermäßigt (${vatRateReduced} %)`;
+    return 'Steuerfrei (0 %)';
+  }
+
   function openCreate() {
-    editing = null; formName = ''; formTaxRate = '19'; formError = '';
+    editing = null; formName = ''; formTaxCategory = 'standard'; formError = '';
     modalOpen = true;
   }
 
   function openEdit(c: ArticleCategory) {
-    editing = c; formName = c.name; formTaxRate = String(c.tax_rate); formError = '';
+    editing = c; formName = c.name; formTaxCategory = c.tax_category; formError = '';
     modalOpen = true;
   }
 
   async function save() {
     formError = ''; saving = true;
     try {
-      const tax_rate = parseFloat(formTaxRate.replace(',', '.'));
-      if (isNaN(tax_rate) || tax_rate < 0 || tax_rate > 100) {
-        formError = 'Ungültiger Steuersatz'; saving = false; return;
-      }
       if (editing) {
-        await api.admin.categories.update(editing.id, { name: formName, tax_rate });
+        await api.admin.categories.update(editing.id, { name: formName, tax_category: formTaxCategory });
       } else {
-        await api.admin.categories.create({ name: formName, tax_rate });
+        await api.admin.categories.create({ name: formName, tax_category: formTaxCategory });
       }
       modalOpen = false;
       await load();
@@ -87,7 +104,7 @@
         {#each categories as c}
           <tr>
             <td>{c.name}</td>
-            <td class="num">{c.tax_rate} %</td>
+            <td class="num">{taxCategoryLabel(c.tax_category)}</td>
             <td class="actions">
               <button class="btn-ghost" onclick={() => openEdit(c)}>Bearbeiten</button>
             </td>
@@ -105,9 +122,12 @@
       <input id="cat-name" bind:value={formName} required disabled={saving || deleting} />
     </div>
     <div class="field">
-      <label for="cat-tax">Steuersatz (%)</label>
-      <input id="cat-tax" inputmode="decimal" bind:value={formTaxRate}
-             placeholder="z. B. 19 oder 7,5" required disabled={saving || deleting} />
+      <label for="cat-tax">Steuersatz</label>
+      <select id="cat-tax" bind:value={formTaxCategory} required disabled={saving || deleting}>
+        <option value="standard">{taxCategoryLabel('standard')}</option>
+        <option value="reduced">{taxCategoryLabel('reduced')}</option>
+        <option value="zero">{taxCategoryLabel('zero')}</option>
+      </select>
     </div>
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">

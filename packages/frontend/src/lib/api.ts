@@ -5,7 +5,7 @@
 import type {
   User, Article, ArticleCategory, Printer, Register, ProductOption,
   CancellationReason, Event, CashTransaction, RegisterLayout, RegisterLayoutSlot,
-  DiningTable,
+  DiningTable, TaxCategory,
 } from '@fairpos/shared';
 
 /** Snapshot of TSE health/status, mirroring `packages/backend/src/tse/types.ts`. */
@@ -173,19 +173,20 @@ export const api = {
 
     categories: {
       list: (): Promise<ArticleCategory[]> => request('GET', '/admin/categories'),
-      create: (data: { name: string; tax_rate: number }): Promise<ArticleCategory> =>
+      create: (data: { name: string; tax_category: TaxCategory }): Promise<ArticleCategory> =>
         request('POST', '/admin/categories', data),
-      update: (id: string, data: { name?: string; tax_rate?: number }): Promise<ArticleCategory> =>
+      update: (id: string, data: { name?: string; tax_category?: TaxCategory }): Promise<ArticleCategory> =>
         request('PUT', `/admin/categories/${id}`, data),
       delete: (id: string): Promise<void> => request('DELETE', `/admin/categories/${id}`),
     },
 
     articles: {
-      list: (): Promise<(Article & { category_name: string; tax_rate: number })[]> =>
+      list: (): Promise<(Article & { category_name: string; tax_category: TaxCategory })[]> =>
         request('GET', '/admin/articles'),
       create: (data: {
         name: string; category_id: string; price: number;
-        deposit_price?: number | null; printer_id?: string | null; is_active?: boolean;
+        deposit_price?: number | null; print_deposit_receipt?: boolean;
+        printer_id?: string | null; is_active?: boolean; skip_pickup_slip?: boolean;
       }): Promise<Article> => request('POST', '/admin/articles', data),
       update: (id: string, data: Partial<Article>): Promise<Article> =>
         request('PUT', `/admin/articles/${id}`, data),
@@ -382,10 +383,14 @@ export const api = {
     },
 
     closings: {
-      /** Closes the day for the given register, prints the Z-Bon if a printer is assigned. */
+      /**
+       * Closes the register: one Z-Bon per distinct calendar day it has
+       * unassigned invoices for (Task #106), prints each if a printer is
+       * assigned. Usually a single entry, but more than one when the
+       * register had invoices from more than one still-open day.
+       */
       closeRegister: (registerId: string): Promise<{
-        closing_id: string; register_id: string; z_number: number;
-        is_zero_closing: boolean; print_job_id: string | null;
+        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean; print_job_id: string | null }[];
       }> => request('POST', `/admin/registers/${registerId}/closings`),
 
       /** Past Z-Bons for the register, newest first. */
@@ -492,6 +497,9 @@ export const api = {
       /** Cancels a queued or terminally-failed job. Refuses jobs in `printing` status. */
       cancel: (id: string): Promise<void> => request('DELETE', `/admin/print-jobs/${id}`),
 
+      /** Bulk-cancels every job currently `pending`, regardless of the active status filter (Task #107). */
+      cancelAll: (): Promise<{ cancelled: number }> => request('POST', '/admin/print-jobs/cancel-all'),
+
       /** Resets a failed job back to `pending` so the worker retries it. */
       retry: (id: string): Promise<{ ok: true }> => request('POST', `/admin/print-jobs/${id}/retry`),
 
@@ -510,10 +518,12 @@ export const api = {
        * Re-queues a brand-new print job with the exact same content as an
        * existing one (Task #105) — works for every job type except
        * `pin_slip` (excluded for security, same reasoning as `pdfUrl`).
-       * Reprints to the job's original printer; fails if that printer was
-       * since deleted.
+       * Reprints to the job's original printer by default — or, with Task
+       * #108's optional `printerId`, to an explicitly chosen one (e.g.
+       * because the original printer was since deleted).
        */
-      reprint: (id: string): Promise<{ print_job_id: string }> => request('POST', `/admin/print-jobs/${id}/reprint`),
+      reprint: (id: string, printerId?: string): Promise<{ print_job_id: string }> =>
+        request('POST', `/admin/print-jobs/${id}/reprint`, printerId ? { printer_id: printerId } : undefined),
     },
 
     logs: {

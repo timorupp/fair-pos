@@ -48,7 +48,7 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
   });
 
   it('builds a ZIP with the Kassenbeleg-V1 transaction reflected in transactions.csv and lines.csv', async () => {
-    const category = await createTestCategory({ name: 'Getränke', taxRate: 19 });
+    const category = await createTestCategory({ name: 'Getränke', taxCategory: 'standard' });
     const article = await createTestArticle({ name: 'Bier', price: 5, categoryId: category.id });
     const register = await createTestRegister({ type: 'receipt_register' });
 
@@ -71,8 +71,8 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
       [register.id, closingId],
     );
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, article_id, article_name, article_category_name, tax_rate, price, status)
-       VALUES ($1, $2, $3, 'Bier', 'Getränke', 19, 5, 'paid')`,
+      `INSERT INTO order_item (invoice_id, register_id, article_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, $3, 'Bier', 'Getränke', 19, 'standard', 5, 'paid')`,
       [invoice.rows[0]!.id, register.id, article.id],
     );
 
@@ -104,7 +104,7 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     // checks out — an earlier version of the loader joined order_item into
     // the invoice query and GROUP-BY'd on the (varying) user, which silently
     // multiplied one invoice into several transactions.csv rows.
-    const category = await createTestCategory({ name: 'Getränke', taxRate: 19 });
+    const category = await createTestCategory({ name: 'Getränke', taxCategory: 'standard' });
     const article = await createTestArticle({ name: 'Bier', price: 5, categoryId: category.id });
     const register = await createTestRegister({ type: 'service_register' });
     const waiterA = await createTestUser({ name: 'Anna' });
@@ -130,13 +130,13 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     // Two order_items on the same invoice, placed by two different waiters
     // (as if from two separate order rounds), then both checked out together.
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, user_name, article_id, article_name, article_category_name, tax_rate, price, status, created_at)
-       VALUES ($1, $2, $3, $4, 'Bier', 'Getränke', 19, 5, 'paid', now() - interval '10 minutes')`,
+      `INSERT INTO order_item (invoice_id, register_id, user_name, article_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, $3, $4, 'Bier', 'Getränke', 19, 'standard', 5, 'paid', now() - interval '10 minutes')`,
       [invoiceId, register.id, waiterA.name, article.id],
     );
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, user_name, article_id, article_name, article_category_name, tax_rate, price, status, created_at)
-       VALUES ($1, $2, $3, $4, 'Bier', 'Getränke', 19, 5, 'paid', now())`,
+      `INSERT INTO order_item (invoice_id, register_id, user_name, article_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, $3, $4, 'Bier', 'Getränke', 19, 'standard', 5, 'paid', now())`,
       [invoiceId, register.id, waiterB.name, article.id],
     );
 

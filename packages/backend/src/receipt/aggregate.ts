@@ -1,13 +1,17 @@
 /** Aggregates flat `order_item` rows (one per unit) into grouped `ReceiptPosition`s with a quantity. */
 
+import type { TaxCategory } from '@fairpos/shared';
 import type { ReceiptPosition } from './types.js';
 
 /** Subset of the `order_item` columns needed to aggregate into receipt positions. */
 export interface RawOrderItem {
   article_name: string;
   tax_rate: number | string;        // DECIMAL — pg returns string in some configs
+  tax_category: TaxCategory;
   price: number | string;
   deposit_price: number | string | null;
+  /** VAT rate the deposit portion was taxed at (Task #113) — `null` unless `deposit_price` is set. */
+  deposit_tax_rate: number | string | null;
   options: string | null;
 }
 
@@ -30,6 +34,8 @@ export function aggregatePositions(items: RawOrderItem[]): ReceiptPosition[] {
       String(item.price),
       String(item.deposit_price ?? ''),
       String(item.tax_rate),
+      item.tax_category,
+      String(item.deposit_tax_rate ?? ''),
     ]);
     const existing = groups.get(key);
     if (existing) existing.count += 1;
@@ -49,6 +55,8 @@ function toPosition(item: RawOrderItem, count: number): ReceiptPosition {
     unitPrice,
     unitDeposit,
     taxRate: num(item.tax_rate),
+    taxCategory: item.tax_category,
+    depositTaxRate: item.deposit_tax_rate === null ? null : num(item.deposit_tax_rate),
     lineGross: round2(count * (unitPrice + (unitDeposit ?? 0))),
   };
 }

@@ -267,4 +267,94 @@ describe('POST /api/admin/print-jobs/:id/reprint (Task #105)', () => {
     });
     expect(response.statusCode).toBe(404);
   });
+
+  // Task #108: printer-selection dialog instead of always the original printer.
+  it('reprints to an explicitly chosen printer instead of the original', async () => {
+    const otherPrinter = await createTestPrinter({ name: 'Anderer Drucker' });
+    const jobId = await insertJobWithBlocks('order_slip');
+    const app = await getTestApp();
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/print-jobs/${jobId}/reprint`,
+      headers: { cookie: adminCookie }, payload: { printer_id: otherPrinter.id },
+    });
+    expect(response.statusCode).toBe(200);
+    const row = await pool.query<{ printer_id: string }>(
+      `SELECT printer_id FROM print_job WHERE id = $1`, [response.json().print_job_id],
+    );
+    expect(row.rows[0]!.printer_id).toBe(otherPrinter.id);
+  });
+
+  it('recovers from a deleted original printer when an explicit printer_id is given', async () => {
+    const jobId = await insertJobWithBlocks('test_print', null);
+    const app = await getTestApp();
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/print-jobs/${jobId}/reprint`,
+      headers: { cookie: adminCookie }, payload: { printer_id: printerId },
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('rejects an unknown printer_id with 400', async () => {
+    const jobId = await insertJobWithBlocks('order_slip');
+    const app = await getTestApp();
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/print-jobs/${jobId}/reprint`,
+      headers: { cookie: adminCookie }, payload: { printer_id: '00000000-0000-0000-0000-000000000000' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+});
+
+describe('POST /api/admin/print-jobs/cancel-all (Task #107)', () => {
+  it('cancels every pending job, leaving failed/done/cancelled untouched', async () => {
+    const pending1 = await insertJob('pending');
+    const pending2 = await insertJob('pending');
+    const failed = await insertJob('failed');
+    const done = await insertJob('done');
+    const app = await getTestApp();
+
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/print-jobs/cancel-all',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().cancelled).toBe(2);
+
+    const rows = await pool.query<{ id: string; status: string }>(`SELECT id, status FROM print_job`);
+    const statusById = new Map(rows.rows.map((r) => [r.id, r.status]));
+    expect(statusById.get(pending1)).toBe('cancelled');
+    expect(statusById.get(pending2)).toBe('cancelled');
+    expect(statusById.get(failed)).toBe('failed');
+    expect(statusById.get(done)).toBe('done');
+  });
+
+  it('does not touch a job currently printing', async () => {
+    const printing = await insertJob('printing');
+    const app = await getTestApp();
+
+    await app.inject({
+      method: 'POST', url: '/api/admin/print-jobs/cancel-all',
+      headers: { cookie: adminCookie },
+    });
+    const row = await pool.query<{ status: string }>(`SELECT status FROM print_job WHERE id = $1`, [printing]);
+    expect(row.rows[0]!.status).toBe('printing');
+  });
+
+  it('returns cancelled: 0 when there is nothing pending', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/print-jobs/cancel-all',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().cancelled).toBe(0);
+  });
+
+  it('rejects unauthenticated requests with 401', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'POST', url: '/api/admin/print-jobs/cancel-all' });
+    expect(response.statusCode).toBe(401);
+  });
 });

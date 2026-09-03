@@ -62,7 +62,7 @@ beforeEach(async () => {
   serviceRegisterId = sr.id;
   await assignRegisterToUser(userId, serviceRegisterId);
 
-  const a = await createTestArticle({ price: 5, taxRate: 19, printerId });
+  const a = await createTestArticle({ price: 5, taxCategory: 'standard', printerId });
   articleId = a.id;
 
   await seedReceiptCounter(0);

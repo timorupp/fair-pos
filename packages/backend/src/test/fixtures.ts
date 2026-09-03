@@ -6,6 +6,7 @@
  * helpers truncate — pair them with `truncateAllTables()` in `beforeEach`.
  */
 
+import type { TaxCategory } from '@fairpos/shared';
 import { pool } from '../db/client.js';
 import { hashPassword } from '../auth/password.js';
 import { generateRandomPin, hashPin } from '../auth/pin.js';
@@ -106,18 +107,18 @@ export async function assignRegisterToUser(userId: string, registerId: string): 
 /**
  * Inserts an `article_category` row.
  *
- * @param overrides - Optional name/taxRate.
+ * @param overrides - Optional name/taxCategory.
  * @returns The new category id and name.
  */
 export async function createTestCategory(overrides: {
   name?: string;
-  taxRate?: number;
+  taxCategory?: TaxCategory;
   eventId?: string | null;
 } = {}): Promise<{ id: string; name: string }> {
   const name = overrides.name ?? `cat-${Math.random().toString(36).slice(2, 8)}`;
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO article_category (name, tax_rate, event_id) VALUES ($1, $2, $3) RETURNING id`,
-    [name, overrides.taxRate ?? 19, overrides.eventId ?? config.activeEventId],
+    `INSERT INTO article_category (name, tax_category, event_id) VALUES ($1, $2, $3) RETURNING id`,
+    [name, overrides.taxCategory ?? 'standard', overrides.eventId ?? config.activeEventId],
   );
   return { id: result.rows[0]!.id, name };
 }
@@ -133,21 +134,24 @@ export async function createTestArticle(overrides: {
   price?: number;
   depositPrice?: number | null;
   printDepositReceipt?: boolean;
+  /** Skips the Bonkasse self-pickup slip for this article (Task #114). */
+  skipPickupSlip?: boolean;
   categoryId?: string;
   printerId?: string | null;
-  taxRate?: number;
+  taxCategory?: TaxCategory;
   eventId?: string | null;
 } = {}): Promise<{ id: string; name: string; categoryId: string }> {
   const eventId = overrides.eventId ?? config.activeEventId;
-  const categoryId = overrides.categoryId ?? (await createTestCategory({ taxRate: overrides.taxRate ?? 19, eventId })).id;
+  const categoryId = overrides.categoryId ?? (await createTestCategory({ taxCategory: overrides.taxCategory ?? 'standard', eventId })).id;
   const name = overrides.name ?? `art-${Math.random().toString(36).slice(2, 8)}`;
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO article (category_id, name, price, deposit_price, print_deposit_receipt, printer_id, is_active, event_id)
-     VALUES ($1, $2, $3, $4, $5, $6, true, $7) RETURNING id`,
+    `INSERT INTO article (category_id, name, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, event_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8) RETURNING id`,
     [
       categoryId, name, overrides.price ?? 5,
       overrides.depositPrice ?? null,
       overrides.printDepositReceipt ?? false,
+      overrides.skipPickupSlip ?? false,
       overrides.printerId ?? null,
       eventId,
     ],

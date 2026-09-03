@@ -21,7 +21,7 @@ function baseSource(vorgaenge: SourceVorgang[]): DsfinvkSource {
       name: 'Testverein e.V.', street: 'Hauptstr. 1', postalCode: '12345', city: 'Musterstadt',
       taxNumber: '12/345/67890', vatId: null,
     },
-    taxRates: [{ rate: 19, description: 'Allgemeiner Steuersatz' }],
+    taxRates: [{ category: 'standard', rate: 19, description: 'Allgemeiner Steuersatz' }],
     vorgaenge,
   };
 }
@@ -42,7 +42,7 @@ function beleg(overrides: Partial<SourceVorgang> = {}): SourceVorgang {
       transactionNumber: 7, signatureCounter: 3, signatureHex: 'aa',
       startTime: new Date('2026-08-05T18:00:00.000Z'), endTime: new Date('2026-08-05T18:00:01.000Z'),
     },
-    items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, priceEuros: 5, depositPriceEuros: null }],
+    items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: null, depositTaxRate: null }],
     ...overrides,
   };
 }
@@ -73,7 +73,7 @@ describe('buildDsfinvkExport', () => {
 
   it('splits into Umsatz + Pfand lines when a position carries a positive deposit', () => {
     const v = beleg({
-      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, priceEuros: 5, depositPriceEuros: 2 }],
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     expect(out['lines.csv']).toHaveLength(2);
@@ -83,11 +83,22 @@ describe('buildDsfinvkExport', () => {
 
   it('uses PfandRueckzahlung for a negative deposit (Leergutrückgabe)', () => {
     const v = beleg({
-      items: [{ articleId: 'art-1', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, priceEuros: 0, depositPriceEuros: -2 }],
+      items: [{ articleId: 'art-1', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 0, depositPriceEuros: -2, depositTaxRate: 19 }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
     expect(pfandLine).toMatchObject({ GV_TYP: 'PfandRueckzahlung', STK_BR: '2.00' });
+  });
+
+  it('taxes the Pfand line at UST_SCHLUESSEL 1 (Regelsteuersatz) even when the article itself is reduced-rate (Task #113)', () => {
+    const v = beleg({
+      items: [{ articleId: 'art-1', articleName: 'Essen im Pfandglas', categoryName: 'Speisen', taxRate: 7, taxCategory: 'reduced', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+    });
+    const out = buildDsfinvkExport(baseSource([v]));
+    const articleVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === '1');
+    const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === '2');
+    expect(articleVat!.UST_SCHLUESSEL).toBe(2); // reduced
+    expect(pfandVat!.UST_SCHLUESSEL).toBe(1);   // standard, independent of the article
   });
 
   it('negates amounts for a Bonstorno (isStornoBeleg)', () => {
@@ -185,12 +196,12 @@ describe('buildDsfinvkExport', () => {
     ]);
   });
 
-  it('maps the standard/reduced/zero tax rates to UST_SCHLUESSEL 1/2/5', () => {
+  it('maps the standard/reduced/zero tax categories to UST_SCHLUESSEL 1/2/5', () => {
     const v = beleg({
       items: [
-        { articleId: 'a', articleName: 'A', categoryName: 'C', taxRate: 19, priceEuros: 10, depositPriceEuros: null },
-        { articleId: 'b', articleName: 'B', categoryName: 'C', taxRate: 7, priceEuros: 10, depositPriceEuros: null },
-        { articleId: 'c', articleName: 'C', categoryName: 'C', taxRate: 0, priceEuros: 10, depositPriceEuros: null },
+        { articleId: 'a', articleName: 'A', categoryName: 'C', taxRate: 19, taxCategory: 'standard', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null },
+        { articleId: 'b', articleName: 'B', categoryName: 'C', taxRate: 7, taxCategory: 'reduced', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null },
+        { articleId: 'c', articleName: 'C', categoryName: 'C', taxRate: 0, taxCategory: 'zero', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null },
       ],
     });
     const out = buildDsfinvkExport(baseSource([v]));
