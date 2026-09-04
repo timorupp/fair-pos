@@ -42,7 +42,12 @@ echo "==> git pull (als $SERVICE_USER)"
 run_as_service_user "git pull"
 
 echo "==> npm ci (als $SERVICE_USER)"
-run_as_service_user "npm ci"
+# --prefer-offline: vertraut dem lokalen npm-Cache, statt bei jedem der
+# gut 500 Pakete erst eine Registry-Anfrage abzuwarten — auf einer
+# latenzreichen Veranstaltungs-Internetverbindung (z. B. mobiler Hotspot)
+# macht das den Unterschied zwischen Sekunden und mehreren Minuten pro
+# Update, wenn sich package-lock.json ohnehin nicht geändert hat.
+run_as_service_user "npm ci --prefer-offline"
 
 echo "==> Build (als $SERVICE_USER)"
 run_as_service_user "npm run build"

@@ -452,7 +452,7 @@ ist:
 ```bash
 cd /opt/fairpos
 git pull
-npm ci
+npm ci --prefer-offline
 npm run build
 rm -rf packages/backend/public && mkdir -p packages/backend/public
 cp -r packages/frontend/build/* packages/backend/public/
