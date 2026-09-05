@@ -25,6 +25,8 @@ function baseData(overrides: Partial<ReceiptData> = {}): ReceiptData {
     registerName: 'Theke',
     paymentMethod: 'cash',
     isCancellation: false,
+    tableName: null,
+    firstOrderTime: null,
     logoPng: null,
     logoWidth: 0,
     logoHeight: 0,
@@ -33,7 +35,6 @@ function baseData(overrides: Partial<ReceiptData> = {}): ReceiptData {
     positions: [position()],
     totalGross: 5,
     taxBreakdown: [],
-    tseSerial: null,
     tseTransactionNumber: null,
     tseSignatureCounter: null,
     tseSignature: null,
@@ -67,7 +68,6 @@ describe('buildQrPayload', () => {
 
   it('includes TSE transaction fields, in ISO-8601-with-millis format, when present', async () => {
     const parts = (await buildQrPayload(baseData({
-      tseSerial: 'SWISSBIT-XYZ',
       tseTransactionNumber: 12345,
       tseSignatureCounter: 99,
       tseSignature: 'aabb',

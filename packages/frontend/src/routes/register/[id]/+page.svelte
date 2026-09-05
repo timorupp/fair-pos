@@ -6,9 +6,10 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api';
   import type { Article } from '@fairpos/shared';
-  import { adjustQuantity, computeOrderTotal, num, type OrderLine } from '$lib/order';
+  import { adjustQuantity, computeOrderTotal, num, setQuantity, type OrderLine } from '$lib/order';
   import { currentRegisterName } from '$lib/stores/page-title';
   import { longpress } from '$lib/longpress';
+  import Modal from '$lib/components/Modal.svelte';
 
   type Slot = { article_id: string; grid_row: number; grid_col: number; color: string; label: string | null };
 
@@ -88,6 +89,46 @@
   function plus(articleId: string)  { order = adjustQuantity(order, articleId, 1); }
   function minus(articleId: string) { order = adjustQuantity(order, articleId, -1); }
 
+  // "Mengen bearbeiten" dialog — lets staff type a large quantity directly
+  // instead of tapping "+" repeatedly (e.g. 50 Tombola-Lose). Two steps like
+  // "Hinweis hinzufügen" at der Bedienungskasse: pick a position, then enter
+  // its new total quantity. Chosen over a single dialog editing every line
+  // at once — no per-line input state to keep in sync, reuses an
+  // already-established, familiar pattern, and the underlying use case is
+  // "one position needs a big number", not "edit everything at once".
+  let qtyDialogOpen = $state(false);
+  let qtyStep: 'select' | 'edit' = $state('select');
+  let qtySelectedLine: OrderLine | null = $state(null);
+  /** `undefined` while the input is empty — Svelte's own behaviour for a cleared `type="number"` field. */
+  let qtyValue: number | undefined = $state(undefined);
+
+  /** Opens the "Mengen bearbeiten" dialog at the position-selection step. */
+  function openQtyDialog() {
+    qtyStep = 'select';
+    qtySelectedLine = null;
+    qtyDialogOpen = true;
+  }
+
+  /**
+   * Moves to the edit step for the given line, pre-filling its current quantity.
+   *
+   * @param line - The order line to edit.
+   */
+  function selectQtyLine(line: OrderLine) {
+    qtySelectedLine = line;
+    qtyValue = line.quantity;
+    qtyStep = 'edit';
+  }
+
+  let qtyOkDisabled = $derived(typeof qtyValue !== 'number' || !Number.isInteger(qtyValue) || qtyValue < 0);
+
+  /** Applies the edited quantity to the selected line — 0 removes it entirely — and closes the dialog. */
+  function applyQtyEdit() {
+    if (!qtySelectedLine || qtyOkDisabled || typeof qtyValue !== 'number') return;
+    order = setQuantity(order, qtySelectedLine.article_id, qtyValue);
+    qtyDialogOpen = false;
+  }
+
   function nameOf(articleId: string): string {
     return articleById.get(articleId)?.name ?? '?';
   }
@@ -161,10 +202,6 @@
       <p class="muted">Bitte den Administrator informieren.</p>
     </div>
   {:else}
-    <header class="register-header">
-      <h1>{registerName}</h1>
-    </header>
-
     <!-- Responsive: article grid + order list reflow via CSS grid-template-areas
          (see .pos-layout) — narrow screens stack grid-then-list top to bottom with
          no internal scrolling (the whole page scrolls); from the tablet breakpoint
@@ -201,38 +238,95 @@
 
       <!-- Order list -->
       <section class="order-section">
-        {#if order.length === 0}
-          <p class="empty">Noch keine Artikel.</p>
-        {:else}
-          <ul class="order-list">
-            {#each order as line (line.article_id)}
-              <li class="order-line">
-                <span class="line-name">{nameOf(line.article_id)}</span>
-                <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
-                <div class="qty">
-                  <button class="qty-btn" onclick={() => minus(line.article_id)}>−</button>
-                  <span class="qty-val">{line.quantity}</span>
-                  <button class="qty-btn" onclick={() => plus(line.article_id)}>+</button>
-                </div>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-        <div class="total-row">
-          <span class="total-value" class:negative={total < 0}>{fmt(total)} €</span>
-          <button class="btn-primary checkout-btn hold-btn"
-                  use:longpress={{ onHold: startCheckout }}
-                  disabled={order.length === 0 || checkoutBusy}
-                  aria-label="Kassieren — gedrückt halten zum Bestätigen">
-            <span class="hold-fill"></span>
-            <span class="hold-label">⏱ {checkoutBusy ? 'Kassiere…' : 'Kassieren (halten)'}</span>
-          </button>
+        <div class="order-card">
+          {#if order.length === 0}
+            <p class="empty">Noch keine Artikel.</p>
+          {:else}
+            <ul class="order-list">
+              {#each order as line (line.article_id)}
+                <li class="order-line">
+                  <span class="line-name">{nameOf(line.article_id)}</span>
+                  <span class="line-unit muted">{fmt(unitPriceOf(line.article_id))} €</span>
+                  <div class="qty">
+                    <button class="qty-btn" onclick={() => minus(line.article_id)}>−</button>
+                    <span class="qty-val">{line.quantity}</span>
+                    <button class="qty-btn" onclick={() => plus(line.article_id)}>+</button>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <div class="total-row">
+            <span class="total-value" class:negative={total < 0}>{fmt(total)} €</span>
+            <button class="btn-primary checkout-btn hold-btn"
+                    use:longpress={{ onHold: startCheckout }}
+                    disabled={order.length === 0 || checkoutBusy}
+                    aria-label="Kassieren — gedrückt halten zum Bestätigen">
+              <span class="hold-fill"></span>
+              <span class="hold-label">⏱ {checkoutBusy ? 'Kassiere…' : 'Kassieren (halten)'}</span>
+            </button>
+          </div>
+          {#if checkoutError}<p class="error-text">{checkoutError}</p>{/if}
         </div>
-        {#if checkoutError}<p class="error-text">{checkoutError}</p>{/if}
+
+        <!-- Deliberately outside the order card, matching "Hinweis
+             hinzufügen" at der Bedienungskasse — a rare-ish action that
+             shouldn't visually compete with the primary "Kassieren" button. -->
+        <button
+          type="button"
+          class="btn-ghost qty-edit-btn"
+          disabled={order.length === 0}
+          onclick={openQtyDialog}
+        >
+          Mengen bearbeiten
+        </button>
       </section>
     </div>
   {/if}
 </div>
+
+<Modal
+  bind:open={qtyDialogOpen}
+  title={qtyStep === 'select' || !qtySelectedLine ? 'Position wählen' : `Menge — ${nameOf(qtySelectedLine.article_id)}`}
+>
+  {#if qtyStep === 'select'}
+    {#if order.length === 0}
+      <p class="muted">Keine Positionen vorhanden.</p>
+    {:else}
+      <ul class="qty-select-list">
+        {#each order as line (line.article_id)}
+          <li>
+            <button type="button" class="qty-select-item" onclick={() => selectQtyLine(line)}>
+              <span class="qty-select-qty">{line.quantity}×</span>
+              <span class="qty-select-name">{nameOf(line.article_id)}</span>
+              <span class="qty-select-chevron">›</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick={() => (qtyDialogOpen = false)}>Abbrechen</button>
+    </div>
+  {:else if qtySelectedLine}
+    <label class="qty-input-label">
+      Menge
+      <input
+        type="number"
+        inputmode="numeric"
+        min="0"
+        step="1"
+        bind:value={qtyValue}
+      />
+    </label>
+    <p class="qty-hint">0 eingeben entfernt die Position.</p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick={() => (qtyDialogOpen = false)}>Abbrechen</button>
+      <div class="spacer"></div>
+      <button class="btn-primary" disabled={qtyOkDisabled} onclick={applyQtyEdit}>OK</button>
+    </div>
+  {/if}
+</Modal>
 
 <style>
   .register-shell { flex: 1; display: flex; flex-direction: column; padding: 1rem; gap: 1rem; max-width: 100%; }
@@ -261,7 +355,7 @@
     gap: 1rem;
   }
   .grid-section { grid-area: grid; }
-  .order-section { grid-area: order; }
+  .order-section { grid-area: order; display: flex; flex-direction: column; gap: 0.75rem; }
   @media (min-width: 768px) {
     .pos-layout {
       grid-template-columns: 1fr 30%;
@@ -277,7 +371,7 @@
   }
 
   /* ── Order list ─────────────────────────────────────────────────────── */
-  .order-section {
+  .order-card {
     background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: var(--radius); padding: 1rem; display: flex; flex-direction: column;
   }
@@ -359,4 +453,28 @@
   .grid-empty { background: transparent; }
 
   .error-text { color: var(--color-danger); font-size: 0.9rem; margin-top: 0.5rem; }
+
+  .qty-edit-btn { margin-top: 0.6rem; align-self: stretch; }
+
+  /* ── "Mengen bearbeiten" dialog ────────────────────────────────────────
+     Same "clickable card" list look as the Bedienungskasse's
+     "Hinweis hinzufügen" position picker (order/+page.svelte). */
+  .modal-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
+  .modal-actions .spacer { flex: 1; }
+  .qty-select-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+  .qty-select-item {
+    display: flex; align-items: center; gap: 0.6rem; width: 100%;
+    padding: 0.6rem 0.8rem;
+    background: var(--color-surface-2); border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: inherit; text-align: left; cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .qty-select-item:hover { background: color-mix(in srgb, var(--color-surface-2) 85%, white); border-color: var(--color-primary); }
+  .qty-select-qty { font-weight: 600; min-width: 2.5em; }
+  .qty-select-name { flex: 1; }
+  .qty-select-chevron { color: var(--color-text-muted); font-size: 1.2rem; }
+  .qty-input-label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--color-text-muted); }
+  .qty-input-label input { padding: 0.4rem 0.6rem; font-size: 1.1rem; }
+  .qty-hint { font-size: 0.8rem; color: var(--color-text-muted); margin: 0.4rem 0 0; }
 </style>

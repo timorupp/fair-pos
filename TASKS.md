@@ -3922,3 +3922,119 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
   Nutzervorgabe) — als für den Echtbetrieb beim ersten Event relevant
   eingestuft.**
+
+- [ ] **#115** Kennbuchstaben je Steuersatz auf dem Rechnungsbeleg (Positionen + USt-Aufschlüsselung)
+  **Klassifikation: Verbesserung (rein kosmetisch, keine gesetzliche
+  Pflicht).** Nutzerfrage 2026-09-04: ist eine Position-zu-Steuersatz-
+  Zuordnung auf dem Bon rechtlich erforderlich?
+
+  **Rechtliche Prüfung (2026-09-04):** § 6 KassenSichV verlangt nur
+  *"Entgelt und Steuerbetrag, getrennt nach Steuersatz"* — also eine
+  **Aufschlüsselung je Steuersatz in Summe**, keine Kennzeichnung pro
+  Position. Bereits vollständig umgesetzt: `receipt/blocks.ts` druckt für
+  jeden im Bon vorkommenden Steuersatz eine eigene Zeile (`MwSt <Satz>` /
+  `Netto ... Steuer ...`), siehe auch `docs/Rechtliche-Anforderungen.md`
+  Abschnitt 2 und `docs/Anforderungen.md` „Pflichtangaben auf dem
+  Kassenbon" (beide bereits als ✅ geprüft markiert, Quelle: § 6
+  KassenSichV verbatim). Kein Compliance-Fund, keine Migration/TSE-/
+  DSFinV-K-Änderung nötig — reine Anzeige-Ergänzung auf dem gedruckten
+  Beleg.
+
+  **Nutzerentscheidung (2026-09-04): trotzdem umsetzen, für bessere
+  Nachvollziehbarkeit bei gemischten Warenkörben (z. B. Speisen 7 % +
+  Getränke 19 % im selben Bon).** Kennbuchstabe erscheint an **zwei**
+  Stellen:
+  1. Direkt an jeder Position in der Positionsliste (z. B. „1x Bratwurst
+     3,50 € B").
+  2. An der zugehörigen Aufschlüsselungszeile am Bon-Ende (z. B. „MwSt 7%
+     B — Netto X,XX  Steuer Y,YY").
+
+  **Umsetzungsskizze (grob, noch nicht final):** feste Zuordnung
+  `TaxCategory` → Kennbuchstabe (Vorschlag, analog gängiger
+  Supermarktbon-Konvention: `standard` = A, `reduced` = B, `zero` = C),
+  z. B. als kleine Hilfsfunktion neben den bestehenden
+  `TaxCategory`-Helfern in `tax/rates.ts` oder direkt in
+  `receipt/format.ts`. Betrifft nur die Druckaufbereitung
+  (`receipt/blocks.ts` für Positionszeilen + die bestehende
+  `taxBreakdown`-Schleife) sowie `receipt/pdf.ts` für die
+  PDF-Vorschau/den Download — `ReceiptPosition.taxCategory` ist bereits
+  vorhanden (Task #110/#113), keine neuen Daten nötig. TSE-`processData`,
+  Z-Bon und DSFinV-K-Export bleiben unberührt (reine Druckdarstellung).
+
+  Vor der Umsetzung: konkrete Buchstaben-Zuordnung final bestätigen (oder
+  Nutzervorschlag A/B/C wie oben übernehmen).
+
+- [x] **#116** Rechnungsbeleg (Bedienungskasse): Zeitpunkt der ersten Bestellung + Tischnummer drucken; TSE-Klartextblock auf das gesetzlich Nötige reduzieren
+  **Klassifikation: Compliance-Fund + Verbesserung.** Nutzerfrage 2026-09-04
+  zu identischen Start-/Ende-Zeitstempeln auf dem Bedienungskasse-Beleg —
+  vollständige Analyse siehe `DANGER.md` D-062.
+
+  **Fund 1 (Pflicht):** DSFinV-K v2.4 Tz. 2.7.2 verlangt bei der von FairPOS
+  genutzten "Durchbedienen"-Erleichterung (Kassenbeleg-V1 erst bei Zahlung
+  gestartet/beendet, keine über den Tischbesuch offene Transaktion)
+  zusätzlich den Abdruck des Start-Zeitpunkts der ersten Bestellung.
+
+  **Fund 2 (Verbesserung, im selben Aufwasch geprüft):** § 6 Satz 2 Nr. 2
+  KassenSichV (verbatim geprüft, gesetze-im-internet.de) erlaubt, Teile der
+  Pflichtangaben statt im Klartext nur über den ohnehin vorhandenen QR-Code
+  bereitzustellen — TSE-Seriennr./Transaktionsnr./Signaturzähler/Start/
+  Ende/Signatur sind alle byte-identisch mit bzw. aus dem QR-Code ableitbar.
+
+  **Umgesetzt (2026-09-04):**
+  - Neue Zeile `Tisch <Name> von <erste Bestellung> bis <Zahlung>` unter der
+    Positionsliste (`receipt/blocks.ts`) — nur für Bedienungskasse-Belege
+    mit Tisch, nicht für Bonkasse-Verkäufe. Datenquelle: neue
+    `loadTableInfo()`-Query in `receipt/data.ts`, nimmt den frühesten
+    `service_order.tse_start_time`/`created_at`/`order_item.created_at`
+    über die auf diesem Beleg abgerechneten Positionen.
+  - `ReceiptData` um `tableName`/`firstOrderTime` erweitert.
+  - TSE-Klartextblock in `receipt/blocks.ts` auf das gesetzlich Nötige
+    reduziert: TSE-Seriennr./Transaktionsnr./Signaturzähler/Start/Ende/
+    Signatur-Hexblock entfernt (jetzt nur noch im QR-Code). Bewusst
+    **nicht** entfernt: `Kassensystem-Seriennr.` (kein garantierter
+    Gleichlauf mit dem QR-Feld, das den TSE-Client-ID trägt — eine separat
+    konfigurierte, potenziell abweichende Kennung) sowie Firmendaten/
+    Positionen/Steueraufschlüsselung (unabhängig von KassenSichV durch § 33
+    UStDV vorgeschrieben). Bei fehlgeschlagener Signatur bleibt ein
+    sichtbarer "! TSE Fehler !"-Klartexthinweis erhalten (der leere/
+    degradierte QR-Code allein wäre für Kunde/Prüfer kein offensichtliches
+    Warnsignal).
+  - `ReceiptData.tseSerial` (nur noch für den entfernten Klartext genutzt,
+    kryptografisch aus dem QR-Code ableitbar) komplett entfernt statt als
+    totes Feld stehen gelassen.
+  - Neue Unit-Tests (`receipt/blocks.test.ts`, neu angelegt) + 2 neue
+    Integrationstests (`register-session.integration.test.ts`: Tisch-Zeile
+    mit rückdatierter erster Bestellung; Bonkasse-Verkauf ohne Tisch/
+    Zeitangabe).
+
+- [x] **#117** Bonkasse: "Mengen bearbeiten" — Großbestellungen ohne wiederholtes Antippen von "+" erfassen
+  **Klassifikation: Verbesserung.** Nutzerwunsch 2026-09-04.
+
+  **Anforderung:** Möglichkeit, an der Bonkasse eine Menge direkt einzugeben
+  statt sie über "+" hochzuzählen (z. B. 50 Tombola-Lose).
+
+  **Umgesetzt:** neuer Button "Mengen bearbeiten" in `register/[id]/+page.svelte`,
+  platziert wie "Hinweis hinzufügen" bei der Bedienungskasse (unter der
+  Positionsliste, außerhalb der Kassieren-Karte). Zwei-Schritt-Dialog analog
+  zu "Hinweis hinzufügen" (Position wählen, dann Menge eingeben) — bewusst
+  gegenüber einer Variante mit einem editierbaren Feld pro Position in einem
+  Dialog gewählt: kein Zustand für mehrere gleichzeitig offene Eingabefelder
+  zu pflegen, nutzt ein bereits etabliertes, vertrautes Muster. `0` eingeben
+  entfernt die Position komplett (löst nebenbei auch "eine große Menge nur
+  über 1er-Schritte wieder loswerden"). Nutzt die bereits vorhandene, aber
+  bis dahin nirgends verwendete, unit-getestete `setQuantity()` aus
+  `$lib/order.ts`. Bewusst keine künstliche Obergrenze für die Eingabe —
+  der sichtbare Gesamtbetrag plus der bestehende Hold-to-confirm-
+  "Kassieren"-Button sind die Sicherheitsbremse gegen Tippfehler.
+
+  **Separater Fund beim Testen (nicht behoben, außerhalb des Scopes):** beim
+  Versuch, den PIN-Login für einen Browser-Test automatisiert einzutippen,
+  reformatiert das Eingabefeld (`login/+page.svelte`) bei schnellem
+  Antippen mehrerer Zeichen hintereinander offenbar fehlerhaft — führende
+  Zeichen gingen verloren (bei sehr schnellem simuliertem Tippen sogar
+  mehrere). Bei Eingabe über einen einzelnen Paste-artigen Vorgang (wie es
+  ein Passwort-Manager oder Copy-Paste einer PIN tun würde) trat der Fehler
+  nicht auf. Nicht mit echten Nutzern reproduziert — vermutlich nur bei
+  Tippgeschwindigkeiten relevant, die eine reale Bildschirmtastatur kaum
+  erreicht. Noch nicht in `DANGER.md` aufgenommen, da nicht am echten Gerät
+  nachgestellt — bei Gelegenheit gegenprüfen.

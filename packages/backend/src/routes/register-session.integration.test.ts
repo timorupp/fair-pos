@@ -15,6 +15,7 @@ import {
   createTestRegister, createTestUser, seedReceiptCounter, setSystemSetting,
 } from '../test/fixtures.js';
 import { config } from '../config.js';
+import { loadReceiptById } from '../receipt/data.js';
 
 /** Test double for native/tse-cli — see tse/client.test.ts for the same fixture. */
 const TSE_CLI_STUB_PATH = path.join(
@@ -413,6 +414,57 @@ describe('Bedienungskasse: order + checkout flow', () => {
       [tableId],
     );
     expect(stillOpen.rows[0]!.n).toBe(1);
+  });
+
+  it('receipt for a table checkout carries the table name and the first order\'s timestamp (DSFinV-K Tz. 2.7.2, Task #116)', async () => {
+    const app = await getTestApp();
+    const firstOrder = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(firstOrder.statusCode).toBe(200);
+    // Backdate the first order so it's clearly distinguishable from "now" —
+    // the receipt's table line must reflect this earlier timestamp, not the
+    // checkout/payment moment.
+    const backdated = new Date(Date.now() - 3600_000);
+    await pool.query(`UPDATE order_item SET created_at = $1 WHERE dining_table_id = $2`, [backdated, tableId]);
+    await pool.query(`UPDATE service_order SET created_at = $1 WHERE dining_table_id = $2`, [backdated, tableId]);
+
+    const openItems = await app.inject({
+      method: 'GET',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/open-items`,
+      headers: { cookie: userCookie },
+    });
+    const groupKey = openItems.json().groups[0].group_key;
+    const checkoutResult = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { quantities: [{ group_key: groupKey, count: 1 }] },
+    });
+    expect(checkoutResult.statusCode).toBe(200);
+
+    const receipt = await loadReceiptById(checkoutResult.json().invoice_id);
+    expect(receipt).not.toBeNull();
+    expect(receipt!.tableName).toBe('A1');
+    expect(receipt!.firstOrderTime?.getTime()).toBe(backdated.getTime());
+  });
+
+  it('receipt for a Bonkasse walk-up sale has no table name or first-order time', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    const receipt = await loadReceiptById(response.json().invoice_id);
+    expect(receipt).not.toBeNull();
+    expect(receipt!.tableName).toBeNull();
+    expect(receipt!.firstOrderTime).toBeNull();
   });
 
   it('cancel marks selected items as cancelled with the reason', async () => {

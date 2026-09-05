@@ -68,6 +68,18 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
       blocks.push({ kind: 'text', text: `     à ${formatEuro(p.unitPrice)} + Pfand ${formatEuro(p.unitDeposit)}` });
     }
   }
+  // DSFinV-K Tz. 2.7.2: the Kassenbeleg-V1 transaction's own TSE start/end
+  // time below reflects only the payment itself, not the whole table visit
+  // (correct per the "Durchbedienen"-Erleichterung FairPOS relies on) — but
+  // the spec makes printing the first order's start time on the receipt a
+  // precondition for using that simplification. Combined here with the
+  // table name into one readable line, per Nutzervorgabe (2026-09-04).
+  if (d.tableName && d.firstOrderTime) {
+    blocks.push({
+      kind: 'text',
+      text: `Tisch ${d.tableName} von ${formatGermanDateTime(d.firstOrderTime)} bis ${formatGermanDateTime(d.createdAt)}`,
+    });
+  }
   blocks.push({ kind: 'hr' });
 
   blocks.push({ kind: 'row', left: 'Gesamt', right: formatEuroLabel(d.totalGross), bold: true, size: 'large' });
@@ -81,17 +93,25 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
   }
   blocks.push({ kind: 'hr' });
 
-  blocks.push({ kind: 'text', text: 'TSE-Daten', bold: true });
+  // TSE-Seriennr./Transaktionsnr./Signaturzähler/Start/Ende/Signatur are no
+  // longer printed as plain text — each is byte-identical to (or, for the
+  // TSE serial, cryptographically derivable from) the QR code below, and
+  // § 6 Satz 2 Nr. 2 KassenSichV explicitly allows replacing this part of
+  // the mandatory content with a machine-readable QR code (verified
+  // 2026-09-04 against the verbatim law text and DSFinV-K v2.4 Anhang I).
+  // `systemSerial` (Kassensystem-Seriennr.) stays printed below, though —
+  // it is a separately configured value, not guaranteed to equal or be
+  // derivable from the QR's own "Kassenseriennummer" field (which FairPOS
+  // populates with the TSE Client-ID, a distinct setting) — so dropping it
+  // would make that specific identifier vanish from the document entirely.
+  // What § 33 UStDV independently requires regardless of KassenSichV's QR
+  // allowance — company name/address, date, line items, tax breakdown —
+  // stays printed above/below unchanged. A failed signature must stay
+  // visible in plain text too: an empty/degraded QR code isn't an obvious
+  // "TSE broken" signal to a customer or auditor the way this line is.
   blocks.push({ kind: 'text', text: `Kassensystem-Seriennr.: ${d.systemSerial}` });
-  if (d.tseSerial) blocks.push({ kind: 'text', text: `TSE-Seriennr.: ${d.tseSerial}` });
-  if (d.tseTransactionNumber !== null) blocks.push({ kind: 'text', text: `Transaktionsnr.: ${d.tseTransactionNumber}` });
-  if (d.tseSignatureCounter !== null) blocks.push({ kind: 'text', text: `Signaturzähler: ${d.tseSignatureCounter}` });
-  if (d.tseStartTime) blocks.push({ kind: 'text', text: `Start: ${formatGermanDateTime(d.tseStartTime)}` });
-  if (d.tseEndTime) blocks.push({ kind: 'text', text: `Ende:  ${formatGermanDateTime(d.tseEndTime)}` });
-  if (d.tseSignature) {
-    blocks.push({ kind: 'text', text: `Signatur: ${d.tseSignature}` });
-  } else {
-    blocks.push({ kind: 'text', text: 'Signatur: ! TSE Fehler !' });
+  if (!d.tseSignature) {
+    blocks.push({ kind: 'text', text: '! TSE Fehler !', bold: true });
   }
 
   blocks.push({

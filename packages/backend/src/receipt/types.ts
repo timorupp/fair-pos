@@ -57,6 +57,18 @@ export interface ReceiptData {
    */
   isCancellation: boolean;
 
+  /**
+   * Name of the dining table this receipt's items were ordered at, or `null`
+   * for a Bonkasse walk-up sale (no table involved). Printed together with
+   * {@link firstOrderTime} — DSFinV-K Tz. 2.7.2 requires the start time of
+   * the first order to be printed on the receipt when, as FairPOS does, the
+   * Kassenbeleg-V1 transaction's own TSE start/end time reflects only the
+   * payment itself rather than spanning back to the first order.
+   */
+  tableName: string | null;
+  /** Timestamp of the earliest order contributing to this receipt. `null` unless `tableName` is set. */
+  firstOrderTime: Date | null;
+
   // ── Optional company logo (loaded conditionally per-document-type) ────────
   /** PNG bytes for the PDF renderer, or `null` to omit. */
   logoPng: Buffer | null;
@@ -83,7 +95,6 @@ export interface ReceiptData {
 
   // ── TSE (null when the sale wasn't signed — TSE unconfigured or an outage;
   //    see docs/TSE-Integration.md → "TSE-Ausfall") ──────────────────────────
-  tseSerial: string | null;
   tseTransactionNumber: number | null;
   tseSignatureCounter: number | null;
   tseSignature: string | null;
