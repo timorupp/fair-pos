@@ -34,6 +34,17 @@
   let verifyPassword = $state('');
   let verifyError = $state('');
   let verifying = $state(false);
+  let verifyInput: HTMLInputElement | undefined = $state();
+
+  // Plain `autofocus` on the input doesn't reliably focus it here — the
+  // input is freshly mounted each time the modal opens (Modal.svelte uses
+  // `{#if open}`), and dynamic-insertion autofocus isn't consistently
+  // honored across browsers/WebViews, including some of the embedded
+  // browsers this app runs in on touch-register hardware. Focusing
+  // explicitly once the input exists is reliable everywhere.
+  $effect(() => {
+    if (verifyOpen) verifyInput?.focus();
+  });
 
   onMount(async () => {
     try {
@@ -147,8 +158,7 @@
   <form onsubmit={(e) => { e.preventDefault(); confirmVerify(); }}>
     <label class="field-label">
       Passwort
-      <!-- svelte-ignore a11y_autofocus -->
-      <input type="password" bind:value={verifyPassword} autocomplete="current-password" disabled={verifying} required autofocus />
+      <input type="password" bind:this={verifyInput} bind:value={verifyPassword} autocomplete="current-password" disabled={verifying} required />
     </label>
     {#if verifyError}<p class="error-text small">{verifyError}</p>{/if}
     <div class="modal-actions">

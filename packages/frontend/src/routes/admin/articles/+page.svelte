@@ -44,11 +44,14 @@
   async function load() {
     loading = true;
     try {
-      [articles, categories, printers] = await Promise.all([
+      const [loadedArticles, loadedCategories, loadedPrinters] = await Promise.all([
         api.admin.articles.list(),
         api.admin.categories.list(),
         api.admin.printers.list(),
       ]);
+      articles = loadedArticles.sort((a, b) => a.name.localeCompare(b.name, 'de'));
+      categories = loadedCategories;
+      printers = loadedPrinters;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally { loading = false; }
