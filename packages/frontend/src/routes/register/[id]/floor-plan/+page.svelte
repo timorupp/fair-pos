@@ -77,7 +77,6 @@
 
 <div class="floor-plan-page">
   <header class="header">
-    <h1>Saalplan</h1>
     <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
   </header>
 
@@ -134,8 +133,7 @@
 
 <style>
   .floor-plan-page { padding: 1rem; }
-  .header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
-  .header h1 { font-size: 1.2rem; margin: 0; flex: 1; }
+  .header { display: flex; align-items: center; justify-content: flex-end; gap: 1rem; margin-bottom: 1rem; }
   .legend { display: flex; gap: 1rem; font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1rem; }
   .legend-item { display: inline-flex; align-items: center; gap: 0.4rem; }
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
