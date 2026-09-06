@@ -231,6 +231,84 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
   });
 });
 
+describe('POST /api/register-session/invoices/:id/print (DANGER.md T-012/T-013)', () => {
+  async function checkout(): Promise<string> {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    return response.json().invoice_id;
+  }
+
+  it('enqueues a receipt print_job for the register\'s assigned printer, referencing the invoice', async () => {
+    const invoiceId = await checkout();
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/${invoiceId}/print`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const { print_job_id } = response.json();
+    expect(print_job_id).toMatch(/^[0-9a-f-]{36}$/);
+
+    const job = await pool.query<{ type: string; printer_id: string; reference_id: string }>(
+      `SELECT type, printer_id, reference_id FROM print_job WHERE id = $1`, [print_job_id],
+    );
+    expect(job.rows[0]).toMatchObject({ type: 'receipt', printer_id: printerId, reference_id: invoiceId });
+  });
+
+  it('returns 404 for an invoice that does not exist', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/00000000-0000-0000-0000-000000000000/print`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns 403 when the caller is not assigned to the invoice\'s register', async () => {
+    const invoiceId = await checkout();
+    const other = await createTestUser({ isAdmin: false });
+    const otherCookie = await loginAsRegisterUser(await getTestApp(), other.pin);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/${invoiceId}/print`,
+      headers: { cookie: otherCookie },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('returns 400 when neither the register nor the system has a printer configured', async () => {
+    await pool.query(`UPDATE printer SET is_default = false WHERE id = $1`, [printerId]);
+    const bare = await createTestRegister({ type: 'receipt_register' }); // no printerId
+    await assignRegisterToUser(userId, bare.id);
+    const app = await getTestApp();
+    const checkoutResult = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${bare.id}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/${checkoutResult.json().invoice_id}/print`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('returns 500 for an invoice whose receipt_token is somehow null instead of crashing', async () => {
+    const invoiceId = await checkout();
+    await pool.query(`UPDATE invoice SET receipt_token = NULL WHERE id = $1`, [invoiceId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/${invoiceId}/print`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(500);
+  });
+});
+
 describe('GET /api/register-session/registers/:id — layout slots (Task #91 follow-up)', () => {
   it('excludes hidden slots entirely and includes the custom label of visible ones', async () => {
     const layout = await pool.query<{ id: string }>(

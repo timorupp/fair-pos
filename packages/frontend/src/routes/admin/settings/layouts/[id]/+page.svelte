@@ -6,13 +6,9 @@
   import { page } from '$app/stores';
   import { api } from '$lib/api';
   import type { Article } from '@fairpos/shared';
+  import { buildGrid, changeGridSize, applyDrop, type Slot, type DragSource } from '$lib/layout-editor';
 
   // ── State ──────────────────────────────────────────────────────────────────
-
-  type Slot = {
-    article_id: string; article_name: string; grid_row: number; grid_col: number; color: string;
-    label: string | null; hidden: boolean;
-  };
 
   let layoutId = $state('');
   let layoutName = $state('');
@@ -30,7 +26,7 @@
   let pickerCell: { row: number; col: number } | null = $state(null);
 
   // Drag state — module-level so dragover handlers can read it without dataTransfer
-  let dragging: { type: 'ablage' | 'slot'; articleId: string; articleName: string; fromRow?: number; fromCol?: number } | null = null;
+  let dragging: DragSource | null = null;
   let dragOverCell: string | null = $state(null); // "row:col"
 
 
@@ -54,37 +50,19 @@
   });
 
 
-  function buildGrid(rows: number, cols: number, s: Slot[]) {
-    const cells: (Slot | null)[][] = Array.from({ length: rows }, () => Array(cols).fill(null));
-    for (const slot of s) {
-      if (slot.grid_row < rows && slot.grid_col < cols) (cells[slot.grid_row] as (Slot | null)[])[slot.grid_col] = slot;
-    }
-    return cells;
-  }
-
-  function slotAt(row: number, col: number): Slot | null {
-    return slots.find((s) => s.grid_row === row && s.grid_col === col) ?? null;
-  }
-
   // ── Grid size changes ──────────────────────────────────────────────────────
 
   function changeSize(dim: 'cols' | 'rows', delta: number) {
-    if (dim === 'cols') {
-      const next = Math.max(1, Math.min(10, gridCols + delta));
-      if (next < gridCols) slots = slots.filter((s) => s.grid_col < next);
-      gridCols = next;
-    } else {
-      const next = Math.max(1, Math.min(10, gridRows + delta));
-      if (next < gridRows) slots = slots.filter((s) => s.grid_row < next);
-      gridRows = next;
-    }
+    const next = changeGridSize(dim, delta, gridCols, gridRows, slots);
+    gridCols = next.gridCols;
+    gridRows = next.gridRows;
+    slots = next.slots;
     dirty = true;
   }
 
   // ── Drag & drop ────────────────────────────────────────────────────────────
 
   const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316','#14b8a6','#6366f1','#84cc16','#64748b'];
-  const DEFAULT_COLOR = '#3b82f6';
 
   function dragStartAblage(e: DragEvent, article: Article) {
     dragging = { type: 'ablage', articleId: article.id, articleName: article.name };
@@ -108,38 +86,7 @@
     e.preventDefault();
     dragOverCell = null;
     if (!dragging) return;
-
-    const existing = slotAt(row, col);
-
-    if (dragging.type === 'ablage') {
-      // Place from ablage; if cell occupied, bump existing back to ablage (just remove).
-      // A fresh placement always starts with defaults — only a move preserves attributes (see below).
-      slots = slots.filter((s) => !(s.grid_row === row && s.grid_col === col));
-      slots = [...slots, {
-        article_id: dragging.articleId, article_name: dragging.articleName,
-        grid_row: row, grid_col: col, color: DEFAULT_COLOR, label: null, hidden: false,
-      }];
-    } else {
-      // Move from another cell — grab the full moved slot BEFORE removing it from
-      // its old position, so color/label/hidden carry over to the new position
-      // instead of resetting to defaults (found live: the previous code looked
-      // the old slot up again via slotAt() only after it had already been
-      // filtered out, so it always found nothing and silently fell back to
-      // DEFAULT_COLOR).
-      const { fromRow, fromCol } = dragging;
-      const movedSlot = slotAt(fromRow!, fromCol!)!;
-      // Remove from old position
-      slots = slots.filter((s) => !(s.grid_row === fromRow && s.grid_col === fromCol));
-      if (existing) {
-        // Swap: put existing where the dragged came from
-        slots = slots.filter((s) => !(s.grid_row === row && s.grid_col === col));
-        slots = [...slots, { ...existing, grid_row: fromRow!, grid_col: fromCol! }];
-      } else {
-        slots = slots.filter((s) => !(s.grid_row === row && s.grid_col === col));
-      }
-      slots = [...slots, { ...movedSlot, grid_row: row, grid_col: col }];
-    }
-
+    slots = applyDrop(slots, dragging, row, col);
     dragging = null;
     dirty = true;
     pickerCell = null;

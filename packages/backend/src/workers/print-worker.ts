@@ -53,8 +53,17 @@ async function claimJob(jobId: string): Promise<ClaimedJob | null> {
   return result.rows[0] ?? null;
 }
 
-/** Fetches, sends, and finalises a single job. Safe to call concurrently — the claim is atomic. */
-async function processJob(jobId: string): Promise<void> {
+/**
+ * Fetches, sends, and finalises a single job. Safe to call concurrently — the
+ * claim is atomic, so two overlapping calls for the same `jobId` never both
+ * send it (the second one's `claimJob` finds `status <> 'pending'` and
+ * returns `null`). Exported for integration tests (DANGER.md T-010) —
+ * `startPrintWorker()` itself is a long-running LISTEN loop, not something a
+ * test can drive directly.
+ *
+ * @param jobId - The `print_job.id` to process.
+ */
+export async function processJob(jobId: string): Promise<void> {
   const job = await claimJob(jobId);
   if (!job) return;
 
@@ -76,9 +85,9 @@ async function processJob(jobId: string): Promise<void> {
 /**
  * Picks up any `pending` job whose last attempt is older than the cooldown.
  * Skips jobs that have never been attempted only if NOTIFY missed them
- * (last_attempt_at IS NULL).
+ * (last_attempt_at IS NULL). Exported for integration tests (T-010).
  */
-async function retryPending(): Promise<void> {
+export async function retryPending(): Promise<void> {
   const result = await query<{ id: string }>(`
     SELECT id FROM print_job
      WHERE status = 'pending'
@@ -91,8 +100,8 @@ async function retryPending(): Promise<void> {
   }
 }
 
-/** Resets any `printing` rows back to `pending` so they get retried after a crash. */
-async function recoverInFlight(): Promise<void> {
+/** Resets any `printing` rows back to `pending` so they get retried after a crash. Exported for integration tests (T-010). */
+export async function recoverInFlight(): Promise<void> {
   const result = await query(
     `UPDATE print_job SET status = 'pending' WHERE status = 'printing'`,
   );
