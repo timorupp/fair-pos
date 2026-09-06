@@ -34,6 +34,20 @@ describe('buildReceiptBlocks', () => {
     expect(text).not.toContain('Tisch');
   });
 
+  it('prints the table line in the last section, after the final separator — not right after the positions (Nutzervorgabe 2026-09-06)', async () => {
+    const data: ReceiptData = {
+      ...base,
+      tableName: '7',
+      firstOrderTime: new Date(2026, 5, 24, 10, 11, 0),
+    };
+    const blocks = await buildReceiptBlocks(data);
+    const lastHrIndex = blocks.map((b) => b.kind).lastIndexOf('hr');
+    const tableLineIndex = blocks.findIndex((b) => b.kind === 'text' && b.text.startsWith('Tisch '));
+    const serialIndex = blocks.findIndex((b) => b.kind === 'text' && b.text.startsWith('Kassensystem-Seriennr.'));
+    expect(tableLineIndex).toBeGreaterThan(lastHrIndex);
+    expect(tableLineIndex).toBeLessThan(serialIndex);
+  });
+
   it('shows the TSE-error hint when unsigned', async () => {
     const blocks = await buildReceiptBlocks({ ...base, tseSignature: null });
     expect(textBlocks(blocks).some((b) => b.text === '! TSE Fehler !')).toBe(true);

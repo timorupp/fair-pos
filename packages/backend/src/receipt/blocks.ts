@@ -72,18 +72,6 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
       blocks.push({ kind: 'text', text: `     à ${formatEuro(p.unitPrice)} + Pfand ${formatEuro(p.unitDeposit)}` });
     }
   }
-  // DSFinV-K Tz. 2.7.2: the Kassenbeleg-V1 transaction's own TSE start/end
-  // time below reflects only the payment itself, not the whole table visit
-  // (correct per the "Durchbedienen"-Erleichterung FairPOS relies on) — but
-  // the spec makes printing the first order's start time on the receipt a
-  // precondition for using that simplification. Combined here with the
-  // table name into one readable line, per Nutzervorgabe (2026-09-04).
-  if (d.tableName && d.firstOrderTime) {
-    blocks.push({
-      kind: 'text',
-      text: `Tisch ${d.tableName} von ${formatGermanDateTime(d.firstOrderTime)} bis ${formatGermanDateTime(d.createdAt)}`,
-    });
-  }
   blocks.push({ kind: 'hr' });
 
   blocks.push({ kind: 'row', left: 'Gesamt', right: formatEuroLabel(d.totalGross), bold: true, size: 'large' });
@@ -96,6 +84,21 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
     });
   }
   blocks.push({ kind: 'hr' });
+
+  // DSFinV-K Tz. 2.7.2: the Kassenbeleg-V1 transaction's own TSE start/end
+  // time below reflects only the payment itself, not the whole table visit
+  // (correct per the "Durchbedienen"-Erleichterung FairPOS relies on) — but
+  // the spec makes printing the first order's start time on the receipt a
+  // precondition for using that simplification. Combined here with the
+  // table name into one readable line, per Nutzervorgabe (2026-09-04).
+  // Printed in this last section (after the final separator), not right
+  // after the positions — Nutzervorgabe 2026-09-06.
+  if (d.tableName && d.firstOrderTime) {
+    blocks.push({
+      kind: 'text',
+      text: `Tisch ${d.tableName} von ${formatGermanDateTime(d.firstOrderTime)} bis ${formatGermanDateTime(d.createdAt)}`,
+    });
+  }
 
   // TSE-Seriennr./Transaktionsnr./Signaturzähler/Start/Ende/Signatur are no
   // longer printed as plain text — each is byte-identical to (or, for the
