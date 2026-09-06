@@ -4051,7 +4051,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   erreicht. Noch nicht in `DANGER.md` aufgenommen, da nicht am echten Gerät
   nachgestellt — bei Gelegenheit gegenprüfen.
 
-- [ ] **#118** Rückgeldrechner in der Rechnungsansicht
+- [x] **#118** Rückgeldrechner in der Rechnungsansicht
   **Klassifikation: Verbesserung.** Nutzerwunsch 2026-09-05.
 
   **Anforderung:** in der Rechnungsansicht (`ReceiptConfirmation.svelte`,
@@ -4085,3 +4085,16 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   (wirkt dadurch automatisch für beide Kassenarten). Keine neuen Props/
   API-Calls nötig — der Rechner braucht nur den bereits vorhandenen
   `total`-Wert. Reiner Frontend-Task, keine Migration/Backend-Änderung.
+
+  **Umgesetzt (2026-09-06):** Prototyp 1:1 in Svelte übernommen. Bestehendes
+  Markup (Header/Betrag/Aktionen) unverändert in eine eigene `<section
+  class="old-ui">` gewrappt, Rechner als separate `<section
+  class="calc-card">` daneben/darunter (`.layout`-Grid, 1↔2 Spalten via
+  `@media (min-width: 768px)`, wie geplant). Ein-/ausklappbar
+  (`calcOpen`-State, Standard: offen), Auf-/Abrunden-Chips + Ziffernblock +
+  Ergebnis wie im Artifact. `--color-success`/`--color-danger` etc. sind
+  bereits echte globale Tokens aus `+layout.svelte` — keine neuen Farben
+  nötig. Typecheck + bestehende Frontend-Unit-Tests grün; keine
+  Live-Browser-Verifikation diesmal (Sandbox-Chromium in dieser Session
+  nicht mehr verfügbar) — Design war aber bereits zweimal vom Nutzer im
+  echten Browser über den Artifact-Prototyp geprüft.
