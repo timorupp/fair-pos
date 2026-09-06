@@ -1,7 +1,7 @@
 /** Unit tests for the receipt formatting and aggregation helpers. */
 import { describe, it, expect } from 'vitest';
 import {
-  formatEuro, formatEuroLabel, formatGermanDateTime, formatTaxRate,
+  formatEuro, formatEuroLabel, formatGermanDateTime, formatTaxRate, taxCategoryLetter,
   computeTaxBreakdown, computeTotalGross,
 } from './format.js';
 import type { ReceiptPosition } from './types.js';
@@ -57,6 +57,14 @@ describe('formatTaxRate', () => {
 
   it('keeps two decimals for non-whole rates and uses the German comma', () => {
     expect(formatTaxRate(10.5)).toBe('10,50 %');
+  });
+});
+
+describe('taxCategoryLetter', () => {
+  it('maps each tax category to its Kennbuchstabe (Task #115)', () => {
+    expect(taxCategoryLetter('standard')).toBe('A');
+    expect(taxCategoryLetter('reduced')).toBe('B');
+    expect(taxCategoryLetter('zero')).toBe('C');
   });
 });
 
@@ -129,6 +137,14 @@ describe('computeTaxBreakdown', () => {
     const r19 = rows.find((r) => r.rate === 19)!;
     expect(r7.gross).toBe(4);
     expect(r19.gross).toBe(2);
+  });
+
+  it('tags each row with the tax category, always \'standard\' for the deposit bucket even when the article itself is \'reduced\' (Task #115)', () => {
+    const rows = computeTaxBreakdown([
+      p('Essen im Pfandglas', 1, 4, 7, 2, 19), // article: reduced @ 7%, deposit: standard @ 19%
+    ]);
+    expect(rows.find((r) => r.rate === 7)!.category).toBe('reduced');
+    expect(rows.find((r) => r.rate === 19)!.category).toBe('standard');
   });
 });
 

@@ -7,7 +7,7 @@
 import type { PrintBlock } from '../print/blocks.js';
 import { pngToEscposRaster } from '../print/raster.js';
 import { buildQrPayload, renderQrPng } from './qr.js';
-import { formatEuro, formatEuroLabel, formatGermanDateTime, formatTaxRate } from './format.js';
+import { formatEuro, formatEuroLabel, formatGermanDateTime, formatTaxRate, taxCategoryLetter } from './format.js';
 import type { ReceiptData } from './types.js';
 
 /** Fraction of the printable width the QR code occupies in the PDF. */
@@ -63,7 +63,11 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
   blocks.push({ kind: 'hr' });
 
   for (const p of d.positions) {
-    blocks.push({ kind: 'row', left: `${p.quantity}x ${p.name}`, right: formatEuro(p.lineGross) });
+    blocks.push({
+      kind: 'row',
+      left: `${p.quantity}x ${p.name}`,
+      right: `${formatEuro(p.lineGross)} ${taxCategoryLetter(p.taxCategory)}`,
+    });
     if (p.unitDeposit !== null && p.unitDeposit !== 0) {
       blocks.push({ kind: 'text', text: `     à ${formatEuro(p.unitPrice)} + Pfand ${formatEuro(p.unitDeposit)}` });
     }
@@ -87,7 +91,7 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
   for (const row of d.taxBreakdown) {
     blocks.push({
       kind: 'row',
-      left: `MwSt ${formatTaxRate(row.rate)}`,
+      left: `MwSt ${formatTaxRate(row.rate)} ${taxCategoryLetter(row.category)}`,
       right: `Netto ${formatEuro(row.net)}  Steuer ${formatEuro(row.tax)}`,
     });
   }

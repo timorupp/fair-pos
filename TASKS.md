@@ -3923,7 +3923,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Nutzervorgabe) — als für den Echtbetrieb beim ersten Event relevant
   eingestuft.**
 
-- [ ] **#115** Kennbuchstaben je Steuersatz auf dem Rechnungsbeleg (Positionen + USt-Aufschlüsselung)
+- [x] **#115** Kennbuchstaben je Steuersatz auf dem Rechnungsbeleg (Positionen + USt-Aufschlüsselung)
   **Klassifikation: Verbesserung (rein kosmetisch, keine gesetzliche
   Pflicht).** Nutzerfrage 2026-09-04: ist eine Position-zu-Steuersatz-
   Zuordnung auf dem Bon rechtlich erforderlich?
@@ -3963,6 +3963,18 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
 
   Vor der Umsetzung: konkrete Buchstaben-Zuordnung final bestätigen (oder
   Nutzervorschlag A/B/C wie oben übernehmen).
+
+  **Umgesetzt (2026-09-06):** Nutzervorschlag A/B/C übernommen, neue
+  Funktion `taxCategoryLetter()` in `receipt/format.ts`. `TaxBreakdownRow`
+  um `category` erweitert (`computeTaxBreakdown()` trackt jetzt neben dem
+  Bruttobetrag auch die Steuerkategorie je Satz-Bucket — Pfand immer
+  `standard`, unabhängig vom Artikel, siehe Task #113). `receipt/blocks.ts`
+  hängt den Buchstaben an die Positionszeile (`right`) und an die
+  `MwSt <Satz>`-Zeile (`left`) an. Rein additive Änderung, betrifft nur
+  `TaxBreakdownRow`/die Druckaufbereitung — keine andere Verwendung
+  existiert (`grep` bestätigt). Neue Unit-Tests in `format.test.ts`
+  (`taxCategoryLetter`, `category`-Feld je Bucket) und `blocks.test.ts`
+  (Buchstabe an Position + passender Aufschlüsselungszeile).
 
 - [x] **#116** Rechnungsbeleg (Bedienungskasse): Zeitpunkt der ersten Bestellung + Tischnummer drucken; TSE-Klartextblock auf das gesetzlich Nötige reduzieren
   **Klassifikation: Compliance-Fund + Verbesserung.** Nutzerfrage 2026-09-04
@@ -4038,3 +4050,38 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Tippgeschwindigkeiten relevant, die eine reale Bildschirmtastatur kaum
   erreicht. Noch nicht in `DANGER.md` aufgenommen, da nicht am echten Gerät
   nachgestellt — bei Gelegenheit gegenprüfen.
+
+- [ ] **#118** Rückgeldrechner in der Rechnungsansicht
+  **Klassifikation: Verbesserung.** Nutzerwunsch 2026-09-05.
+
+  **Anforderung:** in der Rechnungsansicht (`ReceiptConfirmation.svelte`,
+  gemeinsam genutzt von Bonkasse `register/[id]/receipt` **und**
+  Bedienungskasse `register/[id]/tables/[tableId]/checkout/receipt`) einen
+  Rückgeldrechner ergänzen — rein clientseitige Rechenhilfe, nichts wird
+  gespeichert oder ans Backend geschickt. Rechnungsbetrag steht oben
+  (bereits vorhanden), darunter gibt der Anwender den "Gegeben"-Betrag über
+  ein Tastenfeld in der UI ein (kein Aufruf der Smartphone/Tablet-Tastatur),
+  Rückgeld wird live berechnet.
+
+  **Design per Prototyp abgestimmt** (HTML-Artifact, mehrfach iteriert,
+  2026-09-05): Eingabe wie an einem Kartenterminal — Ziffern schieben von
+  rechts rein (z. B. "2750" → 27,50 €), keine separate Komma-Taste nötig.
+  Zusätzlich Schnellwahl-Chips für 5/10/20/50/100 € (kein "Passend"-Button
+  — bewusst entfernt, Nutzerfeedback). Drei Ergebniszustände: noch nichts
+  eingegeben (neutral), zu wenig gegeben ("Es fehlen noch X,XX €", Warnfarbe
+  statt einer verwirrenden negativen Zahl), genug gegeben ("Rückgeld:
+  X,XX €", Erfolgsfarbe).
+
+  **Layout (Nutzervorgabe):** ab Tablet-Breite (≥768px, derselbe Breakpoint
+  wie `register/[id]/+page.svelte`s `.pos-layout`) zweispaltig — bestehende
+  Rechnungsansicht links, Rechner rechts. Unterhalb davon (Smartphone)
+  einspaltig — bestehende Ansicht zuerst, Rechner darunter. Wichtig: die
+  bestehenden Aktionen ("Kunde wünscht keinen Beleg" / "Rechnung drucken")
+  müssen in beiden Layouts immer ohne Scrollen erreichbar bleiben — im
+  Prototyp dadurch gelöst, dass der unveränderte Alt-UI-Block im DOM immer
+  zuerst kommt und nicht mit dem Rechner vermischt wird.
+
+  **Umsetzung:** Änderungen ausschließlich in `ReceiptConfirmation.svelte`
+  (wirkt dadurch automatisch für beide Kassenarten). Keine neuen Props/
+  API-Calls nötig — der Rechner braucht nur den bereits vorhandenen
+  `total`-Wert. Reiner Frontend-Task, keine Migration/Backend-Änderung.

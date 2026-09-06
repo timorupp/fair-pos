@@ -26,6 +26,8 @@ export interface ReceiptPosition {
 export interface TaxBreakdownRow {
   /** Rate in percent, e.g. 19, 7, 0. */
   rate: number;
+  /** The tax category `rate` belongs to (Task #115) — used to print the same Kennbuchstabe (A/B/C) as the positions taxed at this rate. */
+  category: TaxCategory;
   /** Sum of all positions at this rate (gross). */
   gross: number;
   /** Net portion of `gross` (gross - tax). */

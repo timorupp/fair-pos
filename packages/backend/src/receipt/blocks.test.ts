@@ -64,4 +64,24 @@ describe('buildReceiptBlocks', () => {
     expect(signed).toContain(`Kassensystem-Seriennr.: ${base.systemSerial}`);
     expect(unsigned).toContain(`Kassensystem-Seriennr.: ${base.systemSerial}`);
   });
+
+  describe('Kennbuchstaben (Task #115)', () => {
+    it('prints the category letter next to each position', async () => {
+      const blocks = await buildReceiptBlocks(base);
+      const rows = blocks.filter((b): b is Extract<PrintBlock, { kind: 'row' }> => b.kind === 'row');
+      const bier = rows.find((r) => r.left.includes('Bier 0,5l'))!;
+      const flasche = rows.find((r) => r.left.includes('Flasche zurück'))!;
+      expect(bier.right).toMatch(/ B$/); // reduced
+      expect(flasche.right).toMatch(/ A$/); // standard
+    });
+
+    it('prints the matching category letter next to the corresponding VAT-breakdown row', async () => {
+      const blocks = await buildReceiptBlocks(base);
+      const rows = blocks.filter((b): b is Extract<PrintBlock, { kind: 'row' }> => b.kind === 'row');
+      const reducedRow = rows.find((r) => r.left.startsWith('MwSt 7'))!;
+      const standardRow = rows.find((r) => r.left.startsWith('MwSt 19'))!;
+      expect(reducedRow.left).toBe('MwSt 7 % B');
+      expect(standardRow.left).toBe('MwSt 19 % A');
+    });
+  });
 });

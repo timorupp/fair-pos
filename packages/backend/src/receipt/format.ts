@@ -1,5 +1,6 @@
 /** Pure formatting and aggregation helpers for receipts. No I/O, no globals — fully unit-testable. */
 
+import type { TaxCategory } from '@fairpos/shared';
 import type { ReceiptPosition, TaxBreakdownRow } from './types.js';
 
 /**
@@ -56,6 +57,23 @@ export function formatTaxRate(rate: number): string {
 }
 
 /**
+ * Kennbuchstabe per tax category (Task #115) — printed next to a position
+ * and next to its matching VAT-breakdown row, so a mixed-rate basket (e.g.
+ * Speisen 7 % + Getränke 19 %) stays traceable per line without repeating
+ * the full percentage on every position. Not a legal requirement (§ 6
+ * KassenSichV only requires the aggregate breakdown, already printed) —
+ * purely a readability improvement, Nutzerentscheidung 2026-09-04.
+ *
+ * @param category - The tax category to label.
+ * @returns A single uppercase letter, matching the common German
+ *   supermarket-receipt convention (A = Regelsteuersatz, B = ermäßigt, C = steuerfrei).
+ */
+export function taxCategoryLetter(category: TaxCategory): string {
+  const letters: Record<TaxCategory, string> = { standard: 'A', reduced: 'B', zero: 'C' };
+  return letters[category];
+}
+
+/**
  * Aggregates a list of positions into one row per VAT rate.
  *
  * - `gross` is summed across positions of the same rate — the article price
@@ -69,19 +87,24 @@ export function formatTaxRate(rate: number): string {
  * @returns One row per distinct rate, sorted descending by rate (standard first).
  */
 export function computeTaxBreakdown(positions: ReceiptPosition[]): TaxBreakdownRow[] {
-  const byRate = new Map<number, number>();
+  const byRate = new Map<number, { gross: number; category: TaxCategory }>();
+  const add = (rate: number, category: TaxCategory, amount: number) => {
+    const existing = byRate.get(rate);
+    byRate.set(rate, { gross: (existing?.gross ?? 0) + amount, category });
+  };
   for (const p of positions) {
-    byRate.set(p.taxRate, (byRate.get(p.taxRate) ?? 0) + p.unitPrice * p.quantity);
+    add(p.taxRate, p.taxCategory, p.unitPrice * p.quantity);
+    // Deposit is always taxed at the Regelsteuersatz (Task #113), independent of the article's own category.
     if (p.unitDeposit && p.depositTaxRate !== null) {
-      byRate.set(p.depositTaxRate, (byRate.get(p.depositTaxRate) ?? 0) + p.unitDeposit * p.quantity);
+      add(p.depositTaxRate, 'standard', p.unitDeposit * p.quantity);
     }
   }
 
   const rows: TaxBreakdownRow[] = [];
-  for (const [rate, gross] of byRate.entries()) {
+  for (const [rate, { gross, category }] of byRate.entries()) {
     const roundedGross = round2(gross);
     const net = round2(roundedGross / (1 + rate / 100));
-    rows.push({ rate, gross: roundedGross, net, tax: round2(roundedGross - net) });
+    rows.push({ rate, category, gross: roundedGross, net, tax: round2(roundedGross - net) });
   }
   rows.sort((a, b) => b.rate - a.rate);
   return rows;
