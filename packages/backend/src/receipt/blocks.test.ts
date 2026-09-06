@@ -26,7 +26,7 @@ describe('buildReceiptBlocks', () => {
       firstOrderTime: new Date(2026, 5, 24, 10, 11, 0),
     };
     const text = allText(await buildReceiptBlocks(data));
-    expect(text).toContain('Tisch 7 von 24.06.2026 10:11:00 bis 24.06.2026 12:00:00');
+    expect(text).toContain('Tisch 7 von 24.06.2026 10:11 bis 24.06.2026 12:00');
   });
 
   it('omits the table line for a Bonkasse walk-up sale (no table)', async () => {
@@ -87,6 +87,16 @@ describe('buildReceiptBlocks', () => {
       const flasche = rows.find((r) => r.left.includes('Flasche zurück'))!;
       expect(bier.right).toMatch(/ B$/); // reduced
       expect(flasche.right).toMatch(/ A$/); // standard
+    });
+
+    it('gives the deposit (Pfand) its own row and letter, separate from the article — Regelsteuersatz regardless of the article\'s own category (D-060/Nutzervorgabe 2026-09-06)', async () => {
+      const blocks = await buildReceiptBlocks(base);
+      const rows = blocks.filter((b): b is Extract<PrintBlock, { kind: 'row' }> => b.kind === 'row');
+      // base's "Bier 0,5l": quantity 3, unitPrice 4.50 (reduced/B), unitDeposit 2.00 (always standard/A).
+      const bier = rows.find((r) => r.left.includes('Bier 0,5l'))!;
+      const pfand = rows.find((r) => r.left === '3x Pfand')!;
+      expect(bier.right).toBe('13,50 B'); // article-only total (3 × 4,50) — no longer includes the deposit
+      expect(pfand.right).toBe('6,00 A'); // deposit-only total (3 × 2,00), always standard rate
     });
 
     it('prints the matching category letter next to the corresponding VAT-breakdown row', async () => {

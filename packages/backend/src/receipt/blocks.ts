@@ -7,7 +7,7 @@
 import type { PrintBlock } from '../print/blocks.js';
 import { pngToEscposRaster } from '../print/raster.js';
 import { buildQrPayload, renderQrPng } from './qr.js';
-import { formatEuro, formatEuroLabel, formatGermanDateTime, formatTaxRate, taxCategoryLetter } from './format.js';
+import { formatEuro, formatEuroLabel, formatGermanDateTime, formatGermanDateTimeShort, formatTaxRate, taxCategoryLetter } from './format.js';
 import type { ReceiptData } from './types.js';
 
 /** Fraction of the printable width the QR code occupies in the PDF. */
@@ -66,10 +66,18 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
     blocks.push({
       kind: 'row',
       left: `${p.quantity}x ${p.name}`,
-      right: `${formatEuro(p.lineGross)} ${taxCategoryLetter(p.taxCategory)}`,
+      right: `${formatEuro(p.unitPrice * p.quantity)} ${taxCategoryLetter(p.taxCategory)}`,
     });
     if (p.unitDeposit !== null && p.unitDeposit !== 0) {
-      blocks.push({ kind: 'text', text: `     à ${formatEuro(p.unitPrice)} + Pfand ${formatEuro(p.unitDeposit)}` });
+      // Own row, not just an info sub-line (Nutzervorgabe 2026-09-06) — Pfand
+      // is always taxed at the Regelsteuersatz (Task #113/D-060), which can
+      // differ from the article's own tax category, so it needs its own
+      // Kennbuchstabe rather than sharing the position's combined total.
+      blocks.push({
+        kind: 'row',
+        left: `${p.quantity}x Pfand`,
+        right: `${formatEuro(p.unitDeposit * p.quantity)} ${taxCategoryLetter('standard')}`,
+      });
     }
   }
   blocks.push({ kind: 'hr' });
@@ -92,11 +100,13 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
   // precondition for using that simplification. Combined here with the
   // table name into one readable line, per Nutzervorgabe (2026-09-04).
   // Printed in this last section (after the final separator), not right
-  // after the positions — Nutzervorgabe 2026-09-06.
+  // after the positions — Nutzervorgabe 2026-09-06. Without seconds (also
+  // Nutzervorgabe 2026-09-06) — the extra digits pushed the line onto a
+  // second, harder-to-read row on the receipt's narrow paper width.
   if (d.tableName && d.firstOrderTime) {
     blocks.push({
       kind: 'text',
-      text: `Tisch ${d.tableName} von ${formatGermanDateTime(d.firstOrderTime)} bis ${formatGermanDateTime(d.createdAt)}`,
+      text: `Tisch ${d.tableName} von ${formatGermanDateTimeShort(d.firstOrderTime)} bis ${formatGermanDateTimeShort(d.createdAt)}`,
     });
   }
 

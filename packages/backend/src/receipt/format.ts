@@ -45,6 +45,20 @@ export function formatGermanDateTime(d: Date): string {
 }
 
 /**
+ * Formats a date the same way {@link formatGermanDateTime} does, but without
+ * seconds — used where the extra precision only adds width without adding
+ * information (e.g. the printed "Tisch ... von ... bis ..." line, which
+ * would otherwise wrap to a second line on the receipt's narrow paper width).
+ *
+ * @param d - Date to format (host's local timezone).
+ * @returns `DD.MM.YYYY HH:MM` string.
+ */
+export function formatGermanDateTimeShort(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
  * Formats a tax rate as a German-style percent string.
  *
  * @param rate - The rate as a number (e.g. 19, 7, 0, 10.5).

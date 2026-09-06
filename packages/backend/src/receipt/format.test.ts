@@ -1,7 +1,7 @@
 /** Unit tests for the receipt formatting and aggregation helpers. */
 import { describe, it, expect } from 'vitest';
 import {
-  formatEuro, formatEuroLabel, formatGermanDateTime, formatTaxRate, taxCategoryLetter,
+  formatEuro, formatEuroLabel, formatGermanDateTime, formatGermanDateTimeShort, formatTaxRate, taxCategoryLetter,
   computeTaxBreakdown, computeTotalGross,
 } from './format.js';
 import type { ReceiptPosition } from './types.js';
@@ -45,6 +45,12 @@ describe('formatEuroLabel', () => {
 describe('formatGermanDateTime', () => {
   it('pads day, month, hour, minute, second to two digits', () => {
     expect(formatGermanDateTime(new Date(2026, 0, 3, 4, 5, 6))).toBe('03.01.2026 04:05:06');
+  });
+});
+
+describe('formatGermanDateTimeShort', () => {
+  it('formats like formatGermanDateTime but omits seconds', () => {
+    expect(formatGermanDateTimeShort(new Date(2026, 0, 3, 4, 5, 6))).toBe('03.01.2026 04:05');
   });
 });
 
