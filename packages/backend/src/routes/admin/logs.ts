@@ -20,7 +20,11 @@ import type { LogSeverity, SystemLogEntry } from '../../system/log.js';
 /** Hard cap on rows returned per request — the log grows unbounded over time, so the viewer always shows the most recent slice, not the whole table. */
 const MAX_ROWS = 500;
 
-/** Registers `/api/admin/logs` routes. */
+/**
+ * Registers `/api/admin/logs` routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function logsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

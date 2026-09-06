@@ -41,6 +41,28 @@ run_as_service_user() {
 echo "==> git pull (als $SERVICE_USER)"
 run_as_service_user "git pull"
 
+echo "==> Pflicht-Umgebungsvariablen prüfen"
+# Liest die Liste der Pflichtvariablen direkt aus config.ts (requireEnv(...))
+# aus, statt sie hier separat zu pflegen — eine künftig neu hinzukommende
+# Pflichtvariable wird dadurch automatisch mitgeprüft. Läuft bewusst direkt
+# nach git pull und vor dem restlichen (langsamen) Update, damit ein
+# Update mit fehlender Variable sofort abbricht statt erst nach Build und
+# Migration mit einem abgestürzten Neustart zu enden (siehe DANGER.md D-049).
+ENV_FILE="$REPO_ROOT/.env"
+CONFIG_FILE="$REPO_ROOT/packages/backend/src/config.ts"
+MISSING=""
+for VAR in $(grep -oE "requireEnv\('[A-Z_]+'\)" "$CONFIG_FILE" | grep -oE "'[A-Z_]+'" | tr -d "'"); do
+  VALUE="$(grep -E "^${VAR}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+  if [ -z "$VALUE" ]; then
+    MISSING="$MISSING $VAR"
+  fi
+done
+if [ -n "$MISSING" ]; then
+  echo "error: folgende Pflicht-Umgebungsvariable(n) fehlen in $ENV_FILE:$MISSING" >&2
+  echo "Bitte eintragen (siehe docs/Installationsanleitung.md) und Update erneut ausführen." >&2
+  exit 1
+fi
+
 echo "==> npm ci (als $SERVICE_USER)"
 # --prefer-offline: vertraut dem lokalen npm-Cache, statt bei jedem der
 # gut 500 Pakete erst eine Registry-Anfrage abzuwarten — auf einer

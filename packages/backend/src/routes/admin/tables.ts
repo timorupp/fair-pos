@@ -37,7 +37,11 @@ async function loadFullFloorPlan(): Promise<FloorPlanRow[]> {
   return result.rows;
 }
 
-/** Registers all `/api/admin/tables/*` routes. */
+/**
+ * Registers all `/api/admin/tables/*` routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function tablesRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticateAdmin);
 

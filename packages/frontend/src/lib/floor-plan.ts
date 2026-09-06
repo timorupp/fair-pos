@@ -12,12 +12,20 @@ export interface TableLike {
  * Derives the ordered column-label sequence from a flat list of tables.
  * Each column appears exactly once, sorted by its `col_order`. Conflicts (same
  * `col_label` with different `col_order` values) take the first-seen ordering.
+ *
+ * @param tables - The dining tables to derive the column sequence from.
+ * @returns Deduplicated column labels, in ascending `col_order`.
  */
 export function columnsFromTables(tables: TableLike[]): string[] {
   return uniqueLabelsByOrder(tables, (t) => t.col_label, (t) => t.col_order);
 }
 
-/** Derives the ordered row-label sequence the same way `columnsFromTables` does. */
+/**
+ * Derives the ordered row-label sequence the same way `columnsFromTables` does.
+ *
+ * @param tables - The dining tables to derive the row sequence from.
+ * @returns Deduplicated row labels, in ascending `row_order`.
+ */
 export function rowsFromTables(tables: TableLike[]): string[] {
   return uniqueLabelsByOrder(tables, (t) => t.row_label, (t) => t.row_order);
 }

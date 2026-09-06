@@ -20,7 +20,11 @@ async function categoryBelongsToActiveEvent(categoryId: string): Promise<boolean
   return (result.rowCount ?? 0) > 0;
 }
 
-/** Admin routes for article and product option management. Scoped to the active event (Task #95). */
+/**
+ * Admin routes for article and product option management. Scoped to the active event (Task #95).
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

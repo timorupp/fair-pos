@@ -86,7 +86,11 @@ async function lockedResponse(registerId: string): Promise<{ status: 409; body: 
   };
 }
 
-/** Registers /api/register-session routes. */
+/**
+ * Registers /api/register-session routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function registerSessionRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateRegister);
 

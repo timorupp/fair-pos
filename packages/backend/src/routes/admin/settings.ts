@@ -40,7 +40,11 @@ const SYSTEM_ONLY_KEYS = new Set([
   'receipt_prefix', 'receipt_counter_start',
 ]);
 
-/** Admin routes for system settings (key-value store). */
+/**
+ * Admin routes for system settings (key-value store).
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function settingsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

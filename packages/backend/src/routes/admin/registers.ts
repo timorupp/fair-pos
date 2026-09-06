@@ -21,7 +21,11 @@ async function layoutBelongsToActiveEvent(layoutId: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
-/** Admin routes for register management. Scoped to the active event (Task #95). */
+/**
+ * Admin routes for register management. Scoped to the active event (Task #95).
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

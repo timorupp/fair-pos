@@ -20,7 +20,11 @@ interface SystemStatus {
   ip_lockout_count: number;
 }
 
-/** Registers /api/admin/system routes. */
+/**
+ * Registers /api/admin/system routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function systemAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

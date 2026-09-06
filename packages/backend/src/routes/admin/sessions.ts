@@ -16,7 +16,11 @@ interface SessionListRow {
   user_agent: string | null;
 }
 
-/** Registers `/api/admin/sessions` routes. */
+/**
+ * Registers `/api/admin/sessions` routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function sessionsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

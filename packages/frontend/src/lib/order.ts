@@ -18,13 +18,25 @@ export interface OrderLine {
   quantity: number;
 }
 
-/** Coerces a value that may be a pg-decimal string into a number. */
+/**
+ * Coerces a value that may be a pg-decimal string into a number.
+ *
+ * @param v - The raw value, possibly a pg-decimal string, `null`, or `undefined`.
+ * @returns The numeric value, or `0` for `null`/`undefined`.
+ */
 export function num(v: number | string | null | undefined): number {
   if (v === null || v === undefined) return 0;
   return typeof v === 'string' ? Number(v) : v;
 }
 
-/** Adjusts the quantity for an article in the order list. Removes the line when quantity reaches 0. Pure. */
+/**
+ * Adjusts the quantity for an article in the order list. Removes the line when quantity reaches 0. Pure.
+ *
+ * @param lines - The current order lines.
+ * @param articleId - The article whose quantity to adjust.
+ * @param delta - The amount to add (negative to decrease).
+ * @returns A new order-line list with the adjustment applied.
+ */
 export function adjustQuantity(lines: OrderLine[], articleId: string, delta: number): OrderLine[] {
   const existing = lines.find((l) => l.article_id === articleId);
   if (!existing) {
@@ -36,7 +48,14 @@ export function adjustQuantity(lines: OrderLine[], articleId: string, delta: num
   return lines.map((l) => (l.article_id === articleId ? { ...l, quantity: next } : l));
 }
 
-/** Sets the quantity for an article in the order list to an absolute value. Removes when 0. Pure. */
+/**
+ * Sets the quantity for an article in the order list to an absolute value. Removes when 0. Pure.
+ *
+ * @param lines - The current order lines.
+ * @param articleId - The article whose quantity to set.
+ * @param quantity - The absolute quantity to set.
+ * @returns A new order-line list with the quantity applied.
+ */
 export function setQuantity(lines: OrderLine[], articleId: string, quantity: number): OrderLine[] {
   if (quantity <= 0) return lines.filter((l) => l.article_id !== articleId);
   const existing = lines.find((l) => l.article_id === articleId);
@@ -44,7 +63,13 @@ export function setQuantity(lines: OrderLine[], articleId: string, quantity: num
   return lines.map((l) => (l.article_id === articleId ? { ...l, quantity } : l));
 }
 
-/** Computes the gross total for the current order. Includes deposit per unit. Cent-precise rounding. */
+/**
+ * Computes the gross total for the current order. Includes deposit per unit. Cent-precise rounding.
+ *
+ * @param lines - The current order lines.
+ * @param articles - The full article list, used to look up unit price/deposit.
+ * @returns The order's gross total, rounded to the cent.
+ */
 export function computeOrderTotal(lines: OrderLine[], articles: ArticleLike[]): number {
   const byId = new Map(articles.map((a) => [a.id, a]));
   let total = 0;

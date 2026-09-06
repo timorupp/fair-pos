@@ -3,7 +3,11 @@ import { query } from '../../db/client.js';
 import { authenticateSystemAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 
-/** Admin routes for event management — Task #95's hierarchy level, not just a reporting period. */
+/**
+ * Admin routes for event management — Task #95's hierarchy level, not just a reporting period.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function eventsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateSystemAdmin);
 

@@ -7,7 +7,11 @@ import { config } from '../../config.js';
 /** The only valid `tax_category` values (Task #110) — free-text `tax_rate` was replaced by this fixed set so an admin can never enter a rate the rest of the system doesn't recognise. */
 const TAX_CATEGORIES: readonly TaxCategory[] = ['zero', 'reduced', 'standard'];
 
-/** Admin routes for article category management. Scoped to the active event (Task #95). */
+/**
+ * Admin routes for article category management. Scoped to the active event (Task #95).
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

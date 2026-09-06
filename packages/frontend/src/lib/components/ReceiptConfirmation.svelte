@@ -133,6 +133,11 @@
       {#if printDone}<p class="success-text">✓ Bon wird gedruckt</p>{/if}
       {#if error}<p class="error-text">{error}</p>{/if}
 
+      <div class="beleg-hint">
+        <p class="beleg-hint-main">Bitte den Kunden immer aktiv fragen, ob er einen Beleg möchte.</p>
+        <p class="beleg-hint-sub">Aufgrund der Belegausgabepflicht dürfen wir nicht stillschweigend annehmen, dass kein Beleg gewünscht wird.</p>
+      </div>
+
       <div class="actions">
         <button class="btn-ghost" onclick={finish} disabled={printing}>Kunde wünscht keinen Beleg</button>
         <div class="spacer"></div>
@@ -219,7 +224,11 @@
   .warning-text { color: #f59e0b; font-size: 0.9rem; margin-top: 0.5rem; font-weight: 600; }
   .error-text { color: var(--color-danger); font-size: 0.9rem; margin-top: 0.5rem; }
 
-  .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.5rem; }
+  .beleg-hint { margin-top: 1.5rem; }
+  .beleg-hint-main { color: var(--color-danger); font-weight: 700; font-size: 0.95rem; margin: 0; }
+  .beleg-hint-sub { color: var(--color-text-muted); font-size: 0.8rem; margin: 0.3rem 0 0; }
+
+  .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
   .actions .spacer { flex: 1; }
   .actions .btn-primary { padding: 0.7rem 1.5rem; font-size: 1rem; }
 

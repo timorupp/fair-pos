@@ -37,7 +37,11 @@ interface TseDetectResponse {
   candidatesTried: number;
 }
 
-/** Registers /api/admin/tse routes. */
+/**
+ * Registers /api/admin/tse routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

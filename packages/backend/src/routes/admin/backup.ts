@@ -11,7 +11,11 @@ import { authenticateSystemAdmin } from '../../middleware/authenticate.js';
 import { createDatabaseDump } from '../../backup/dump.js';
 import { buildBackupZip } from '../../backup/zip.js';
 
-/** Registers `/api/admin/backup` routes. */
+/**
+ * Registers `/api/admin/backup` routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function backupAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateSystemAdmin);
 

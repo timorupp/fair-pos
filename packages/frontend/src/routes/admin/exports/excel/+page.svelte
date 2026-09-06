@@ -6,11 +6,34 @@
    *
    * Both endpoints stream an .xlsx file; the browser handles the download via
    * a synthetic anchor click so the user stays on this page.
+   *
+   * The `date` query the day-export endpoint expects is interpreted in the
+   * *server's* local timezone (DANGER.md D-025) — if an admin browses from a
+   * different timezone (e.g. on the road), the browser's own "today" can
+   * disagree with the server's. `serverTimezone` is loaded on mount purely
+   * to compute a correctly-defaulted date and to make the server's timezone
+   * explicit in the UI, so there's no silent mismatch.
    */
+  import { api } from '$lib/api';
+  import { onMount } from 'svelte';
+
   let dayDate: string = $state(todayIso());
+  let serverTimezone: string | null = $state(null);
+
+  onMount(async () => {
+    try {
+      const status = await api.admin.system.status();
+      serverTimezone = status.timezone;
+      dayDate = serverDateIso(status.server_time, status.timezone);
+    } catch {
+      // Falls back to the browser's own "today" (set above) — only affects
+      // the pre-filled default, the user can still pick any date manually.
+    }
+  });
 
   /**
-   * Returns today's date as a `YYYY-MM-DD` string in the user's local timezone.
+   * Returns today's date as a `YYYY-MM-DD` string in the browser's local
+   * timezone. Used only as a fallback until the server's own date has loaded.
    *
    * @returns The ISO date portion of "right now".
    */
@@ -18,6 +41,20 @@
     const d = new Date();
     const p = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
+  /**
+   * Formats an instant as a `YYYY-MM-DD` string in the given IANA timezone —
+   * used to compute "today" the same way the day-export endpoint interprets
+   * its `date` query (the server's local calendar day), regardless of the
+   * browser's own timezone.
+   *
+   * @param isoInstant - The instant to format, as an ISO-8601 timestamp.
+   * @param timezone - IANA timezone identifier, e.g. `Europe/Berlin`.
+   * @returns The date portion in `YYYY-MM-DD` form.
+   */
+  function serverDateIso(isoInstant: string, timezone: string): string {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(isoInstant));
   }
 
   /**
@@ -62,6 +99,9 @@
         Tagesexport herunterladen
       </button>
     </div>
+    {#if serverTimezone}
+      <p class="hint tz-hint">Der Kalendertag bezieht sich auf die Zeitzone des Kassenservers ({serverTimezone}), nicht auf die Ihres Geräts.</p>
+    {/if}
   </section>
 
   <section class="card">
@@ -86,6 +126,7 @@
     color: var(--color-text-muted); margin: 0 0 0.5rem 0;
   }
   .hint { font-size: 0.85rem; color: var(--color-text-muted); margin: 0 0 0.75rem 0; }
+  .tz-hint { margin: 0.75rem 0 0 0; }
   .row { display: flex; gap: 1rem; align-items: flex-end; }
   .field { display: flex; flex-direction: column; gap: 0.3rem; }
   .field-label { font-size: 0.8rem; color: var(--color-text-muted); font-weight: 600; }

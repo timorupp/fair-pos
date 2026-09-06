@@ -35,7 +35,11 @@ async function isTargetSystemAdmin(id: string): Promise<boolean | null> {
   return result.rows[0]?.is_admin ?? null;
 }
 
-/** Admin routes for user management. All routes require admin privileges. */
+/**
+ * Admin routes for user management. All routes require admin privileges.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

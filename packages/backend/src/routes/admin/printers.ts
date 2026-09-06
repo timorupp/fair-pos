@@ -9,7 +9,11 @@ import { enqueuePrintJob } from '../../print/enqueue.js';
 import { renderBlocksToEscPos } from '../../print/blocks.js';
 import { MAX_ATTEMPTS } from '../../print/worker.helpers.js';
 
-/** Registers /api/admin/printers routes. */
+/**
+ * Registers /api/admin/printers routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function printersAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

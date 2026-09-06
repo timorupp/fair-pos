@@ -3,7 +3,11 @@ import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 
-/** Admin routes for cancellation reason management. Scoped to the active event (Task #95). */
+/**
+ * Admin routes for cancellation reason management. Scoped to the active event (Task #95).
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function cancellationReasonsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
