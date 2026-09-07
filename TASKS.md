@@ -4101,14 +4101,20 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Markup (Header/Betrag/Aktionen) unverändert in eine eigene `<section
   class="old-ui">` gewrappt, Rechner als separate `<section
   class="calc-card">` daneben/darunter (`.layout`-Grid, 1↔2 Spalten via
-  `@media (min-width: 768px)`, wie geplant). Ein-/ausklappbar
-  (`calcOpen`-State, Standard: offen), Auf-/Abrunden-Chips + Ziffernblock +
-  Ergebnis wie im Artifact. `--color-success`/`--color-danger` etc. sind
-  bereits echte globale Tokens aus `+layout.svelte` — keine neuen Farben
-  nötig. Typecheck + bestehende Frontend-Unit-Tests grün; keine
-  Live-Browser-Verifikation diesmal (Sandbox-Chromium in dieser Session
-  nicht mehr verfügbar) — Design war aber bereits zweimal vom Nutzer im
-  echten Browser über den Artifact-Prototyp geprüft.
+  `@media (min-width: 768px)`, wie geplant). Auf-/Abrunden-Chips +
+  Ziffernblock + Ergebnis wie im Artifact. `--color-success`/
+  `--color-danger` etc. sind bereits echte globale Tokens aus
+  `+layout.svelte` — keine neuen Farben nötig. Typecheck + bestehende
+  Frontend-Unit-Tests grün; keine Live-Browser-Verifikation diesmal
+  (Sandbox-Chromium in dieser Session nicht mehr verfügbar) — Design war
+  aber bereits zweimal vom Nutzer im echten Browser über den
+  Artifact-Prototyp geprüft.
+
+  **Nachgebessert (2026-09-06, Nutzervorgabe):** Ein-/Ausklappen
+  (`calcOpen`-Toggle-Button "Rückgeld berechnen ausblenden") entfernt —
+  nicht notwendig, der Rechner bleibt jetzt immer eingeblendet. Statt des
+  Toggle-Buttons steht dort jetzt eine reine, nicht-interaktive
+  Überschrift ("Rückgeld berechnen").
 
 - [ ] **#119** Unterstützung für Kleinunternehmerregelung (§ 19 UStG)
   **Priorisierung (Nutzervorgabe 2026-09-06): nicht mehr für das erste

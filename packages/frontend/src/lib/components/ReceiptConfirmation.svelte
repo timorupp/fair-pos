@@ -70,7 +70,6 @@
   const MAX_GIVEN_CENTS = 99999900; // 999.999,00 € — generous, never realistic to reach.
   const QUICK_AMOUNTS_CENTS = [500, 1000, 2000, 5000, 10000];
 
-  let calcOpen = $state(true);
   let givenCents = $state(0);
   let hasEnteredGiven = $state(false);
 
@@ -148,50 +147,40 @@
     </section>
 
     <section class="calc-card">
-      <button
-        type="button"
-        class="calc-toggle"
-        aria-expanded={calcOpen}
-        onclick={() => (calcOpen = !calcOpen)}
-      >
-        <span>Rückgeld berechnen{calcOpen ? ' ausblenden' : ''}</span>
-        <span class="chev" class:open={calcOpen}>▾</span>
-      </button>
+      <h2 class="calc-title">Rückgeld berechnen</h2>
 
-      {#if calcOpen}
-        <div class="calc-panel">
-          <span class="calc-label">Gegeben</span>
-          <div class="given-display" class:is-empty={!hasEnteredGiven}>
-            {hasEnteredGiven ? fmtCents(givenCents) : '–,–– €'}
-          </div>
-
-          <div class="quick-amounts">
-            {#each QUICK_AMOUNTS_CENTS as cents (cents)}
-              <button type="button" class="chip" onclick={() => setGiven(cents)}>{fmtCents(cents).replace(',00', '')}</button>
-            {/each}
-          </div>
-
-          <div class="keypad">
-            {#each [7, 8, 9, 4, 5, 6, 1, 2, 3] as d (d)}
-              <button type="button" class="key" onclick={() => pressDigit(d)}>{d}</button>
-            {/each}
-            <button type="button" class="key key-clear" onclick={clearGiven}>C</button>
-            <button type="button" class="key" onclick={() => pressDigit(0)}>0</button>
-            <button type="button" class="key key-back" onclick={backspaceGiven} aria-label="Löschen">⌫</button>
-          </div>
-
-          <div class="result">
-            <span class="result-label">{!hasEnteredGiven ? 'Rückgeld' : diffCents < 0 ? 'Es fehlen noch' : 'Rückgeld'}</span>
-            <span
-              class="result-value"
-              class:success={hasEnteredGiven && diffCents >= 0}
-              class:short={hasEnteredGiven && diffCents < 0}
-            >
-              {hasEnteredGiven ? fmtCents(Math.abs(diffCents)) : '–,–– €'}
-            </span>
-          </div>
+      <div class="calc-panel">
+        <span class="calc-label">Gegeben</span>
+        <div class="given-display" class:is-empty={!hasEnteredGiven}>
+          {hasEnteredGiven ? fmtCents(givenCents) : '–,–– €'}
         </div>
-      {/if}
+
+        <div class="quick-amounts">
+          {#each QUICK_AMOUNTS_CENTS as cents (cents)}
+            <button type="button" class="chip" onclick={() => setGiven(cents)}>{fmtCents(cents).replace(',00', '')}</button>
+          {/each}
+        </div>
+
+        <div class="keypad">
+          {#each [7, 8, 9, 4, 5, 6, 1, 2, 3] as d (d)}
+            <button type="button" class="key" onclick={() => pressDigit(d)}>{d}</button>
+          {/each}
+          <button type="button" class="key key-clear" onclick={clearGiven}>C</button>
+          <button type="button" class="key" onclick={() => pressDigit(0)}>0</button>
+          <button type="button" class="key key-back" onclick={backspaceGiven} aria-label="Löschen">⌫</button>
+        </div>
+
+        <div class="result">
+          <span class="result-label">{!hasEnteredGiven ? 'Rückgeld' : diffCents < 0 ? 'Es fehlen noch' : 'Rückgeld'}</span>
+          <span
+            class="result-value"
+            class:success={hasEnteredGiven && diffCents >= 0}
+            class:short={hasEnteredGiven && diffCents < 0}
+          >
+            {hasEnteredGiven ? fmtCents(Math.abs(diffCents)) : '–,–– €'}
+          </span>
+        </div>
+      </div>
     </section>
   </div>
 </div>
@@ -237,17 +226,10 @@
     background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: var(--radius); padding: 1.1rem;
   }
-  .calc-toggle {
-    width: 100%; min-height: 48px;
-    padding: 0.75rem 1rem;
-    background: transparent; border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm); color: var(--color-text-muted);
-    font-size: 0.95rem; font-weight: 600;
-    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  .calc-title {
+    font-size: 0.95rem; font-weight: 600; color: var(--color-text-muted);
+    margin: 0;
   }
-  .calc-toggle:hover { border-color: var(--color-text-muted); color: var(--color-text); }
-  .calc-toggle .chev { transition: transform 0.2s; }
-  .calc-toggle .chev.open { transform: rotate(180deg); }
 
   .calc-panel { margin-top: 0.9rem; display: flex; flex-direction: column; gap: 0.9rem; }
   .calc-label {
