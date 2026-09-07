@@ -24,8 +24,9 @@ const COLUMNS: { header: string; key: keyof ExportRow | 'date' | 'time'; width: 
   { header: 'Artikelname',    key: 'article_name',      width: 28 },
   { header: 'Menge',          key: 'quantity',          width: 8,  align: 'right' },
   { header: 'Einzelpreis',    key: 'unit_price',        width: 12, align: 'right', numFmt: '#,##0.00 "€"' },
+  { header: 'USt. Artikel',  key: 'tax_rate',          width: 12, align: 'right', numFmt: '0"%"' },
   { header: 'Pfandbetrag',    key: 'unit_deposit',      width: 12, align: 'right', numFmt: '#,##0.00 "€"' },
-  { header: 'Umsatzsteuersatz', key: 'tax_rate',        width: 14, align: 'right', numFmt: '0"%"' },
+  { header: 'USt. Pfand',    key: 'deposit_tax_rate',  width: 12, align: 'right', numFmt: '0"%"' },
   { header: 'Gesamtbetrag',   key: 'line_total',        width: 14, align: 'right', numFmt: '#,##0.00 "€"' },
 ];
 
@@ -89,6 +90,7 @@ export async function buildExcelWorkbook(meta: WorkbookMeta, rows: ExportRow[]):
       unit_price: r.unit_price,
       unit_deposit: r.unit_deposit,
       tax_rate: r.tax_rate,
+      deposit_tax_rate: r.deposit_tax_rate,
       line_total: r.line_total,
     });
   }

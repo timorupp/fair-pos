@@ -77,6 +77,13 @@
 
 <div class="floor-plan-page">
   <header class="header">
+    {#if !loading && !locked && tables.length > 0}
+      <div class="legend">
+        <span class="legend-item"><span class="dot status-free"></span> Frei</span>
+        <span class="legend-item"><span class="dot status-open"></span> Offene Rechnung</span>
+        <span class="legend-item"><span class="dot status-inactive"></span> Inaktiv</span>
+      </div>
+    {/if}
     <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
   </header>
 
@@ -99,12 +106,6 @@
   {:else if !loading && tables.length === 0}
     <p class="muted">Kein Saalplan konfiguriert. Bitte den Administrator kontaktieren.</p>
   {:else if !loading}
-    <div class="legend">
-      <span class="legend-item"><span class="dot status-free"></span> Frei</span>
-      <span class="legend-item"><span class="dot status-open"></span> Offene Rechnung</span>
-      <span class="legend-item"><span class="dot status-inactive"></span> Inaktiv</span>
-    </div>
-
     <div class="grid-wrapper">
       <div class="floor-grid" style="--cols:{columns.length}; --rows:{rows.length}">
         {#each rows as row}
@@ -133,8 +134,13 @@
 
 <style>
   .floor-plan-page { padding: 1rem; }
-  .header { display: flex; align-items: center; justify-content: flex-end; gap: 1rem; margin-bottom: 1rem; }
-  .legend { display: flex; gap: 1rem; font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1rem; }
+  /* margin-left: auto on the button (not justify-content: space-between)
+     so it still sits at the right edge when the legend is hidden (loading/
+     locked/no tables) instead of collapsing to the left with nothing to
+     space against. */
+  .header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+  .header .btn-ghost { margin-left: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.85rem; color: var(--color-text-muted); }
   .legend-item { display: inline-flex; align-items: center; gap: 0.4rem; }
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .status-free { background: #22c55e; }

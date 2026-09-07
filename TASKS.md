@@ -3583,6 +3583,17 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Fehlkonfiguration) würde das Limit bei einem Aufruf pro Minute in ca.
   104 Tagen aufgebraucht.
 
+  **Ergänzung 2026-09-06 (Nutzerhinweis) — zweites, dringlicheres Risiko in
+  derselben Schleife:** `maintainTse()` authentifiziert sich mit der
+  `tse_time_admin_pin`-Einstellung. Laut SDK-Header haben PINs einen
+  Retry-Zähler von 3 — bei drei Fehlversuchen wird die PIN blockiert und
+  ist nur noch über die PUK entsperrbar. Ist die hinterlegte PIN falsch
+  (z. B. Tippfehler bei der Ersteinrichtung), würde derselbe minütliche
+  Retry-Loop die PIN bereits nach spätestens 3 Minuten dauerhaft
+  blockieren — nicht erst nach 104 Tagen wie beim `updateTime`-Limit.
+  Jede Lösung für diesen Task muss beide Fälle gemeinsam abdecken, siehe
+  `DANGER.md` D-055 für die vollständige Analyse inkl. SDK-Zitat.
+
   **Ausdrücklich noch offen — Entscheidung über die beste Lösung steht
   noch aus, hier bewusst nicht vorweggenommen.** Denkbare Ansätze (nicht
   abschließend, nicht bewertet):
@@ -4098,3 +4109,79 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Live-Browser-Verifikation diesmal (Sandbox-Chromium in dieser Session
   nicht mehr verfügbar) — Design war aber bereits zweimal vom Nutzer im
   echten Browser über den Artifact-Prototyp geprüft.
+
+- [ ] **#119** Unterstützung für Kleinunternehmerregelung (§ 19 UStG)
+  **Priorisierung (Nutzervorgabe 2026-09-06): nicht mehr für das erste
+  Release, aber bald danach angehen — kein Release-Blocker, aber zeitnahe
+  Folgearbeit.**
+
+  **Klassifikation: Feature (aktuell nicht unterstützt).** Nutzerfrage
+  2026-09-06: kann ein Verein, der der Kleinunternehmerregelung
+  unterliegt (keine USt.-Abführung), einfach `vat_rate_standard`/
+  `vat_rate_reduced` in den Einstellungen auf 0 setzen, oder braucht es
+  dafür eine eigene Funktion?
+
+  **Antwort der Analyse: reines Nullsetzen der beiden Einstellungen
+  reicht nicht.**
+
+  - Der DSFinV-K-Export ordnet den USt-Schlüssel nach `tax_category`
+    (`standard`/`reduced`/`zero`) zu, nicht nach dem tatsächlichen
+    Prozentsatz (`exports/dsfinvk/rows.ts::ustSchluessel()`). Bei
+    genullten Sätzen würden Artikel weiterhin unter Schlüssel 1/2
+    ("regelbesteuert"/"ermäßigt", nur mit 0,00 % Satz) exportiert statt
+    unter Schlüssel 5 ("nicht steuerbar" — laut
+    `docs/Rechtliche-Anforderungen.md` der fachlich korrekte Fall für
+    Kleinunternehmer). Für einen echten Kleinunternehmer-Betrieb müssten
+    alle Artikelgruppen tatsächlich auf `tax_category = 'zero'`
+    umkategorisiert werden — das ist eine Datenumstellung, keine reine
+    Einstellungsänderung.
+  - Es gibt aktuell keinen Pflicht-/Hinweistext auf dem Beleg für diesen
+    Fall (üblich: "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.").
+    FairPOS druckt unabhängig vom Satz immer die MwSt-Aufschlüsselungs-
+    zeilen.
+  - TSE-Signierung ist unabhängig vom Steuersatz und bereits unkritisch
+    (läuft immer, keine Änderung nötig).
+
+  **Ausdrücklich kein Bug, sondern Nutzervorgabe (2026-09-06):** bei der
+  Analyse fiel auf, dass `receipt/format.ts::computeTaxBreakdown()` die
+  gedruckte Aufschlüsselung nach dem **Zahlenwert** des Steuersatzes
+  bündelt, nicht nach `tax_category` (anders als `closing/totals.ts` und
+  die TSE-`processData`, die nach Kategorie bündeln) — bei zwei
+  Kategorien mit zufällig identischem Satz würden sie auf dem Bon in
+  eine Zeile mit einem Kennbuchstaben zusammenfallen, obwohl TSE/
+  DSFinV-K sie intern weiterhin getrennt (unterschiedlicher USt-
+  Schlüssel) führen. **Nutzerentscheidung dazu: das ist so gewollt** —
+  identische Sätze brauchen auf dem Bon keine unterschiedlichen
+  Kennbuchstaben. Diese Stelle also nicht "reparieren".
+
+  **Ergänzung 2026-09-06 (Nutzerhinweis) — manuelle Umkategorisierung
+  allein greift nicht, wegen Pfand:** Pfand wird an vier unabhängigen
+  Stellen fest auf die Kategorie `'standard'` verdrahtet, unabhängig vom
+  `tax_category` des zugehörigen Artikels (Task #113/D-060, jeweils ein
+  Literal im Code, keine Einstellung/Daten): `closing/totals.ts:82`
+  (`total_tax_standard += depositGross` unbedingt), `receipt/format.ts:113`
+  (`computeTaxBreakdown` bucketet Pfand fest auf `'standard'`),
+  `receipt/blocks.ts:79` (`taxCategoryLetter('standard')` für die
+  gedruckte Pfand-Zeile) und `exports/dsfinvk/rows.ts:278`
+  (`ustSchluessel('standard')` für die DSFinV-K-Pfandzeile). Ein Admin
+  könnte also jede Artikelgruppe auf `tax_category = 'zero'`
+  umkategorisieren — der Pfandanteil jeder Position bliebe trotzdem
+  überall als USt-Schlüssel 1 (Regelsteuersatz) verbucht, da dieser Wert
+  nirgends aus den Artikeldaten gelesen wird. Für Vereine mit
+  Pfandartikeln (Becher, Flaschen — der Normalfall bei Festen) ist die
+  reine Umkategorisierung damit **nicht nur mühsam, sondern unvollständig
+  und erreicht nie echte Nullsteuer**.
+
+  **Ausdrücklich noch offen — Lösungsansatz nicht vorweggenommen:**
+  - Manuelle Umkategorisierung aller Artikelgruppen auf `tax_category =
+    'zero'` — reicht wegen des oben beschriebenen Pfand-Problems allein
+    nicht aus; bräuchte zusätzlich eine Code-Änderung, die die vier
+    Pfand-`'standard'`-Stellen an einen System-Zustand koppelt.
+  - Ein dedizierter System-Schalter ("Kleinunternehmer nach § 19 UStG"),
+    der beim Aktivieren automatisch DSFinV-K-Schlüssel 5 erzwingt (auch
+    für Pfand), den Beleghinweistext ergänzt und die vier Pfand-Stellen
+    mit umschaltet — deckt beide Fälle (Artikel und Pfand) aus einer
+    Hand ab, ohne jede Artikelgruppe einzeln anfassen zu müssen.
+  - Kombination/anderer Ansatz.
+
+  Vor der Umsetzung: Nutzerentscheidung, welcher Ansatz gewünscht ist.

@@ -14,6 +14,8 @@ export interface ExportSourceRow {
   price: number | string;
   deposit_price: number | string | null;
   tax_rate: number | string;
+  /** VAT rate the deposit portion was taxed at (Task #113) — always the Regelsteuersatz, independent of `tax_rate`. `null` when there's no deposit. */
+  deposit_tax_rate: number | string | null;
 }
 
 /** One aggregated row in the Excel sheet. */
@@ -35,6 +37,8 @@ export interface ExportRow {
   unit_price: number;
   unit_deposit: number;
   tax_rate: number;
+  /** VAT rate the deposit was taxed at — always the Regelsteuersatz, independent of `tax_rate`. `null` when there's no deposit. */
+  deposit_tax_rate: number | null;
   line_total: number;
 }
 
@@ -52,7 +56,7 @@ export interface ExportRow {
  * @returns One row per aggregated invoice position, ready for the workbook builder.
  */
 export function buildExportRows(items: ExportSourceRow[], receiptPrefix: string = ''): ExportRow[] {
-  /** Result accumulator and lookup index — keyed by `invoice_id|article|options|price|deposit|tax`. */
+  /** Result accumulator and lookup index — keyed by `invoice_id|article|options|price|deposit|tax|depositTax`. */
   const out: ExportRow[] = [];
   const index = new Map<string, ExportRow>();
 
@@ -60,6 +64,7 @@ export function buildExportRows(items: ExportSourceRow[], receiptPrefix: string 
     const unit = num(item.price);
     const deposit = item.deposit_price === null || item.deposit_price === undefined ? 0 : num(item.deposit_price);
     const tax = num(item.tax_rate);
+    const depositTax = item.deposit_tax_rate === null || item.deposit_tax_rate === undefined ? null : num(item.deposit_tax_rate);
     const key = [
       item.invoice_id,
       item.article_name,
@@ -67,6 +72,7 @@ export function buildExportRows(items: ExportSourceRow[], receiptPrefix: string 
       String(unit),
       String(deposit),
       String(tax),
+      String(depositTax),
     ].join('|');
 
     const existing = index.get(key);
@@ -87,6 +93,7 @@ export function buildExportRows(items: ExportSourceRow[], receiptPrefix: string 
       unit_price: unit,
       unit_deposit: deposit,
       tax_rate: tax,
+      deposit_tax_rate: depositTax,
       line_total: round2(unit + deposit),
     };
     out.push(row);

@@ -9,13 +9,13 @@ const sampleRows: ExportRow[] = [
     receipt_number: 'POS-00042',
     created_at: new Date(2026, 5, 24, 18, 30, 0).toISOString(),
     table_name: 'A1', ordering_user_name: 'Anna', register_name: 'Theke',
-    article_name: 'Bier', quantity: 3, unit_price: 4.5, unit_deposit: 2, tax_rate: 19, line_total: 19.5,
+    article_name: 'Bier', quantity: 3, unit_price: 4.5, unit_deposit: 2, tax_rate: 7, deposit_tax_rate: 19, line_total: 19.5,
   },
   {
     receipt_number: 'POS-00042',
     created_at: new Date(2026, 5, 24, 18, 30, 0).toISOString(),
     table_name: 'A1', ordering_user_name: 'Anna', register_name: 'Theke',
-    article_name: 'Brezel', quantity: 1, unit_price: 2.5, unit_deposit: 0, tax_rate: 7, line_total: 2.5,
+    article_name: 'Brezel', quantity: 1, unit_price: 2.5, unit_deposit: 0, tax_rate: 7, deposit_tax_rate: null, line_total: 2.5,
   },
 ];
 
@@ -47,10 +47,10 @@ describe('buildExcelWorkbook', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buf as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    const headers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((col) => sheet.getCell(3, col).value);
+    const headers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((col) => sheet.getCell(3, col).value);
     expect(headers).toEqual([
       'Belegnummer', 'Datum', 'Uhrzeit', 'Tisch', 'Besteller', 'Kasse',
-      'Artikelname', 'Menge', 'Einzelpreis', 'Pfandbetrag', 'Umsatzsteuersatz', 'Gesamtbetrag',
+      'Artikelname', 'Menge', 'Einzelpreis', 'USt. Artikel', 'Pfandbetrag', 'USt. Pfand', 'Gesamtbetrag',
     ]);
   });
 
@@ -63,10 +63,13 @@ describe('buildExcelWorkbook', () => {
     expect(sheet.getCell(4, 1).value).toBe('POS-00042'); // Belegnummer (prefix + padded sequence)
     expect(sheet.getCell(4, 7).value).toBe('Bier');      // Artikelname
     expect(sheet.getCell(4, 8).value).toBe(3);           // Menge
-    expect(sheet.getCell(4, 12).value).toBe(19.5);       // Gesamtbetrag
-    // Row 5 — second data row
+    expect(sheet.getCell(4, 10).value).toBe(7);          // USt. Artikel
+    expect(sheet.getCell(4, 12).value).toBe(19);         // USt. Pfand
+    expect(sheet.getCell(4, 13).value).toBe(19.5);       // Gesamtbetrag
+    // Row 5 — second data row (no deposit — USt. Pfand stays empty)
     expect(sheet.getCell(5, 7).value).toBe('Brezel');
     expect(sheet.getCell(5, 8).value).toBe(1);
+    expect(sheet.getCell(5, 12).value).toBeNull();
   });
 
   it('produces an empty body for zero input rows but still has the header', async () => {

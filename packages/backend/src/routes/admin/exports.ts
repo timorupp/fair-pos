@@ -38,7 +38,8 @@ const EXPORT_SOURCE_COLUMNS = `
            oi.options,
            oi.price::text,
            oi.deposit_price::text,
-           oi.tax_rate::text
+           oi.tax_rate::text,
+           oi.deposit_tax_rate::text
       FROM invoice i
       JOIN order_item oi ON oi.invoice_id = i.id
       JOIN register r ON r.id = i.register_id
@@ -57,6 +58,7 @@ interface ExportSourceQueryRow {
   price: string;
   deposit_price: string | null;
   tax_rate: string;
+  deposit_tax_rate: string | null;
 }
 
 /** Maps a raw query row to the shape `buildExportRows` expects. */
@@ -73,6 +75,7 @@ function toExportSourceRow(r: ExportSourceQueryRow): ExportSourceRow {
     price: r.price,
     deposit_price: r.deposit_price,
     tax_rate: r.tax_rate,
+    deposit_tax_rate: r.deposit_tax_rate,
   };
 }
 

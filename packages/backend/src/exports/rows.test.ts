@@ -14,6 +14,7 @@ const row = (overrides: Partial<ExportSourceRow> = {}): ExportSourceRow => ({
   price: 5,
   deposit_price: null,
   tax_rate: 19,
+  deposit_tax_rate: null,
   ...overrides,
 });
 
@@ -72,6 +73,19 @@ describe('buildExportRows', () => {
     expect(out[0]!.line_total).toBe(13);
   });
 
+  it('carries the deposit tax rate separately from the article tax rate (Task #113 — Pfand ist immer Regelsteuersatz)', () => {
+    const out = buildExportRows([
+      row({ article_name: 'Essen im Pfandglas', price: 4, tax_rate: 7, deposit_price: 2, deposit_tax_rate: 19 }),
+    ]);
+    expect(out[0]!.tax_rate).toBe(7);
+    expect(out[0]!.deposit_tax_rate).toBe(19);
+  });
+
+  it('leaves deposit_tax_rate null when there is no deposit', () => {
+    const out = buildExportRows([row({ deposit_price: null, deposit_tax_rate: null })]);
+    expect(out[0]!.deposit_tax_rate).toBeNull();
+  });
+
   it('handles negative deposits (Leergutrückgabe) cent-precisely', () => {
     const out = buildExportRows([
       row({ article_name: 'Flasche zurück', price: 0, deposit_price: -1 }),
@@ -82,11 +96,12 @@ describe('buildExportRows', () => {
 
   it('coerces pg-decimal-strings to numbers', () => {
     const out = buildExportRows([
-      row({ price: '4.50', tax_rate: '19.00', deposit_price: '2.00' }),
+      row({ price: '4.50', tax_rate: '19.00', deposit_price: '2.00', deposit_tax_rate: '19.00' }),
     ]);
     expect(out[0]!.unit_price).toBe(4.5);
     expect(out[0]!.tax_rate).toBe(19);
     expect(out[0]!.unit_deposit).toBe(2);
+    expect(out[0]!.deposit_tax_rate).toBe(19);
   });
 
   it('uses empty strings for missing table and user', () => {
