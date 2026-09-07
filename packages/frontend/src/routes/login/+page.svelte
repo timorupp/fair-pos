@@ -19,6 +19,8 @@
   let pinDisplay = $state('');
   let error = $state('');
   let loading = $state(false);
+  /** Whether the PIN is shown in clear text — masked by default so it can't be read over someone's shoulder. */
+  let showPin = $state(false);
 
   // "Zum Home-Bildschirm hinzufügen" hint (Task #89 follow-up) — only shown
   // here on the login screen, for operators who log in on their own phone
@@ -88,21 +90,31 @@
     <form onsubmit={preventDefault(handleLogin)}>
       <div class="field">
         <label for="pin">PIN</label>
-        <input
-          id="pin"
-          class="pin-input"
-          type="text"
-          inputmode="text"
-          value={pinDisplay}
-          oninput={onPinInput}
-          placeholder="XXX-XXX-XXX"
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="characters"
-          spellcheck="false"
-          disabled={loading}
-          required
-        />
+        <div class="pin-input-wrap">
+          <input
+            id="pin"
+            class="pin-input"
+            type={showPin ? 'text' : 'password'}
+            inputmode="text"
+            value={pinDisplay}
+            oninput={onPinInput}
+            placeholder="XXX-XXX-XXX"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            disabled={loading}
+            required
+          />
+          <button
+            type="button"
+            class="toggle-visibility"
+            onclick={() => (showPin = !showPin)}
+            aria-label={showPin ? 'PIN verbergen' : 'PIN anzeigen'}
+          >
+            {showPin ? '🙈' : '👁'}
+          </button>
+        </div>
       </div>
 
       {#if error}
@@ -220,12 +232,36 @@
 
   /* Wide letter-spacing + monospace makes the XXX-XXX-XXX groups easy to
      read/verify at a glance — matters here since a mistyped character fails
-     silently (no separate username to cross-check against). */
+     silently (no separate username to cross-check against). Masked by
+     default (Blickschutz); the toggle button below lets the user reveal it
+     on demand to still self-check what they typed. */
+  .pin-input-wrap {
+    position: relative;
+  }
+
   .pin-input {
     font-family: ui-monospace, 'SF Mono', Consolas, monospace;
     font-size: 1.3rem;
     letter-spacing: 0.15em;
     text-align: center;
+    padding-right: 2.75rem;
+  }
+
+  .toggle-visibility {
+    position: absolute;
+    top: 50%;
+    right: 0.5rem;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0.4rem;
+    color: var(--color-text-muted);
+  }
+
+  .toggle-visibility:hover {
+    color: var(--color-text);
   }
 
   input:focus {

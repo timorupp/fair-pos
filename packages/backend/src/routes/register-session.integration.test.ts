@@ -177,7 +177,7 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
       // `toString('ascii')` here because the slip is CP858-encoded (the €
       // sign is byte 0xd5), so non-ASCII bytes would turn into '?'.
       const buf = Buffer.from(row.content, 'base64');
-      expect(buf.includes('SELBSTABHOLER')).toBe(true);
+      expect(buf.includes('W E R T B O N')).toBe(true);
       // The article line and the Pfand line are now right-aligned two-column
       // rows. Spaces sit between the label and the amount, so we check the
       // pieces separately. The CP858 € byte is 0xd5.
@@ -204,7 +204,7 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
     expect(jobs.rowCount).toBe(2);
     const decoded = jobs.rows.map((r) => Buffer.from(r.content, 'base64'));
     // Article slip first (no inline deposit line), Pfandbon second.
-    expect(decoded[0]!.includes('SELBSTABHOLER')).toBe(true);
+    expect(decoded[0]!.includes('W E R T B O N')).toBe(true);
     expect(decoded[0]!.includes('Pfand')).toBe(false);
     expect(decoded[1]!.includes('PFAND')).toBe(true);
     // "2.00 " followed by the CP858 € byte (0xd5).

@@ -145,11 +145,11 @@ export function buildPickupSlipBlocks(
   const blocks: PrintBlock[] = [...logoBlock(logo)];
 
   // A 0-€-article with a negative deposit is unmistakably a pure Pfandrückgabe
-  // (Task #114) — "SELBSTABHOLER" would be misleading (nothing is being
+  // (Task #114) — "W E R T B O N" would be misleading (nothing is being
   // picked up), so the header calls it what it is.
   const isPureReturn = item.priceEuros === 0 && item.depositEuros !== null && item.depositEuros < 0;
   blocks.push({
-    kind: 'text', text: isPureReturn ? 'PFANDRÜCKGABE' : 'SELBSTABHOLER',
+    kind: 'text', text: isPureReturn ? 'PFANDRÜCKGABE' : 'W E R T B O N',
     align: 'center', bold: true, size: 'xlarge',
   });
   blocks.push({ kind: 'hr' });

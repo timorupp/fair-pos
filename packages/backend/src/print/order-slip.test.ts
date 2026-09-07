@@ -148,9 +148,9 @@ describe('buildOrderSlipEscPos', () => {
 describe('buildPickupSlipEscPos (Bonkasse self-pickup slip)', () => {
   const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z') };
 
-  it('emits a SELBSTABHOLER header and the article line with price', () => {
+  it('emits a "W E R T B O N" header and the article line with price', () => {
     const buf = buildPickupSlipEscPos({ name: 'Bier', priceEuros: 4, depositEuros: null }, ctx);
-    expect(buf.includes('SELBSTABHOLER')).toBe(true);
+    expect(buf.includes('W E R T B O N')).toBe(true);
     expect(buf.includes('1x Bier')).toBe(true);
     expect(buf.includes('4.00 ')).toBe(true);  // price is on the same line as the article
     expect(buf.includes('Pfand')).toBe(false);
@@ -192,17 +192,17 @@ describe('buildPickupSlipEscPos (Bonkasse self-pickup slip)', () => {
     expect(buf.includes('-1.50')).toBe(false);
   });
 
-  it('prints "PFANDRÜCKGABE" instead of "SELBSTABHOLER" for a pure return (0-€ article, negative deposit)', () => {
+  it('prints "PFANDRÜCKGABE" instead of "W E R T B O N" for a pure return (0-€ article, negative deposit)', () => {
     const buf = buildPickupSlipEscPos({ name: 'Leergutrückgabe', priceEuros: 0, depositEuros: -2 }, ctx);
     // Match around the CP858-encoded "Ü" rather than asserting its exact byte.
     expect(buf.includes('PFANDR')).toBe(true);
     expect(buf.includes('CKGABE')).toBe(true);
-    expect(buf.includes('SELBSTABHOLER')).toBe(false);
+    expect(buf.includes('W E R T B O N')).toBe(false);
   });
 
-  it('keeps the "SELBSTABHOLER" header for a normal purchase with a positive deposit', () => {
+  it('keeps the "W E R T B O N" header for a normal purchase with a positive deposit', () => {
     const buf = buildPickupSlipEscPos({ name: 'Bier', priceEuros: 4, depositEuros: 2 }, ctx);
-    expect(buf.includes('SELBSTABHOLER')).toBe(true);
+    expect(buf.includes('W E R T B O N')).toBe(true);
   });
 });
 
