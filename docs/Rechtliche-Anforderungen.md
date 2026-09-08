@@ -374,12 +374,16 @@ bereits am Export-Zeitpunkt lösbar herausgestellt — **keine Migration nötig*
    `Pfand`/`PfandRueckzahlung`-Zeile für das Pfand — beides aus denselben
    zwei Spalten ableitbar, keine neue `order_item`-Spalte nötig.
 
-**Bewusste Vereinfachung (dokumentiert, nicht "gelöst"):** `service_order`/
-`order_cancellation` haben keine `daily_closing_id`-Referenz (anders als
-`invoice`) und werden daher über Kasse + Kalendertag (`business_date`)
-angenähert, nicht über eine exakte Zuordnung zum Kassenabschluss. Bei mehreren
-Abschlüssen desselben Tages und derselben Kasse kann das zu einer falschen
-Zuordnung führen. Siehe `exports/dsfinvk/load.ts` für die genaue Logik.
+**Behoben (Task #123, Migration 0031):** `service_order`/`order_cancellation`
+hatten bis dahin keine `daily_closing_id`-Referenz (anders als `invoice`) und
+wurden über Kasse + Kalendertag (`business_date`) angenähert statt über eine
+exakte Zuordnung zum Kassenabschluss — bei mehreren Abschlüssen desselben
+Tages und derselben Kasse konnte das zu einer falschen Zuordnung führen. Beide
+Tabellen haben jetzt dieselbe `daily_closing_id`-Spalte wie `invoice`, gesetzt
+in `routes/admin/closings.ts` (`closeRegister`) im selben Zug wie bei
+Rechnungen; bereits bestehende Zeilen wurden per Migration anhand der
+bisherigen Näherung befüllt. `exports/dsfinvk/load.ts` filtert seitdem exakt
+über diese Spalte, keine Näherung mehr.
 
 **Ebenfalls noch offen:** `TSE_ZERTIFIKAT_I/II` bleiben in `tse.csv` leer.
 `native/tse-cli`s `info`-Kommando liest die volle Zertifikatskette

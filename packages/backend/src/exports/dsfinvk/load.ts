@@ -58,14 +58,13 @@ function toTseSignature(row: {
 /**
  * Loads the complete DSFinV-K source data for one `daily_closing`.
  *
- * Scoping: invoices are matched via the persisted `invoice.daily_closing_id`
- * (set when the Z-Bon was created, see `routes/admin/closings.ts`).
- * `service_order`/`order_cancellation` have no such link yet (see
- * docs/Rechtliche-Anforderungen.md Abschnitt 6.7) — as a pragmatic
- * approximation, they're scoped to the same register and calendar day
- * (`business_date`) as the closing. For FairPOS's actual usage (closings
- * per calendar day, per event) this matches the invoices' own scope; it can
- * misattribute rows for a register closed more than once on the same day.
+ * Scoping: invoices, service_order and order_cancellation rows are all
+ * matched via their persisted `daily_closing_id` (set when the Z-Bon was
+ * created, see `routes/admin/closings.ts`) — an exact link, not an
+ * approximation. `service_order`/`order_cancellation` only gained this
+ * column in migration 0031 (Task #123); before that they were scoped via
+ * register + calendar day (`business_date`), which could misattribute rows
+ * when a register was closed more than once on the same day.
  *
  * @param closingId - The `daily_closing` primary key.
  * @returns The loaded source data, or `null` if the closing doesn't exist.
@@ -159,7 +158,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     };
   });
 
-  // ── service_order (BON_TYP = AVBestellung) — scoped by register + business_date. ──
+  // ── service_order (BON_TYP = AVBestellung) — scoped via daily_closing_id. ──
   const ordersResult = await query<{
     id: string; created_at: Date; table_name: string | null; user_name: string | null;
     tse_transaction_number: string | null; tse_signature_counter: string | null; tse_signature: string | null;
@@ -170,8 +169,8 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
             so.tse_start_time, so.tse_end_time
        FROM service_order so
        LEFT JOIN dining_table t ON t.id = so.dining_table_id
-      WHERE so.register_id = $1 AND so.created_at::date = $2::date`,
-    [closing.register_id, closing.business_date],
+      WHERE so.daily_closing_id = $1`,
+    [closingId],
   );
   const orderItemsResult = await query<RawItemRow & { service_order_id: string }>(
     `SELECT service_order_id, article_id, article_name, article_category_name,
@@ -201,7 +200,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     items: (orderItemsById.get(so.id) ?? []).map(toLineItem),
   }));
 
-  // ── order_cancellation (BON_TYP = AVSonstige) — scoped by register + business_date. ──
+  // ── order_cancellation (BON_TYP = AVSonstige) — scoped via daily_closing_id. ──
   const cancellationsResult = await query<{
     id: string; created_at: Date; cancelled_by_name: string | null;
     cancellation_reason_name: string;
@@ -213,8 +212,8 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
             oc.tse_transaction_number::text, oc.tse_signature_counter::text, oc.tse_signature,
             oc.tse_start_time, oc.tse_end_time
        FROM order_cancellation oc
-      WHERE oc.register_id = $1 AND oc.created_at::date = $2::date`,
-    [closing.register_id, closing.business_date],
+      WHERE oc.daily_closing_id = $1`,
+    [closingId],
   );
   const cancellationItemsResult = await query<RawItemRow & { order_cancellation_id: string }>(
     `SELECT order_cancellation_id, article_id, article_name, article_category_name,

@@ -8,6 +8,7 @@
 import unzipper from 'unzipper';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import {
@@ -159,5 +160,75 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     const linesFile = directory.files.find((f) => f.path === 'lines.csv')!;
     const lineRows = (await linesFile.buffer()).toString('utf-8').trim().split('\r\n');
     expect(lineRows).toHaveLength(3); // header + 2 article positions
+  });
+
+  it('assigns service_order/order_cancellation rows to the correct one of two same-day closings via daily_closing_id (Task #123)', async () => {
+    // Regression test for the register+business_date approximation this
+    // replaced: two closings for the same register on the same calendar day
+    // used to be indistinguishable by that approximation — both AVBestellung
+    // rows would have shown up in both closings' exports. The persisted
+    // daily_closing_id link must keep them apart.
+    const register = await createTestRegister({ type: 'service_register' });
+    const waiter = await createTestUser({ name: 'Clara' });
+    const reason = await pool.query<{ id: string }>(
+      `INSERT INTO cancellation_reason (name, booking_type, event_id) VALUES ('Testgrund', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
+    );
+
+    const closingA = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash, total_cancellations
+       ) VALUES ($1, 1, true, '2026-08-05', 0, 0, 0, 0, 0, 0) RETURNING id`,
+      [register.id],
+    );
+    const closingB = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash, total_cancellations
+       ) VALUES ($1, 2, true, '2026-08-05', 0, 0, 0, 0, 0, 0) RETURNING id`,
+      [register.id],
+    );
+
+    const orderA = await pool.query<{ id: string }>(
+      `INSERT INTO service_order (register_id, user_name, daily_closing_id, created_at)
+       VALUES ($1, $2, $3, '2026-08-05 10:00:00') RETURNING id`,
+      [register.id, waiter.name, closingA.rows[0]!.id],
+    );
+    const orderB = await pool.query<{ id: string }>(
+      `INSERT INTO service_order (register_id, user_name, daily_closing_id, created_at)
+       VALUES ($1, $2, $3, '2026-08-05 18:00:00') RETURNING id`,
+      [register.id, waiter.name, closingB.rows[0]!.id],
+    );
+    await pool.query(
+      `INSERT INTO order_cancellation (register_id, cancellation_reason_id, cancellation_reason_name, daily_closing_id, created_at)
+       VALUES ($1, $2, 'Testgrund', $3, '2026-08-05 19:00:00')`,
+      [register.id, reason.rows[0]!.id, closingB.rows[0]!.id],
+    );
+
+    const app = await getTestApp();
+    const responseA = await app.inject({
+      method: 'GET', url: `/api/admin/exports/dsfinvk/${closingA.rows[0]!.id}`,
+      headers: { cookie: adminCookie },
+    });
+    const responseB = await app.inject({
+      method: 'GET', url: `/api/admin/exports/dsfinvk/${closingB.rows[0]!.id}`,
+      headers: { cookie: adminCookie },
+    });
+
+    const namesA = (await unzipper.Open.buffer(responseA.rawPayload)).files.find((f) => f.path === 'transactions.csv')!;
+    const contentA = (await namesA.buffer()).toString('utf-8').trim().split('\r\n');
+    expect(contentA).toHaveLength(2); // header + orderA only
+    expect(contentA[1]).toContain('AVBestellung');
+
+    const namesB = (await unzipper.Open.buffer(responseB.rawPayload)).files.find((f) => f.path === 'transactions.csv')!;
+    const contentB = (await namesB.buffer()).toString('utf-8').trim().split('\r\n');
+    expect(contentB).toHaveLength(3); // header + orderB + the cancellation
+    expect(contentB.some((l) => l.includes('AVBestellung'))).toBe(true);
+    expect(contentB.some((l) => l.includes('AVSonstige'))).toBe(true);
+
+    // Sanity: orderA's id never appears in closing B's export and vice versa.
+    expect(contentB.some((l) => l.includes(orderA.rows[0]!.id))).toBe(false);
+    expect(contentA.some((l) => l.includes(orderB.rows[0]!.id))).toBe(false);
   });
 });

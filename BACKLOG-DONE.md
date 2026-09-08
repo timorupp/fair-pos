@@ -4184,6 +4184,49 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   "Aufbewahrung"-Regelung (30 Tage täglich / 12 Monate monatlich / 10 Jahre
   Archiv) gilt jetzt explizit für beide Backup-Arten gemeinsam.
 
+- [Task] **#123** `service_order`/`order_cancellation` ohne `daily_closing_id` — Zuordnung nur angenähert
+  **Klassifikation: Bewusste Vereinfachung, bisher nicht als Task erfasst.**
+  Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 als
+  "bewusste Vereinfachung (dokumentiert, nicht gelöst)" beschrieben — hier
+  nachgezogen (2026-09-06).
+
+  **Problem:** Anders als `invoice` haben `service_order`/
+  `order_cancellation` keine `daily_closing_id`-Referenz und werden im
+  DSFinV-K-Export daher über Kasse + Kalendertag (`business_date`)
+  angenähert, nicht über eine exakte Zuordnung zum tatsächlichen
+  Kassenabschluss (`exports/dsfinvk/load.ts`). Bei mehreren Abschlüssen
+  derselben Kasse am selben Tag kann das zu einer falschen Zuordnung
+  führen.
+
+  **Entscheidung (Nutzer, 2026-09-08):** unabhängig davon, wie oft mehrere
+  Abschlüsse pro Kasse und Tag praktisch vorkommen, sollen `service_order`/
+  `order_cancellation` konsistent mit `invoice` eine echte
+  `daily_closing_id`-Spalte bekommen — robuster und wartungsfreundlicher als
+  die Näherung dauerhaft zu behalten.
+
+  **Erledigt 2026-09-08:** Migration `0031_service_order_cancellation_daily_closing_id.sql`
+  fügt `daily_closing_id UUID REFERENCES daily_closing(id)` zu beiden
+  Tabellen hinzu und befüllt bestehende Zeilen einmalig anhand der bisherigen
+  Näherung (Kasse + `business_date`; bei historisch mehrdeutigen Tagen
+  deterministisch der Abschluss mit der niedrigsten `z_number`).
+  `routes/admin/closings.ts` (`closeRegister`) setzt die Spalte ab sofort im
+  selben Zug wie bei `invoice` — gleiche Tages-/Registerscope-Logik, gleiche
+  UPDATE-nach-Erfassung-Reihenfolge. `exports/dsfinvk/load.ts` filtert
+  `service_order`/`order_cancellation` seitdem exakt über
+  `daily_closing_id = $1` statt über die Näherung. `closing/pending-db.ts`
+  bezieht die erste-Aktivität-Berechnung jetzt zusätzlich aus
+  `service_order`/`order_cancellation` (nicht mehr nur `invoice`/
+  `daily_closing`), damit ein Kalendertag mit ausschließlich Bedienungskasse-
+  Aktivität (Bestellung/Storno, aber keine Rechnung) nicht dauerhaft
+  unzugeordnet bleibt. `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 und
+  `docs/Manueller-Testplan.md` aktualisiert (Näherung nicht mehr als bekannte
+  Einschränkung gelistet). Neue Integrationstests: FK-Zuweisung in
+  `closings.integration.test.ts` (inkl. Gap-Tag-Fall ohne Rechnungen) sowie
+  ein Regressionstest in `exports.dsfinvk.integration.test.ts`, der zwei
+  Abschlüsse desselben Tages/derselben Kasse anlegt und beweist, dass
+  `service_order`/`order_cancellation`-Zeilen jetzt korrekt getrennt bleiben
+  (genau das Szenario, das die alte Näherung nicht unterscheiden konnte).
+
 ## Findings
 
 - [Finding] **D-001** (mittel, Datenmodell) — Gefunden 2026-06-24

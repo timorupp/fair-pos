@@ -127,6 +127,31 @@ async function closeRegister(registerId: string, userName: string, date?: string
       }));
     }
 
+    // Same scope (register, optionally day) as the invoice query above, so
+    // service_order/order_cancellation get the exact same daily_closing_id
+    // link invoice already has (Task #123) — no more register+day
+    // approximation in the DSFinV-K export.
+    const serviceOrderResult = date
+      ? await client.query<{ id: string }>(
+          `SELECT id FROM service_order
+            WHERE register_id = $1 AND daily_closing_id IS NULL AND created_at::date = $2::date`,
+          [registerId, date],
+        )
+      : await client.query<{ id: string }>(
+          `SELECT id FROM service_order WHERE register_id = $1 AND daily_closing_id IS NULL`,
+          [registerId],
+        );
+    const cancellationResult = date
+      ? await client.query<{ id: string }>(
+          `SELECT id FROM order_cancellation
+            WHERE register_id = $1 AND daily_closing_id IS NULL AND created_at::date = $2::date`,
+          [registerId, date],
+        )
+      : await client.query<{ id: string }>(
+          `SELECT id FROM order_cancellation WHERE register_id = $1 AND daily_closing_id IS NULL`,
+          [registerId],
+        );
+
     const totals = computeClosingTotals(invoices);
 
     // Compute the next Z-number for this register.
@@ -164,6 +189,18 @@ async function closeRegister(registerId: string, userName: string, date?: string
       await client.query(
         `UPDATE invoice SET daily_closing_id = $1 WHERE id = ANY($2)`,
         [closingId, invoices.map((i) => i.id)],
+      );
+    }
+    if (serviceOrderResult.rows.length > 0) {
+      await client.query(
+        `UPDATE service_order SET daily_closing_id = $1 WHERE id = ANY($2)`,
+        [closingId, serviceOrderResult.rows.map((r) => r.id)],
+      );
+    }
+    if (cancellationResult.rows.length > 0) {
+      await client.query(
+        `UPDATE order_cancellation SET daily_closing_id = $1 WHERE id = ANY($2)`,
+        [closingId, cancellationResult.rows.map((r) => r.id)],
       );
     }
 

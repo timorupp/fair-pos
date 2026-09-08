@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import {
@@ -120,6 +121,64 @@ describe('POST /api/admin/registers/:id/closings', () => {
       `SELECT daily_closing_id FROM invoice WHERE id = $1`, [invoiceId],
     );
     expect(inv.rows[0]!.daily_closing_id).toBe(closingId);
+  });
+
+  it('also links unassigned service_order/order_cancellation rows of the same day to the new closing (Task #123)', async () => {
+    const app = await getTestApp();
+    await insertPaidInvoice(`${TODAY} 12:00:00`, 10);
+    const serviceOrder = await pool.query<{ id: string }>(
+      `INSERT INTO service_order (register_id, created_at) VALUES ($1, $2) RETURNING id`,
+      [registerId, `${TODAY} 12:05:00`],
+    );
+    const reason = await pool.query<{ id: string }>(
+      `INSERT INTO cancellation_reason (name, booking_type, event_id) VALUES ('Testgrund', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
+    );
+    const cancellation = await pool.query<{ id: string }>(
+      `INSERT INTO order_cancellation (register_id, cancellation_reason_id, cancellation_reason_name, created_at)
+       VALUES ($1, $2, 'Testgrund', $3) RETURNING id`,
+      [registerId, reason.rows[0]!.id, `${TODAY} 12:10:00`],
+    );
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    const closingId = response.json().closings[0].closing_id;
+
+    const so = await pool.query<{ daily_closing_id: string | null }>(
+      `SELECT daily_closing_id FROM service_order WHERE id = $1`, [serviceOrder.rows[0]!.id],
+    );
+    expect(so.rows[0]!.daily_closing_id).toBe(closingId);
+    const oc = await pool.query<{ daily_closing_id: string | null }>(
+      `SELECT daily_closing_id FROM order_cancellation WHERE id = $1`, [cancellation.rows[0]!.id],
+    );
+    expect(oc.rows[0]!.daily_closing_id).toBe(closingId);
+  });
+
+  it('links service_order/order_cancellation to the day-scoped catch-up closing even on a gap day with zero invoices', async () => {
+    const app = await getTestApp();
+    // Yesterday: a service_order but no invoice at all — a gap day for
+    // invoices, but not for Bedienung activity. Must still be picked up by
+    // the day-scoped catch-up closing rather than staying unassigned forever.
+    const serviceOrder = await pool.query<{ id: string }>(
+      `INSERT INTO service_order (register_id, created_at) VALUES ($1, $2) RETURNING id`,
+      [registerId, `${YESTERDAY} 12:00:00`],
+    );
+    await insertPaidInvoice(`${TODAY} 09:00:00`, 5);
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    const closings = response.json().closings;
+    expect(closings).toHaveLength(2);
+    const yesterdayClosing = closings[0];
+
+    const so = await pool.query<{ daily_closing_id: string | null }>(
+      `SELECT daily_closing_id FROM service_order WHERE id = $1`, [serviceOrder.rows[0]!.id],
+    );
+    expect(so.rows[0]!.daily_closing_id).toBe(yesterdayClosing.closing_id);
   });
 
   it('enqueues a print job when the register has a printer', async () => {

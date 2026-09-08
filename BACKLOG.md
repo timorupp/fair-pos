@@ -271,24 +271,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Noch nicht bewertet: Beschaffung der GoBD-Anlage, Abgleich, ggf.
   Anpassungsbedarf.
 
-- [Task] **#123** `service_order`/`order_cancellation` ohne `daily_closing_id` — Zuordnung nur angenähert
-  **Klassifikation: Bewusste Vereinfachung, bisher nicht als Task erfasst.**
-  Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 als
-  "bewusste Vereinfachung (dokumentiert, nicht gelöst)" beschrieben — hier
-  nachgezogen (2026-09-06).
-
-  **Problem:** Anders als `invoice` haben `service_order`/
-  `order_cancellation` keine `daily_closing_id`-Referenz und werden im
-  DSFinV-K-Export daher über Kasse + Kalendertag (`business_date`)
-  angenähert, nicht über eine exakte Zuordnung zum tatsächlichen
-  Kassenabschluss (`exports/dsfinvk/load.ts`). Bei mehreren Abschlüssen
-  derselben Kasse am selben Tag kann das zu einer falschen Zuordnung
-  führen.
-
-  Noch nicht bewertet: wie oft mehrere Abschlüsse pro Kasse und Tag
-  praktisch vorkommen, ob eine echte `daily_closing_id`-Spalte (Migration)
-  nötig ist oder die Näherung für den praktischen Betrieb ausreicht.
-
 - [Task] **#124** `docs/Datenmodell.dbml` gegen das echte Schema abgleichen
   **Klassifikation: Doku-Bereinigung.** Bei Task #91 (2026-08-29) aufgefallen
   — nur die für diese Änderung direkt relevanten Felder (`label`, `hidden`
@@ -306,12 +288,12 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 ## Findings
 
 - [Finding] **D-021** (niedrig, Reports) — Gefunden 2026-06-24 — Kontext: Während Auswertungen-Implementierung gefunden
-  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release.** „Erstellte Rechnungen" listet `payment_method='card'` mit auf, obwohl die App aktuell nur `cash` produziert. Spalte sinnvoll, aber für Auswertungs-Excel später konsistent halten.
-  Beim Excel-Export (#10) sicherstellen, dass die Spalte mit anderen Reports übereinstimmt.
+  „Erstellte Rechnungen" listet `payment_method='card'` mit auf, obwohl die App aktuell nur `cash` produziert. Spalte sinnvoll, aber für Auswertungs-Excel später konsistent halten.
+  **Geprüft 2026-09-06:** Der Excel-Export (Task #10, `exports/rows.ts`/`workbook.ts`) hat aktuell **gar keine** Zahlungsart-Spalte — die ursprüngliche Sorge (Inkonsistenz zwischen Report und Export) ist damit gegenstandslos, es gibt nichts, womit sie inkonsistent sein könnte. Der Admin-Report selbst (`admin/reports/invoices`) bildet `payment_method` bereits sauber auf "Bar"/"Karte" ab. **Kein Handlungsbedarf jetzt (Nutzerentscheidung):** nur relevant, falls irgendwann echte Kartenzahlungen dazukommen — dann prüfen, ob Excel-Export und Report dieselbe Zahlungsart-Bezeichnung verwenden sollen.
 
 - [Finding] **D-026** (niedrig, Excel-Export) — Gefunden 2026-06-24 — Kontext: Während Excel-Export-Implementierung gefunden
-  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release.** Storno-Rechnungen (`receipt_type='cancellation'`) sind im Export **nicht** enthalten. **Prämisse überholt (2026-09-02, beim Doku-Audit vor dem QA-Lauf gefunden):** Task #8 (Bonstorno) ist seit längerem umgesetzt und produktiv im Einsatz, die ursprüngliche "solange nicht existiert, irrelevant"-Einschätzung stimmt nicht mehr. Aktueller Code-Stand (`routes/admin/exports.ts:81-84`, Docstring): der Ausschluss ist **bewusst dokumentiert** ("cancellation/training invoices are not part of the standard sales export") — Stornos landen stattdessen im Rechnungs-ZIP-Export und im DSFinV-K-Export, nicht im Excel-Umsatz-Export. Kein Bug, aber die im Vorschlag genannte explizite Entscheidung (separate Spalte/eigenes Sheet) wurde nie wirklich getroffen, nur implizit durch Weglassen.
-  Weiterhin offen, aber nicht blockierend: falls gewünscht, explizit im Export selbst dokumentieren/sichtbar machen (z.B. Fußnote im Excel), dass Stornos absichtlich fehlen — sonst könnte ein Auswertender die Summe für vollständig halten.
+  Storno-Rechnungen (`receipt_type='cancellation'`) sind im Excel-Umsatzexport nicht enthalten. Aktueller Code-Stand (`routes/admin/exports.ts:81-84`, Docstring): der Ausschluss ist **bewusst dokumentiert** ("cancellation/training invoices are not part of the standard sales export") — Stornos landen stattdessen im Rechnungs-ZIP-Export und im DSFinV-K-Export, nicht im Excel-Umsatz-Export.
+  **Geprüft 2026-09-06, als "nichts zu tun" geschlossen (Nutzerentscheidung):** Der Ausschluss ist rechnerisch korrekt, kein Versehen — stornierte Positionen bekommen `order_item.status='cancelled'` gesetzt, der Export filtert explizit auf `status IN ('paid', 'free')`. Der Excel-Export ist als Netto-Umsatzbericht gedacht ("was wurde final verkauft"); eine verkaufte und stornierte Position hat wirtschaftlich 0 € Netto-Umsatz, das einfache Weglassen ist korrekt statt eine Lücke. Lückenlose Prüfbarkeit (dass verkauft *und* storniert wurde) bleibt über DSFinV-K/Rechnungs-ZIP erhalten — dort ist sie auch fachlich relevant, im Excel-Bericht nicht. Die ursprünglich vorgeschlagene Fußnote/Hinweis im Export selbst wird nicht umgesetzt.
 
 - [Finding] **D-033** (mittel, Backend / Excel-Export) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
   `exceljs` (Produktions-Abhängigkeit für Task #10/#32) bündelt intern `uuid@^8.3.0` — betroffen von GHSA-w5hq-g745-h8pq (fehlende Buffer-Bounds-Prüfung in `uuid` v3/v5/v6 bei übergebenem `buf`-Parameter). Verifiziert: `npm view exceljs dist-tags` → `latest: 4.4.0`, identisch mit der installierten Version — es gibt aktuell **keine** neuere `exceljs`-Version, die ein aktuelleres `uuid` zieht. `npm audit fix --force` schlägt widersinnig ein *Downgrade* auf `exceljs@3.4.0` vor (npms generischer Lösungsversuch, kein echter Fix). Praktische Ausnutzbarkeit gering: eigener Code ruft `uuid` nie direkt auf, nur `exceljs` intern. Dieselbe exceljs-interne Abhängigkeitskette ist auch Ursache der `npm ci`-Deprecation-Warnungen `inflight`, `rimraf@2`, `lodash.isequal`, `glob@7` (über `archiver`/`fast-csv`/`unzipper`) — nicht eigenständig behebbar.

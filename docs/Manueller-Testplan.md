@@ -224,7 +224,6 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 - [ ] CSV-Dateien lassen sich in Excel/LibreOffice mit Semikolon als Trenner öffnen und sind lesbar (Umlaute korrekt, kein Encoding-Problem)
 
 **Bekannte, dokumentierte Einschränkungen — nicht als Bug melden, aber im Hinterkopf behalten:**
-- `service_order`/`order_cancellation` werden über Kasse + Kalendertag angenähert, nicht exakt dem Kassenabschluss zugeordnet (Abschnitt 6.7)
 - Nur die volle TSE-Zertifikatskette (`TSE_ZERTIFIKAT_I/II` in `tse.csv`) ist noch leer — Signaturalgorithmus/Zeitformat/Public-Key sind seit Task #46 gefüllt
 - CSV-Trennzeichen/`index.xml`-Schema folgen der verbreiteten Konvention, sind aber nicht gegen die separate GoBD-Anlage verifiziert (Abschnitt 6, Einleitung)
 
