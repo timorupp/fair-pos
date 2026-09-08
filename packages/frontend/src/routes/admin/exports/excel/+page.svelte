@@ -8,7 +8,7 @@
    * a synthetic anchor click so the user stays on this page.
    *
    * The `date` query the day-export endpoint expects is interpreted in the
-   * *server's* local timezone (DANGER.md D-025) — if an admin browses from a
+   * *server's* local timezone (D-025) — if an admin browses from a
    * different timezone (e.g. on the road), the browser's own "today" can
    * disagree with the server's. `serverTimezone` is loaded on mount purely
    * to compute a correctly-defaulted date and to make the server's timezone

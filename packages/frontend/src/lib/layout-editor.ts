@@ -2,7 +2,7 @@
  * Pure helpers for the Kassenlayout editor
  * (`routes/admin/settings/layouts/[id]/+page.svelte`) — extracted so the
  * grid/resize/drag-drop logic is unit-testable without a component harness
- * (DANGER.md T-007).
+ * (T-007).
  */
 
 /** One placed article on the layout grid. */

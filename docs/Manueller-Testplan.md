@@ -8,7 +8,7 @@ und mit echter (oder simulierter) TSE-Hardware.
 
 **Nutzung:** Vor jedem größeren Release / vor dem ersten Produktivgang einmal
 komplett durchgehen. Zwischendurch reicht der jeweils betroffene Abschnitt.
-Gefundene Probleme in `DANGER.md` eintragen, nicht nur hier abhaken.
+Gefundene Probleme in `BACKLOG.md` eintragen, nicht nur hier abhaken.
 
 **Stand:** September 2026. Bei neuen Features diese Liste ergänzen (siehe
 Abschnitt „Diese Liste aktuell halten" am Ende).
@@ -274,4 +274,4 @@ Wenn ein neues Feature entsteht: hier einen Abschnitt/Punkt ergänzen, bevor
 die Aufgabe als abgeschlossen gilt — siehe Vorgehen in dieser Session (Docs
 werden bei jeder Änderung mitgepflegt, nicht nachträglich gesammelt). Wenn ein
 Testschritt beim Durchlaufen einen echten Fehler aufdeckt, den Fehler in
-`DANGER.md` eintragen (nicht nur hier den Haken weglassen).
+`BACKLOG.md` eintragen (nicht nur hier den Haken weglassen).

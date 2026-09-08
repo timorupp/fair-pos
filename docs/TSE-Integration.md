@@ -330,7 +330,7 @@ nötig). Stattdessen:
   Entwickler bereitgestellt werden) und wird auch nicht erwartet.
 - Manuelles Testen gegen die echte TSE bleibt manuell/vor Ort.
 
-**Stand 2026-08-26 (live bestätigt, siehe DANGER.md D-038-Fortsetzung):**
+**Stand 2026-08-26 (live bestätigt, siehe D-038-Fortsetzung):**
 Automatisierte Tests (CI, lokale Entwicklung unter WSL2) bleiben weiterhin
 auf die Stub-basierten Unit-Tests beschränkt — WSL2 reicht USB-Geräte
 nicht ohne `usbipd-win` (Windows-Host-Aktion) durch. Die erste echte
@@ -397,8 +397,7 @@ Swissbits Beispiel).
   nötig: `dumpProcessData` (neuer `tseCli`-Befehl, siehe
   `docs/TSE-CLI-Referenz.md` Abschnitt 2) liest `processData` — FairPOS'
   eigenes, bereits bekanntes DSFinV-K-Klartextformat — direkt von der
-  lebenden TSE, ohne den Envelope zu parsen. Löst damit Task #102, siehe
-  `TASKS.md`.
+  lebenden TSE, ohne den Envelope zu parsen. Löst damit Task #102.
 - Korrektur des `processData`-Formats für `Kassenbeleg-V1`/`Bestellung-V1`/
   `SonstigerVorgang` auf die von DSFinV-K Anhang I vorgeschriebene Struktur,
   inkl. TSE-Signaturalgorithmus/Zeitformat/Public-Key für den QR-Code —

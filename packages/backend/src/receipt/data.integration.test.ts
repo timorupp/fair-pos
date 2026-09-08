@@ -1,5 +1,5 @@
 /**
- * Integration tests for `loadReceiptByToken`/`loadReceiptById` (DANGER.md T-013)
+ * Integration tests for `loadReceiptByToken`/`loadReceiptById` (T-013)
  * — DB-driven data loading, needs a real Postgres.
  */
 

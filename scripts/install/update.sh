@@ -47,7 +47,7 @@ echo "==> Pflicht-Umgebungsvariablen prüfen"
 # Pflichtvariable wird dadurch automatisch mitgeprüft. Läuft bewusst direkt
 # nach git pull und vor dem restlichen (langsamen) Update, damit ein
 # Update mit fehlender Variable sofort abbricht statt erst nach Build und
-# Migration mit einem abgestürzten Neustart zu enden (siehe DANGER.md D-049).
+# Migration mit einem abgestürzten Neustart zu enden (siehe D-049).
 ENV_FILE="$REPO_ROOT/.env"
 CONFIG_FILE="$REPO_ROOT/packages/backend/src/config.ts"
 MISSING=""

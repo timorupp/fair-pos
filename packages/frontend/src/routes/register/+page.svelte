@@ -21,7 +21,7 @@
    * (is_event_admin only) must reach this screen exactly like a
    * System-Administrator does — checking only is_admin here would silently
    * lock them out of /admin entirely if they have exactly one register
-   * assigned (found live, see DANGER.md).
+   * assigned (found live).
    */
   let hasAdminAccess = $state(false);
   let loading = $state(true);

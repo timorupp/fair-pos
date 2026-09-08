@@ -634,7 +634,7 @@ Beleg-Blöcke (neutrale Liste: Text/Zeile/Trennlinie/Bild)
 ```
 
 - **ESC/POS-Renderer** (`print/blocks.ts`): erzeugt die Druckbefehle selbst geschrieben, keine externe ESC/POS-Bibliothek.
-- **PDF-Renderer** (`print/blocks.ts`, `pdfkit`): rendert mit einer Monospace-Schrift (Courier) und ohne Farbe, damit das PDF optisch dem Ausdruck entspricht, statt eigenständig zu driften (das war vor Task #105 der Fall — siehe TASKS.md Task #101).
+- **PDF-Renderer** (`print/blocks.ts`, `pdfkit`): rendert mit einer Monospace-Schrift (Courier) und ohne Farbe, damit das PDF optisch dem Ausdruck entspricht, statt eigenständig zu driften (das war vor Task #105 der Fall — siehe Task #101).
 - Vorher hatte jeder Belegtyp zwei unabhängige, eigenständig gepflegte Renderer (nur die Rechnung hatte überhaupt beide Formate — die anderen vier Typen hatten gar keine PDF-Variante). Jetzt schreibt jeder Belegtyp seine Blöcke nur einmal (`receipt/blocks.ts`, `closing/blocks.ts`, `print/order-slip.ts`, `print/escpos.ts`).
 - Jeder `print_job` speichert seine Blöcke mit (`print_job.blocks`, JSONB) — das macht die Admin-Druckwarteschlange generisch: PDF-Vorschau und "Erneut drucken" funktionieren für **jeden** Auftragstyp, ohne die Quelldaten neu laden zu müssen (bei einem PIN-Zettel z. B. gar nicht möglich, da die PIN sonst nirgends im Klartext gespeichert ist). Einzige Ausnahme: PIN-Zettel selbst — dort sind PDF-Vorschau und Reprint aus Sicherheitsgründen bewusst gesperrt (Nutzerentscheidung 2026-09-01).
 

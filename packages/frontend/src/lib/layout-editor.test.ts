@@ -1,4 +1,4 @@
-/** Unit tests for the Kassenlayout-editor pure helpers (DANGER.md T-007). */
+/** Unit tests for the Kassenlayout-editor pure helpers (T-007). */
 import { describe, it, expect } from 'vitest';
 import { buildGrid, changeGridSize, applyDrop, DEFAULT_COLOR, type Slot } from './layout-editor';
 

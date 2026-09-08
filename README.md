@@ -58,8 +58,8 @@ bewusst Vereinfachungen/Annahmen getroffen wurden, steht in
 | [docs/Rechtliche-Anforderungen.md](docs/Rechtliche-Anforderungen.md) | KassenSichV-/GoBD-/DSFinV-K-Rechtsgrundlagen |
 | [docs/Organisatorische-Anleitung.md](docs/Organisatorische-Anleitung.md) | Betriebsabläufe (ELSTER-Meldung, Backup, Verfahrensdokumentation) |
 | [docs/Manueller-Testplan.md](docs/Manueller-Testplan.md) | Checkliste für den manuellen Regressionstest |
-| [TASKS.md](TASKS.md) | Aufgabenliste (offen + Historie) |
-| [DANGER.md](DANGER.md) | Bekannte Risiken, Refactoring-Bedarf |
+| [BACKLOG.md](BACKLOG.md) | Offene Tasks und gefundene Risiken/Refactoring-Bedarf |
+| [BACKLOG-DONE.md](BACKLOG-DONE.md) | Archiv erledigter Einträge aus BACKLOG.md |
 
 ## Schnellstart
 

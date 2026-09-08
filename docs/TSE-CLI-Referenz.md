@@ -13,10 +13,10 @@ die die Admin-UI nicht abdeckt:
    FairPOS-Feature, nur über die CLI erreichbar, siehe Abschnitt 2.
 3. **Löschen der auf der TSE gespeicherten Rohdaten** (`deleteStoredData`) —
    von FairPOS bewusst nicht ins Backend/die Admin-UI gebaut (siehe Task
-   #103 in `TASKS.md`), nur über die CLI erreichbar, siehe Abschnitt 2.
+   #103), nur über die CLI erreichbar, siehe Abschnitt 2.
 4. **Inhaltliche Prüfung der auf der TSE gespeicherten Vorgänge**
    (`dumpProcessData`) — reiner Testing-Helfer für den manuellen
-   Regressionstest (siehe Task #47/#102 in `TASKS.md`), nie von FairPOS
+   Regressionstest (siehe Task #47/#102), nie von FairPOS
    selbst aufgerufen, nur über die CLI erreichbar, siehe Abschnitt 2.
 
 ---
@@ -172,7 +172,7 @@ des Vereins stammen und wird nur für diesen einen Aufruf eingegeben — siehe
 den Sicherheitshinweis in Abschnitt 1.
 
 **Nie von FairPOS aufgerufen** — bewusst nicht ins Backend/die Admin-UI
-eingebaut (siehe `TASKS.md` Task #103, "Bewusst nicht umgesetzt": destruktiv,
+eingebaut (siehe Task #103, "Bewusst nicht umgesetzt": destruktiv,
 mit eigenen Vorbedingungen, nur relevant, sobald der TSE-Speicher tatsächlich
 eng wird). Vor dem Löschen unbedingt `<ausgabedatei>` prüfen/sichern — der
 Export ist die einzige Kopie der Daten, sobald gelöscht wurde.
@@ -204,7 +204,7 @@ TSE unversehrt sind — nur die Dump-Datei hätte es falsch dargestellt.
 Gefunden und behoben 2026-09-02 beim ersten echten Testlauf.
 
 **Zweck: prüfen, ob wirklich jede Testbuchung mit den richtigen Beträgen auf
-der TSE ankam** — Task #102/#47 (`TASKS.md`). Ersetzt die zuvor
+der TSE ankam** — Task #102/#47. Ersetzt die zuvor
 vorgesehene, dauerhaft eigene Testing-Helper-Idee: die Prüfung braucht
 lediglich diesen einen `tseCli`-Befehl plus Diff/Grep von Hand, kein
 separates Skript.
@@ -252,7 +252,7 @@ Prüfen: `hasPassedSelfTest`/`hasValidTime` beide `true`,
 Aufruf machen und den `code` im Fehlerfall gegen Abschnitt 5 abgleichen,
 oder direkt den Text aus dem Systemprotokoll (Einstellungen → Monitoring →
 Systemprotokoll) lesen, der enthält den Code bereits als
-`<Message> (Code <n>)` (siehe `DANGER.md` D-038).
+`<Message> (Code <n>)` (siehe D-038).
 
 **"TSE reagiert gar nicht"** — prüfen, ob der Mountpunkt überhaupt existiert
 (`lsblk`, `mount | grep <mount-pfad>`), bevor der CLI-Aufruf selbst
@@ -307,10 +307,10 @@ bisher tatsächlich aufgetretenen oder für Abschnitt 2 relevanten Codes:
 |---|---|---|---|
 | 0 | `0x0` | `WORM_ERROR_NOERROR` | Erfolg |
 | 23 | `0x17` | `WORM_ERROR_INVALID_STATE` | Aufruf passt nicht zum aktuellen TSE-Zustand (z. B. `setup` auf einer bereits eingerichteten TSE) |
-| 4098 | `0x1002` | `WORM_ERROR_NO_TIME_SET` | Keine gültige Zeit gesetzt — siehe `DANGER.md` D-038-Fortsetzung |
+| 4098 | `0x1002` | `WORM_ERROR_NO_TIME_SET` | Keine gültige Zeit gesetzt — siehe D-038-Fortsetzung |
 | 4106 | `0x100a` | `WORM_ERROR_CERTIFICATE_EXPIRED` | TSE-Zertifikat abgelaufen |
 | 4111 | `0x100f` | `WORM_ERROR_NOT_AUTHORIZED` | Falscher/kein Nutzer eingeloggt für diesen Aufruf |
-| 4113 | `0x1011` | `WORM_ERROR_CLIENT_NOT_REGISTERED` | Client-ID nicht registriert — siehe `DANGER.md` D-038 |
+| 4113 | `0x1011` | `WORM_ERROR_CLIENT_NOT_REGISTERED` | Client-ID nicht registriert — siehe D-038 |
 | 4116 | `0x1014` | `WORM_ERROR_TSE_HAS_UNFINISHED_TRANSACTIONS` | Offene Transaktion blockiert den Aufruf (z. B. Decommissioning) |
 | 4119 | `0x1017` | `WORM_ERROR_STORE_FULL` | TSE-Speicher voll — spätestens jetzt `deleteStoredData` nutzen (Abschnitt 2) |
 | 4350 | `0x10fe` | `WORM_ERROR_TSE_DECOMMISSIONED` | TSE wurde stillgelegt (Abschnitt 4), keine Vorgänge mehr möglich |
@@ -332,5 +332,4 @@ sind laut `WormDLL.h` ab TSE-Firmware ≥ 2.0.0 abgeschaltet und schlagen
 the TSE [...]. If an ERS requires a filtered export, the ERS must filter the
 TAR themselves."* Es gibt nur noch Vollexport (Abschnitt 2) oder
 inkrementellen Export (`worm_export_tar_incremental`, bräuchte einen
-persistierten State-Token — von FairPOS nicht gebaut, siehe `TASKS.md`
-Task #103).
+persistierten State-Token — von FairPOS nicht gebaut, siehe Task #103).

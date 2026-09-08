@@ -57,7 +57,7 @@ async function claimJob(jobId: string): Promise<ClaimedJob | null> {
  * Fetches, sends, and finalises a single job. Safe to call concurrently — the
  * claim is atomic, so two overlapping calls for the same `jobId` never both
  * send it (the second one's `claimJob` finds `status <> 'pending'` and
- * returns `null`). Exported for integration tests (DANGER.md T-010) —
+ * returns `null`). Exported for integration tests (T-010) —
  * `startPrintWorker()` itself is a long-running LISTEN loop, not something a
  * test can drive directly.
  *

@@ -231,7 +231,7 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
   });
 });
 
-describe('POST /api/register-session/invoices/:id/print (DANGER.md T-012/T-013)', () => {
+describe('POST /api/register-session/invoices/:id/print (T-012/T-013)', () => {
   async function checkout(): Promise<string> {
     const app = await getTestApp();
     const response = await app.inject({

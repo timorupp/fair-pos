@@ -1,6 +1,6 @@
 /**
  * Integration tests for the printers admin routes — DELETE (Task #57/#96),
- * plus the status-probe and test-print endpoints (DANGER.md T-011).
+ * plus the status-probe and test-print endpoints (T-011).
  */
 import net from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';

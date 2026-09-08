@@ -1,6 +1,6 @@
 /**
  * Integration tests for `withTransaction` — needs a real Postgres, since
- * this is specifically about actual COMMIT/ROLLBACK behaviour (DANGER.md T-002).
+ * this is specifically about actual COMMIT/ROLLBACK behaviour (T-002).
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';

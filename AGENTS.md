@@ -39,10 +39,15 @@ kollidieren können (z.B. manche CDDL/EPL-Varianten), und bei jeglicher
 - `docs/Manueller-Testplan.md` — Checkliste für den manuellen Regressionstest (UI, TSE-Ausfallverhalten, DSFinV-K-Export)
 
 **Projekt-Metadateien** (Repo-Root, nicht unter `docs/`):
-- `TASKS.md` — maßgebliche, versionierte Aufgabenliste (ersetzt eine
-  werkzeug-interne, nicht persistente Task-Verwaltung; `Task #<N>`-Verweise
-  im Code lösen hier auf)
-- `DANGER.md` — gefundene Risiken, fragwürdige Designs, Refactoring-Bedarf
+- `BACKLOG.md` — maßgebliche, versionierte Liste offener Tasks (Nutzerwünsche/
+  geplante Arbeit) und Findings (gefundene Risiken, fragwürdige Designs,
+  Refactoring-Bedarf), gemeinsam per `[Task]`/`[Finding]`-Tag (ersetzt eine
+  werkzeug-interne, nicht persistente Task-Verwaltung; `Task #<N>`- und
+  `D-<N>`/`T-<N>`/`DOC-<N>`-Verweise im Code lösen hier oder in
+  `BACKLOG-DONE.md` auf)
+- `BACKLOG-DONE.md` — Archiv erledigter Einträge aus `BACKLOG.md`, gleiches
+  Format, IDs unverändert. Beim Abschließen eines Eintrags: aus `BACKLOG.md`
+  ausschneiden und hierher verschieben (nicht kopieren), inkl. Erledigt-Vermerk
 
 ---
 

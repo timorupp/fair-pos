@@ -1,6 +1,6 @@
 /**
  * Integration tests for the print worker's job-processing logic
- * (DANGER.md T-010) — atomic claim, crash recovery, retry-with-cooldown,
+ * (T-010) — atomic claim, crash recovery, retry-with-cooldown,
  * terminal failure. Uses a real Postgres plus a real `net.createServer`
  * mock TCP printer (no mocked TCP layer) so the actual `sendToPrinter`
  * code path is exercised end to end.
