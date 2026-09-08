@@ -90,7 +90,7 @@ registriert den Client, aktiviert den CTSS-Zugriff.
   ersetzt. `<admin-puk>`/`<admin-pin>` sind also die vom Verein selbst
   festgelegten neuen Werte.
 
-Vollständiges Praxisbeispiel: `docs/Installationsanleitung.md` Abschnitt 8.4.
+Vollständiges Praxisbeispiel: `docs/Installationsanleitung.md` Abschnitt 8.3.
 
 > ⚠️ **Ein falscher Credential-Seed kann die TSE unwiderruflich sperren.**
 > `setup` versucht mit dem angegebenen Credential-Seed den werksseitigen

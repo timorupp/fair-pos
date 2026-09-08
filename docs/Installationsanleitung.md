@@ -271,7 +271,7 @@ Da der Server ggf. von mehreren Vereinen mit je eigener TSE genutzt wird
 (kein fester Mountpunkt für ein bestimmtes Gerät, siehe `docs/SETUP.md`),
 reicht ein generisches Automount für **beliebige** eingesteckte
 USB-Massenspeicher — welcher Mountpunkt tatsächlich die TSE ist, ermittelt
-FairPOS selbst über den "Auto-erkennen"-Button in der Admin-UI (Abschnitt 8.3).
+FairPOS selbst über den "Auto-erkennen"-Button in der Admin-UI (Abschnitt 8.4).
 
 **✅ Verifiziert gegen echte Swissbit-USB-TSE-Hardware** (2026-08-24, Ubuntu
 26.04 LTS "resolute"). `usbmount` — das ursprünglich hier vorgesehene Paket
@@ -331,15 +331,19 @@ verzeichnis vor Abschluss des asynchronen Mounts; `systemd-mount --no-block`
 gibt sofort zurück, ohne auf den tatsächlichen Mount-Abschluss zu warten —
 bei Bedarf `lsblk`/`stat` einfach nach einer Sekunde erneut ausführen).
 
-### 8.3 TSE in der Admin-UI konfigurieren
+### 8.3 Einmalige Hardware-Inbetriebnahme (`setup`)
 
-Nach dem ersten Start des Backends (Abschnitt 10): Einstellungen →
-System → "Auto-erkennen" klickt sich durch alle aktuell gemounteten
-Wechseldatenträger und trägt den ersten Treffer automatisch ein. Danach
-Client-ID frei vergeben (z.B. `FairPOS-1`), TimeAdmin-PIN eintragen und
-speichern.
-
-### 8.4 Einmalige Hardware-Inbetriebnahme (`setup`)
+**Reihenfolge wichtig: dieser Schritt zuerst, Abschnitt 8.4 (Admin-UI)
+erst danach.** Würde die TSE zuerst in der Admin-UI eingetragen (Mount-
+Pfad, Client-ID, TimeAdmin-PIN) und erst anschließend per `setup`
+initialisiert, beginnt der automatische Hintergrund-Health-Job
+(`docs/TSE-Integration.md` Abschnitt 6) sofort nach dem Speichern, die
+noch uninitialisierte TSE mit der bereits eingetragenen TimeAdmin-PIN
+anzusprechen — eine TSE, die diese PIN noch gar nicht kennt, quittiert das
+mit Fehlversuchen und riskiert dieselbe Sperre wie unten beschrieben
+(siehe `BACKLOG.md` D-055 zum Health-Job-Risiko). Deshalb: TSE zuerst
+per `setup` initialisieren, danach dieselben Werte in der Admin-UI
+eintragen.
 
 **Kein Admin-UI-Schritt** — bewusst nicht Teil der UI (siehe
 `docs/TSE-Integration.md` Abschnitt 7): die einmalige Aktivierung der TSE
@@ -356,6 +360,11 @@ Bash-History):
   selbst gewählte Werte ersetzt wird. Die hier übergebenen `<admin-puk>`/
   `<admin-pin>` sind also die **neuen**, vom Verein selbst festgelegten
   Werte — nicht Werte aus irgendwelchen Herstellerunterlagen.
+- **Client-ID** — bei der Erstregistrierung eines neuen Clients frei
+  wählbar (z.B. `FairPOS-1`). Soll stattdessen ein **bestehender** Client
+  zurückgesetzt werden (z. B. weil dessen PIN gesperrt wurde), muss hier
+  exakt dessen bereits vergebene Client-ID eingetragen werden — nicht neu
+  frei wählbar.
 
 ```bash
 sudo -u fairpos /opt/fairpos/packages/backend/native/tse-cli/vendor/bin/tseCli \
@@ -372,11 +381,22 @@ sudo -u fairpos /opt/fairpos/packages/backend/native/tse-cli/vendor/bin/tseCli \
 > TSE-Händler verifizieren, nicht aus dem Gedächtnis oder einer Vermutung
 > eintragen.
 
-`<mount-pfad>`/`<client-id>`/`<time-admin-pin>` entsprechen genau den Werten
-aus Abschnitt 8.3. Danach in der Admin-UI über "TSE testen" verifizieren
-(`hasPassedSelfTest: true` erwartet). Vollständige Befehlsreferenz für
-`tseCli` (alle Befehle, Fehlercodes, Entwickler-TSE-Reset):
-`docs/TSE-CLI-Referenz.md`.
+Die hier verwendeten Werte für `<mount-pfad>`, `<client-id>` und
+`<time-admin-pin>` werden im nächsten Schritt (Abschnitt 8.4) identisch in
+die Admin-UI übertragen. Vollständige Befehlsreferenz für `tseCli` (alle
+Befehle, Fehlercodes, Entwickler-TSE-Reset): `docs/TSE-CLI-Referenz.md`.
+
+### 8.4 TSE in der Admin-UI konfigurieren
+
+Nach dem ersten Start des Backends (Abschnitt 10) **und** nach der
+Hardware-Inbetriebnahme (Abschnitt 8.3): Einstellungen → System →
+"Auto-erkennen" klickt sich durch alle aktuell gemounteten
+Wechseldatenträger und trägt den ersten Treffer automatisch ein. Danach
+Client-ID und TimeAdmin-PIN **exakt identisch zu den beim `setup`-Aufruf
+verwendeten Werten** eintragen und speichern — abweichende Werte hier
+lösen denselben Sperrrisiko-Mechanismus aus, der oben die Reihenfolge
+begründet. Danach über "TSE testen" verifizieren (`hasPassedSelfTest:
+true` erwartet).
 
 ---
 
