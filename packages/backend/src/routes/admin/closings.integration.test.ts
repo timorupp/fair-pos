@@ -34,6 +34,16 @@ beforeEach(async () => {
   await setSystemSetting('system_serial', 'FairPOS-2026-TESTAAAAAA');
 });
 
+/** Formats a `Date` as `YYYY-MM-DD` (server-local calendar day). */
+function fmtDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Today's calendar day as `YYYY-MM-DD`, real time — closing behaviour now depends on the actual gap to "today" (Bug A fix), so fixture dates must be relative, not a historical constant. */
+const TODAY = fmtDay(new Date());
+/** Yesterday's calendar day as `YYYY-MM-DD`. */
+const YESTERDAY = fmtDay(new Date(Date.now() - 24 * 3600 * 1000));
+
 /**
  * Inserts an invoice + one paid order_item to give the register some turnover.
  * Returns the invoice id.
@@ -63,7 +73,7 @@ async function insertPaidInvoice(date: string, gross: number): Promise<string> {
 describe('POST /api/admin/registers/:id/closings', () => {
   it('creates a Z-Bon with the next sequential number', async () => {
     const app = await getTestApp();
-    await insertPaidInvoice('2026-06-24 12:00:00', 10);
+    await insertPaidInvoice(`${TODAY} 12:00:00`, 10);
     const response = await app.inject({
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
       headers: { cookie: adminCookie },
@@ -77,9 +87,9 @@ describe('POST /api/admin/registers/:id/closings', () => {
 
   it('increments z_number per register', async () => {
     const app = await getTestApp();
-    await insertPaidInvoice('2026-06-24 12:00:00', 10);
+    await insertPaidInvoice(`${TODAY} 12:00:00`, 10);
     await app.inject({ method: 'POST', url: `/api/admin/registers/${registerId}/closings`, headers: { cookie: adminCookie } });
-    await insertPaidInvoice('2026-06-24 13:00:00', 5);
+    await insertPaidInvoice(`${TODAY} 13:00:00`, 5);
     const r2 = await app.inject({
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
       headers: { cookie: adminCookie },
@@ -100,7 +110,7 @@ describe('POST /api/admin/registers/:id/closings', () => {
 
   it('links the closed invoices to the new closing (daily_closing_id set)', async () => {
     const app = await getTestApp();
-    const invoiceId = await insertPaidInvoice('2026-06-24 12:00:00', 10);
+    const invoiceId = await insertPaidInvoice(`${TODAY} 12:00:00`, 10);
     const response = await app.inject({
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
       headers: { cookie: adminCookie },
@@ -114,7 +124,7 @@ describe('POST /api/admin/registers/:id/closings', () => {
 
   it('enqueues a print job when the register has a printer', async () => {
     const app = await getTestApp();
-    await insertPaidInvoice('2026-06-24 12:00:00', 10);
+    await insertPaidInvoice(`${TODAY} 12:00:00`, 10);
     const response = await app.inject({
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
       headers: { cookie: adminCookie },
@@ -131,10 +141,8 @@ describe('POST /api/admin/registers/:id/closings', () => {
   // correctly dated Z-Bon.
   it('produces one correctly dated Z-Bon per distinct calendar day (not one lump closing stamped as today)', async () => {
     const app = await getTestApp();
-    const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
-    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    await insertPaidInvoice(`${fmt(yesterday)} 12:00:00`, 10); // an old, never-closed day
-    await insertPaidInvoice('2026-06-24 09:00:00', 5);         // a second, distinct day
+    await insertPaidInvoice(`${YESTERDAY} 12:00:00`, 10); // an old, never-closed day
+    await insertPaidInvoice(`${TODAY} 09:00:00`, 5);       // today
 
     const response = await app.inject({
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
@@ -149,13 +157,69 @@ describe('POST /api/admin/registers/:id/closings', () => {
          FROM daily_closing WHERE register_id = $1 ORDER BY z_number`,
       [registerId],
     );
-    // z_number order follows chronological day order (closeAllPendingDays
-    // processes days ascending), not insertion order — 2026-06-24 predates
-    // "yesterday" so it gets the lower z_number.
-    expect(stored.rows[0]!.business_date).toBe('2026-06-24');
-    expect(Number(stored.rows[0]!.total_gross)).toBe(5);
-    expect(stored.rows[1]!.business_date).toBe(fmt(yesterday));
-    expect(Number(stored.rows[1]!.total_gross)).toBe(10);
+    // z_number order follows chronological day order: the past-pending
+    // catch-up (yesterday) runs before the separate "close today" step.
+    expect(stored.rows[0]!.business_date).toBe(YESTERDAY);
+    expect(Number(stored.rows[0]!.total_gross)).toBe(10);
+    expect(stored.rows[1]!.business_date).toBe(TODAY);
+    expect(Number(stored.rows[1]!.total_gross)).toBe(5);
+  });
+
+  // Bug A (2026-09-06 Z-Bon live test): a calendar day with genuinely zero
+  // invoices ("a gap") could never get a daily_closing row before, since the
+  // old day-list came from DISTINCT invoice dates — the gap day stayed
+  // "ausstehend" forever no matter how often the register was closed. The
+  // day list now comes from findPendingDaysForRegister() instead, which
+  // walks every calendar day, so a gap day gets an explicit Nullabschluss.
+  it('closes a gap day with zero invoices as an explicit Nullabschluss, not just the days with real turnover', async () => {
+    const app = await getTestApp();
+    const twoDaysAgo = fmtDay(new Date(Date.now() - 48 * 3600 * 1000));
+    // twoDaysAgo has turnover, YESTERDAY has none at all (the gap), TODAY has turnover again.
+    await insertPaidInvoice(`${twoDaysAgo} 12:00:00`, 10);
+    await insertPaidInvoice(`${TODAY} 09:00:00`, 5);
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().closings).toHaveLength(3);
+
+    const stored = await pool.query<{ business_date: string; is_zero_closing: boolean }>(
+      `SELECT to_char(business_date, 'YYYY-MM-DD') AS business_date, is_zero_closing
+         FROM daily_closing WHERE register_id = $1 ORDER BY z_number`,
+      [registerId],
+    );
+    expect(stored.rows.map((r) => r.business_date)).toEqual([twoDaysAgo, YESTERDAY, TODAY]);
+    expect(stored.rows[1]!.is_zero_closing).toBe(true); // the gap day
+
+    // The register must actually be unlocked afterwards — the whole point of the fix.
+    const pending = await app.inject({
+      method: 'GET', url: '/api/admin/closings/pending', headers: { cookie: adminCookie },
+    });
+    const myReg = pending.json().registers.find((r: { register_id: string }) => r.register_id === registerId);
+    expect(myReg.pending_days).toEqual([]);
+  });
+
+  // Bug B (2026-09-06 Z-Bon live test): clicking "Tagesabschluss jetzt
+  // durchführen" repeatedly on an idle, already-closed register used to
+  // mint a fresh Nullabschluss every single time.
+  it('does not create a second Nullabschluss when clicked again on an already-closed, still-idle register', async () => {
+    const app = await getTestApp();
+    const first = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    expect(first.json().closings).toHaveLength(1); // the one-time idle Nullabschluss
+
+    const second = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    expect(second.json().closings).toHaveLength(0);
+
+    const count = await pool.query(`SELECT COUNT(*)::int AS n FROM daily_closing WHERE register_id = $1`, [registerId]);
+    expect(count.rows[0]!.n).toBe(1);
   });
 
   it('rejects unauthenticated requests with 401', async () => {
@@ -285,33 +349,12 @@ describe('POST /api/admin/registers/:id/close-pending', () => {
   });
 });
 
-describe('POST /api/admin/closings/close-all', () => {
-  it('closes every register in one call', async () => {
-    const app = await getTestApp();
-    const reg2 = await createTestRegister({ name: 'R2', type: 'receipt_register', printerId });
-    await insertPaidInvoice('2026-06-24 12:00:00', 10);
-    // Plant some turnover on the second register too
-    await pool.query(
-      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
-       VALUES ($1, $2, 'sales_receipt', 'cash', $3)`,
-      [reg2.id, 999, '2026-06-24 13:00:00'],
-    );
-    const response = await app.inject({
-      method: 'POST', url: '/api/admin/closings/close-all',
-      headers: { cookie: adminCookie },
-    });
-    expect(response.statusCode).toBe(200);
-    expect(response.json().closings.length).toBe(2);
-  });
-});
-
 describe('Authentication is required', () => {
   it('all closing endpoints reject requests without an admin_session', async () => {
     const app = await getTestApp();
     for (const url of [
       `/api/admin/registers/${registerId}/closings`,
       `/api/admin/registers/${registerId}/close-pending`,
-      '/api/admin/closings/close-all',
     ]) {
       const r = await app.inject({ method: 'POST', url });
       expect(r.statusCode, `expected 401 for ${url}`).toBe(401);

@@ -49,7 +49,11 @@
   }
 
   /**
-   * Re-inserts the `XXX-XXX-XXX` hyphens for display.
+   * Re-inserts the `XXX-XXX-XXX` hyphens for display. Appends a trailing
+   * hyphen as soon as a group of 3 is complete (not only once the next
+   * character is typed) — otherwise "ABC" looks identical to a PIN that
+   * really is just "ABC", and the user can't tell the hyphen is
+   * auto-inserted rather than something they need to type themselves.
    *
    * @param normalized - Separator-free, uppercase PIN.
    * @returns The hyphen-grouped display form.
@@ -57,13 +61,37 @@
   function format(normalized: string): string {
     const groups: string[] = [];
     for (let i = 0; i < normalized.length; i += 3) groups.push(normalized.slice(i, i + 3));
-    return groups.join('-');
+    let result = groups.join('-');
+    if (normalized.length > 0 && normalized.length % 3 === 0 && normalized.length < PIN_LENGTH) {
+      result += '-';
+    }
+    return result;
   }
 
   /** Reformats the field as the user types or pastes — handles both `ABC123XYZ` and `ABC-123-XYZ` paste input. */
   function onPinInput(e: Event) {
     const target = e.currentTarget as HTMLInputElement;
     pinDisplay = format(normalize(target.value));
+  }
+
+  /**
+   * Widens Backspace/Delete to also remove the adjacent auto-inserted
+   * hyphen's real neighbor — without this, deleting the hyphen right after
+   * a completed group of 3 (now shown immediately, see `format`) leaves the
+   * PIN itself untouched, since `format` just re-inserts the same hyphen —
+   * a single Backspace would visibly do nothing.
+   *
+   * @param e - The keydown event from the PIN input.
+   */
+  function onPinKeydown(e: KeyboardEvent) {
+    const target = e.currentTarget as HTMLInputElement;
+    const pos = target.selectionStart;
+    if (pos === null || pos !== target.selectionEnd) return; // only a plain caret, not an active range selection
+    if (e.key === 'Backspace' && pos > 0 && target.value[pos - 1] === '-') {
+      target.setSelectionRange(pos - 2, pos);
+    } else if (e.key === 'Delete' && pos < target.value.length && target.value[pos] === '-') {
+      target.setSelectionRange(pos, pos + 2);
+    }
   }
 
   /**
@@ -108,10 +136,11 @@
           <input
             id="pin"
             class="pin-input"
-            type="text"
+            type={showPin ? 'text' : 'password'}
             inputmode="text"
             value={pinDisplay}
             oninput={onPinInput}
+            onkeydown={onPinKeydown}
             maxlength={MAX_DISPLAY_LENGTH}
             placeholder="XXX-XXX-XXX"
             autocomplete="off"
@@ -121,12 +150,17 @@
             disabled={loading}
             required
           />
-          <!-- The input's own text is transparent (see .pin-input color rules) —
-               this overlay is the only thing that actually renders the value,
-               so masking can replace PIN characters with a dot while leaving
-               the hyphen separators plainly visible (Task #125). Same font
-               metrics as .pin-input so it lines up exactly over the real
-               caret; pointer-events: none passes clicks/typing through. -->
+          <!-- The input's own text is transparent (see .pin-input color rules)
+               — this overlay is the only thing that actually renders the
+               value, so masking can replace PIN characters with a dot while
+               leaving the hyphen separators plainly visible (Task #125). The
+               input itself still toggles real type="password"/"text" too —
+               selecting the field's (invisible) text would otherwise still
+               reveal the real characters through the browser's default
+               ::selection styling, which doesn't honor a transparent color.
+               Same font metrics as .pin-input so the overlay lines up exactly
+               over the real caret; pointer-events: none passes clicks/typing
+               through. -->
           <div class="pin-input-overlay" aria-hidden="true">
             {showPin ? pinDisplay : maskExceptHyphens(pinDisplay)}
           </div>
@@ -265,9 +299,12 @@
 
   /* The input itself never shows visible text (see below) — .pin-input-overlay
      renders the value instead, so masking can dot out the PIN while leaving
-     the hyphen separators visible. Both share the exact same font metrics/
-     padding/border width so the overlay's text sits precisely over the
-     input's own (invisible) text and caret. */
+     the hyphen separators visible. The real input's type still toggles
+     password/text alongside this (see the template) so selecting the field
+     can't reveal the real characters through the browser's own selection
+     styling. Both share the exact same font metrics/padding/border width so
+     the overlay's text sits precisely over the input's own (invisible) text
+     and caret. */
   .pin-input,
   .pin-input-overlay {
     font-family: ui-monospace, 'SF Mono', Consolas, monospace;

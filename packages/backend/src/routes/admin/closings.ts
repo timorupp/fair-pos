@@ -1,11 +1,14 @@
 /**
- * Daily-closing (Z-Bon) endpoints.
+ * Daily-closing (Z-Bon) endpoints, nested under `/registers/:id/closings`.
+ * Each closing assigns a fresh per-register sequential `z_number`,
+ * aggregates everything not yet assigned to a previous closing, persists
+ * the result, and queues an ESC/POS print job on the register's printer.
  *
- * Per-register endpoints are nested under `/registers/:id/closings`; the
- * "close all" shortcut lives at `/closings/close-all`. Each closing assigns
- * a fresh per-register sequential `z_number`, aggregates everything not yet
- * assigned to a previous closing, persists the result, and queues an ESC/POS
- * print job on the register's printer.
+ * The former system-wide "Alle Kassen abschließen" shortcut
+ * (`POST /closings/close-all`) was removed (Nutzerentscheidung 2026-09-06,
+ * D-054-Nachbesserung) — closing every register in one blind bulk action
+ * was judged too risky; each register is now closed individually from its
+ * own detail page.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -15,7 +18,7 @@ import {
   computeClosingTotals, type ClosingInvoice, type ClosingItem,
 } from '../../closing/totals.js';
 import { buildZBonBlocks } from '../../closing/blocks.js';
-import { pendingClosingDays, localDateString } from '../../closing/pending.js';
+import { localDateString } from '../../closing/pending.js';
 import { findPendingDaysForRegister } from '../../closing/pending-db.js';
 import { loadClosingById } from '../../closing/load.js';
 import { renderZBonPdf } from '../../closing/pdf.js';
@@ -205,43 +208,68 @@ async function closeRegister(registerId: string, userName: string, date?: string
 }
 
 /**
- * Closes a register for every distinct calendar day it currently has
- * unassigned invoices for — one Z-Bon per day, oldest first, INCLUDING
- * today (unlike `findPendingDaysForRegister`, which deliberately excludes
- * today since it exists only to catch up old backlog). Used by both "Alle
- * Kassen abschließen" and the single-register "Kasse jetzt abschließen"
- * button (Task #106): closing without this split used to stamp every
- * unassigned invoice — regardless of which day it actually belongs to —
- * with today's date, leaving a genuinely open older day permanently marked
- * "offen" even though its revenue had already been swept into a
- * wrong-dated Z-Bon.
+ * Closes every outstanding past calendar day for a register, oldest first —
+ * one Z-Bon per day. Draws the day list from `findPendingDaysForRegister()`,
+ * the same function that drives the "ausstehend" lock/banner — a day is
+ * only ever in this list because a closing is genuinely still missing for
+ * it, so a day with zero invoices (a gap with no bookings at all) still
+ * produces an explicit Nullabschluss instead of being silently un-closeable
+ * forever (the previous implementation derived its day list from `DISTINCT
+ * created_at::date` on unassigned invoices instead, which could never
+ * produce a day that had no invoices to begin with). Deliberately never
+ * touches today — see `closeToday` below for that.
  *
- * A register with NO unassigned invoices at all (fully idle) still gets
- * exactly one (zero) closing, stamped with today via `closeRegister`'s own
- * `current_date` fallback — preserves the pre-existing auto-zero-closing
- * behaviour for idle registers without backfilling a Nullabschluss for
- * every day of inactivity.
+ * Shared by the per-register "ausstehende Tage nachholen" endpoint and by
+ * "Tagesabschluss jetzt durchführen" (which additionally closes today
+ * afterwards) — a single day-list source avoids the two ever disagreeing
+ * on what counts as pending.
+ *
+ * @param registerId - The register to catch up.
+ * @param userName - Name of the administrator performing the closings.
+ * @param today - Reference "now"; injected for testability.
+ * @returns One `CloseResult` per produced Z-Bon, oldest day first (empty if nothing was pending).
+ */
+async function closePastPendingDays(
+  registerId: string, userName: string, today: Date = new Date(),
+): Promise<CloseResult[]> {
+  const pending = await findPendingDaysForRegister(registerId, today);
+  const results: CloseResult[] = [];
+  for (const day of pending) {
+    results.push(await closeRegister(registerId, userName, day));
+  }
+  return results;
+}
+
+/**
+ * Closes today for a register — unless there is nothing at all to close
+ * (no unassigned invoices) AND today has already been closed once. Without
+ * this guard, clicking "Tagesabschluss jetzt durchführen" repeatedly on an
+ * idle, already-caught-up register would keep minting a fresh Nullabschluss
+ * for the same business day every time. A register that DOES have new
+ * unassigned invoices always gets closed regardless of whether today was
+ * already closed before — same-day interim closings remain possible, only
+ * the pointless repeat-Nullabschluss case is suppressed.
  *
  * @param registerId - The register to close.
  * @param userName - Name of the administrator performing the closing.
- * @returns One `CloseResult` per produced Z-Bon, oldest day first.
+ * @param today - Reference "now"; injected for testability.
+ * @returns The produced `CloseResult`, or `null` if there was nothing to close.
  */
-async function closeAllPendingDays(registerId: string, userName: string): Promise<CloseResult[]> {
-  const daysResult = await query<{ day: string }>(
-    `SELECT DISTINCT created_at::date::text AS day
-       FROM invoice
-      WHERE register_id = $1 AND daily_closing_id IS NULL
-      ORDER BY day`,
+async function closeTodayUnlessAlreadyClosed(
+  registerId: string, userName: string, today: Date = new Date(),
+): Promise<CloseResult | null> {
+  const unassigned = await query(
+    `SELECT 1 FROM invoice WHERE register_id = $1 AND daily_closing_id IS NULL LIMIT 1`,
     [registerId],
   );
-  if (daysResult.rows.length === 0) {
-    return [await closeRegister(registerId, userName)];
+  if ((unassigned.rowCount ?? 0) === 0) {
+    const existing = await query(
+      `SELECT 1 FROM daily_closing WHERE register_id = $1 AND business_date = $2::date`,
+      [registerId, localDateString(today)],
+    );
+    if ((existing.rowCount ?? 0) > 0) return null;
   }
-  const results: CloseResult[] = [];
-  for (const row of daysResult.rows) {
-    results.push(await closeRegister(registerId, userName, row.day));
-  }
-  return results;
+  return closeRegister(registerId, userName);
 }
 
 /**
@@ -253,16 +281,21 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
   /**
-   * POST /api/admin/registers/:id/closings — closes the register: one Z-Bon
-   * per distinct calendar day it has unassigned invoices for (Task #106),
-   * not a single lump closing stamped with today's date regardless of which
-   * day the invoices actually belong to. Returns one entry per produced
-   * Z-Bon (closing id, Z-number, zero-closing flag, print job id).
+   * POST /api/admin/registers/:id/closings — "Tagesabschluss jetzt
+   * durchführen": catches up every outstanding past day first (same
+   * definition as "ausstehende Tage nachholen", see `closePastPendingDays`),
+   * then closes today too — unless today already has a closing, in which
+   * case that step is skipped rather than minting a duplicate Nullabschluss.
+   * Returns one entry per produced Z-Bon (closing id, Z-number,
+   * zero-closing flag, print job id).
    */
   app.post<{ Params: { id: string } }>('/registers/:id/closings', async (req, reply) => {
     const { id } = req.params;
     try {
-      const closings = await closeAllPendingDays(id, req.adminUser.name);
+      const today = new Date();
+      const closings = await closePastPendingDays(id, req.adminUser.name, today);
+      const todayClosing = await closeTodayUnlessAlreadyClosed(id, req.adminUser.name, today);
+      if (todayClosing) closings.push(todayClosing);
       return reply.send({ closings });
     } catch (err) {
       const e = err as Error & { httpStatus?: number };
@@ -309,30 +342,6 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * POST /api/admin/closings/close-all — system-wide shortcut: closes every
-   * register that has at least one unassigned invoice OR (per Anforderungen)
-   * no prior closing for the calendar day. Closes ALL registers, which lets
-   * the auto-zero-closing requirement reuse the same code path. Each
-   * register produces one Z-Bon per distinct calendar day it has unassigned
-   * invoices for (Task #106), not a single lump closing per register.
-   */
-  app.post('/closings/close-all', async (req, reply) => {
-    const regs = await query<{ id: string }>(`SELECT id FROM register ORDER BY name`);
-    const closings: CloseResult[] = [];
-    for (const r of regs.rows) {
-      try {
-        closings.push(...await closeAllPendingDays(r.id, req.adminUser.name));
-      } catch (err) {
-        const e = err as Error & { httpStatus?: number };
-        // If a register cannot be closed (deleted mid-loop etc.) we skip it but keep going.
-        if (e.httpStatus === 404) continue;
-        throw err;
-      }
-    }
-    return reply.send({ closings });
-  });
-
-  /**
    * GET /api/admin/closings/pending — pending-Z-Bon summary for every register.
    *
    * For each register, returns the list of past calendar days (oldest first) that
@@ -356,25 +365,22 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * POST /api/admin/registers/:id/close-pending — closes every outstanding past day
-   * for one register in oldest-first order. Each iteration produces a separate Z-Bon
-   * with the next sequential number. Stops on the first error.
+   * POST /api/admin/registers/:id/close-pending — "ausstehende Tage
+   * nachholen": closes every outstanding past day for one register in
+   * oldest-first order, never today (see `closePastPendingDays`). Each
+   * iteration produces a separate Z-Bon with the next sequential number.
+   * Stops on the first error.
    */
   app.post<{ Params: { id: string } }>('/registers/:id/close-pending', async (req, reply) => {
     const { id } = req.params;
-    const today = new Date();
-    const pending = await findPendingDaysForRegister(id, today);
-    const closings: CloseResult[] = [];
-    for (const day of pending) {
-      try {
-        closings.push(await closeRegister(id, req.adminUser.name, day));
-      } catch (err) {
-        const e = err as Error & { httpStatus?: number };
-        if (e.httpStatus) return reply.status(e.httpStatus).send({ error: e.message, closings });
-        throw err;
-      }
+    try {
+      const closings = await closePastPendingDays(id, req.adminUser.name);
+      return reply.send({ closings, pending_days_remaining: 0 });
+    } catch (err) {
+      const e = err as Error & { httpStatus?: number };
+      if (e.httpStatus) return reply.status(e.httpStatus).send({ error: e.message });
+      throw err;
     }
-    return reply.send({ closings, pending_days_remaining: 0 });
   });
 
   /**

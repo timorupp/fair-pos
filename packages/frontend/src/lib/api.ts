@@ -417,11 +417,6 @@ export const api = {
       reprint: (closingId: string): Promise<{ print_job_id: string }> =>
         request('POST', `/admin/closings/${closingId}/reprint`),
 
-      /** System-wide shortcut: closes the day on every register. */
-      closeAll: (): Promise<{
-        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean; print_job_id: string | null }[];
-      }> => request('POST', '/admin/closings/close-all'),
-
       /** Pending-Z-Bon summary across every register. Drives the global banner + badges. */
       pending: (): Promise<{
         today: string;

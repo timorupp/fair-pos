@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { adminUser, registerUser } from '$lib/stores/user';
+  import { pendingClosings, refreshPendingClosings } from '$lib/stores/pendingClosings';
   import { api } from '$lib/api';
   interface Props {
     children?: import('svelte').Snippet;
@@ -15,19 +16,7 @@
   /** Whether the layout is still verifying the admin session on first load. */
   let checking = $state(true);
 
-  /** Pending-Z-Bon summary, refreshed on mount and on route change. */
-  let pendingSummary: { total_pending_registers: number; total_pending_days: number } | null = $state(null);
   let pendingRefreshTimer: ReturnType<typeof setInterval> | null = null;
-
-  /**
-   * Loads the pending-Z-Bon summary so the global warning banner can show
-   * how many days/registers are awaiting an Abschluss. Silent on errors —
-   * the banner simply hides if the call fails.
-   */
-  async function loadPending() {
-    try { pendingSummary = await api.admin.closings.pending(); }
-    catch { pendingSummary = null; }
-  }
 
   onMount(async () => {
     // Verify the admin session BEFORE rendering any sidebar items — otherwise
@@ -45,16 +34,18 @@
     } finally {
       checking = false;
     }
-    loadPending();
+    refreshPendingClosings();
     // Auto-refresh every 5 minutes so a freshly arrived day pushes into the banner.
-    pendingRefreshTimer = setInterval(loadPending, 5 * 60 * 1000);
+    pendingRefreshTimer = setInterval(refreshPendingClosings, 5 * 60 * 1000);
   });
 
   onDestroy(() => { if (pendingRefreshTimer) clearInterval(pendingRefreshTimer); });
 
-  // Re-check whenever the URL changes (e.g. operator went through "Alle Ausstehenden abschließen").
+  // Re-check whenever the URL changes — a belt-and-braces catch-all in
+  // addition to pages calling `refreshPendingClosings()` themselves right
+  // after a closing action (see admin/registers/[id]/+page.svelte).
   run(() => {
-    $page.url.pathname, loadPending();
+    $page.url.pathname, refreshPendingClosings();
   });
 
   /**
@@ -236,10 +227,10 @@
   </aside>
 
   <main>
-    {#if pendingSummary && pendingSummary.total_pending_registers > 0}
+    {#if $pendingClosings && $pendingClosings.total_pending_registers > 0}
       <a class="closing-banner" href="/admin/registers">
-        <strong>⚠ {pendingSummary.total_pending_days} Tagesabschluss{pendingSummary.total_pending_days === 1 ? '' : '/üsse'} ausstehend</strong>
-        ({pendingSummary.total_pending_registers} Kasse{pendingSummary.total_pending_registers === 1 ? '' : 'n'} gesperrt)
+        <strong>⚠ {$pendingClosings.total_pending_days} Tagesabschluss{$pendingClosings.total_pending_days === 1 ? '' : '/üsse'} ausstehend</strong>
+        ({$pendingClosings.total_pending_registers} Kasse{$pendingClosings.total_pending_registers === 1 ? '' : 'n'} gesperrt)
         — bitte nachholen, damit weiter kassiert werden kann.
       </a>
     {/if}

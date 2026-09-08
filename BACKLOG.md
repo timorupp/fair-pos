@@ -271,32 +271,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Noch nicht bewertet: vollständiger Abgleich aller Tabellen gegen die
   aktuellen Migrationen, danach `docs/Datenmodell.dbml` korrigieren.
 
-- [Task] **#125** PIN-Login: Bindestriche bei maskierter Eingabe nicht mehr erkennbar; Eingabe nicht hart begrenzt
-  Nutzerbericht (2026-09-06), Folgeproblem aus der PIN-Maskierung
-  (`login/+page.svelte`, `type={showPin ? 'text' : 'password'}`): seit die
-  Eingabe standardmäßig maskiert ist, zeigt ein `type="password"`-Feld
-  jedes Zeichen — auch die automatisch eingefügten Bindestriche
-  (`XXX-XXX-XXX`) — einheitlich als Punkt/Kreis an. Für den Anwender ist
-  dadurch nicht mehr erkennbar, dass die Bindestriche automatisch
-  eingefügt werden und nicht selbst getippt werden müssen.
-
-  **Zwei Verbesserungswünsche:**
-  1. Bindestriche weiterhin im Klartext anzeigen, nur die eigentlichen
-     PIN-Zeichen maskieren. Ein natives `<input type="password">` kann das
-     nicht selektiv — bräuchte eine eigene Darstellung (z. B. ein
-     überlagerndes Anzeige-Element, das pro Zeichen zwischen Punkt und
-     Bindestrich unterscheidet, während das eigentliche `<input>` weiterhin
-     den echten Wert hält). Noch kein Lösungsweg festgelegt.
-  2. Eingabe hart auf das vorgegebene Format begrenzen — aktuell hat das
-     `<input>` kein `maxlength`-Attribut; die Begrenzung auf `PIN_LENGTH`
-     (9 Zeichen, `normalize()`) läuft ausschließlich über die
-     JS-Neuformatierung bei jedem `oninput`. Nutzerbeobachtung: aktuell
-     lässt sich mehr eingeben als das Format vorsieht — Ursache noch nicht
-     verifiziert (möglicherweise Paste- oder schnelle-Eingabe-Fall, bei dem
-     die Neuformatierung dem Tippen sichtbar hinterherhinkt). Naheliegende
-     Absicherung: `maxlength="11"` (9 Zeichen + 2 Bindestriche) zusätzlich
-     zur bestehenden JS-Logik als Defense-in-Depth.
-
 ## Findings
 
 - [Finding] **D-021** (niedrig, Reports) — Gefunden 2026-06-24 — Kontext: Während Auswertungen-Implementierung gefunden
@@ -318,6 +292,21 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 - [Finding] **D-052** (niedrig, Backend / Tests) — Gefunden 2026-08-31 — Kontext: Während Task #94/#95-Umsetzung (Zwei-Stufen-Admin, Veranstaltung als Hierarchieebene) gefunden
   `settings.receipt-preview.integration.test.ts` — Test `renders identically whether no logo is stored at all, or one is stored but the flag stays off (default)` ist zeitabhängig-flaky, reproduzierbar aber mit jeweils unterschiedlicher Byte-Differenz (einmal 6329 vs. 6328, dann 6327 vs. 6326). Ursache: `receipt/demo.ts`s `buildDemoReceipt(now: Date = new Date())` nutzt beim Aufruf ohne explizites Argument den echten aktuellen Zeitpunkt; die Route ruft sie ohne Override auf, und der Test macht zwei sequentielle `fetchPreview()`-HTTP-Aufrufe, die dadurch minimal unterschiedliche Zeitstempel einbetten — vermutlich wirkt sich das über schriftgrößen-/kerning-abhängige Fließkomma-Koordinaten im PDF-Content-Stream auf die Byte-Länge aus. Kein Zusammenhang mit Task #94/#95 — nur während der Vollständigkeits-Testläufe für Phase 2.3 aufgefallen (Test lief davor offenbar nie zufällig zu einem ungünstigen Zeitpunkt).
   Der Test sollte einen festen `now`-Zeitpunkt injizieren (z. B. Route-Parameter oder Test-Override) statt sich auf `new Date()` zu verlassen — noch nicht umgesetzt, da unabhängig vom aktuellen Task.
+
+- [Finding] **D-054** (hoch, Backend / Tagesabschluss (Z-Bon)) — Gefunden 2026-09-02 — Kontext: Live beim Testen der Admin-UI gefunden (2026-09-02)
+  Nutzer berichtet: „Alle Kassen abschließen" meldete 2 erstellte Z-Bons (2 Nullabschlüsse), aber nur eine Kasse hatte laut UI überhaupt einen offenen Tag — und genau diese Kasse zeigte danach weiterhin einen offenen Tag, der Z-Bon musste manuell nachgeholt werden. Ursache: `closeRegister()` stempelte den `daily_closing`-Eintrag immer mit `business_date = current_date` statt dem tatsächlichen Rechnungsdatum.
+  **Erledigt 2026-09-03:** neue Funktion `closeAllPendingDays()` ermittelte vor dem Abschließen die tatsächlich vorkommenden Kalendertage unter den unzugeordneten Rechnungen und schloss chronologisch aufsteigend einmal pro Tag. Siehe Task #106.
+
+  **Nachgebessert 2026-09-06 (Live-Test mit 3 Kassen und echten Lücken-Tagen deckte weitere Bugs auf):**
+  - **Kernursache:** `closeAllPendingDays()` ermittelte die zu schließenden Tage über `DISTINCT created_at::date` auf unzugeordneten Rechnungen — ein Kalendertag ganz ohne Buchung ("Lücke") tauchte darin nie auf und konnte dadurch **nie** geschlossen werden, obwohl die "ausstehend"-Erkennung (`findPendingDaysForRegister()`) für genau diesen Tag weiterhin einen Abschluss verlangte. Die betroffene Kasse blieb dadurch dauerhaft "1 Tag ausstehend", egal wie oft abgeschlossen wurde.
+  - **Zweiter Fund:** wiederholtes Klicken auf einer bereits vollständig abgeschlossenen, untätigen Kasse erzeugte bei jedem Klick einen weiteren Nullabschluss für denselben Geschäftstag (keine Prüfung, ob heute schon abgeschlossen war).
+  - **Fix:** `closeAllPendingDays()` durch `closePastPendingDays()` ersetzt — nutzt jetzt exakt dieselbe Tagesliste wie `findPendingDaysForRegister()` (eine einzige Quelle der Wahrheit statt zweier potenziell abweichender Definitionen), wodurch Lücken-Tage automatisch einen Nullabschluss bekommen. Ergänzt um `closeTodayUnlessAlreadyClosed()` — schließt den heutigen Tag nur, wenn tatsächlich unzugeordnete Rechnungen vorliegen oder heute noch gar nicht abgeschlossen wurde.
+  - **"Alle Kassen abschließen" (systemweiter Button + `POST /closings/close-all`) komplett entfernt** (Nutzerentscheidung) — ein blinder Sammel-Abschluss über alle Kassen wurde als zu riskant eingestuft; jede Kasse wird jetzt einzeln aus ihrer Detailseite abgeschlossen (`docs/Anforderungen.md` entsprechend nachgezogen).
+  - **Fehlender UI-Refresh behoben:** neuer Store `lib/stores/pendingClosings.ts` — beide Kassen-Detail-Aktionen ("Tagesabschluss jetzt durchführen", "ausstehende Tage nachholen") aktualisieren jetzt das globale Banner sofort, nicht erst nach manuellem Neuladen oder Routenwechsel.
+  - **"Null"-Markierung** in der Abschluss-Tabelle durch echte Spalte "Nullabschluss" (mit "X" bei Nullabschlüssen) ersetzt, statt eines unklaren Textes hinter den Buttons.
+  - Drei neue Integrationstests (Lücken-Tag-Nullabschluss + danach entsperrt, kein doppelter Nullabschluss bei wiederholtem Klick) laufen grün gegen eine echte Postgres-Instanz; bestehende Tests mit fest codiertem historischem Datum (`2026-06-24`) auf relative Daten umgestellt, da die Korrektur das Verhalten bei großem Abstand zu "heute" grundlegend ändert.
+
+  **Noch ausstehend: echter Live-Test.** Der Nutzer hat aktuell keine Kasse mit einem offenen/Lücken-Tag mehr (muss ~2 Tage abwarten, bis sich die Situation im echten Betrieb erneut ergibt) — bis dahin bleibt dieser Eintrag offen, auch wenn Code-Fix + automatisierte Tests bereits stehen.
 
 - [Finding] **D-055** (mittel, Backend / TSE-Health-Job) — Gefunden 2026-09-02 — Kontext: Bei Nutzerfragen zur TSE-Nutzung/Steuersätzen gefunden (2026-09-02)
   Nutzerfrage zu `dumpProcessData`-Testdaten führte zur Prüfung, ob die minütliche TSE-Gesundheitsprüfung (`tse/healthJob.ts`) der TSE schaden könnte. Die routinemäßige Minutenabfrage selbst ist unkritisch (`getTseInfo()`, reiner Lesebefehl, erzeugt keinen Log-Eintrag). Aber: `tick()`s "TSE ungesund"-Zweig ruft bei jedem Fehlschlag erneut `maintainTse()` auf (Selbsttest + `worm_tse_updateTime`) — **ohne jeglichen Backoff/Cooldown** über das 60-Sekunden-Ticksintervall hinaus. Der SDK-Header warnt explizit (Abschnitt „Common Issues" → „Update Time Frequency"): `worm_tse_updateTime` "should NOT be called significantly more often than announced in `worm_info_maxTimeSynchronizationDelay`" (typischerweise im Bereich von Stunden/einem Tag) — "the guaranteed number of supported update time commands is 150000... If the time gets synchronized more often than that, the TSE might get damaged." Würde eine TSE aus irgendeinem Grund dauerhaft als "ungesund" gemeldet (Bug, Wackelkontakt, Fehlkonfiguration, die `maintainTse()` scheinbar erfolgreich durchläuft, `hasValidTime` danach aber weiterhin `false` liefert), würde jede Minute ein neuer `updateTime`-Aufruf ausgelöst — bei diesem Takt wäre das 150.000er-Lebensdauer-Limit in ca. 104 Tagen aufgebraucht. Aktuell rein hypothetisch (im Normalbetrieb ist "ungesund" selten/kurz), aber genau die Art Dauerschleife, vor der die SDK-Doku ausdrücklich warnt. **Ergänzung 2026-09-06:** Dieselbe ungebremste Schleife hat noch ein zweites, deutlich akuteres Risiko — `maintainTse()` authentifiziert sich dabei mit dem `tse_time_admin_pin`-Setting. Laut SDK-Header (`WormDLL.h` Zeile 2273f.): "PINs have a retry counter of 3. If a wrong PIN has been entered 3 times, the PIN will be blocked and must be unblocked with the PUK." Ist die hinterlegte TimeAdmin-PIN aus irgendeinem Grund falsch (Tippfehler bei der Ersteinrichtung, versehentlich geändert), würde der minütliche Retry-Loop die PIN nach spätestens 3 Minuten (statt erst nach 104 Tagen wie beim Update-Time-Limit) dauerhaft blockieren — Entsperrung nur über die separat aufbewahrte PUK möglich. Deutlich dringlicher als das Lebensdauer-Limit, da es in Minuten statt Monaten eintritt.

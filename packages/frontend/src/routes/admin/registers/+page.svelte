@@ -14,10 +14,6 @@
   let loading = $state(true);
   let error = $state('');
 
-  let closingAll = $state(false);
-  let closeAllError = $state('');
-  let closeAllResult: { closings: { z_number: number; is_zero_closing: boolean }[] } | null = $state(null);
-
   let modalOpen = $state(false);
   let editing: RegisterRow | null = $state(null);
   let formName = $state('');
@@ -93,41 +89,15 @@
   }
 
   const typeLabel = (t: string) => t === 'receipt_register' ? 'Bonkasse' : 'Bedienungskasse';
-
-  /**
-   * Runs the system-wide "close all registers" shortcut. Shows the count of
-   * issued Z-Bons (regular + zero closings) on success.
-   */
-  async function closeAll() {
-    if (!confirm('Wirklich alle Kassen jetzt abschließen?')) return;
-    closingAll = true; closeAllError = ''; closeAllResult = null;
-    try {
-      closeAllResult = await api.admin.closings.closeAll();
-    } catch (e) {
-      closeAllError = e instanceof Error ? e.message : 'Fehler';
-    } finally {
-      closingAll = false;
-    }
-  }
 </script>
 
 <div class="page">
   <div class="page-header">
     <h1>Kassen</h1>
     <div class="header-actions">
-      <button class="btn-ghost" onclick={closeAll} disabled={closingAll}>
-        {closingAll ? 'Schließe ab…' : 'Alle Kassen abschließen'}
-      </button>
       <button class="btn-primary" onclick={openCreate}>+ Neu</button>
     </div>
   </div>
-  {#if closeAllResult}
-    <p class="success-text">
-      ✓ {closeAllResult.closings.length} Z-Bon{closeAllResult.closings.length === 1 ? '' : 's'} erstellt
-      ({closeAllResult.closings.filter((c) => c.is_zero_closing).length} Nullabschlüsse).
-    </p>
-  {/if}
-  {#if closeAllError}<p class="error-text">{closeAllError}</p>{/if}
 
   {#if loading}
     <p class="muted">Lade…</p>
@@ -225,7 +195,6 @@
 <style>
   .spacer { flex: 1; }
   .header-actions { display: flex; gap: 0.5rem; align-items: center; }
-  .success-text { color: #4caf7d; font-size: 0.875rem; margin: 0.5rem 0; }
   .lock-badge { color: #c87a00; font-weight: 600; font-size: 0.85rem; }
   .small { font-size: 0.85rem; }
   tr.locked-row { background: #f59e0b11; }

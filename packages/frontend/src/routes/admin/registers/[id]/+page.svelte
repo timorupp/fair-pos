@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { api } from '$lib/api';
+  import { refreshPendingClosings } from '$lib/stores/pendingClosings';
   import type { CashTransaction } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
@@ -96,9 +97,11 @@
     try {
       await api.admin.closings.closePending(id);
       await load();
+      await refreshPendingClosings();
     } catch (e) {
       catchUpError = e instanceof Error ? e.message : 'Fehler';
       await load();
+      await refreshPendingClosings();
     } finally { catchingUp = false; }
   }
 
@@ -113,6 +116,7 @@
       const result = await api.admin.closings.closeRegister(id);
       lastClosings = result.closings;
       await load();
+      await refreshPendingClosings();
     } catch (e) {
       closingError = e instanceof Error ? e.message : 'Fehler';
     } finally {
@@ -261,6 +265,7 @@
             <th class="num">Brutto</th>
             <th class="num">Bar</th>
             <th class="num">Stornos</th>
+            <th class="center">Nullabschluss</th>
             <th></th>
           </tr>
         </thead>
@@ -274,13 +279,13 @@
               <td class="num">{fmt(c.total_gross)} €</td>
               <td class="num">{fmt(c.total_cash)} €</td>
               <td class="num">{fmt(c.total_cancellations)} €</td>
+              <td class="center">{c.is_zero_closing ? 'X' : ''}</td>
               <td class="actions">
                 <a class="btn-ghost" href={api.admin.closings.pdfUrl(c.id)} target="_blank" rel="noopener">PDF</a>
                 <a class="btn-ghost" href={api.admin.closings.dsfinvkUrl(c.id)} rel="noopener" title="DSFinV-K-Export (ZIP)">DSFinV-K</a>
                 <button class="btn-ghost" onclick={() => reprintClosing(c.id)} disabled={reprintingClosingId === c.id}>
                   {reprintingClosingId === c.id ? '…' : 'Drucken'}
                 </button>
-                {#if c.is_zero_closing}<span class="muted small">Null</span>{/if}
               </td>
             </tr>
           {/each}
@@ -348,6 +353,7 @@
   .amount-negative { color: var(--color-danger); }
   .tx-actions { display: flex; gap: 0.5rem; }
   .section-title { font-size: 0.9rem; font-weight: 600; color: var(--color-text-muted); margin-top: 1.5rem; }
+  .center { text-align: center; }
   .spacer { flex: 1; }
   .closing-actions { display: flex; flex-direction: column; gap: 0.4rem; }
   .small { font-size: 0.85rem; }

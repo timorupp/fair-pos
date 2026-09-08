@@ -4119,6 +4119,39 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Toggle-Buttons steht dort jetzt eine reine, nicht-interaktive
   Überschrift ("Rückgeld berechnen").
 
+- [Task] **#125** PIN-Login: Bindestriche bei maskierter Eingabe nicht mehr erkennbar; Eingabe nicht hart begrenzt
+  Nutzerbericht (2026-09-06), Folgeproblem aus der PIN-Maskierung
+  (`login/+page.svelte`, `type={showPin ? 'text' : 'password'}`): seit die
+  Eingabe standardmäßig maskiert ist, zeigt ein `type="password"`-Feld
+  jedes Zeichen — auch die automatisch eingefügten Bindestriche
+  (`XXX-XXX-XXX`) — einheitlich als Punkt/Kreis an.
+
+  **Erledigt 2026-09-06:**
+  1. **Bindestriche bleiben sichtbar:** `login/+page.svelte` — das echte
+     `<input>` ist jetzt farblich transparent (`color`/`-webkit-text-fill-color:
+     transparent`, `caret-color` bleibt sichtbar), togglet aber weiterhin
+     echtes `type="password"`/`"text"` synchron mit dem Augen-Icon (verhindert,
+     dass markierter Text über die browsereigene `::selection`-Darstellung den
+     echten Wert doch preisgibt). Ein separates Overlay-`<div>` mit identischen
+     Font-Metriken rendert den sichtbaren Wert und maskiert dabei jedes
+     PIN-Zeichen als `•`, lässt Bindestriche aber im Klartext.
+  2. **Harte Formatbegrenzung:** `maxlength={MAX_DISPLAY_LENGTH}` (11 = 9
+     Zeichen + 2 Bindestriche) ergänzt.
+  3. **Bindestrich erscheint sofort:** `format()` hängt den Trennstrich direkt
+     nach Vervollständigung einer Dreiergruppe an (`length % 3 === 0`), statt
+     erst nach dem nächsten Zeichen — vorher sah "ABC" identisch aus wie ein
+     dreistelliger PIN ohne Trenner.
+  4. **Nebenbei behoben:** Backspace direkt nach einem automatisch
+     eingefügten Bindestrich hätte sonst wirkungslos gewirkt (Bindestrich
+     löschen, sofort automatisch neu eingefügt) — `onPinKeydown()` erweitert
+     Backspace/Delete an einem Bindestrich auf das benachbarte echte Zeichen.
+  Live im Browser bestätigt (Playwright-Screenshots: leer/maskiert/sichtbar/
+  Überlänge-Test — 16 eingegebene Zeichen korrekt auf `ABC-DEF-GHI` gekappt).
+  Typecheck + Frontend-Unit-Tests grün. Bekannter Kompromiss: Feld ist
+  `type="text"` statt durchgehend `"password"`, ein Screenreader liest den
+  echten Wert daher unabhängig von der visuellen Maskierung vor — für dieses
+  interne Kiosk-Tool als vertretbar eingestuft.
+
 ## Findings
 
 - [Finding] **D-001** (mittel, Datenmodell) — Gefunden 2026-06-24
@@ -4312,10 +4345,6 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
 - [Finding] **D-053** (mittel, Backend / Rechnungs-Vorschau) — Gefunden 2026-09-01 — Kontext: Während Task #105-Umsetzung (gemeinsames Zwischenformat für alle Belege) gefunden
   Vom vollen Integrationstest-Lauf aufgedeckt: `GET /api/admin/settings/receipt-preview` (Bon-Vorschau in Unternehmensdaten) zeigte das Firmenlogo nach der Block-Modell-Umstellung gar nicht mehr an, obwohl konfiguriert und die Checkbox aktiv. Ursache: die Route baut ihr `ReceiptData`-Objekt manuell zusammen (`logoPng`/`logoWidth`/`logoHeight`/`logoWidthFactor`), setzt aber `logoEscPos` nie — der neue gemeinsame Block-Builder (`receipt/blocks.ts`) verlangt für den Bild-Block jetzt beide Repräsentationen gleichzeitig (PNG fürs PDF, ESC/POS-Raster für den Ausdruck), da ein Block ja für beide Renderer gilt. Die echten Druck-Pfade (`receipt/data.ts`) setzten `logoEscPos` bereits korrekt — nur dieser eine Vorschau-Endpunkt (baute `ReceiptData` von Hand statt über `receipt/data.ts` zu laden) hatte die Lücke.
   **Behoben (2026-09-01):** `routes/admin/settings.ts`s `receipt-preview`-Handler ergänzt `logoEscPos: logo?.escposBytes ?? null`. Regressionstest `settings.receipt-preview.integration.test.ts` (bereits vorhanden, Task #98) hat den Fehler beim vollen Integrationslauf sofort aufgedeckt, keine neue Testdatei nötig. **Live bestätigt (2026-09-06).**
-
-- [Finding] **D-054** (hoch, Backend / Tagesabschluss (Z-Bon)) — Gefunden 2026-09-02 — Kontext: Live beim Testen der Admin-UI gefunden (2026-09-02)
-  Nutzer berichtet: „Alle Kassen abschließen" meldete 2 erstellte Z-Bons (2 Nullabschlüsse), aber nur eine Kasse hatte laut UI überhaupt einen offenen Tag — und genau diese Kasse zeigte danach weiterhin einen offenen Tag, der Z-Bon musste manuell nachgeholt werden. Ursache: `closeRegister()` stempelte den `daily_closing`-Eintrag immer mit `business_date = current_date` statt dem tatsächlichen Rechnungsdatum.
-  **Erledigt 2026-09-03:** neue Funktion `closeAllPendingDays()` (`routes/admin/closings.ts`) ermittelt vor dem Abschließen die tatsächlich vorkommenden Kalendertage unter den unzugeordneten Rechnungen (`DISTINCT created_at::date`) und ruft `closeRegister()` chronologisch aufsteigend einmal pro Tag auf — jeder Tag bekommt seinen eigenen, korrekt datierten Z-Bon, inklusive des heutigen Tages. Sonderfall Nullabschluss (Kasse ganz ohne unzugeordnete Rechnungen) bleibt erhalten. Beide Endpunkte (`POST /registers/:id/closings`, `POST /closings/close-all`) nutzen die neue Funktion; Response-Form auf `{ closings: CloseResult[] }` erweitert, Frontend (`admin/registers/[id]/+page.svelte`) entsprechend angepasst. Dedizierter Integrationstest deckt Multi-Tage-Fall ab. Siehe Task #106.
 
 - [Finding] **D-056** (mittel, Backend / TSE + DSFinV-K + Z-Bon) — Gefunden 2026-09-02 — Kontext: Bei Nutzerfragen zur TSE-Nutzung/Steuersätzen gefunden (2026-09-02)
   Nutzerfrage: wie verhält sich das Kassenbeleg-V1-Format bei einer künftigen USt-Satz-Änderung (z. B. Regelsteuersatz 19 %→20 %)? Code-Recherche zeigt drei unabhängige, hart codierte Annahmen über die aktuell gültigen Sätze 19/7, die bei einer Satzänderung silent falsch würden: (1) `tse/processData.ts::taxSlot()` — exakter Floatvergleich gegen 19/7; (2) `exports/dsfinvk/rows.ts::ustSchluessel()` — identische Logik; (3) `closing/totals.ts::computeClosingTotals()` — Schwellenwerte statt Exaktvergleich. Zusätzlich druckt `closing/blocks.ts` die Z-Bon-Zeilen mit fest einprogrammiertem Text "19 %"/"7 %".

@@ -62,7 +62,6 @@ Administrator
 │   ├── Artikel
 │   ├── Stornogründe
 │   ├── Kassen
-│   │   ├── [Button: Alle Kassen abschließen]
 │   │   └── [Kassendetail]
 │   │       ├── Kassenstand
 │   │       ├── Wechselgeldeinlage
@@ -817,7 +816,7 @@ Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — una
 
 - ~~**Tagesabschluss (Z-Bon)**~~ — **Entschieden:**
   - **Je Kasse:** In der Kassendetailansicht (unter Kassen) kann der Tagesabschluss für diese Kasse manuell angestoßen werden
-  - **Systemweit:** In der Kassenübersicht gibt es zusätzlich einen Button „Alle Kassen abschließen" als Shortcut
+  - ~~**Systemweit:** In der Kassenübersicht gibt es zusätzlich einen Button „Alle Kassen abschließen" als Shortcut~~ — **Wieder entfernt (Nutzerentscheidung 2026-09-06):** ein blinder Sammel-Abschluss über alle Kassen wurde bei einem Live-Test als zu riskant eingestuft (siehe D-054-Nachbesserung) — jede Kasse wird jetzt ausschließlich einzeln aus ihrer eigenen Detailansicht abgeschlossen.
   - **Automatische Nullabschlüsse:** Das System erzeugt täglich automatisch Nullabschlüsse für alle Kassen, die an diesem Tag keinen Umsatz hatten — stellt lückenlose Z-Bon-Nummerierung sicher
   - **Z-Bon-Nummerierung:** Fortlaufend je Kasse, nie zurückgesetzt
   - **Inhalt Z-Bon:** Unternehmensname, Datum/Uhrzeit, Z-Bon-Nummer, Bruttoeinnahmen nach MwSt.-Satz, Stornos, Zahlungsartensummen, Nullstellungszähler (Details: `Rechtliche-Anforderungen.md`)
