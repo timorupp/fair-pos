@@ -79,10 +79,26 @@ tseCli <mount-pfad> setup <client-id> <credential-seed> <admin-puk> <admin-pin> 
 Wraps `worm_tse_needs_setup` (bricht ab, falls die TSE schon eingerichtet
 ist — Absicht, kein Bug) + `worm_tse_setup_ext`. Bringt eine fabrikneue TSE
 von "nicht initialisiert" in "betriebsbereit": setzt PUK/alle PINs,
-registriert den Client, aktiviert den CTSS-Zugriff. `credential-seed`/
-`admin-puk`/`admin-pin` stammen aus den Swissbit-Vertragsunterlagen des
-Vereins — nicht aus diesem Repo. Vollständiges Praxisbeispiel:
-`docs/Installationsanleitung.md` Abschnitt 8.4.
+registriert den Client, aktiviert den CTSS-Zugriff.
+
+- `credential-seed` kommt **nicht** vom TSE-Hersteller direkt, sondern wird
+  vom TSE-**Händler** vergeben (häufig, aber nicht garantiert,
+  `SwissbitSwissbit`) — im Zweifel beim Händler nachfragen.
+- `admin-puk`/`admin-pin` sind **nicht** vorgegebene Werte aus
+  Herstellerunterlagen — jede TSE hat werksseitig einen ursprünglichen
+  PUK/PIN, den dieser Aufruf zwingend durch neue, selbst gewählte Werte
+  ersetzt. `<admin-puk>`/`<admin-pin>` sind also die vom Verein selbst
+  festgelegten neuen Werte.
+
+Vollständiges Praxisbeispiel: `docs/Installationsanleitung.md` Abschnitt 8.4.
+
+> ⚠️ **Ein falscher Credential-Seed kann die TSE unwiderruflich sperren.**
+> `setup` versucht mit dem angegebenen Credential-Seed den werksseitigen
+> PUK zu ändern. Ist der Credential-Seed falsch, wird daraus der falsche
+> ursprüngliche PUK abgeleitet und der Änderungsversuch schlägt fehl. Nach
+> **drei** solchen Fehlversuchen ist die TSE **dauerhaft und unwiderruflich
+> gesperrt** — keine Wiederherstellung möglich. Credential-Seed vor dem
+> ersten Aufruf unbedingt beim Händler verifizieren.
 
 **Einziger Befehl in dieser Liste, den FairPOS selbst nie aufruft.** Ein
 `setupTse()`-Wrapper existiert zwar in `tse/client.ts`, wird aber von keiner

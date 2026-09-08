@@ -343,15 +343,34 @@ speichern.
 
 **Kein Admin-UI-Schritt** — bewusst nicht Teil der UI (siehe
 `docs/TSE-Integration.md` Abschnitt 7): die einmalige Aktivierung der TSE
-läuft direkt über die `tseCli`-Binary, mit Zugangsdaten (Credential-Seed,
-Admin-PUK, Admin-PIN), die aus den Swissbit-Vertragsunterlagen des Vereins
-kommen — nicht aus diesem Repo, und laut KassenSichV-Vorgabe nirgends
-dauerhaft speicherbar (auch nicht in der Bash-History):
+läuft direkt über die `tseCli`-Binary. Zugangsdaten dafür, laut
+KassenSichV-Vorgabe nirgends dauerhaft speicherbar (auch nicht in der
+Bash-History):
+
+- **Credential-Seed** — kommt **nicht** vom TSE-Hersteller direkt, sondern
+  wird vom TSE-**Händler** vergeben (häufig, aber nicht garantiert,
+  `SwissbitSwissbit`) — im Zweifel immer beim Händler nachfragen, nicht
+  raten.
+- **Admin-PUK/Admin-PIN** — jede TSE hat werksseitig einen ursprünglichen
+  PUK/PIN, der bei diesem `setup`-Aufruf aber zwingend durch neue,
+  selbst gewählte Werte ersetzt wird. Die hier übergebenen `<admin-puk>`/
+  `<admin-pin>` sind also die **neuen**, vom Verein selbst festgelegten
+  Werte — nicht Werte aus irgendwelchen Herstellerunterlagen.
 
 ```bash
 sudo -u fairpos /opt/fairpos/packages/backend/native/tse-cli/vendor/bin/tseCli \
   <mount-pfad> setup <client-id> <credential-seed> <admin-puk> <admin-pin> <time-admin-pin>
 ```
+
+> ⚠️ **Ein falscher Credential-Seed kann die TSE unwiderruflich sperren.**
+> `setup` versucht mit dem angegebenen Credential-Seed den werksseitigen
+> PUK zu ändern. Ist der Credential-Seed falsch (Tippfehler), wird daraus
+> der falsche ursprüngliche PUK abgeleitet — der Änderungsversuch schlägt
+> fehl. Nach **drei** solchen Fehlversuchen ist die TSE **dauerhaft und
+> unwiderruflich gesperrt** (keine Wiederherstellung möglich). Vor dem
+> ersten `setup`-Aufruf den Credential-Seed daher unbedingt beim
+> TSE-Händler verifizieren, nicht aus dem Gedächtnis oder einer Vermutung
+> eintragen.
 
 `<mount-pfad>`/`<client-id>`/`<time-admin-pin>` entsprechen genau den Werten
 aus Abschnitt 8.3. Danach in der Admin-UI über "TSE testen" verifizieren

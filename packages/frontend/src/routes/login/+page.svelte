@@ -34,6 +34,8 @@
   });
 
   const PIN_LENGTH = 9;
+  /** `XXX-XXX-XXX` — 9 PIN characters plus the 2 auto-inserted hyphens. */
+  const MAX_DISPLAY_LENGTH = 11;
 
   /**
    * Strips separators/whitespace and uppercases — accepts typed or pasted
@@ -62,6 +64,18 @@
   function onPinInput(e: Event) {
     const target = e.currentTarget as HTMLInputElement;
     pinDisplay = format(normalize(target.value));
+  }
+
+  /**
+   * Masks every PIN character but keeps the hyphen separators visible — so
+   * masking the field doesn't also hide which parts are auto-inserted
+   * formatting the user never has to type themselves (Task #125).
+   *
+   * @param value - The hyphen-formatted display value.
+   * @returns The same value with every non-hyphen character replaced by `•`.
+   */
+  function maskExceptHyphens(value: string): string {
+    return value.replace(/[^-]/g, '•');
   }
 
   async function handleLogin() {
@@ -94,10 +108,11 @@
           <input
             id="pin"
             class="pin-input"
-            type={showPin ? 'text' : 'password'}
+            type="text"
             inputmode="text"
             value={pinDisplay}
             oninput={onPinInput}
+            maxlength={MAX_DISPLAY_LENGTH}
             placeholder="XXX-XXX-XXX"
             autocomplete="off"
             autocorrect="off"
@@ -106,6 +121,15 @@
             disabled={loading}
             required
           />
+          <!-- The input's own text is transparent (see .pin-input color rules) —
+               this overlay is the only thing that actually renders the value,
+               so masking can replace PIN characters with a dot while leaving
+               the hyphen separators plainly visible (Task #125). Same font
+               metrics as .pin-input so it lines up exactly over the real
+               caret; pointer-events: none passes clicks/typing through. -->
+          <div class="pin-input-overlay" aria-hidden="true">
+            {showPin ? pinDisplay : maskExceptHyphens(pinDisplay)}
+          </div>
           <button
             type="button"
             class="toggle-visibility"
@@ -239,12 +263,49 @@
     position: relative;
   }
 
-  .pin-input {
+  /* The input itself never shows visible text (see below) — .pin-input-overlay
+     renders the value instead, so masking can dot out the PIN while leaving
+     the hyphen separators visible. Both share the exact same font metrics/
+     padding/border width so the overlay's text sits precisely over the
+     input's own (invisible) text and caret. */
+  .pin-input,
+  .pin-input-overlay {
     font-family: ui-monospace, 'SF Mono', Consolas, monospace;
     font-size: 1.3rem;
     letter-spacing: 0.15em;
     text-align: center;
     padding-right: 2.75rem;
+  }
+
+  .pin-input {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--color-text);
+  }
+
+  .pin-input::placeholder {
+    color: var(--color-text-muted);
+    -webkit-text-fill-color: var(--color-text-muted);
+    opacity: 1;
+  }
+
+  .pin-input-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1rem;
+    padding-right: 2.75rem;
+    border: 1px solid transparent;
+    color: var(--color-text);
+    pointer-events: none;
+    white-space: pre;
+    overflow: hidden;
+  }
+
+  .pin-input:disabled ~ .pin-input-overlay {
+    opacity: 0.5;
   }
 
   .toggle-visibility {

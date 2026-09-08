@@ -271,6 +271,32 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Noch nicht bewertet: vollständiger Abgleich aller Tabellen gegen die
   aktuellen Migrationen, danach `docs/Datenmodell.dbml` korrigieren.
 
+- [Task] **#125** PIN-Login: Bindestriche bei maskierter Eingabe nicht mehr erkennbar; Eingabe nicht hart begrenzt
+  Nutzerbericht (2026-09-06), Folgeproblem aus der PIN-Maskierung
+  (`login/+page.svelte`, `type={showPin ? 'text' : 'password'}`): seit die
+  Eingabe standardmäßig maskiert ist, zeigt ein `type="password"`-Feld
+  jedes Zeichen — auch die automatisch eingefügten Bindestriche
+  (`XXX-XXX-XXX`) — einheitlich als Punkt/Kreis an. Für den Anwender ist
+  dadurch nicht mehr erkennbar, dass die Bindestriche automatisch
+  eingefügt werden und nicht selbst getippt werden müssen.
+
+  **Zwei Verbesserungswünsche:**
+  1. Bindestriche weiterhin im Klartext anzeigen, nur die eigentlichen
+     PIN-Zeichen maskieren. Ein natives `<input type="password">` kann das
+     nicht selektiv — bräuchte eine eigene Darstellung (z. B. ein
+     überlagerndes Anzeige-Element, das pro Zeichen zwischen Punkt und
+     Bindestrich unterscheidet, während das eigentliche `<input>` weiterhin
+     den echten Wert hält). Noch kein Lösungsweg festgelegt.
+  2. Eingabe hart auf das vorgegebene Format begrenzen — aktuell hat das
+     `<input>` kein `maxlength`-Attribut; die Begrenzung auf `PIN_LENGTH`
+     (9 Zeichen, `normalize()`) läuft ausschließlich über die
+     JS-Neuformatierung bei jedem `oninput`. Nutzerbeobachtung: aktuell
+     lässt sich mehr eingeben als das Format vorsieht — Ursache noch nicht
+     verifiziert (möglicherweise Paste- oder schnelle-Eingabe-Fall, bei dem
+     die Neuformatierung dem Tippen sichtbar hinterherhinkt). Naheliegende
+     Absicherung: `maxlength="11"` (9 Zeichen + 2 Bindestriche) zusätzlich
+     zur bestehenden JS-Logik als Defense-in-Depth.
+
 ## Findings
 
 - [Finding] **D-021** (niedrig, Reports) — Gefunden 2026-06-24 — Kontext: Während Auswertungen-Implementierung gefunden
