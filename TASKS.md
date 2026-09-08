@@ -309,10 +309,8 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `docs/Installationsanleitung.md` Abschnitt 13 (inkl. Fund: `set-time`
   funktioniert gar nicht, solange NTP aktiv ist — Abschnitt 13.1 lässt es
   vorher deaktivieren). Unit- + Integrationstests für beide Routen/Funktionen.
-  **Noch offen (bewusst zurückgestellt für die nächste Session):** die
-  eigentliche `sudoers`-Datei muss noch live auf dem Server angelegt werden
-  (SSH-Zugriff nötig, hat niemand aus dieser Session heraus) — bis dahin
-  liefern beide Endpunkte eine klare Fehlermeldung statt zu funktionieren.
+  **Erledigt (2026-09-06):** `sudoers`-Datei ist auf dem Produktivserver
+  angelegt, beide Endpunkte funktionieren live.
 - [x] **#61** Shutdown-Button in der Admin-UI
   Gewünscht, damit ein normaler Vereins-Nutzer den Server kontrolliert
   herunterfahren kann, ohne auf die Shell zu müssen. Gleiches technisches
@@ -482,10 +480,10 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     Admin-UI (Systemeinstellungen → System, künftig ggf. eigene Seite siehe
     Task #65) — eigener Button neben "TSE testen", nicht nur automatisch
     beim Start.
-  - Ergebnisse jedes Laufs **in ein Protokoll schreiben** (Format/Ablageort
+  - ~~Ergebnisse jedes Laufs in ein Protokoll schreiben (Format/Ablageort
     noch offen — eigene DB-Tabelle vs. Logdatei; ggf. an das bestehende
     `tse_outage`-Muster anlehnen, das für TSE-Ausfälle schon eine Art
-    Protokollierung macht).
+    Protokollierung macht).~~ **Won't do (Nutzerentscheidung 2026-09-06).**
   - Fehlerhafte Checks sollen sich im Dashboard (Task #63) zeigen.
 
   **Teilweise vorgezogen (2026-08-26):** Der manuelle Button (dritter Punkt
@@ -1055,10 +1053,8 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Bedienungskasse (`register/[id]/tables/[tableId]/order/+page.svelte`)
   nutzt für dieselbe Sektion bereits `height: 35vh; min-height: 220px;`
   (feste Höhe) und zeigt das Problem vermutlich deshalb nicht — als
-  möglicher Ansatzpunkt, aber noch offen, ob eine feste Höhe für die
-  Bonkasse tatsächlich die richtige Lösung ist (z. B. Platzverbrauch bei
-  leerer/kurzer Bestellung auf kleinen Bildschirmen gegenprüfen) oder ob ein
-  anderes Layout-Konzept besser passt.
+  möglicher Ansatzpunkt (durch die unten dokumentierte finale Lösung
+  überholt, siehe dort).
 
   **Design festgelegt und umgesetzt (2026-08-26):** Nutzervorgabe — echtes
   responsives Verhalten statt nur eine feste Höhe: auf schmalen Bildschirmen
@@ -1079,7 +1075,10 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   `overflow-y: auto` auf `.order-section`, `flex:1; overflow:auto` auf
   `.grid-section`) entfernt; Sidebar-Verhalten (`position: sticky` +
   `max-height`/`overflow-y: auto`) nur innerhalb des Media Querys aktiv.
-  **Live bestätigt (2026-08-26).**
+  **Live bestätigt (2026-08-26).** **Erneut bestätigt (2026-09-06):**
+  Nutzer bestätigt, aktuelle Lösung (Artikel-Grid oben, Bestellliste
+  darunter auf schmalen Bildschirmen) funktioniert weiterhin, Problem
+  bleibt gelöst.
 - [x] **#77** Button-Style app-weit überarbeiten (Kontrast aktuell sehr stark: weiß auf dunkelblau)
   Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
   „Ggf. den Button-Style optimieren für alle Buttons". Technischer Fund als
@@ -1354,8 +1353,9 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
 - [x] **#86** Freitext pro Artikel in der Bedienungskasse (zusätzlich zu den vordefinierten Optionen)
   Nutzerwunsch (2026-08-26): die Bedienung soll zu jedem bestellten Artikel
   einen Freitext eingeben können (z. B. Sonderwünsche, die keine der
-  vordefinierten Optionen abdeckt). UI-Gestaltung bewusst noch offen — nur
-  als Backlog-Eintrag angelegt.
+  vordefinierten Optionen abdeckt). UI-Gestaltung zum Zeitpunkt dieser
+  Notiz noch offen — durch die weiter unten dokumentierte Umsetzung und
+  Nutzerentscheidungen überholt.
   **Backend-seitig bereits verifiziert, kein Handlungsbedarf dort:**
   `order_item.options` ist eine reine `TEXT`-Spalte (`0001_initial.sql`,
   keine FK/Länge/Check-Constraint gegen `product_option`);
@@ -1428,6 +1428,8 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   beschriebenen Bestandteile (`freetextOpen`/`freetextValue`,
   `OPTIONS_MAX_LENGTH`, `optionsCombinedLabel`/`optionsTooLong`,
   `.freetext-link`-Styling) existieren exakt wie dokumentiert.
+  **Live bestätigt (2026-09-06):** vom Nutzer als umgesetzt und getestet
+  bestätigt.
 
   **Nachgebessert (2026-08-27, im Zuge von #88):** bisher war nur das
   Freitextfeld selbst auf 50 Zeichen begrenzt (`maxlength`), nicht die
@@ -1993,7 +1995,8 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
      `min-height`), damit alle Buttons einheitlich hoch sind, mit
      `overflow: hidden` bei zu langem Text abschneiden statt umzubrechen.
   Beide Ansätze schließen sich nicht zwingend aus (feste Höhe + optionale
-  manuelle Umbrüche) — Entscheidung/Kombination noch offen.
+  manuelle Umbrüche) — durch die unten dokumentierte Entscheidung (Lösung 1)
+  überholt.
 
   **Konzept korrigiert (2026-08-29):** Annahme oben ("dasselbe Feld, das
   auch auf Rechnungen/DSFinV-K erscheint") war falsch — geprüft anhand
@@ -2046,7 +2049,8 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     `slot.label || nameOf(slot.article_id)`, zusätzlich `white-space:
     pre-line` auf `.grid-btn` für manuelle Umbrüche. Bestellliste/
     Notiz-Dialog-Titel zeigen weiterhin den echten Artikelnamen (nicht das
-    Slot-Label) — bewusste Nutzerentscheidung.
+    Slot-Label) — bewusste Nutzerentscheidung. **Live bestätigt
+    (2026-09-06):** manuell vorgegebener Zeilenumbruch funktioniert.
   - Neue Tests: `admin-routes.integration.test.ts` (Label/Hidden werden
     beim Speichern und Duplizieren übernommen),
     `register-session.integration.test.ts` (versteckter Slot fehlt in der
@@ -2102,7 +2106,7 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
     tatsächlich auf die konfigurierte IP auflöst, statt dass der erste
     echte Test ein Gerät am Einlass ist.
 
-  **Architekturfragen, noch offen:**
+  **Architekturfragen (durch die unten dokumentierte Umsetzung überholt):**
   - Welche DNS-Server-Software läuft im Hintergrund. `dnsmasq` naheliegend
     (leichtgewichtig, Standard-Ubuntu-Paket, kann Forwarder + einzelne
     Host-Overrides gleichzeitig, passt zum bisherigen „native Ubuntu, kein
@@ -2170,6 +2174,17 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   eigene IP als DNS-Server, Geräte lösen die konfigurierte Domain korrekt
   auf. Der zuvor einzige offene Punkt (fehlende passende Router-Hardware)
   ist damit erledigt.
+
+  **Gegen `docs/Installationsanleitung.md` Abschnitt 16 geprüft
+  (2026-09-06):** Code und Setup-Anleitung stimmen exakt überein —
+  Skriptpfad (`/opt/fairpos/scripts/dns-config.sh`, parameterlos),
+  Staging-Verzeichnis/-Dateiname (`config.dnsStagingDir`/`fairpos.conf`,
+  Default `/var/lib/fairpos/dns-staging`, wie in 16.2 angelegt),
+  Sudoers-Regel (`fairpos ALL=(root) NOPASSWD:
+  /opt/fairpos/scripts/dns-config.sh`, exakt wie `execFile('sudo', […])`
+  im Code aufruft) und der Auflösungstest (fragt die konfigurierte eigene
+  IP ab, nicht `127.0.0.1` — passend zum in 16.1 dokumentierten
+  `bind-interfaces`-Grund). Keine Abweichung gefunden.
 - [x] **#93** Geschäftszahlen auf der Admin-Startseite (Folgeaufgabe aus #63)
   Herausgelöst aus Task #63 (2026-08-29, Nutzerentscheidung: Fokus dort
   zunächst nur auf Systemzustand/Fehler). Idee: zusätzliche Kennzahlen-
@@ -3564,6 +3579,9 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Nutzervorgabe — Komfort fürs Testing, geringes Risiko).**
 
 - [ ] **#109** Schutz gegen zu häufige TSE-Zeitsynchronisation (`worm_tse_updateTime`)
+  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
+  Release erledigen.**
+
   **Klassifikation: Bug (Schwere: mittel bis hoch — kein akutes Problem im
   Normalbetrieb, aber ein von der SDK-Doku ausdrücklich als schädlich
   beschriebenes Szenario ohne jede Absicherung im Code).** Gefunden
@@ -3776,6 +3794,9 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   Nutzervorgabe).**
 
 - [ ] **#112** Firmendaten/Logo auf Rechnungs-PDF und Reprint werden live geladen statt zum Verkaufszeitpunkt eingefroren
+  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
+  Release erledigen.**
+
   **Klassifikation: Bug (niedrig-mittel).** Nutzerauftrag 2026-09-02,
   Fund per Code-Recherche bestätigt — siehe `DANGER.md` D-058. Von
   zwei parallelen Audits zum Thema GoBD-Unveränderbarkeit; siehe auch
@@ -4191,3 +4212,84 @@ erhalten bleibt und erledigte Aufgaben als Projekthistorie sichtbar sind.
   - Kombination/anderer Ansatz.
 
   Vor der Umsetzung: Nutzerentscheidung, welcher Ansatz gewünscht ist.
+
+- [ ] **#120** TSE-Zertifikatskette für `tse.csv` (`TSE_ZERTIFIKAT_I/II`)
+  **Klassifikation: Feature/Doku-Lücke (klein, nicht blockierend).**
+  Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 und
+  `docs/TSE-Integration.md` Abschnitt 11 dokumentiert, ohne eigenen Task —
+  hier nachgezogen (2026-09-06).
+
+  **Problem:** `tse.csv`s Felder `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II`
+  bleiben im DSFinV-K-Export leer. `native/tse-cli` liest die volle
+  Zertifikatskette (`worm_getLogMessageCertificate`) noch nicht aus — dafür
+  wird laut SDK die CTSS-Schnittstelle benötigt, die der CLI-Wrapper bisher
+  nicht anspricht. `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind
+  bereits befüllt (Task #46) — genau die drei für die QR-Code-Prüfung
+  relevanten Felder; die Zertifikatskette betrifft nur `tse.csv`s
+  Vollständigkeit, nicht die Prüfbarkeit der einzelnen Belege.
+
+  Noch nicht bewertet: Aufwand für die CTSS-Anbindung in `native/tse-cli`,
+  Priorisierung.
+
+- [ ] **#121** TSE-Rohdaten-Backup-/Archivierungsstrategie
+  **Klassifikation: Feature/Konzept-Lücke.** Bisher nur in
+  `docs/TSE-Integration.md` Abschnitt 11 als offener Punkt genannt, kein
+  eigener Task — hier nachgezogen (2026-09-06).
+
+  **Problem:** Der TAR-Export der TSE-Rohdaten (`worm_export_tar`,
+  TR-03153-konform) ist seit Task #103 über die Admin-UI herunterladbar —
+  was danach mit der Datei passieren soll (regelmäßig ziehen? wo dauerhaft
+  ablegen? gemeinsam mit dem Datenbank-Backup aus Task #25, oder getrennt?)
+  ist weiterhin nicht festgelegt. Bewusst nicht Teil von Task #25 (reines
+  `pg_dump`-Datenbank-Backup) oder #103 (nur der Download-Mechanismus
+  selbst).
+
+  Noch nicht bewertet: gehört das in `docs/Organisatorische-Anleitung.md`
+  als Betriebsroutine, oder braucht es zusätzliche Automatisierung
+  (z. B. automatischer periodischer Export)?
+
+- [ ] **#122** DSFinV-K CSV-/index.xml-Format gegen GoBD-Anlage verifizieren
+  **Klassifikation: Compliance-Verifikation (noch nicht durchgeführt).**
+  Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 als offener
+  Punkt genannt, kein eigener Task — hier nachgezogen (2026-09-06).
+
+  **Problem:** Das aktuelle CSV-/`index.xml`-Dateiformat (Feldtrennzeichen,
+  Kopfzeile, Zeichensatz) folgt der verbreiteten Konvention (Semikolon,
+  UTF-8, CRLF, GDPdU-artige `index.xml`), wurde aber nie gegen die separate
+  GoBD-Anlage "Ergänzende Informationen zur Datenträgerüberlassung"
+  verifiziert — nur gegen die DSFinV-K-Kernspezifikation v2.4 selbst.
+
+  Noch nicht bewertet: Beschaffung der GoBD-Anlage, Abgleich, ggf.
+  Anpassungsbedarf.
+
+- [ ] **#123** `service_order`/`order_cancellation` ohne `daily_closing_id` — Zuordnung nur angenähert
+  **Klassifikation: Bewusste Vereinfachung, bisher nicht als Task erfasst.**
+  Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 als
+  "bewusste Vereinfachung (dokumentiert, nicht gelöst)" beschrieben — hier
+  nachgezogen (2026-09-06).
+
+  **Problem:** Anders als `invoice` haben `service_order`/
+  `order_cancellation` keine `daily_closing_id`-Referenz und werden im
+  DSFinV-K-Export daher über Kasse + Kalendertag (`business_date`)
+  angenähert, nicht über eine exakte Zuordnung zum tatsächlichen
+  Kassenabschluss (`exports/dsfinvk/load.ts`). Bei mehreren Abschlüssen
+  derselben Kasse am selben Tag kann das zu einer falschen Zuordnung
+  führen.
+
+  Noch nicht bewertet: wie oft mehrere Abschlüsse pro Kasse und Tag
+  praktisch vorkommen, ob eine echte `daily_closing_id`-Spalte (Migration)
+  nötig ist oder die Näherung für den praktischen Betrieb ausreicht.
+
+- [ ] **#124** `docs/Datenmodell.dbml` gegen das echte Schema abgleichen
+  **Klassifikation: Doku-Bereinigung.** Bei Task #91 (2026-08-29) aufgefallen
+  — nur die für diese Änderung direkt relevanten Felder (`label`, `hidden`
+  auf `register_layout_slot`) wurden nachgezogen, eine größere Bereinigung
+  bewusst als eigene Aufgabe offen gelassen — hier angelegt (2026-09-06).
+
+  **Bekannte Drift (mindestens):** `register_layout.register_id`/
+  `is_default` existieren laut Task #91 im echten Schema gar nicht mehr.
+  Vermutlich weitere Abweichungen, da `docs/Datenmodell.dbml` nicht bei
+  jeder Migration systematisch mitgepflegt wird.
+
+  Noch nicht bewertet: vollständiger Abgleich aller Tabellen gegen die
+  aktuellen Migrationen, danach `docs/Datenmodell.dbml` korrigieren.
