@@ -403,10 +403,19 @@ Swissbits Beispiel).
   inkl. TSE-Signaturalgorithmus/Zeitformat/Public-Key für den QR-Code —
   **✅ Task #46 umgesetzt** (August 2026), siehe `tse/processData.ts`,
   `tse/certificateInfo.ts`, `receipt/qr.ts` und
-  `docs/Rechtliche-Anforderungen.md` Abschnitt 6.5. Rest davon, bewusst
-  zurückgestellt (kleiner, nicht blockierend): die volle
+  `docs/Rechtliche-Anforderungen.md` Abschnitt 6.5. Rest davon — die volle
   TSE-Zertifikatskette (`worm_getLogMessageCertificate`, nur für `tse.csv`s
-  `TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung).
+  `TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung) — seit
+  Task #120 (2026-09-06) auslesbar (`native/tse-cli`s `info`-Kommando,
+  Feld `certificateChain`; erfordert laut `WormDLL.h` keinen Nutzerlogin,
+  nur eine aktive CTSS-Schnittstelle, die ab TSE-Firmware ≥2.0.0 automatisch
+  aktiv ist, sobald der Self-Test bestanden wurde). Compile+Link gegen die
+  echte vendorte SDK erfolgreich verifiziert; die eigentliche Aufteilung der
+  zurückgegebenen PEM-Kette auf `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` bleibt
+  bewusst offen, bis das gegen den verbindlichen DSFinV-K-Spezifikationstext
+  verifiziert ist (siehe `BACKLOG.md` Task #120) — außerdem noch kein
+  Live-Hardware-Test, ob das Auslesen an einer echten TSE tatsächlich ohne
+  Login gelingt.
 - Fachliche Zuordnung, welcher Vorgang welchen `processType` bekommt — siehe
   `Anforderungen.md`.
 - Backup/Archivierungsstrategie der TSE-Rohdaten — der Download selbst ist

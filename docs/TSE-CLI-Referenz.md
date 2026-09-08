@@ -126,8 +126,11 @@ tseCli <mount-pfad> info
 ```
 Kein `client-id`-Argument nötig. Liefert Self-Test-Status, verbleibende
 Signaturen/Transaktionen, Zertifikatsablauf, Seriennummer,
-Signaturalgorithmus/Zeitformat/Public-Key. Entspricht dem
-"TSE testen"-Button.
+Signaturalgorithmus/Zeitformat/Public-Key sowie (Task #120) die volle
+Zertifikatskette (`worm_getLogMessageCertificate`, Base64-kodiertes PEM,
+Feld `certificateChain`) für `tse.csv`s `TSE_ZERTIFIKAT_I/II` — leeres
+Feld statt Fehlschlag, falls die TSE sie gerade nicht liefern kann (z. B.
+Self-Test noch nicht bestanden). Entspricht dem "TSE testen"-Button.
 
 ### `exportTar` — Rohdaten-Vollexport
 

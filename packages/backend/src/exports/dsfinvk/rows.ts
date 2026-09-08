@@ -87,7 +87,11 @@ export interface DsfinvkSource {
   tseClientId: string | null;
   tseSerial: string | null;
   /** Signature algorithm / log-time format / public key, cached from the TSE (see tse/certificateInfo.ts) — `null` when unavailable (unconfigured/unreachable TSE), in which case `tse.csv`'s corresponding fields stay empty. */
-  tseCertificate: { signatureAlgorithm: string; logTimeFormat: string; publicKeyBase64: string } | null;
+  tseCertificate: {
+    signatureAlgorithm: string; logTimeFormat: string; publicKeyBase64: string;
+    /** Base64-encoded PEM certificate chain (Task #120) — not yet wired into TSE_ZERTIFIKAT_I/II, see the comment where those are built below. */
+    certificateChainBase64: string;
+  } | null;
   company: {
     name: string;
     street: string;
@@ -191,10 +195,17 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     TSE_ZEITFORMAT: source.tseCertificate?.logTimeFormat ?? '',
     TSE_PD_ENCODING: 'UTF-8',
     TSE_PUBLIC_KEY: source.tseCertificate?.publicKeyBase64 ?? '',
-    // The certificate chain itself is not yet exposed by native/tse-cli
-    // (worm_getLogMessageCertificate, needs the CTSS interface) — see
-    // docs/TSE-Integration.md Abschnitt 11. Left empty rather than guessed;
-    // not required for QR-code verification, only for this file's completeness.
+    // The raw certificate chain is now readable (Task #120,
+    // source.tseCertificate?.certificateChainBase64 — a single PEM
+    // containing the TSE's own certificate followed by its issuers, leaf
+    // first) but deliberately not wired into these two columns yet: the
+    // exact split of one chain onto two separate fields still needs
+    // verifying against the authoritative DSFinV-K Anhang I/E spec text
+    // (which of possibly more than two certificates goes where, and what
+    // to do if the chain has only one or more than two entries) rather
+    // than guessed for a KassenSichV-relevant export — see BACKLOG.md
+    // Task #120. Not required for QR-code verification, only for this
+    // file's completeness.
     TSE_ZERTIFIKAT_I: '',
     TSE_ZERTIFIKAT_II: '',
   }] : [];

@@ -205,27 +205,59 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   relevanten Felder; die Zertifikatskette betrifft nur `tse.csv`s
   Vollständigkeit, nicht die Prüfbarkeit der einzelnen Belege.
 
-  Noch nicht bewertet: Aufwand für die CTSS-Anbindung in `native/tse-cli`,
-  Priorisierung.
+  **Weitgehend umgesetzt 2026-09-06 — Analyse und Auslesen fertig, ein
+  Rest bewusst offengelassen:**
+  - **Aufwandsanalyse (`WormDLL.h` geprüft):** `worm_getLogMessageCertificate`
+    verlangt laut Doku-Kommentar nur eine aktive CTSS-Schnittstelle, **keinen**
+    Nutzerlogin (anders als z. B. `worm_export_deleteStoredData`, das
+    ausdrücklich "the user Admin to be logged in" verlangt — dieser Satz
+    fehlt bei der Zertifikatsfunktion). Auf TSE-Firmware ≥2.0.0 ist die
+    CTSS-Schnittstelle laut `worm_info_isCtssInterfaceActive`-Doku ohnehin
+    automatisch aktiv, sobald der Self-Test bestanden wurde — kein
+    `worm_tse_ctss_enable`-Aufruf nötig (der wäre auf ≥2.0.0 ohnehin ein
+    No-Op). Zusätzlich bestätigt der bereits produktiv genutzte
+    `exportTar`-Befehl (`worm_export_tar`, identische
+    "nur CTSS aktiv"-Doku-Formulierung), dass diese Funktionsklasse im
+    bestehenden Code tatsächlich ohne Login funktioniert. Die CTSS-Anbindung
+    war damit **kein zusätzlicher Aufwand** — nur ein weiterer Auslese-Aufruf
+    im bereits bestehenden `info`-Kommando.
+  - **Umgesetzt:** `native/tse-cli/src/tseCli.cpp`s `cmdInfo()` ruft jetzt
+    zusätzlich `worm_getLogMessageCertificate` auf (Base64-kodiert im neuen
+    JSON-Feld `certificateChain`; leer statt Fehlschlag, falls die TSE sie
+    gerade nicht liefern kann). Durchgereicht über `tse/types.ts`s `TseInfo`
+    und `tse/certificateInfo.ts`s `TseCertificateInfo` (neues Feld
+    `certificateChainBase64`, prozessweit gecacht wie die anderen drei
+    Felder). 4 neue Unit-Tests (`certificateInfo.test.ts`).
+  - **Compile+Link gegen die echte vendorte SDK erfolgreich verifiziert**
+    (`build.sh` lief fehlerfrei mit `-Wall -Wextra`, der gebaute Binary lädt
+    `libWormAPI.so` korrekt und meldet bei ungültigem Mount-Pfad den
+    erwarteten `worm_init failed`-Fehler) — aber **kein Live-Hardware-Test**:
+    ob `worm_getLogMessageCertificate` an einer echten, physisch
+    angeschlossenen TSE tatsächlich ohne Login gelingt, ist bisher nur
+    durch die SDK-Dokumentation belegt, nicht durch einen echten Aufruf.
+  - **Bewusst nicht verdrahtet:** `exports/dsfinvk/rows.ts`s
+    `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` bleiben weiterhin leer (jetzt mit
+    Verweis auf `source.tseCertificate?.certificateChainBase64` im
+    Code-Kommentar). `worm_getLogMessageCertificate` liefert laut SDK-Doku
+    **eine** PEM-Datei mit mehreren Zertifikaten (erst das TSE-eigene, dann
+    dessen Aussteller) — wie genau diese eine Kette auf exakt zwei Spalten
+    aufzuteilen ist (welches Zertifikat wohin, was bei mehr/weniger als zwei
+    Einträgen passiert), wurde nicht geraten, da das ein KassenSichV-/
+    DSFinV-K-relevantes Feld ist. Noch offen: den verbindlichen
+    DSFinV-K-Anhang-I/E-Spezifikationstext dafür konsultieren, dann die
+    Verdrahtung ergänzen (reine Wire-up-Arbeit, keine weitere Native-Code-
+    Änderung nötig).
 
-- [Task] **#121** TSE-Rohdaten-Backup-/Archivierungsstrategie
-  **Klassifikation: Feature/Konzept-Lücke.** Bisher nur in
-  `docs/TSE-Integration.md` Abschnitt 11 als offener Punkt genannt, kein
-  eigener Task — hier nachgezogen (2026-09-06).
-
-  **Problem:** Der TAR-Export der TSE-Rohdaten (`worm_export_tar`,
-  TR-03153-konform) ist seit Task #103 über die Admin-UI herunterladbar —
-  was danach mit der Datei passieren soll (regelmäßig ziehen? wo dauerhaft
-  ablegen? gemeinsam mit dem Datenbank-Backup aus Task #25, oder getrennt?)
-  ist weiterhin nicht festgelegt. Bewusst nicht Teil von Task #25 (reines
-  `pg_dump`-Datenbank-Backup) oder #103 (nur der Download-Mechanismus
-  selbst).
-
-  Noch nicht bewertet: gehört das in `docs/Organisatorische-Anleitung.md`
-  als Betriebsroutine, oder braucht es zusätzliche Automatisierung
-  (z. B. automatischer periodischer Export)?
+  **Noch ausstehend: echter Live-Test.** Das Auslesen der Zertifikatskette
+  ist bisher nur gegen die reale SDK kompiliert/gelinkt, aber nie gegen
+  eine echte, physisch angeschlossene TSE ausgeführt worden — bis das
+  bestätigt ist, bleibt dieser Task offen, auch wenn der Code bereits
+  steht.
 
 - [Task] **#122** DSFinV-K CSV-/index.xml-Format gegen GoBD-Anlage verifizieren
+  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
+  Release erledigen.**
+
   **Klassifikation: Compliance-Verifikation (noch nicht durchgeführt).**
   Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 als offener
   Punkt genannt, kein eigener Task — hier nachgezogen (2026-09-06).

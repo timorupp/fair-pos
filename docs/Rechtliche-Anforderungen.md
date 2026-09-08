@@ -345,8 +345,9 @@ Public Key) liest `native/tse-cli`s `info`-Kommando jetzt aus
 (`worm_signatureAlgorithm`/`worm_logTimeFormat`/`worm_info_tsePublicKey`) und
 cacht sie prozessweit (fix pro TSE/Firmware, nicht pro Vorgang). Die volle
 Zertifikatskette (`worm_getLogMessageCertificate`, nur für `tse.csv`s
-`TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung) bleibt ein
-kleinerer, nicht blockierender Rest — siehe Abschnitt 6.7.
+`TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung) ist seit
+Task #120 auslesbar, aber noch nicht in die beiden Export-Spalten
+verdrahtet — siehe Abschnitt 6.7.
 
 ### 6.6 Kundendaten
 
@@ -380,13 +381,22 @@ angenähert, nicht über eine exakte Zuordnung zum Kassenabschluss. Bei mehreren
 Abschlüssen desselben Tages und derselben Kasse kann das zu einer falschen
 Zuordnung führen. Siehe `exports/dsfinvk/load.ts` für die genaue Logik.
 
-**Ebenfalls noch offen:** die volle TSE-Zertifikatskette (`TSE_ZERTIFIKAT_I/II`)
-bleibt leer — `native/tse-cli` liest sie noch nicht aus
-(`worm_getLogMessageCertificate`, benötigt die CTSS-Schnittstelle; s.
-`docs/TSE-Integration.md` Abschnitt 11). `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/
-`TSE_PUBLIC_KEY` sind seit der processData-Formatkorrektur (Abschnitt 6.5)
-befüllt — diese drei sind auch die für die QR-Code-Prüfung relevanten, die
-Zertifikatskette betrifft nur `tse.csv`s Vollständigkeit, nicht die Prüfbarkeit.
+**Ebenfalls noch offen:** `TSE_ZERTIFIKAT_I/II` bleiben in `tse.csv` leer.
+`native/tse-cli`s `info`-Kommando liest die volle Zertifikatskette
+(`worm_getLogMessageCertificate`) seit Task #120 (2026-09-06) technisch
+aus — laut `WormDLL.h` ohne Nutzerlogin, nur mit aktiver
+CTSS-Schnittstelle (ab TSE-Firmware ≥2.0.0 automatisch aktiv nach
+bestandenem Self-Test) —, aber die Aufteilung der zurückgegebenen
+PEM-Kette auf genau diese zwei Spalten ist bewusst noch nicht verdrahtet,
+bis das gegen den verbindlichen DSFinV-K-Spezifikationstext geprüft ist
+(nicht geraten für ein KassenSichV-relevantes Feld). Ebenfalls noch
+offen: ein Live-Hardware-Test, ob das Auslesen an einer echten TSE
+tatsächlich ohne Login gelingt (Compile+Link gegen die echte vendorte
+SDK bereits erfolgreich verifiziert, siehe `docs/TSE-Integration.md`
+Abschnitt 11). `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind seit
+der processData-Formatkorrektur (Abschnitt 6.5) befüllt — diese drei sind
+auch die für die QR-Code-Prüfung relevanten, die Zertifikatskette betrifft
+nur `tse.csv`s Vollständigkeit, nicht die Prüfbarkeit.
 Das genaue CSV-/index.xml-Dateiformat (Feldtrennzeichen, Kopfzeile) folgt der
 verbreiteten Konvention (Semikolon, UTF-8, CRLF, GDPdU-artige index.xml), ist
 aber nicht gegen die separate GoBD-Anlage "Ergänzende Informationen zur

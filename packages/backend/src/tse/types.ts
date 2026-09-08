@@ -38,6 +38,8 @@ export interface TseInfo {
   logTimeFormat: string;
   /** Base64-encoded public key, extracted from the TSE's certificate — fixed per TSE/firmware, needed to verify QR-code signatures and for `tse.csv` field `TSE_PUBLIC_KEY`. */
   publicKey: string;
+  /** Base64-encoded PEM certificate chain (`worm_getLogMessageCertificate`, Task #120), leaf certificate first — for `tse.csv` fields `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II`, not needed for QR-code verification. Empty string if the TSE couldn't provide it (e.g. self-test not yet passed). */
+  certificateChain: string;
 }
 
 /**

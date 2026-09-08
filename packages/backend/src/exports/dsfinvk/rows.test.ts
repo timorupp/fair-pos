@@ -16,7 +16,10 @@ function baseSource(vorgaenge: SourceVorgang[]): DsfinvkSource {
     systemSerial: 'FairPOS-2026-AAAAAAAAAA',
     tseClientId: 'FairPOS-1',
     tseSerial: 'aabbcc',
-    tseCertificate: { signatureAlgorithm: 'ecdsa-plain-SHA384', logTimeFormat: 'unixTime', publicKeyBase64: 'AAA=' },
+    tseCertificate: {
+      signatureAlgorithm: 'ecdsa-plain-SHA384', logTimeFormat: 'unixTime',
+      publicKeyBase64: 'AAA=', certificateChainBase64: '',
+    },
     company: {
       name: 'Testverein e.V.', street: 'Hauptstr. 1', postalCode: '12345', city: 'Musterstadt',
       taxNumber: '12/345/67890', vatId: null,

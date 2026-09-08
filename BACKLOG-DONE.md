@@ -4152,6 +4152,38 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   echten Wert daher unabhängig von der visuellen Maskierung vor — für dieses
   interne Kiosk-Tool als vertretbar eingestuft.
 
+- [Task] **#121** TSE-Rohdaten-Backup-/Archivierungsstrategie
+  Bisher nur in `docs/TSE-Integration.md` Abschnitt 11 als offener Punkt
+  genannt, kein eigener Task — hier nachgezogen (2026-09-06). Der TAR-Export
+  der TSE-Rohdaten (`worm_export_tar`, TR-03153-konform) ist seit Task #103
+  über die Admin-UI herunterladbar — was danach mit der Datei passieren
+  soll war nicht festgelegt.
+
+  **Vorab geklärte Rückfrage (Nutzer, 2026-09-06):** ob dafür ein
+  vollständiges `pg_dump`-Datenbank-Backup nötig ist oder die vorhandenen
+  veranstaltungsbezogenen Exporte (Excel/DSFinV-K/Rechnungs-ZIP je
+  Veranstaltung) ausreichen — Hintergrund: ein Veranstalter soll keine
+  fremden Veranstaltungen anderer Vereine vom selben (verliehenen) Server
+  herunterladen können. Recherche ergab: kein GoBD/KassenSichV-Passus
+  verlangt einen rohen DB-Dump speziell, nur maschinelle Auswertbarkeit in
+  DSFinV-K-Struktur — bereits durch die veranstaltungsbezogenen Exporte
+  erfüllt. Nichts fiskalisch Relevantes fehlt darin (nur nicht
+  aufbewahrungspflichtige Betriebskonfiguration bleibt außen vor). Das
+  Berechtigungsproblem besteht ohnehin nicht: `routes/admin/backup.ts`
+  nutzt bereits `authenticateSystemAdmin` (strikt System-Administrator-
+  exklusiv, siehe `middleware/authenticate.ts`), ein Veranstaltungs-
+  Administrator kommt an den vollen DB-Export gar nicht heran.
+
+  **Entscheidung (Nutzer): Option A — rein organisatorisch, keine
+  zusätzliche Automatisierung.** **Erledigt 2026-09-06:**
+  `docs/Organisatorische-Anleitung.md` Abschnitt 3 ("Backup-Konzept") um
+  einen neuen Punkt "TSE-Rohdatenexport (TAR)" ergänzt: regelmäßig im
+  selben Rhythmus wie das Datenbank-Backup ziehen (Einstellungen → TSE →
+  "Rohdaten exportieren"), auf demselben externen Medium ablegen, zwingend
+  vor jedem `deleteStoredData`-Aufruf ein frischer Export. Die bestehende
+  "Aufbewahrung"-Regelung (30 Tage täglich / 12 Monate monatlich / 10 Jahre
+  Archiv) gilt jetzt explizit für beide Backup-Arten gemeinsam.
+
 ## Findings
 
 - [Finding] **D-001** (mittel, Datenmodell) — Gefunden 2026-06-24

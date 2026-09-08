@@ -19,6 +19,7 @@
 
 #include <WormDLL/WormDLL.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -279,10 +280,16 @@ int cmdFinish(WormContext *ctx, int argc, char **argv) {
  * in the QR-code content (signature algorithm, log-time format, public key —
  * see docs/Rechtliche-Anforderungen.md Abschnitt 6.5/2). These three are
  * fixed per TSE/firmware, not per transaction, so callers can safely cache
- * them instead of re-reading on every receipt. The full certificate chain
- * (`worm_getLogMessageCertificate`, needed only for `tse.csv`'s
- * TSE_ZERTIFIKAT_I/II, not for QR-code verification) is a separate, still
- * open gap — see docs/TSE-Integration.md Abschnitt 11. */
+ * them instead of re-reading on every receipt. Also reads the full
+ * certificate chain (`worm_getLogMessageCertificate`, Task #120) needed for
+ * `tse.csv`'s TSE_ZERTIFIKAT_I/II — per `WormDLL.h`, that function's only
+ * stated precondition is an active CTSS interface (no specific user login,
+ * same precondition class as `worm_export_tar` below, which this project
+ * already calls successfully without logging in first), and on TSE
+ * firmware >= 2.0.0 the CTSS interface is active automatically once the
+ * self-test has passed (`worm_info_isCtssInterfaceActive` — "same as
+ * worm_info_hasPassedSelfTest"). Read tolerantly: on any error, report an
+ * empty chain instead of failing the whole `info` command. */
 int cmdInfo(WormContext *ctx) {
   WormInfo *info = worm_info_new(ctx);
   if (info == nullptr) return printError(WORM_ERROR_OUTOFMEM, "worm_info_new failed");
@@ -298,6 +305,26 @@ int cmdInfo(WormContext *ctx) {
   const unsigned char *publicKey;
   worm_uint publicKeyLength;
   worm_info_tsePublicKey(info, &publicKey, &publicKeyLength);
+
+  // Certificate chain (TSE_ZERTIFIKAT_I/II, tse.csv Anhang E). See the
+  // function doc comment above for why no user login is attempted here.
+  // Two-call pattern per WormDLL.h: first with a NULL buffer to learn the
+  // required length, then again with an allocated buffer of that size.
+  std::string certificateChainB64;
+  {
+    uint32_t certLen = 0;
+    WormError certErr = worm_getLogMessageCertificate(ctx, nullptr, &certLen);
+    if (certErr == WORM_ERROR_NOERROR && certLen > 0) {
+      std::vector<unsigned char> certBuf(certLen);
+      certErr = worm_getLogMessageCertificate(ctx, certBuf.data(), &certLen);
+      if (certErr == WORM_ERROR_NOERROR) {
+        certificateChainB64 = base64Encode(certBuf.data(), certLen);
+      }
+    }
+    // Any failure (CTSS not active yet, unsupported firmware, ...) leaves
+    // certificateChainB64 empty rather than aborting the whole `info` call —
+    // the other fields remain valid and useful on their own.
+  }
 
   std::printf(
       "{\"ok\":true,\"result\":{"
@@ -315,7 +342,8 @@ int cmdInfo(WormContext *ctx) {
       "\"tseSerialNumber\":\"%s\","
       "\"signatureAlgorithm\":\"%s\","
       "\"logTimeFormat\":\"%s\","
-      "\"publicKey\":\"%s\""
+      "\"publicKey\":\"%s\","
+      "\"certificateChain\":\"%s\""
       "}}\n",
       worm_info_hasPassedSelfTest(info) ? "true" : "false",
       worm_info_hasValidTime(info) ? "true" : "false",
@@ -327,7 +355,8 @@ int cmdInfo(WormContext *ctx) {
       worm_info_tseCertificationId(info), worm_info_formFactor(info),
       toHex(serial, serialLength).c_str(),
       worm_signatureAlgorithm(), worm_logTimeFormat(),
-      base64Encode(publicKey, publicKeyLength).c_str());
+      base64Encode(publicKey, publicKeyLength).c_str(),
+      certificateChainB64.c_str());
 
   worm_info_free(info);
   return 0;
