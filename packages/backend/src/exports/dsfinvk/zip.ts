@@ -1,12 +1,15 @@
-/** Packages the DSFinV-K CSV files + index.xml into a single ZIP buffer. */
+/** Packages the DSFinV-K CSV files + index.xml + its DTD into a single ZIP buffer. */
 import { ZipArchive } from 'archiver';
 import { toCsv } from './csv.js';
 import { buildIndexXml } from './index-xml.js';
+import { GDPDU_DTD_CONTENT, GDPDU_DTD_FILENAME } from './gdpduDtd.js';
 import type { DsfinvkExport } from './types.js';
 
 /**
  * Serialises a built export into a ZIP archive: one CSV file per non-empty
- * table plus `index.xml` describing them all.
+ * table, `index.xml` describing them all, and the DTD `index.xml`'s
+ * `<!DOCTYPE>` references — required to be alongside it on the medium (see
+ * `index-xml.ts`).
  *
  * @param data - The row data built by `buildDsfinvkExport`.
  * @returns The complete ZIP archive as a Buffer.
@@ -29,6 +32,7 @@ export async function buildDsfinvkZip(data: DsfinvkExport): Promise<Buffer> {
     archive.append(toCsv(rows), { name: filename });
   }
   archive.append(buildIndexXml(data), { name: 'index.xml' });
+  archive.append(GDPDU_DTD_CONTENT, { name: GDPDU_DTD_FILENAME });
 
   await archive.finalize();
   await done;

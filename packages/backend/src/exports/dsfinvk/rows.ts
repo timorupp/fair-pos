@@ -13,6 +13,7 @@ import type {
 import {
   KASSENBELEG_PROCESS_TYPE, BESTELLUNG_PROCESS_TYPE, SONSTIGER_VORGANG_PROCESS_TYPE,
 } from '../../tse/processData.js';
+import { extractLeafCertificateChunks } from './leafCertificate.js';
 import type { TaxCategory } from '@fairpos/shared';
 
 /** Maps a DSFinV-K `BON_TYP` to the literal TSE `processType` FairPOS actually signed it with — these are two distinct vocabularies (see tse/processData.ts), and Anhang E defines `TSE_TA_VORGANGSART` as the latter. */
@@ -89,7 +90,7 @@ export interface DsfinvkSource {
   /** Signature algorithm / log-time format / public key, cached from the TSE (see tse/certificateInfo.ts) — `null` when unavailable (unconfigured/unreachable TSE), in which case `tse.csv`'s corresponding fields stay empty. */
   tseCertificate: {
     signatureAlgorithm: string; logTimeFormat: string; publicKeyBase64: string;
-    /** Base64-encoded PEM certificate chain (Task #120) — not yet wired into TSE_ZERTIFIKAT_I/II, see the comment where those are built below. */
+    /** Base64 encoding of the raw PEM chain (leaf certificate first) read via `worm_getLogMessageCertificate` — see `leafCertificate.ts` for how `TSE_ZERTIFIKAT_I/II` are derived from it. */
     certificateChainBase64: string;
   } | null;
   company: {
@@ -187,6 +188,12 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     UST_BESCHR: t.description,
   }));
 
+  // Anhang E (S. 78f. of the official DSFinV-K 2.4 spec, bzst.de): both
+  // fields hold "das Zertifikat der TSE" (the TSE's own leaf certificate,
+  // not the full chain), base64, split into two 1.000-character chunks.
+  const { zertifikatI, zertifikatII } = extractLeafCertificateChunks(
+    source.tseCertificate?.certificateChainBase64 ?? '',
+  );
   const tse: TseRow[] = source.tseSerial ? [{
     ...schluessel,
     TSE_ID: 1,
@@ -195,19 +202,8 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     TSE_ZEITFORMAT: source.tseCertificate?.logTimeFormat ?? '',
     TSE_PD_ENCODING: 'UTF-8',
     TSE_PUBLIC_KEY: source.tseCertificate?.publicKeyBase64 ?? '',
-    // The raw certificate chain is now readable (Task #120,
-    // source.tseCertificate?.certificateChainBase64 — a single PEM
-    // containing the TSE's own certificate followed by its issuers, leaf
-    // first) but deliberately not wired into these two columns yet: the
-    // exact split of one chain onto two separate fields still needs
-    // verifying against the authoritative DSFinV-K Anhang I/E spec text
-    // (which of possibly more than two certificates goes where, and what
-    // to do if the chain has only one or more than two entries) rather
-    // than guessed for a KassenSichV-relevant export — see BACKLOG.md
-    // Task #120. Not required for QR-code verification, only for this
-    // file's completeness.
-    TSE_ZERTIFIKAT_I: '',
-    TSE_ZERTIFIKAT_II: '',
+    TSE_ZERTIFIKAT_I: zertifikatI,
+    TSE_ZERTIFIKAT_II: zertifikatII,
   }] : [];
 
   // ── Per-Vorgang rows ───────────────────────────────────────────────────────

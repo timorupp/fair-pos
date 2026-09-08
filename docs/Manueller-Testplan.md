@@ -222,10 +222,11 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 - [ ] `vat.csv`: `UST_SCHLUESSEL` 1=19 %, 2=7 %, 5=0 % — passend zu den im Abschluss tatsächlich verwendeten Steuersätzen
 - [ ] Summen in `businesscases.csv`/`payment.csv`/`cash_per_currency.csv` stimmen mit dem gedruckten Z-Bon überein (Bar-Summe, Steueraufschlüsselung)
 - [ ] CSV-Dateien lassen sich in Excel/LibreOffice mit Semikolon als Trenner öffnen und sind lesbar (Umlaute korrekt, kein Encoding-Problem)
+- [ ] **`tse.csv`:** `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` sind mit echten Zertifikatsdaten gefüllt (Base64, nicht leer) — noch nicht an echter Hardware bestätigt, siehe Task #120
+- [ ] Export-ZIP enthält `gdpdu-01-09-2004.dtd` neben `index.xml`
 
 **Bekannte, dokumentierte Einschränkungen — nicht als Bug melden, aber im Hinterkopf behalten:**
-- Nur die volle TSE-Zertifikatskette (`TSE_ZERTIFIKAT_I/II` in `tse.csv`) ist noch leer — Signaturalgorithmus/Zeitformat/Public-Key sind seit Task #46 gefüllt
-- CSV-Trennzeichen/`index.xml`-Schema folgen der verbreiteten Konvention, sind aber nicht gegen die separate GoBD-Anlage verifiziert (Abschnitt 6, Einleitung)
+- `TSE_ZERTIFIKAT_I/II` sind seit 2026-09-08 verdrahtet, aber ein Live-Hardware-Test steht noch aus (siehe oben) — bis dahin können sie an echter Hardware theoretisch noch leer bleiben, falls das Auslesen der Zertifikatskette selbst fehlschlägt (Signaturalgorithmus/Zeitformat/Public-Key sind davon unabhängig und seit Task #46 bestätigt gefüllt)
 
 ---
 

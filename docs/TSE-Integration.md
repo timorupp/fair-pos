@@ -410,12 +410,14 @@ Swissbits Beispiel).
   Feld `certificateChain`; erfordert laut `WormDLL.h` keinen Nutzerlogin,
   nur eine aktive CTSS-Schnittstelle, die ab TSE-Firmware ≥2.0.0 automatisch
   aktiv ist, sobald der Self-Test bestanden wurde). Compile+Link gegen die
-  echte vendorte SDK erfolgreich verifiziert; die eigentliche Aufteilung der
-  zurückgegebenen PEM-Kette auf `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` bleibt
-  bewusst offen, bis das gegen den verbindlichen DSFinV-K-Spezifikationstext
-  verifiziert ist (siehe `BACKLOG.md` Task #120) — außerdem noch kein
-  Live-Hardware-Test, ob das Auslesen an einer echten TSE tatsächlich ohne
-  Login gelingt.
+  echte vendorte SDK erfolgreich verifiziert. Die Aufteilung der
+  zurückgegebenen PEM-Kette auf `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` ist
+  seit 2026-09-08 verdrahtet (`exports/dsfinvk/leafCertificate.ts`) — geklärt
+  anhand des offiziellen DSFinV-K-2.4-Downloadpakets (bzst.de) Anhang E:
+  beide Felder enthalten nur das TSE-eigene Leaf-Zertifikat, nicht die volle
+  Kette, in zwei 1.000-Zeichen-Blöcken. **Noch offen:** ein Live-Hardware-Test,
+  dass diese beiden Spalten an einer echten TSE tatsächlich mit echten
+  Zertifikatsdaten befüllt werden (siehe `BACKLOG.md` Task #120).
 - Fachliche Zuordnung, welcher Vorgang welchen `processType` bekommt — siehe
   `Anforderungen.md`.
 - Backup/Archivierungsstrategie der TSE-Rohdaten — der Download selbst ist

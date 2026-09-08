@@ -179,16 +179,23 @@ abhängen darf.
 ## 6. DSFinV-K-Export
 
 **Quelle für diesen gesamten Abschnitt** (verbatim geprüft August 2026, für
-Prüfungszwecke zitierfähig): *DSFinV-K, Version 2.4*, offizielles PDF unter
-[kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf](https://kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf)
-(130 Seiten). Seitenangaben unten beziehen sich auf dieses Dokument. Für
+Prüfungszwecke zitierfähig): *DSFinV-K, Version 2.4*, offizielles
+Downloadpaket des Bundeszentralamts für Steuern unter
+[bzst.de → Digitale Schnittstelle FinV-K](https://www.bzst.de/DE/Unternehmen/Aussenpruefungen/DigitaleSchnittstelleFinV/digitaleschnittstellefinv.html)
+(130 Seiten; ursprünglich über eine Drittanbieter-Kopie unter
+kassensichv.com geprüft, am 2026-09-08 auf die Behörden-Originalquelle
+umgestellt — siehe AGENTS.md "Compliance-Prüfungen gegen offizielle
+Standards"). Seitenangaben unten beziehen sich auf dieses Dokument. Für
 Details zum genauen CSV-Dateiformat (Feldtrennzeichen, Kopfzeile) verweist die
 DSFinV-K selbst (S. 10) auf ein separates Dokument „Ergänzende Informationen
-zur Datenträgerüberlassung" (Anlage zu den GoBD) — dieses wurde für diese
-Dokumentation **nicht** eingesehen; vor der finalen Implementierung des
-CSV-Schreibens (Trennzeichen etc.) sollte das nachgeholt werden. Branchenüblich
-(nicht als DSFinV-K-Vorgabe zitierfähig, sondern nur als Konvention) ist
-Semikolon-getrennte UTF-8-CSV mit Kopfzeile.
+zur Datenträgerüberlassung" (Anlage zu den GoBD) — **seit Task #122
+(2026-09-08) geprüft**: dieses BMF-Dokument selbst enthält keine
+technischen Details, verweist stattdessen auf eine bei Audicon GmbH
+anzufordernde technische Beschreibung; das offizielle bzst.de-Downloadpaket
+bündelt jedoch selbst die tatsächliche DTD und eine Referenz-`index.xml`,
+siehe Abschnitt 6.7 und BACKLOG-DONE.md Task #122 für den vollständigen
+Befund. Semikolon-getrennte UTF-8-CSV mit Kopfzeile ist damit bestätigt
+korrekt, nicht nur Branchenkonvention.
 
 ### 6.1 Struktur
 
@@ -221,7 +228,7 @@ laut Inhaltsverzeichnis (S. 6)** — FairPOS-Relevanz markiert:
 | `slaves.csv` (Stamm_Terminals) | Terminals einer Master-Kasse | nicht benötigt — FairPOS hat keine Master-Slave-Kassen |
 | `pa.csv` (Stamm_Agenturen) | Agenturgeschäfte (Fremdverkauf) | nicht benötigt |
 | `vat.csv` (Stamm_USt) | Steuersätze mit Schlüssel (UST_SCHLUESSEL) | ✅ siehe Schlüsselschema unten |
-| `tse.csv` (Stamm_TSE) | TSE-Seriennummer, Zertifikat, Signaturalgorithmus, Zeitformat, Public Key | ✅ Seriennummer/Signaturalgorithmus/Zeitformat/Public-Key; **teilweise** — die Zertifikatskette selbst (`TSE_ZERTIFIKAT_I/II`) fehlt noch, siehe Abschnitt 6.7 |
+| `tse.csv` (Stamm_TSE) | TSE-Seriennummer, Zertifikat, Signaturalgorithmus, Zeitformat, Public Key | ✅ alle Felder verdrahtet (`TSE_ZERTIFIKAT_I/II` seit Task #120, 2026-09-08); Live-Hardware-Bestätigung für die Zertifikatsfelder noch ausstehend, siehe Abschnitt 6.7 |
 
 **Kassenabschlussmodul** (S. 80–83)
 
@@ -385,26 +392,42 @@ Rechnungen; bereits bestehende Zeilen wurden per Migration anhand der
 bisherigen Näherung befüllt. `exports/dsfinvk/load.ts` filtert seitdem exakt
 über diese Spalte, keine Näherung mehr.
 
-**Ebenfalls noch offen:** `TSE_ZERTIFIKAT_I/II` bleiben in `tse.csv` leer.
-`native/tse-cli`s `info`-Kommando liest die volle Zertifikatskette
-(`worm_getLogMessageCertificate`) seit Task #120 (2026-09-06) technisch
-aus — laut `WormDLL.h` ohne Nutzerlogin, nur mit aktiver
-CTSS-Schnittstelle (ab TSE-Firmware ≥2.0.0 automatisch aktiv nach
-bestandenem Self-Test) —, aber die Aufteilung der zurückgegebenen
-PEM-Kette auf genau diese zwei Spalten ist bewusst noch nicht verdrahtet,
-bis das gegen den verbindlichen DSFinV-K-Spezifikationstext geprüft ist
-(nicht geraten für ein KassenSichV-relevantes Feld). Ebenfalls noch
-offen: ein Live-Hardware-Test, ob das Auslesen an einer echten TSE
-tatsächlich ohne Login gelingt (Compile+Link gegen die echte vendorte
-SDK bereits erfolgreich verifiziert, siehe `docs/TSE-Integration.md`
-Abschnitt 11). `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind seit
-der processData-Formatkorrektur (Abschnitt 6.5) befüllt — diese drei sind
-auch die für die QR-Code-Prüfung relevanten, die Zertifikatskette betrifft
-nur `tse.csv`s Vollständigkeit, nicht die Prüfbarkeit.
-Das genaue CSV-/index.xml-Dateiformat (Feldtrennzeichen, Kopfzeile) folgt der
-verbreiteten Konvention (Semikolon, UTF-8, CRLF, GDPdU-artige index.xml), ist
-aber nicht gegen die separate GoBD-Anlage "Ergänzende Informationen zur
-Datenträgerüberlassung" verifiziert (siehe Einleitung Abschnitt 6).
+**`TSE_ZERTIFIKAT_I/II` verdrahtet (Task #120, 2026-09-08):** Anhang E
+(S. 78f.) des offiziellen DSFinV-K-2.4-Downloadpakets (bzst.de) klärt, dass
+beide Felder "das Zertifikat der TSE" (Singular — nur das TSE-eigene
+Leaf-Zertifikat, nicht die volle Kette samt Ausstellern) enthalten,
+Base64-kodiert und in zwei 1.000-Zeichen-Blöcke aufgeteilt.
+`exports/dsfinvk/leafCertificate.ts` extrahiert das erste Zertifikat aus der
+per `worm_getLogMessageCertificate` gelesenen PEM-Kette und splittet es
+entsprechend; `rows.ts` verdrahtet das in `tse.csv`. **Noch offen:** ein
+Live-Hardware-Test, dass `TSE_ZERTIFIKAT_I/II` an einer echten TSE
+tatsächlich mit echten Zertifikatsdaten befüllt werden (ein vom Nutzer
+bereitgestellter echter Export bestätigt nur, dass das `info`-Kommando
+insgesamt fehlerfrei läuft, siehe `docs/TSE-Integration.md` Abschnitt 11 —
+dieser Export wurde vor der Verdrahtung erzeugt, die Spalten sind darin
+folglich noch leer). `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind
+seit der processData-Formatkorrektur (Abschnitt 6.5) befüllt und an echter
+Hardware bestätigt — diese drei sind auch die für die QR-Code-Prüfung
+relevanten, die Zertifikatskette betrifft nur `tse.csv`s Vollständigkeit,
+nicht die Prüfbarkeit.
+
+**CSV-/index.xml-Format gegen die GoBD-Anlage verifiziert (Task #122,
+2026-09-08):** Die BMF-Anlage "Ergänzende Informationen zur
+Datenträgerüberlassung" selbst enthält keine technischen Details, sondern
+verweist auf eine bei Audicon GmbH anzufordernde, nicht behördlich
+veröffentlichte technische Beschreibung. Das offizielle
+DSFinV-K-2.4-Downloadpaket (bzst.de) bündelt jedoch selbst die tatsächliche
+DTD (`gdpdu-01-09-2004.dtd`) und eine vollständige Referenz-`index.xml` —
+die maßgebliche Behörden-Quelle. Der Abgleich ergab einen echten,
+zuvor unentdeckten Fehler: `index-xml.ts` folgte einem selbst erfundenen
+Schema statt der echten DTD (falsche Elementnamen, kein `<UTF8 />` je
+Tabelle — ANSI wäre der DTD-Default gewesen und hätte Umlaute falsch
+interpretiert —, kein explizites `<DecimalSymbol>`, obwohl FairPOS'
+Punkt-Dezimaltrennzeichen vom DTD-Default Komma abweicht, und die per
+`<!DOCTYPE>` referenzierte DTD-Datei fehlte komplett im Export-ZIP).
+Vollständig neu geschrieben und per `xmllint --valid` gegen die echte
+offizielle DTD verifiziert (validiert exakt wie die Behörden-eigene
+Referenz-`index.xml`). Details: BACKLOG-DONE.md Task #122.
 
 ---
 
@@ -497,7 +520,8 @@ Ein gemeinnütziger Verein ist in vier steuerliche Bereiche aufgeteilt:
 - KassenSichV: gesetze-im-internet.de/kassensichv
 - § 146a AO: gesetze-im-internet.de/ao_1977/__146a.html
 - § 147 AO (Aufbewahrung): gesetze-im-internet.de/ao_1977/__147.html
-- DSFinV-K v2.4 (verbatim geprüft, konkretes PDF für Abschnitt 6 zitiert): kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf — offizielle Fassung auch über bzst.de (Digitale Schnittstelle der Finanzverwaltung) auffindbar
+- DSFinV-K v2.4 (verbatim geprüft, konkretes PDF für Abschnitt 6 zitiert): bzst.de/DE/Unternehmen/Aussenpruefungen/DigitaleSchnittstelleFinV (offizielles Downloadpaket des Bundeszentralamts für Steuern, enthält auch die `index.xml`-DTD und eine Referenz-`index.xml`, siehe Abschnitt 6.7/Task #122)
 - AEAO zu § 146a AO, Neufassung 30.06.2023 (verbatim geprüft, Abschnitt 3.3): bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Weitere_Steuerthemen/Abgabenordnung/AO-Anwendungserlass/2023-06-30-AEAO-Par-146-AO.pdf
 - GoBD BMF-Schreiben 28.11.2019: bundesfinanzministerium.de
+- GoBD-Anlage "Ergänzende Informationen zur Datenträgerüberlassung", 28.11.2019 (verbatim geprüft, Task #122): bundesfinanzministerium.de/Content/DE/Standardartikel/Themen/Steuern/Weitere_Steuerthemen/Abgabeordnung/2019-11-28-GoBD-Ergaenzende-Informationen-zur-Datentraegerueberlassung.pdf
 - ELSTER Kassenmeldung: elster.de/eportal/formulare-leistungen/alleformulare/aufzeichnung146a

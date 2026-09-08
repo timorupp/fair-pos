@@ -3,12 +3,13 @@
  *
  * The DSFinV-K specification itself does not fix a field separator or file
  * encoding — it defers to a separate companion document ("Ergänzende
- * Informationen zur Datenträgerüberlassung", an Anlage to the GoBD), which
- * has not been reviewed for this implementation (see
- * docs/Rechtliche-Anforderungen.md Abschnitt 6). Semicolon-separated UTF-8
- * with a header row and CRLF line endings is the widely used industry
- * convention and is what this module produces — verify against the
- * companion document before relying on this for a real Betriebsprüfung.
+ * Informationen zur Datenträgerüberlassung", an Anlage to the GoBD). That
+ * BMF letter in turn names Audicon GmbH's technical Beschreibungsstandard as
+ * the authoritative source; the official DSFinV-K 2.4 download package
+ * (bzst.de) bundles that standard's actual DTD and a reference `index.xml`,
+ * which confirm semicolon-separated, UTF-8, CRLF-terminated, header-row CSV
+ * as the correct format this module already produces (Task #122) — see
+ * `index-xml.ts` for the `index.xml` side of that verification.
  */
 
 /** Escapes a single CSV field: wraps in quotes and doubles inner quotes if it contains the separator, a quote, or a line break. */

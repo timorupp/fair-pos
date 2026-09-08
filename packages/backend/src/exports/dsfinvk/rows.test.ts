@@ -165,6 +165,18 @@ describe('buildDsfinvkExport', () => {
     expect(out['tse.csv'][0]).toMatchObject({ TSE_SIG_ALGO: '', TSE_ZEITFORMAT: '', TSE_PUBLIC_KEY: '' });
   });
 
+  it('fills TSE_ZERTIFIKAT_I/II from the leaf certificate in the PEM chain (Task #120/#122)', () => {
+    const leafBody = 'A'.repeat(1200);
+    const pem = `-----BEGIN CERTIFICATE-----\n${leafBody}\n-----END CERTIFICATE-----\n`;
+    const source = baseSource([beleg()]);
+    source.tseCertificate!.certificateChainBase64 = Buffer.from(pem, 'utf-8').toString('base64');
+    const out = buildDsfinvkExport(source);
+    expect(out['tse.csv'][0]).toMatchObject({
+      TSE_ZERTIFIKAT_I: leafBody.slice(0, 1000),
+      TSE_ZERTIFIKAT_II: leafBody.slice(1000, 1200),
+    });
+  });
+
   it('marks TSE_TA_FEHLER when no TSE signature is present, without throwing', () => {
     const out = buildDsfinvkExport(baseSource([beleg({ tse: null })]));
     expect(out['transactions_tse.csv'][0]!.TSE_TA_FEHLER).toMatch(/TSE-Ausfall/);

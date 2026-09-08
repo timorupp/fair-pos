@@ -442,7 +442,7 @@ Felder für den Leistungsempfänger vor (v.a. für B2B-Rechnungen). FairPOS erfa
 bewusst **keine** Kundendaten — anonymer Barverkauf an Vereinsfesten — diese
 Felder bleiben im späteren Export leer. Das deckt sich mit der
 Organisationsvorgabe, niemals personenbezogene Daten von Kunden zu verwenden.
-Quelle: [DSFinV-K Version 2.4](https://kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf).
+Quelle: [DSFinV-K Version 2.4](https://www.bzst.de/DE/Unternehmen/Aussenpruefungen/DigitaleSchnittstelleFinV/digitaleschnittstellefinv.html) (Bundeszentralamt für Steuern).
 
 ### TSE-Optionen
 

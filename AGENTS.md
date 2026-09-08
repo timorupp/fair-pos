@@ -158,6 +158,22 @@ Bei strukturellen Refactors (Spalten umbenennen, Tabellen umbauen): drei
 Schritte in einer Migration — neue Struktur anlegen, Daten migrieren, alte
 Struktur entfernen. So bleiben bestehende Daten erhalten.
 
+### Compliance-Prüfungen gegen offizielle Standards
+
+Beim Prüfen, ob FairPOS (Export-Formate, Datenmodell, Abläufe) einem externen
+Standard entspricht (DSFinV-K, GoBD/GDPdU, KassenSichV, TR-03153 o.ä.):
+**ausschließlich Dokumente von offiziellen Behördenseiten** heranziehen —
+Bundesfinanzministerium (`bundesfinanzministerium.de`), Bundeszentralamt für
+Steuern (`bzst.de`), BSI, Gesetze/Verordnungen im Original. Keine
+Drittanbieter-Spiegelungen (IHK-Seiten, Kassenhersteller-Blogs,
+kassensichv.com o.ä.) als Prüfgrundlage verwenden, selbst wenn der Inhalt
+identisch aussieht — nur die Behördenseite selbst ist maßgeblich und aktuell.
+
+**Warum:** Nur die Behörden-Originalquelle garantiert, dass die aktuellste
+Version geprüft wird und keine (auch unabsichtliche) Abweichung einer
+Spiegelung übersehen wird — bei KassenSichV-relevanten Prüfungen mit
+möglichen Bußgeldfolgen ist das nicht verhandelbar.
+
 ### Git-Workflow (Branches)
 
 **`develop`** ist der Arbeits-Branch — alle laufende Entwicklung passiert

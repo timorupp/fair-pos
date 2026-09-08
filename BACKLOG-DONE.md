@@ -4227,6 +4227,111 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   `service_order`/`order_cancellation`-Zeilen jetzt korrekt getrennt bleiben
   (genau das Szenario, das die alte Näherung nicht unterscheiden konnte).
 
+- [Task] **#122** DSFinV-K CSV-/index.xml-Format gegen GoBD-Anlage verifizieren
+  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
+  Release erledigen.**
+
+  **Problem:** Das CSV-/`index.xml`-Dateiformat (Feldtrennzeichen, Kopfzeile,
+  Zeichensatz) folgte der verbreiteten Konvention (Semikolon, UTF-8, CRLF,
+  GDPdU-artige `index.xml`), war aber nie gegen die separate GoBD-Anlage
+  "Ergänzende Informationen zur Datenträgerüberlassung" verifiziert worden.
+
+  **Vorgehen (2026-09-08, ausgelöst durch einen vom Nutzer bereitgestellten
+  echten DSFinV-K-Export von echter Hardware, `dsfinvk_Bonkasse_z17.zip`):**
+  Ausschließlich Behörden-Originalquellen verwendet (siehe AGENTS.md
+  "Compliance-Prüfungen gegen offizielle Standards", heute als Konvention
+  eingeführt) — nicht die zuvor referenzierte Drittanbieter-Kopie
+  (kassensichv.com):
+  - `bundesfinanzministerium.de` — die BMF-Anlage "Ergänzende Informationen
+    zur Datenträgerüberlassung" (28.11.2019) selbst: enthält **keine**
+    technischen Details (kein Feldtrennzeichen, keine Zeichensatz-Vorgabe,
+    kein XML-Schema) — verweist stattdessen ausschließlich auf eine bei der
+    Audicon GmbH kostenlos anzufordernde technische Beschreibung, die nicht
+    behördlich veröffentlicht ist.
+  - `bzst.de` (Bundeszentralamt für Steuern) — das offizielle
+    DSFinV-K-2.4-Downloadpaket selbst (`dsfinv_k_v_2_4.zip`) enthält jedoch
+    direkt im Ordner `02_index.xml/` sowohl die tatsächliche DTD
+    (`gdpdu-01-09-2004.dtd`) als auch eine vollständige Referenz-`index.xml`
+    — das ist die maßgebliche, autoritative technische Quelle, direkt von
+    der Behörde, und ersetzt damit die Notwendigkeit, das Audicon-Dokument
+    gesondert anzufordern.
+
+  **Befund: echter, bis dahin unentdeckter Compliance-Fehler, kein reines
+  Verifikations-Häkchen.** Das bisherige `index.xml` (`exports/dsfinvk/
+  index-xml.ts`) folgte **nicht** dem echten Schema — es verwendete frei
+  erfundene Elemente (`SkipRows`, `TextEncoding`, `Separator`,
+  `Columns`/`Column`/`Type`, ein nicht existierendes Namespace-Attribut)
+  statt der tatsächlich vorgeschriebenen DTD-Elemente. Konkrete Folgen bei
+  Einlesen durch ein strikt-konformes Prüfungstool (z. B. IDEA):
+  - Ohne `<UTF8 />` je Tabelle gilt "ANSI" als Default-Zeichensatz laut DTD
+    → deutsche Umlaute in den tatsächlich UTF-8-kodierten Dateien wären
+    falsch interpretiert worden.
+  - Ohne explizite `<DecimalSymbol>`/`<DigitGroupingSymbol>` gilt laut DTD
+    Komma als Dezimaltrennzeichen-Default — FairPOS' CSVs verwenden aber
+    tatsächlich Punkt (`toFixed(2)`, z. B. "36.00"). Ein strikt-konformer
+    Importer hätte das als 3600 (Punkt als Tausendertrennzeichen)
+    fehlinterpretiert, sobald ein Feld als `Numeric` markiert wird — ein
+    stiller, echter Zahlenfehler.
+  - Die per `<!DOCTYPE DataSet SYSTEM "gdpdu-01-09-2004.dtd">` referenzierte
+    DTD-Datei fehlte komplett im Export-ZIP — die DOCTYPE-Referenz war nicht
+    auflösbar.
+  - Jede Spalte war pauschal als `AlphaNumeric` deklariert statt der
+    tatsächlichen Typen — unterläuft den Zweck der maschinellen
+    Auswertbarkeit, die dieser Standard eigentlich sicherstellen soll.
+  - Kein `<Range><From>2</From></Range>` zum Überspringen der Kopfzeile
+    (offizielle Methode) — stattdessen das erfundene `SkipRows`.
+
+  **Erledigt 2026-09-08:**
+  - `exports/dsfinvk/index-xml.ts` komplett neu geschrieben: echtes
+    `DataSet`/`Version`/`DataSupplier`/`Media`/`Table`-Grundgerüst,
+    `<UTF8 />` und `<DecimalSymbol>.</DecimalSymbol>`/
+    `<DigitGroupingSymbol>,</DigitGroupingSymbol>` je Tabelle (deklariert die
+    tatsächliche Punkt-Dezimal-Konvention statt sie stillschweigend falsch
+    zu lassen — keine CSV-Änderung nötig, siehe Abwägung unten), `<Range>
+    <From>2</From></Range>` für den Kopfzeilen-Sprung, `<VariableColumn>`
+    mit `<Numeric>`/`<AlphaNumeric>` je nach offiziellem Feldkatalog (Anhang
+    E) statt pauschal `AlphaNumeric` — Zahlenfelder mit der spec-gemäßen
+    `Accuracy` (Dezimalstellen), was laut DTD sicher ist auch wenn FairPOS'
+    tatsächliche Werte weniger Nachkommastellen haben (nur der umgekehrte
+    Fall — mehr Dezimalstellen in den Daten als deklariert — ist laut DTD
+    "undefined behaviour"). Jede Tabelle trägt außerdem den offiziellen
+    DSFinV-K-Modulnamen (`Stamm_Abschluss`, `Bonkopf`, `TSE_Transaktionen`
+    usw.) als `<Name>`.
+  - **Abwägung Dezimaltrennzeichen:** zwei gleichwertig korrekte Optionen —
+    (A) CSV-Werte bleiben mit Punkt, `index.xml` deklariert das korrekt, oder
+    (B) CSV-Werte auf Komma umstellen, um der Konvention im offiziellen
+    Beispiel zu entsprechen. Option A gewählt: kein Funktionsrisiko, keine
+    Änderung an mehreren Export-Codepfaden nötig, technisch gleichwertig.
+  - Neues Modul `exports/dsfinvk/gdpduDtd.ts`: vendorte, byte-für-byte
+    geprüfte Kopie von `gdpdu-01-09-2004.dtd` (per Diff gegen die
+    Originaldatei aus dem bzst.de-Paket bestätigt, nur Zeilenenden LF statt
+    CRLF unterscheiden sich — inhaltlich identisch). `exports/dsfinvk/zip.ts`
+    packt die DTD jetzt zusätzlich zu `index.xml` ins Export-ZIP.
+  - **Echte DTD-Validierung durchgeführt** (nicht nur Sichtprüfung): `xmllint
+    --valid` (libxml2, lokal ohne Root via `apt-get download` extrahiert)
+    gegen die echte, offizielle DTD ausgeführt — sowohl das neu generierte
+    `index.xml` als auch die offizielle Referenz-`index.xml` selbst liefern
+    exakt dieselbe (harmlose, in der DTD selbst liegende
+    Nichtdeterminismus-)Warnung und validieren beide erfolgreich (Exit-Code
+    0) — bestätigt, dass die neue Implementierung strukturell exakt der
+    Behörden-Referenz entspricht.
+  - Neue Unit-Tests: `index-xml.test.ts` (7 Tests: DOCTYPE, Filterung leerer
+    Tabellen, UTF8/Dezimaltrennzeichen, Range statt SkipRows,
+    Trennzeichen-Deklarationen, Numeric/AlphaNumeric-Typisierung,
+    Modulnamen).
+  - `docs/Rechtliche-Anforderungen.md`, `docs/Manueller-Testplan.md`,
+    `exports/dsfinvk/types.ts`, `exports/dsfinvk/csv.ts` aktualisiert
+    (Zitat auf bzst.de statt kassensichv.com, "unverifiziert"-Hinweise
+    entfernt).
+  - Drei neue, nicht-blockierende Findings für Restpunkte angelegt:
+    D-063 (fehlende ForeignKey-Verknüpfungen), D-064 (fehlende
+    Description/MaxLength), D-065 (5 vs. 2 Nachkommastellen bei bestimmten
+    Geldbetrags-Feldern — reine Beobachtung, kein bekannter Fehler).
+
+  **Nebenbefund, direkt mitgelöst:** Dieselbe Recherche lieferte auch den
+  fehlenden Spezifikationstext für Task #120s offene
+  `TSE_ZERTIFIKAT_I/II`-Aufteilung (Anhang E, S. 78f.) — dort verdrahtet.
+
 ## Findings
 
 - [Finding] **D-001** (mittel, Datenmodell) — Gefunden 2026-06-24

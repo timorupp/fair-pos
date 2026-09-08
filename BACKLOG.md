@@ -235,41 +235,30 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
     ob `worm_getLogMessageCertificate` an einer echten, physisch
     angeschlossenen TSE tatsächlich ohne Login gelingt, ist bisher nur
     durch die SDK-Dokumentation belegt, nicht durch einen echten Aufruf.
-  - **Bewusst nicht verdrahtet:** `exports/dsfinvk/rows.ts`s
-    `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` bleiben weiterhin leer (jetzt mit
-    Verweis auf `source.tseCertificate?.certificateChainBase64` im
-    Code-Kommentar). `worm_getLogMessageCertificate` liefert laut SDK-Doku
-    **eine** PEM-Datei mit mehreren Zertifikaten (erst das TSE-eigene, dann
-    dessen Aussteller) — wie genau diese eine Kette auf exakt zwei Spalten
-    aufzuteilen ist (welches Zertifikat wohin, was bei mehr/weniger als zwei
-    Einträgen passiert), wurde nicht geraten, da das ein KassenSichV-/
-    DSFinV-K-relevantes Feld ist. Noch offen: den verbindlichen
-    DSFinV-K-Anhang-I/E-Spezifikationstext dafür konsultieren, dann die
-    Verdrahtung ergänzen (reine Wire-up-Arbeit, keine weitere Native-Code-
-    Änderung nötig).
+  - **Verdrahtet 2026-09-08:** Der offene Punkt (wie die eine PEM-Kette auf
+    `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` aufzuteilen ist) ist jetzt anhand
+    des verbindlichen Spezifikationstexts geklärt — Anhang E (S. 78f.) des
+    offiziellen DSFinV-K-2.4-Downloadpakets (bzst.de, Bundeszentralamt für
+    Steuern): beide Felder enthalten **"das Zertifikat der TSE"** (Singular
+    — nur das TSE-eigene Leaf-Zertifikat, nicht die volle Kette samt
+    Ausstellern), Base64-kodiert, aufgeteilt in zwei 1.000-Zeichen-Blöcke
+    (`TSE_ZERTIFIKAT_I` = erste 1.000 Zeichen, `TSE_ZERTIFIKAT_II` = Rest).
+    Neues Modul `exports/dsfinvk/leafCertificate.ts`
+    (`extractLeafCertificateChunks`) extrahiert das erste PEM-Zertifikat aus
+    der Kette und splittet es entsprechend; `rows.ts` verdrahtet das jetzt in
+    `tse.csv`. 5 neue Unit-Tests (`leafCertificate.test.ts`) plus ein
+    Rows-Test mit einer >1000 Zeichen langen synthetischen PEM-Kette.
 
-  **Noch ausstehend: echter Live-Test.** Das Auslesen der Zertifikatskette
-  ist bisher nur gegen die reale SDK kompiliert/gelinkt, aber nie gegen
-  eine echte, physisch angeschlossene TSE ausgeführt worden — bis das
-  bestätigt ist, bleibt dieser Task offen, auch wenn der Code bereits
-  steht.
-
-- [Task] **#122** DSFinV-K CSV-/index.xml-Format gegen GoBD-Anlage verifizieren
-  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
-  Release erledigen.**
-
-  **Klassifikation: Compliance-Verifikation (noch nicht durchgeführt).**
-  Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 als offener
-  Punkt genannt, kein eigener Task — hier nachgezogen (2026-09-06).
-
-  **Problem:** Das aktuelle CSV-/`index.xml`-Dateiformat (Feldtrennzeichen,
-  Kopfzeile, Zeichensatz) folgt der verbreiteten Konvention (Semikolon,
-  UTF-8, CRLF, GDPdU-artige `index.xml`), wurde aber nie gegen die separate
-  GoBD-Anlage "Ergänzende Informationen zur Datenträgerüberlassung"
-  verifiziert — nur gegen die DSFinV-K-Kernspezifikation v2.4 selbst.
-
-  Noch nicht bewertet: Beschaffung der GoBD-Anlage, Abgleich, ggf.
-  Anpassungsbedarf.
+  **Noch ausstehend: echter Live-Test der Zertifikats-Spalten selbst.** Ein
+  vom Nutzer bereitgestellter echter DSFinV-K-Export von echter Hardware
+  (`dsfinvk_Bonkasse_z17.zip`, 2026-09-08) bestätigt, dass das `info`-Kommando
+  insgesamt fehlerfrei gegen die echte TSE läuft (`TSE_SIG_ALGO`/
+  `TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind mit echten Werten gefüllt) — das
+  deckt aber nicht ab, ob `worm_getLogMessageCertificate` speziell auf dieser
+  Hardware auch tatsächlich ein Zertifikat liefert, da dieser Export vor der
+  heutigen Verdrahtung erzeugt wurde und `TSE_ZERTIFIKAT_I/II` deshalb noch
+  leer sind. Bleibt offen, bis ein **neuer** Export nach diesem Fix zeigt,
+  dass beide Spalten mit echten Zertifikatsdaten gefüllt sind.
 
 - [Task] **#124** `docs/Datenmodell.dbml` gegen das echte Schema abgleichen
   **Klassifikation: Doku-Bereinigung.** Bei Task #91 (2026-08-29) aufgefallen
@@ -321,3 +310,15 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 - [Finding] **D-058** (niedrig-mittel, Backend / Rechnungs-PDF) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02)
   Firmendaten (Name/Adresse/Steuernummer/USt-IdNr.) und das Firmenlogo werden bei **jedem** PDF-Abruf/Reprint einer Rechnung live aus `system_setting`/dem aktuell gespeicherten Logo geladen (`receipt/data.ts`s `loadReceiptWhere()`/`loadCompanySettings()`/`loadLogoFor()`), nicht zum Verkaufszeitpunkt eingefroren — weder `invoice` noch eine andere Tabelle speichert einen Snapshot. Sowohl `GET /:id/pdf` als auch `POST /:id/reprint` (`admin/invoices.ts`) rendern die Belegblöcke bei jedem Aufruf neu aus aktuellen Stammdaten, statt den ursprünglich beim Verkauf erzeugten `print_job`-Datensatz wiederzuverwenden. Folge: ändert ein Admin später Firmenname/Adresse/Logo, zeigt die PDF-Ansicht/ein Reprint einer alten Rechnung die **neuen** Daten statt der zum Verkaufszeitpunkt gültigen — die eigentlich TSE-relevanten Felder (Beträge, Steueraufschlüsselung, Transaktionsnummer, Signatur, Belegnummer) bleiben davon unberührt, da sie aus echten Snapshot-Spalten auf `invoice`/`order_item` kommen; betroffen ist nur der "Briefkopf".
   Siehe Task #112.
+
+- [Finding] **D-063** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 (`index.xml` gegen die offizielle DTD verifiziert) gefunden
+  Das jetzt korrekte `index.xml` (`exports/dsfinvk/index-xml.ts`) deklariert keine `ForeignKey`/`VariablePrimaryKey`-Beziehungen zwischen den Tabellen (z. B. `transactions.csv.BON_ID` ↔ `lines.csv.BON_ID`/`transactions_vat.csv.BON_ID`/`datapayment.csv.BON_ID`/`transactions_tse.csv.BON_ID`), obwohl die DTD (`gdpdu-01-09-2004.dtd`) das vorsieht und die offizielle Referenz-`index.xml` (bzst.de) es durchgängig nutzt. Fachlich unschädlich (jede Tabelle bleibt für sich korrekt lesbar), aber ein Prüfungstool könnte die Tabellen ohne diese Angabe nicht automatisch verknüpfen (JOIN von Hand nötig statt automatisch).
+  Kein Handlungsbedarf jetzt — nice-to-have für spätere Verbesserung, kein Compliance-Blocker.
+
+- [Finding] **D-064** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 gefunden
+  `index.xml`s `VariableColumn`-Elemente lassen `Description` (Klartext-Erläuterung je Feld) und `MaxLength` (Performance-Hinweis für `VariableLength`-Tabellen) bewusst weg — beide sind laut DTD optional, ihr Fehlen macht das Dokument nicht ungültig (per `xmllint --valid` gegen die echte, offizielle DTD bestätigt), aber `Description` würde einem Prüfer die Feldbedeutung direkt in der `index.xml` zeigen statt im separaten Anhang-E-Dokument nachschlagen zu müssen.
+  Kein Handlungsbedarf jetzt — nice-to-have für spätere Verbesserung, kein Compliance-Blocker.
+
+- [Finding] **D-065** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 gefunden
+  Die offizielle DSFinV-K-2.4-Spezifikation (Anhang E) nennt für mehrere Geldbetrags-Felder 5 Nachkommastellen (`Z_UMS_BRUTTO`/`Z_UMS_NETTO`/`Z_UST`, `BON_BRUTTO`/`BON_NETTO`/`BON_UST`, `POS_BRUTTO`/`POS_NETTO`/`POS_UST`, `STK_BR`), FairPOS rundet diese Werte aber durchgängig auf 2 Nachkommastellen (`rows.ts`, `toFixed(2)`). Das jetzt korrekte `index.xml` deklariert trotzdem die spec-gemäße `Accuracy` (5) für diese Felder — laut DTD unproblematisch, da eine höhere deklarierte Accuracy als die tatsächlichen Nachkommastellen der Daten explizit erlaubt ist (nur der umgekehrte Fall ist "undefined behaviour"). Nicht bewertet: ob die Steueraufschlüsselung selbst (nicht nur die CSV-Darstellung) von 5-stelliger statt 2-stelliger Rundungsgenauigkeit profitieren würde (z. B. um Rundungsdifferenzen bei einer Betriebsprüfungs-Nachrechnung zu vermeiden) — das wäre eine Änderung an der eigentlichen Berechnung, nicht nur am Export, und dafür bräuchte es eine eigene Bewertung.
+  Kein Handlungsbedarf jetzt — reine Beobachtung, kein bekannter Fehler.
