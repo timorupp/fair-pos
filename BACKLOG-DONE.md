@@ -4332,6 +4332,54 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   fehlenden Spezifikationstext für Task #120s offene
   `TSE_ZERTIFIKAT_I/II`-Aufteilung (Anhang E, S. 78f.) — dort verdrahtet.
 
+- [Task] **#124** `docs/Datenmodell.dbml` gegen das echte Schema abgleichen
+  **Klassifikation: Doku-Bereinigung.** Bei Task #91 (2026-08-29) aufgefallen
+  — nur die für diese Änderung direkt relevanten Felder (`label`, `hidden`
+  auf `register_layout_slot`) wurden nachgezogen, eine größere Bereinigung
+  bewusst als eigene Aufgabe offen gelassen — hier angelegt (2026-09-06).
+
+  **Bekannte Drift (vermutet):** `register_layout.register_id`/`is_default`
+  existieren laut Task #91 im echten Schema gar nicht mehr. Vermutlich
+  weitere Abweichungen, da `docs/Datenmodell.dbml` nicht bei jeder Migration
+  systematisch mitgepflegt wird.
+
+  **Erledigt 2026-09-09.** Methodik: statt die 31 Migrationsdateien von Hand
+  nachzuvollziehen, wurde die lokale Dev-Datenbank auf den vollständigen
+  Migrationsstand gebracht (`npm run db:migrate`, Migration 0031 fehlte noch)
+  und das tatsächliche Schema per `information_schema`/`pg_constraint`
+  introspiziert (Spalten, Typen, Nullability, Primär-/Fremdschlüssel,
+  Unique-/Check-Constraints) — verlässlicher als erneutes Quellenlesen, weil
+  es exakt den Zustand zeigt, den `db:migrate` tatsächlich erzeugt.
+
+  **Ergebnis der vermuteten Drift:** `register_layout.register_id`/
+  `is_default` waren bereits vorher korrekt entfernt (Task #91 hatte das
+  schon erledigt) — keine Korrektur nötig. Die tatsächliche Drift lag
+  woanders: mehrere seit August 2026 hinzugekommene Spalten fehlten
+  komplett, kein einziges Feld war fälschlich vorhanden oder falsch typisiert.
+
+  **Gefundene und behobene Lücken (alle Tabellen gegen das echte Schema
+  geprüft, 26 Tabellen, keine fehlenden/überzähligen Tabellen):**
+  - `article_category.tax_rate` existiert nicht mehr (Task #110) — ersetzt
+    durch `tax_category varchar(10)` ('zero'/'reduced'/'standard'); die
+    Doku beschrieb noch das alte Freitext-Feld.
+  - `article`: fehlende Spalte `skip_pickup_slip` (Task #114, Migration 0030).
+  - `daily_closing`: fehlende Spalte `business_date` (Migration 0002) —
+    obwohl diese Spalte seit August 2026 zentral für die gesamte
+    Z-Bon-Pending-Logik ist (siehe D-054-Fix in dieser Session); im Datenmodell
+    aber nie ergänzt worden.
+  - `order_item`: drei fehlende Spalten — `tax_category` (Task #110),
+    `deposit_tax_rate` (Task #113), `cancellation_reason_name` (Task #111).
+  - `service_order`/`order_cancellation`: fehlende Spalte `daily_closing_id`
+    (Task #123, heute erst hinzugefügt) plus die zugehörigen zwei neuen
+    `Ref:`-Zeilen.
+  - `order_cancellation`: zusätzlich fehlende Spalte
+    `cancellation_reason_name` (Task #111).
+  - `print_job`: fehlende Spalte `blocks` (Task #105); `type`- und
+    `status`-Enum-Kommentare waren veraltet (fehlten `test_print`/`pin_slip`
+    bzw. `cancelled`).
+
+  Kopfzeile der Datei aktualisiert (Migrationsstand 0001–0031, Methodik-Hinweis).
+
 ## Findings
 
 - [Finding] **D-001** (mittel, Datenmodell) — Gefunden 2026-06-24

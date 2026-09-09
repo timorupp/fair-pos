@@ -260,19 +260,62 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   leer sind. Bleibt offen, bis ein **neuer** Export nach diesem Fix zeigt,
   dass beide Spalten mit echten Zertifikatsdaten gefüllt sind.
 
-- [Task] **#124** `docs/Datenmodell.dbml` gegen das echte Schema abgleichen
-  **Klassifikation: Doku-Bereinigung.** Bei Task #91 (2026-08-29) aufgefallen
-  — nur die für diese Änderung direkt relevanten Felder (`label`, `hidden`
-  auf `register_layout_slot`) wurden nachgezogen, eine größere Bereinigung
-  bewusst als eigene Aufgabe offen gelassen — hier angelegt (2026-09-06).
+- [Task] **#126** Excel-Export-Verhalten bei Stornos testen
+  **Klassifikation: Test-Aufgabe (Verifikation bestehenden Verhaltens).**
+  Angelegt 2026-09-09 (Nutzerwunsch).
 
-  **Bekannte Drift (mindestens):** `register_layout.register_id`/
-  `is_default` existieren laut Task #91 im echten Schema gar nicht mehr.
-  Vermutlich weitere Abweichungen, da `docs/Datenmodell.dbml` nicht bei
-  jeder Migration systematisch mitgepflegt wird.
+  Zu testen, was der Excel-Export (`routes/admin/exports.ts`, Task #10/#32)
+  jeweils tut bei:
+  - Storno einer ganzen Rechnung
+  - Erstellen einer Bonstornorechnung
+  - Storno durch Bedienung bei der Rechnungstellung, für beide Typen
+    (`Storno` und `kostenfrei`, `order_cancellation.cancellation_reason_id`/
+    `booking_type`)
 
-  Noch nicht bewertet: vollständiger Abgleich aller Tabellen gegen die
-  aktuellen Migrationen, danach `docs/Datenmodell.dbml` korrigieren.
+  Bekannter Ausgangspunkt: D-026 (bereits geklärt, "nichts zu tun") betrifft
+  nur den Ausschluss stornierter Rechnungen aus dem Umsatzexport
+  (`receipt_type='cancellation'`/`status NOT IN ('paid','free')`) — die
+  Bedienungskasse-Fälle über `order_cancellation` wurden dabei noch nicht
+  explizit durchgetestet. Noch nicht bewertet: ob sich dort dasselbe
+  korrekte Netto-Umsatz-Verhalten zeigt oder eine Abweichung auftritt.
+
+- [Task] **#127** Tests für nachträgliche Datenänderungen (Artikelname, Artikelpreis, USt-Satz etc.)
+  **Klassifikation: Test-Aufgabe / ggf. Datenintegritäts-Prüfung.**
+  Angelegt 2026-09-09 (Nutzerwunsch).
+
+  Zu klären: was passiert mit bereits verkauften/historischen Belegen
+  (Rechnungen, Z-Bons, Exporte), wenn Stammdaten (Artikelname, -preis,
+  USt-Satz) nachträglich geändert werden — bleiben vergangene Belege
+  unverändert (Snapshot auf `order_item` zum Verkaufszeitpunkt), oder
+  zeigen rückwirkend angezeigte/exportierte Werte die **neuen** Stammdaten?
+  Ähnliche Problemklasse wie Task #112 (Firmendaten/Logo werden live statt
+  eingefroren geladen) — hier aber für Artikeldaten/Steuersätze, noch nicht
+  systematisch getestet.
+
+  Noch nicht bewertet: welche Felder tatsächlich als Snapshot auf
+  `order_item`/`invoice` vorliegen vs. welche live aus `article`/
+  `tax_rate`-Tabellen nachgeladen werden.
+
+- [Task] **#128** Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
+  **Klassifikation: Sicherheits-/Datenschutz-Frage (noch nicht bewertet,
+  mehrere Optionen genannt, keine Entscheidung getroffen).**
+  Angelegt 2026-09-09 (Nutzerwunsch).
+
+  **Kontext:** Der Server wird laut Konzept zwischen Vereinen verliehen
+  (siehe `docs/Anforderungen.md`, Begründung der AGPL-3.0-Lizenzwahl mit
+  Netzwerk-Klausel). Offene Frage, wie die Daten eines Vereins vor dem
+  nächsten Nutzer geschützt werden — genannte Optionen:
+  - Druckaufträge (`print_job`) je Veranstaltung filtern/zuordnen? Aktuell
+    hat `print_job` keine `event_id`-Spalte, nur `reference_id` mit
+    uneinheitlichem Event-Bezug je nach `type`.
+  - Alternativ: eine "alle löschen"-Funktion für die Druckwarteschlange?
+  - Grundsätzlichere Frage: wie schützt man beim Verleih überhaupt die
+    Daten des vorherigen Vereins insgesamt (nicht nur Druckaufträge) —
+    Bezug zu Task #121 (Backup-Berechtigungen) und dem bestehenden
+    Veranstaltungs-Datenmodell.
+
+  Noch nicht bewertet: welche der genannten Optionen (oder Kombination)
+  sinnvoll ist, ob eine `event_id`-Migration auf `print_job` nötig ist.
 
 ## Findings
 

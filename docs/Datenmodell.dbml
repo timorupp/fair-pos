@@ -1,5 +1,7 @@
 // FairPOS — Data Model
-// Updated: August 2026 (Task #98 — synced against migrations 0001–0026)
+// Updated: September 2026 (Task #124 — synced against migrations 0001–0031,
+// verified by introspecting a fully-migrated database rather than
+// re-reading migration files by eye)
 // Database: PostgreSQL
 // Visualization: dbdiagram.io (import file or paste content)
 
@@ -111,11 +113,11 @@ Table cash_transaction {
 // Groups articles by type and carries the applicable VAT rate. Child of the
 // event (Task #95) — the same name is reusable across different events.
 Table article_category {
-  id         uuid         [pk, default: `gen_random_uuid()`]
-  event_id   uuid         [not null]
-  name       varchar(100) [not null]
-  tax_rate   decimal(5,2) [not null, note: '0.00 | 7.00 | 19.00']
-  created_at timestamptz  [not null, default: `now()`]
+  id           uuid         [pk, default: `gen_random_uuid()`]
+  event_id     uuid         [not null]
+  name         varchar(100) [not null]
+  tax_category varchar(10)  [not null, note: 'zero | reduced | standard (Task #110) — replaced the former free-text tax_rate; the actual reduced/standard percentages live in system_setting (vat_rate_reduced/vat_rate_standard), not in the schema']
+  created_at   timestamptz  [not null, default: `now()`]
 
   indexes {
     (event_id, name) [unique]
@@ -137,6 +139,7 @@ Table article {
   printer_id             uuid          [null, note: 'Printer for order slips; null = default printer']
   is_active              boolean       [not null, default: true]
   created_at             timestamptz   [not null, default: `now()`]
+  skip_pickup_slip       boolean       [not null, default: false, note: 'Task #114 — "Selbstabholerbon nicht drucken"; only affects the Bonkasse, no effect on the Bedienungskasse (different print path)']
 }
 
 // A selectable option for an article (e.g. "with ketchup").
@@ -260,6 +263,7 @@ Table daily_closing {
   register_id           uuid          [not null]
   z_number              int           [not null, note: 'Sequential per register, no gaps allowed (GoBD)']
   created_at            timestamptz   [not null, default: `now()`]
+  business_date         date          [not null, default: `current_date`, note: 'The calendar day this Z-Bon covers — distinct from created_at (creation timestamp) so a catch-up closing done today for an earlier day is still correctly dated. No UNIQUE(register_id, business_date) — deliberately omitted, see migration 0002']
   created_by_name       text          [null, note: 'Text snapshot of the acting admin name (Task #97) — not a foreign key, survives user deletion; null for automatic zero closings']
   is_zero_closing       boolean       [not null, default: false]
   total_gross           decimal(12,2) [not null]
@@ -310,15 +314,18 @@ Table order_item {
   // Snapshot at order time — immutable after creation
   article_name         varchar(200)  [not null]
   article_category_name varchar(100) [not null]
-  tax_rate             decimal(5,2)  [not null]
+  tax_rate             decimal(5,2)  [not null, note: 'Percent, snapshotted at order time']
+  tax_category         varchar(10)   [not null, note: 'zero | reduced | standard — snapshot of the category alongside tax_rate (Task #110), so exports/totals can branch on the fixed category instead of a guessed percentage']
   price                decimal(10,2) [not null, note: 'Original price — preserved even for free items']
   deposit_price        decimal(10,2) [null]
+  deposit_tax_rate     decimal(5,2)  [null, note: 'Task #113 — Pfand is always taxed at the Regelsteuersatz in effect at sale time, independent of the articles own tax_rate/tax_category. Set only when deposit_price is set']
 
   // Selected options as comma-separated snapshot; surcharge already included in price
   options              text          [null, note: 'e.g. "with ketchup, without onions"']
 
   status                  varchar(20) [not null, note: 'open | paid | free | cancelled']
   cancellation_reason_id  uuid        [null, note: 'Set for free and cancelled items']
+  cancellation_reason_name text       [null, note: 'Task #111 — text snapshot of cancellation_reason.name at cancel time, so a later rename of the reason cannot disagree with what was already TSE-signed into the AVSonstige processData']
   cancelled_by_name       text        [null, note: 'Text snapshot of the waiter who cancelled (Task #97) — not a foreign key, survives user deletion']
   created_at              timestamptz [not null, default: `now()`]
   cancelled_at            timestamptz [null]
@@ -343,6 +350,7 @@ Table service_order {
   tse_start_time         timestamptz  [null]
   tse_end_time           timestamptz  [null]
   tse_serial_number      varchar(128) [null]
+  daily_closing_id       uuid         [null, note: 'Task #123 — set when the covering Z-Bon is closed, same as invoice.daily_closing_id; null until then']
 }
 
 // One Stornovorgang for open (not-yet-invoiced) positions — signed as TSE
@@ -353,6 +361,7 @@ Table order_cancellation {
   id                     uuid         [pk, default: `gen_random_uuid()`]
   register_id            uuid         [not null]
   cancellation_reason_id uuid         [not null]
+  cancellation_reason_name text       [not null, note: 'Task #111 — text snapshot of cancellation_reason.name at cancel time, see order_item.cancellation_reason_name for the rationale']
   cancelled_by_name      text         [null, note: 'Text snapshot of the acting user name (Task #97) — not a foreign key, survives user deletion']
   created_at             timestamptz  [not null, default: `now()`]
   tse_transaction_number bigint       [null]
@@ -361,6 +370,7 @@ Table order_cancellation {
   tse_start_time         timestamptz  [null]
   tse_end_time           timestamptz  [null]
   tse_serial_number      varchar(128) [null]
+  daily_closing_id       uuid         [null, note: 'Task #123 — set when the covering Z-Bon is closed, same as invoice.daily_closing_id; null until then']
 }
 
 // A fiscal receipt created at payment time. Carries the TSE signature.
@@ -399,14 +409,15 @@ Table invoice {
 Table print_job {
   id              uuid        [pk, default: `gen_random_uuid()`]
   printer_id      uuid        [null, note: 'Nullable since Task #96 — a queued job whose printer was deleted falls back to null rather than being deleted']
-  type            varchar(20) [not null, note: 'order_slip | receipt | daily_closing']
+  type            varchar(20) [not null, note: 'order_slip | receipt | daily_closing | test_print | pin_slip']
   content         text        [not null, note: 'ESC/POS content (Base64)']
   reference_id    uuid        [null, note: 'ID of the related invoice or daily_closing']
-  status          varchar(20) [not null, default: 'pending', note: 'pending | printing | done | failed']
+  status          varchar(20) [not null, default: 'pending', note: 'pending | printing | done | failed | cancelled']
   created_at      timestamptz [not null, default: `now()`]
   attempts        int         [not null, default: 0]
   last_attempt_at timestamptz [null]
   error_message   text        [null]
+  blocks          jsonb       [not null, default: `'[]'::jsonb`, note: 'Task #105 — neutral, format-independent document description the job was built from (content stays the pre-rendered ESC/POS bytes the print worker sends as-is); lets the admin UI generically re-render/PDF-preview any job without reloading source data, which is impossible for a pin_slip (the PIN itself is never persisted anywhere else)']
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -535,8 +546,10 @@ Ref: invoice.cancels_invoice_id > invoice.id
 // Bedienungskasse: order rounds & open-position cancellations (TSE-relevant)
 Ref: service_order.register_id > register.id
 Ref: service_order.dining_table_id > dining_table.id
+Ref: service_order.daily_closing_id > daily_closing.id
 Ref: order_cancellation.register_id > register.id
 Ref: order_cancellation.cancellation_reason_id > cancellation_reason.id
+Ref: order_cancellation.daily_closing_id > daily_closing.id
 
 // Configuration
 Ref: cancellation_reason.event_id > event.id
