@@ -209,7 +209,14 @@ sofern die aktuelle PUK bekannt ist — auf Firmware < 2.0.0 muss das immer
 die Admin-PUK sein (auch für `timeAdmin`), auf Firmware ≥ 2.0.0 ist die
 TimeAdmin-PUK ohnehin identisch zur Admin-PUK (beide werden gemeinsam bei
 `setup` festgelegt). `<neue-pin>` muss wie bei `setup` genau 5-stellig
-sein. Schlägt der Aufruf fehl (falsche PUK), liefert die JSON-Antwort
+sein und sich **von der bisherigen PIN unterscheiden** — laut `WormDLL.h`
+("New PIN. Must be different from the previous PIN.") schlägt der Aufruf
+sonst fehl. **Live bestätigt (2026-09-10):** der dabei tatsächlich
+gemeldete Code ist `4103` (`WORM_ERROR_TSE_INVALID_PARAMETER`) statt des
+eigentlich für diesen Fall dokumentierten `WORM_ERROR_TSE_SEAPI_SETTING_NEW_PIN_FAILED`
+(`0x1021`) — die SDK meldet hier offenbar einen generischeren Code als an
+anderer Stelle dokumentiert. Schlägt der Aufruf fehl (falsche PUK),
+liefert die JSON-Antwort
 zusätzlich `remainingRetries` — laut `WormDLL.h`-Dokumentation zu
 `worm_user_unblock` wird dieser Wert **nur auf Firmware < 2.0.0** bei
 jedem Fehlversuch tatsächlich heruntergezählt; auf Firmware ≥ 2.0.0 steht

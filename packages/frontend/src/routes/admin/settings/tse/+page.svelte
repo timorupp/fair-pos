@@ -435,16 +435,17 @@
           disabled={saving}
         />
       </div>
-      <div class="field">
-        <label class="checkbox-row">
+      <div class="auto-maintain-block">
+        <div class="field-check">
           <input
             type="checkbox"
+            id="tse-auto-maintain"
             checked={settings['tse_auto_maintain_enabled'] !== 'false'}
             disabled={autoMaintainSaving}
             onchange={(e) => toggleAutoMaintain(e.currentTarget.checked)}
           />
-          Automatische Zeit-Synchronisation aktiv
-        </label>
+          <label for="tse-auto-maintain">Automatische Zeit-Synchronisation aktiv</label>
+        </div>
         {#if settings['tse_auto_maintain_enabled'] === 'false'}
           <p class="warning-text">
             Für den Normalbetrieb muss die automatische Zeitsynchronisierung
@@ -491,9 +492,9 @@
       <button class="btn-ghost" onclick={openSetup}>TSE initialisieren</button>
       <button class="btn-ghost" onclick={() => openUnblock('admin')}>Admin-PIN entsperren</button>
       <button class="btn-ghost" onclick={() => openUnblock('timeAdmin')}>TimeAdmin-PIN entsperren</button>
-      <button class="btn-ghost tool-danger" onclick={openFactoryReset}>Werkseinstellung (Entwickler-TSE)</button>
       <button class="btn-ghost" onclick={openExport}>TSE-Rohdaten exportieren</button>
       <button class="btn-ghost" onclick={openDump}>Process-Data-Dump</button>
+      <button class="btn-ghost" onclick={openFactoryReset}>Werkseinstellung (Entwickler-TSE)</button>
     </div>
   </section>
 </div>
@@ -669,6 +670,7 @@
     <label for="unblock-new-pin-confirm">Neue PIN bestätigen</label>
     <input id="unblock-new-pin-confirm" type="text" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={unblockNewPinConfirm} disabled={unblockBusy} />
   </div>
+  <p class="hint">Die neue PIN darf nicht identisch zur bisherigen PIN sein.</p>
 
   {#if unblockError}
     <!-- WormDLL.h (worm_user_unblock): on firmware >= 2.0.0 remainingRetries is
@@ -774,7 +776,7 @@
   .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
   .field:last-child { margin-bottom: 0; }
   .field label { font-size: 0.85rem; color: var(--color-text-muted); }
-  .field input:not([type="checkbox"]) { width: 100%; max-width: 360px; }
+  .field input { width: 100%; max-width: 360px; }
   .success-text { color: #4caf7d; font-size: 0.875rem; }
   .form-footer { max-width: 640px; padding-top: 0.5rem; }
 
@@ -790,7 +792,13 @@
   .tool-grid button { width: 100%; }
   .tool-danger { color: #d9534f; border-color: #d9534f; }
   .dialog-footer { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border); }
-  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer; }
+  /* Wraps the shared .field-check checkbox convention (admin/+layout.svelte)
+     plus its follow-up warning/hint text — deliberately NOT nested inside a
+     .field, since the global `.field input` rule (width: 100%) would still
+     reach the checkbox through it as a descendant selector regardless of
+     any local override, stretching it and pushing the label onto what
+     looked like a separate column (live 2026-09-10). */
+  .auto-maintain-block { margin-bottom: 0.9rem; }
   .warning-text {
     font-size: 0.85rem; color: #d9534f; background: rgba(217, 83, 79, 0.08);
     border: 1px solid rgba(217, 83, 79, 0.3); border-radius: var(--radius-sm); padding: 0.6rem 0.75rem;
