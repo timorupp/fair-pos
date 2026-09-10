@@ -4432,6 +4432,140 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Markus Softs eigenem UX-Muster), verhindert aber nicht die bewusste
   Korrektur bei einem abweichenden Händler. Kein blindes Hardcoding.
 
+- [Task] **#131** "TSE-Tools" — Admin-UI für TSE-Verwaltungsfunktionen (statt reinem CLI-Handling)
+  Angelegt 2026-09-10 (Nutzerwunsch), ausgelöst durch den PUK-Längenfehler beim
+  `setup`-Aufruf (5- statt 6-stellig, Fehlercode `4103`) und die fehlende
+  Möglichkeit, eine gesperrte TimeAdmin-PIN zu entsperren. Kernproblem laut
+  Nutzer: "das mit der CLI ist sehr fehleranfällig" — keine clientseitige
+  Validierung.
+
+  **Vorgeschichte bewusst revidiert:** `docs/TSE-Integration.md` Abschnitt 7
+  hatte dokumentiert, Admin-PIN/PUK/CredentialSeed absichtlich nicht über die
+  Admin-UI abzufragen. Die zugrundeliegende Sicherheitsanforderung
+  (KassenSichV: diese Werte nie dauerhaft speichern) bleibt unverändert
+  bestehen und wird von der neuen UI eingehalten — nur transient pro Aufruf
+  durchgereicht, genau wie zuvor am CLI.
+
+  **Nutzer-Entscheidungen für die Umsetzung (2026-09-10):**
+  - Berechtigung: wie bisher `authenticateAdmin` (auch Veranstaltungs-
+    Administrator, da dieser typischerweise seine eigene TSE mitbringt).
+  - UI-Ort: ein Panel "TSE-Tools" in Einstellungen → TSE, ein Button je Tool,
+    jedes Tool öffnet einen Dialog; TSE-Selbsttest und Rohdatenexport wurden
+    mit hineingezogen.
+  - Rohdaten löschen (`deleteStoredData`) bewusst weggelassen.
+  - Alle Tools nutzen die auf der Hauptseite (TSE-Verbindung) bereits
+    gespeicherte Mount-Pfad/Client-ID-Konfiguration statt eigener Felder.
+  - Neue Idee zur Lösung von Task #109 nebenbei mit umgesetzt: Checkbox
+    "Automatische Zeit-Synchronisation aktiv", die sich selbst deaktiviert,
+    sobald der Health-Job eine PIN-Authentifizierungs-Fehlermeldung erhält.
+  - Alle PIN-/PUK-Felder mit doppelter Eingabe zur Bestätigung; Validierung
+    auf Ziffern-only + vorgeschriebene Länge, Client-ID ohne Sonderzeichen.
+  - Umfang: alles in einem Rutsch umgesetzt (keine Phasierung), Fokus auf
+    Berechtigungssicherheit statt Perfektion in jedem Detail.
+
+  **Erledigt 2026-09-10:**
+  - **`native/tse-cli`:** neuer Befehl `unblock <admin|timeAdmin> <puk>
+    <newPin>` (wrappt `worm_user_unblock`, meldet `remainingRetries` im
+    Fehlerfall); `cmdInfo()` liefert zusätzlich `needsSetup`
+    (`worm_tse_needs_setup`). Kompiliert und smoke-getestet
+    (`build.sh` fehlerfrei, `unblock`/Usage-Meldung manuell geprüft).
+  - **`tse/client.ts`:** neue Wrapper `unblockPin()`, `factoryResetTse()`,
+    `dumpProcessDataTse()` (Letztere zwei riefen zuvor existierende, aber
+    nie node-seitig verdrahtete CLI-Befehle auf). `TseError` trägt jetzt
+    optional `remainingRetries`.
+  - **`tse/validation.ts`** (neu): `isValidPuk`/`isValidPin`/`isValidClientId`
+    — serverseitige Formatprüfung vor jedem `tseCli`-Aufruf, exakt die
+    Längen aus `WormDLL.h` (PUK 6-stellig, PIN 5-stellig, Client-ID max.
+    30 Byte, keine Sonderzeichen).
+  - **`tse/healthJob.ts`** (Task #109-Anschluss): `config.tseAutoMaintainEnabled`
+    (neues `system_setting` `tse_auto_maintain_enabled`) wird automatisch
+    auf `false` gesetzt und persistiert, sobald ein automatischer
+    `maintainTse()`-Versuch mit einem PIN-Authentifizierungsfehler
+    (`WORM_ERROR_AUTHENTICATION_FAILED`/`_PIN_BLOCKED`, neue Helper-Funktion
+    `isPinAuthError` in `tse/signing.ts`) fehlschlägt — verhindert die
+    3-Minuten-PIN-Sperre aus Task #109. Zusätzlich `MAINTAIN_RETRY_COOLDOWN_MS`
+    (15 Minuten) gegen das zweite, weniger dringliche Risiko aus Task #109
+    (150.000-Aufrufe-Lebensdauerlimit von `worm_tse_updateTime`) — der Health-
+    Job hämmert nicht mehr jede Minute erneut, wenn die TSE aus einem
+    anderen Grund dauerhaft ungesund bleibt.
+  - **`routes/admin/tse.ts`:** neue Routen `POST /setup`, `POST /unblock`,
+    `POST /factory-reset`, `GET /dump-process-data` — jeweils mit
+    Formatvalidierung vor dem `tseCli`-Aufruf und `system_log`-Eintrag
+    (Kategorie `tse_setup`/`tse_export`).
+  - **Frontend (`settings/tse/+page.svelte`):** "TSE-Status" durch ein
+    "TSE-Tools"-Panel ersetzt (8 Buttons: TSE testen, Zeit synchronisieren,
+    TSE initialisieren, Admin-PIN entsperren, TimeAdmin-PIN entsperren,
+    Werkseinstellung, TSE-Rohdaten exportieren, Process-Data-Dump), jedes
+    öffnet einen `Modal`-Dialog. Setup-/Unblock-Dialoge verlangen PIN/PUK
+    doppelt (mit Client-seitiger Live-Validierung, Submit-Button erst bei
+    exaktem Match aktiv), Factory-Reset verlangt eine Tipp-Bestätigung
+    ("ZURÜCKSETZEN"). Neue Checkbox "Automatische Zeit-Synchronisation
+    aktiv" im Zeit-Synchronisieren-Dialog, speichert sofort bei Änderung.
+  - Tests: `validation.test.ts` (13), `client.test.ts` erweitert (+6),
+    `healthJob.integration.test.ts` erweitert (+2, Cooldown + PIN-Auto-Disable),
+    `tse.integration.test.ts` erweitert (+18 für die vier neuen Routen).
+    Voller Testlauf grün: Unit 364/364, Integration 343/343.
+  - **Live in echtem Browser verifiziert** (Playwright gegen den echten
+    Dev-Server, nicht nur Unit-/Integrationstests): Login +
+    Systemverwaltungs-Step-up, alle 8 Tool-Dialoge geöffnet und
+    Screenshots geprüft, Setup-Dialog-Validierung (PUK-Mismatch blockiert
+    Submit, Match aktiviert ihn) und Checkbox-Persistenz (DB-Wert nach
+    Toggle geprüft) funktional bestätigt.
+  - **Noch offen, nicht Teil dieses Tasks:** Dump-Process-Data-Platzierung
+    (Diagnose vs. Exporte) wurde in die Tools-Sektion gelegt statt zu den
+    Exporten — falls das nicht passt, einfach verschieben; kein
+    strukturelles Problem. `deleteStoredData` weiterhin bewusst nicht
+    verdrahtet.
+
+- [Task] **#109** Schutz gegen zu häufige TSE-Zeitsynchronisation (`worm_tse_updateTime`)
+  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
+  Release erledigen.**
+
+  **Klassifikation: Bug (Schwere: mittel bis hoch — kein akutes Problem im
+  Normalbetrieb, aber ein von der SDK-Doku ausdrücklich als schädlich
+  beschriebenes Szenario ohne jede Absicherung im Code).** Gefunden
+  2026-09-02 bei einer Nutzerfrage zu `dumpProcessData`-Testdaten — siehe
+  D-055 für die vollständige Analyse.
+
+  **Kurzfassung:** `tse/healthJob.ts`s minütlicher `tick()` rief bei jedem
+  "TSE ungesund"-Snapshot erneut `maintainTse()` auf (Selbsttest +
+  `worm_tse_updateTime`) — ohne Backoff/Cooldown über das
+  60-Sekunden-Ticksintervall hinaus. Zwei Risiken: (1) die TSE ist für
+  maximal 150.000 `updateTime`-Aufrufe über ihre gesamte Lebensdauer
+  spezifiziert — bei dauerhaft "ungesund" gemeldetem Zustand wäre das Limit
+  bei einem Aufruf pro Minute in ca. 104 Tagen aufgebraucht; (2) `maintainTse()`
+  authentifiziert sich mit der `tse_time_admin_pin`-Einstellung — bei einer
+  falsch hinterlegten PIN (Retry-Zähler 3) hätte derselbe Loop die PIN
+  bereits nach spätestens 3 Minuten dauerhaft blockiert.
+
+  **Erledigt 2026-09-10, im Rahmen von Task #131 (TSE-Tools):** Die
+  Nutzerentscheidung für den Lösungsansatz kam aus der Diskussion um Task
+  #131 (Checkbox-Idee gegen wiederholte PIN-Fehlversuche). Beide Risiken
+  jetzt in `tse/healthJob.ts` abgedeckt:
+  - **PIN-Risiko (das dringlichere):** neue Config-/Setting-gestützte
+    Sperre `config.tseAutoMaintainEnabled` (`system_setting`
+    `tse_auto_maintain_enabled`) — wird automatisch auf `false` gesetzt und
+    persistiert, sobald ein `maintainTse()`-Versuch mit einem
+    PIN-Authentifizierungsfehler fehlschlägt (`isPinAuthError()` in
+    `tse/signing.ts`, prüft auf `WORM_ERROR_AUTHENTICATION_FAILED`/
+    `_PIN_BLOCKED`). Der Health-Job hört danach auf, es erneut zu
+    versuchen — stoppt nach dem ersten Fehlversuch, weit vor den 3
+    kritischen Versuchen. Ein Admin muss die neue Checkbox "Automatische
+    Zeit-Synchronisation aktiv" (Einstellungen → TSE → TSE-Tools) nach
+    Prüfung/Entsperrung der PIN manuell wieder aktivieren.
+  - **`updateTime`-Lebensdauerlimit (das langfristigere):** neuer
+    `MAINTAIN_RETRY_COOLDOWN_MS` (15 Minuten) — der erste Versuch nach
+    einem gesund→ungesund-Übergang läuft weiterhin sofort (schnelle
+    Erholung bei kurzen Ausfällen bleibt erhalten), aber wiederholte
+    Versuche bei durchgehend ungesundem Zustand aus einem anderen Grund
+    als einer PIN werden auf höchstens einen pro 15 Minuten gedrosselt
+    statt jede Minute — senkt die Abnutzungsrate um den Faktor 15.
+  - Zwei neue Integrationstests (`healthJob.integration.test.ts`): Cooldown
+    verhindert einen zweiten `maintain`-Aufruf im direkt folgenden Tick;
+    PIN-Fehler deaktiviert automatisches Maintain und verhindert jeden
+    weiteren Versuch, bestätigt per DB-Wert und `system_log`-Eintrag.
+  - Vollständiger Umfang (Checkbox-UI, Persistenz, Tests) siehe Task #131.
+
 ## Findings
 
 - [Finding] **D-001** (mittel, Datenmodell) — Gefunden 2026-06-24
@@ -4633,6 +4767,10 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
 - [Finding] **D-053** (mittel, Backend / Rechnungs-Vorschau) — Gefunden 2026-09-01 — Kontext: Während Task #105-Umsetzung (gemeinsames Zwischenformat für alle Belege) gefunden
   Vom vollen Integrationstest-Lauf aufgedeckt: `GET /api/admin/settings/receipt-preview` (Bon-Vorschau in Unternehmensdaten) zeigte das Firmenlogo nach der Block-Modell-Umstellung gar nicht mehr an, obwohl konfiguriert und die Checkbox aktiv. Ursache: die Route baut ihr `ReceiptData`-Objekt manuell zusammen (`logoPng`/`logoWidth`/`logoHeight`/`logoWidthFactor`), setzt aber `logoEscPos` nie — der neue gemeinsame Block-Builder (`receipt/blocks.ts`) verlangt für den Bild-Block jetzt beide Repräsentationen gleichzeitig (PNG fürs PDF, ESC/POS-Raster für den Ausdruck), da ein Block ja für beide Renderer gilt. Die echten Druck-Pfade (`receipt/data.ts`) setzten `logoEscPos` bereits korrekt — nur dieser eine Vorschau-Endpunkt (baute `ReceiptData` von Hand statt über `receipt/data.ts` zu laden) hatte die Lücke.
   **Behoben (2026-09-01):** `routes/admin/settings.ts`s `receipt-preview`-Handler ergänzt `logoEscPos: logo?.escposBytes ?? null`. Regressionstest `settings.receipt-preview.integration.test.ts` (bereits vorhanden, Task #98) hat den Fehler beim vollen Integrationslauf sofort aufgedeckt, keine neue Testdatei nötig. **Live bestätigt (2026-09-06).**
+
+- [Finding] **D-055** (mittel, Backend / TSE-Health-Job) — Gefunden 2026-09-02 — Kontext: Bei Nutzerfragen zur TSE-Nutzung/Steuersätzen gefunden (2026-09-02)
+  Nutzerfrage zu `dumpProcessData`-Testdaten führte zur Prüfung, ob die minütliche TSE-Gesundheitsprüfung (`tse/healthJob.ts`) der TSE schaden könnte. Die routinemäßige Minutenabfrage selbst ist unkritisch (`getTseInfo()`, reiner Lesebefehl, erzeugt keinen Log-Eintrag). Aber: `tick()`s "TSE ungesund"-Zweig rief bei jedem Fehlschlag erneut `maintainTse()` auf (Selbsttest + `worm_tse_updateTime`) — **ohne jeglichen Backoff/Cooldown** über das 60-Sekunden-Ticksintervall hinaus. Der SDK-Header warnt explizit (Abschnitt „Common Issues" → „Update Time Frequency"): `worm_tse_updateTime` "should NOT be called significantly more often than announced in `worm_info_maxTimeSynchronizationDelay`" (typischerweise im Bereich von Stunden/einem Tag) — "the guaranteed number of supported update time commands is 150000... If the time gets synchronized more often than that, the TSE might get damaged." Würde eine TSE aus irgendeinem Grund dauerhaft als "ungesund" gemeldet, würde jede Minute ein neuer `updateTime`-Aufruf ausgelöst — bei diesem Takt wäre das 150.000er-Lebensdauer-Limit in ca. 104 Tagen aufgebraucht. **Ergänzung 2026-09-06:** Dieselbe ungebremste Schleife hatte noch ein zweites, deutlich akuteres Risiko — `maintainTse()` authentifiziert sich dabei mit dem `tse_time_admin_pin`-Setting. Laut SDK-Header (`WormDLL.h` Zeile 2273f.): "PINs have a retry counter of 3. If a wrong PIN has been entered 3 times, the PIN will be blocked and must be unblocked with the PUK." Ist die hinterlegte TimeAdmin-PIN aus irgendeinem Grund falsch, würde der minütliche Retry-Loop die PIN nach spätestens 3 Minuten (statt erst nach 104 Tagen wie beim Update-Time-Limit) dauerhaft blockieren.
+  **Erledigt 2026-09-10, siehe Task #109/#131:** `config.tseAutoMaintainEnabled` deaktiviert sich automatisch und dauerhaft (persistiert in `system_setting`), sobald ein automatischer `maintainTse()`-Versuch mit einem PIN-Authentifizierungsfehler fehlschlägt (`isPinAuthError()`, `tse/signing.ts`) — deckt das dringlichere PIN-Risiko vollständig ab. `MAINTAIN_RETRY_COOLDOWN_MS` (15 Minuten) drosselt wiederholte Versuche bei jedem anderen Dauer-Fehlerzustand — senkt die `updateTime`-Abnutzungsrate um den Faktor 15. Volle Details in Task #109 (Lösung) und Task #131 (Checkbox-UI zum manuellen Wiederaktivieren).
 
 - [Finding] **D-056** (mittel, Backend / TSE + DSFinV-K + Z-Bon) — Gefunden 2026-09-02 — Kontext: Bei Nutzerfragen zur TSE-Nutzung/Steuersätzen gefunden (2026-09-02)
   Nutzerfrage: wie verhält sich das Kassenbeleg-V1-Format bei einer künftigen USt-Satz-Änderung (z. B. Regelsteuersatz 19 %→20 %)? Code-Recherche zeigt drei unabhängige, hart codierte Annahmen über die aktuell gültigen Sätze 19/7, die bei einer Satzänderung silent falsch würden: (1) `tse/processData.ts::taxSlot()` — exakter Floatvergleich gegen 19/7; (2) `exports/dsfinvk/rows.ts::ustSchluessel()` — identische Logik; (3) `closing/totals.ts::computeClosingTotals()` — Schwellenwerte statt Exaktvergleich. Zusätzlich druckt `closing/blocks.ts` die Z-Bon-Zeilen mit fest einprogrammiertem Text "19 %"/"7 %".

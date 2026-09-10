@@ -8,7 +8,11 @@ import { query } from '../db/client.js';
 import { config } from '../config.js';
 
 /** Keys in `system_setting` that configure the TSE connection. */
-export const TSE_SETTING_KEYS = ['tse_mount_point', 'tse_client_id', 'tse_time_admin_pin'] as const;
+export const TSE_SETTING_KEYS = [
+  'tse_mount_point', 'tse_client_id', 'tse_time_admin_pin',
+  // Task #109/#131 — see config.ts's `tseAutoMaintainEnabled` doc comment.
+  'tse_auto_maintain_enabled',
+] as const;
 
 /**
  * Copies TSE-related values from a settings key-value map into `config`,
@@ -21,6 +25,9 @@ export const TSE_SETTING_KEYS = ['tse_mount_point', 'tse_client_id', 'tse_time_a
 export function applyTseSettings(settings: Record<string, string>): void {
   if ('tse_mount_point' in settings) config.tseMountPoint = settings['tse_mount_point'] || null;
   if ('tse_client_id' in settings) config.tseClientId = settings['tse_client_id'] || null;
+  if ('tse_auto_maintain_enabled' in settings) {
+    config.tseAutoMaintainEnabled = settings['tse_auto_maintain_enabled'] !== 'false';
+  }
 }
 
 /** Loads the persisted TSE connection settings from the database into `config`. Called once at startup. */

@@ -28,6 +28,9 @@
 #                               output-file argument, mirroring how the real
 #                               CLI writes TAR bytes there directly instead of
 #                               returning them via the JSON envelope.
+#   TSE_STUB_DUMP_CONTENT     - optional; same idea for `dumpProcessData` —
+#                               writes this exact string to the output-file
+#                               argument instead of the JSON envelope.
 if [ -n "${TSE_STUB_LOG_FILE:-}" ]; then
   printf '%s\n' "$*" >> "$TSE_STUB_LOG_FILE"
 fi
@@ -38,6 +41,25 @@ fi
 # cmdExportTar). Mirror that here so a test can read the file back.
 if [ "$2" = "exportTar" ] && [ -n "${TSE_STUB_EXPORT_CONTENT:-}" ]; then
   printf '%s' "$TSE_STUB_EXPORT_CONTENT" > "$3"
+fi
+
+# TSE_STUB_MAINTAIN_FAILS - optional; when set, the `maintain` command
+# always fails (ignoring TSE_STUB_STDOUT/EXIT_CODE) with the error code from
+# TSE_STUB_MAINTAIN_ERROR_CODE (default 1), while every other command (in
+# particular `info`) still uses TSE_STUB_STDOUT/EXIT_CODE as normal. Lets a
+# test simulate "info reports unhealthy, maintain then fails" — the two are
+# separate CLI invocations, so a single static TSE_STUB_STDOUT can't
+# represent both outcomes at once.
+if [ "$2" = "maintain" ] && [ -n "${TSE_STUB_MAINTAIN_FAILS:-}" ]; then
+  code="${TSE_STUB_MAINTAIN_ERROR_CODE:-1}"
+  printf '{"ok":false,"error":{"code":%s,"message":"maintain failed (stub)"}}' "$code"
+  exit 1
+fi
+
+# dumpProcessData writes its result directly to the output-file argument
+# (mountPoint dumpProcessData <outputFile>) — same shape as exportTar above.
+if [ "$2" = "dumpProcessData" ] && [ -n "${TSE_STUB_DUMP_CONTENT:-}" ]; then
+  printf '%s' "$TSE_STUB_DUMP_CONTENT" > "$3"
 fi
 
 if [ -n "${TSE_STUB_FAIL_EXCEPT_ABORT:-}" ]; then

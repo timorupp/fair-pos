@@ -8,11 +8,29 @@ import path from 'node:path';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 import { query } from '../../db/client.js';
-import { exportTar, getTseInfo, maintainTse } from '../../tse/client.js';
+import {
+  dumpProcessDataTse, exportTar, factoryResetTse, getTseInfo, maintainTse, setupTse, unblockPin,
+} from '../../tse/client.js';
 import { detectTse, listTseMountCandidates, type TseMountCandidate } from '../../tse/detect.js';
-import type { TseInfo } from '../../tse/types.js';
+import { TseError, type TseInfo } from '../../tse/types.js';
 import { describeTseError } from '../../tse/signing.js';
+import { isValidPin, isValidPuk } from '../../tse/validation.js';
 import { logSystemEvent } from '../../system/log.js';
+
+/** Body of `POST /api/admin/tse/setup`. */
+interface TseSetupBody {
+  credentialSeed: string;
+  adminPuk: string;
+  adminPin: string;
+  timeAdminPin: string;
+}
+
+/** Body of `POST /api/admin/tse/unblock`. */
+interface TseUnblockBody {
+  user: 'admin' | 'timeAdmin';
+  puk: string;
+  newPin: string;
+}
 
 /** Shape returned by `GET /api/admin/tse/status`. */
 interface TseStatusResponse {
@@ -160,6 +178,135 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
         .header('Content-Type', 'application/x-tar')
         .header('Content-Disposition', `attachment; filename="${filename}"`)
         .send(tar);
+    } catch (e) {
+      return reply.status(502).send({ error: describeTseError(e) });
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * POST /api/admin/tse/setup — one-time provisioning of a fresh TSE (Task
+   * #131 "TSE-Tools", moves what used to be CLI-only into the Admin UI).
+   * Uses the already-configured `config.tseMountPoint`/`tseClientId` (set
+   * via the "TSE-Verbindung" panel on this same page) — the request only
+   * carries the four values that panel never asks for. Validates format
+   * (PUK/PIN length and digit-only) *before* ever calling `tseCli`, since a
+   * malformed value reaching the TSE itself risks counting toward the
+   * 3-attempt lockout (`docs/TSE-CLI-Referenz.md`). `credentialSeed` isn't
+   * format-checked beyond non-empty — there's no fixed length/charset to
+   * validate against (Task #129).
+   */
+  app.post<{ Body: Partial<TseSetupBody> }>('/setup', async (req, reply) => {
+    if (!config.tseMountPoint || !config.tseClientId) {
+      return reply.status(400).send({
+        error: 'TSE ist nicht konfiguriert — zuerst Mount-Pfad und Client-ID oben eintragen.',
+      });
+    }
+    const { credentialSeed, adminPuk, adminPin, timeAdminPin } = req.body ?? {};
+    if (!credentialSeed) {
+      return reply.status(400).send({ error: 'CredentialSeed fehlt.' });
+    }
+    if (!adminPuk || !isValidPuk(adminPuk)) {
+      return reply.status(400).send({ error: 'Admin-PUK muss genau 6-stellig sein und darf nur Ziffern enthalten.' });
+    }
+    if (!adminPin || !isValidPin(adminPin)) {
+      return reply.status(400).send({ error: 'Admin-PIN muss genau 5-stellig sein und darf nur Ziffern enthalten.' });
+    }
+    if (!timeAdminPin || !isValidPin(timeAdminPin)) {
+      return reply.status(400).send({ error: 'TimeAdmin-PIN muss genau 5-stellig sein und darf nur Ziffern enthalten.' });
+    }
+    try {
+      await setupTse({ credentialSeed, adminPuk, adminPin, timeAdminPin });
+      await logSystemEvent('info', 'tse_setup', `TSE initialisiert (Admin-UI, ${req.adminUser.name}).`);
+      return reply.send({ ok: true });
+    } catch (e) {
+      return reply.status(502).send({ error: describeTseError(e) });
+    }
+  });
+
+  /**
+   * POST /api/admin/tse/unblock — resets a blocked Admin or TimeAdmin PIN
+   * (Task #109/#131). Requires the current PUK for that user; see
+   * `tse/client.ts`'s `unblockPin` doc comment for which PUK applies on
+   * which firmware version. On a failed attempt (wrong PUK), the response
+   * includes `remainingRetries` when the SDK reported one, so the UI can
+   * warn before the PUK itself gets blocked.
+   */
+  app.post<{ Body: Partial<TseUnblockBody> }>('/unblock', async (req, reply) => {
+    if (!config.tseMountPoint || !config.tseClientId) {
+      return reply.status(400).send({ error: 'TSE ist nicht konfiguriert.' });
+    }
+    const { user, puk, newPin } = req.body ?? {};
+    if (user !== 'admin' && user !== 'timeAdmin') {
+      return reply.status(400).send({ error: 'Ungültiger Benutzer — muss "admin" oder "timeAdmin" sein.' });
+    }
+    if (!puk || !isValidPuk(puk)) {
+      return reply.status(400).send({ error: 'PUK muss genau 6-stellig sein und darf nur Ziffern enthalten.' });
+    }
+    if (!newPin || !isValidPin(newPin)) {
+      return reply.status(400).send({ error: 'Neue PIN muss genau 5-stellig sein und darf nur Ziffern enthalten.' });
+    }
+    try {
+      await unblockPin(user, puk, newPin);
+      await logSystemEvent(
+        'info', 'tse_setup',
+        `${user === 'admin' ? 'Admin' : 'TimeAdmin'}-PIN entsperrt (Admin-UI, ${req.adminUser.name}).`,
+      );
+      return reply.send({ ok: true });
+    } catch (e) {
+      const remainingRetries = e instanceof TseError ? e.remainingRetries : undefined;
+      return reply.status(502).send({ error: describeTseError(e), remainingRetries });
+    }
+  });
+
+  /**
+   * POST /api/admin/tse/factory-reset — resets a *development-firmware* TSE
+   * to factory default (Task #131). `worm_tse_factoryReset` only works on
+   * development hardware by design and simply fails on real/production
+   * firmware, so there is no separate safety check here beyond requiring
+   * the TSE to be configured — see `docs/TSE-CLI-Referenz.md` section 4.1.
+   */
+  app.post('/factory-reset', async (req, reply) => {
+    if (!config.tseMountPoint || !config.tseClientId) {
+      return reply.status(400).send({ error: 'TSE ist nicht konfiguriert.' });
+    }
+    try {
+      await factoryResetTse();
+      await logSystemEvent(
+        'warning', 'tse_setup',
+        `TSE auf Werkseinstellung zurückgesetzt (Admin-UI, ${req.adminUser.name}).`,
+      );
+      return reply.send({ ok: true });
+    } catch (e) {
+      return reply.status(502).send({ error: describeTseError(e) });
+    }
+  });
+
+  /**
+   * GET /api/admin/tse/dump-process-data — downloads a tab-separated dump
+   * of every process-data entry currently stored on the TSE (Task #102,
+   * moved into "TSE-Tools" by Task #131) — a diagnostic tool for comparing
+   * what the TSE actually recorded against FairPOS's own database.
+   */
+  app.get('/dump-process-data', async (req, reply) => {
+    if (!config.tseMountPoint || !config.tseClientId) {
+      return reply.status(400).send({ error: 'TSE ist nicht konfiguriert.' });
+    }
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'fairpos-tse-dump-'));
+    const outputFile = path.join(tmpDir, `${randomUUID()}.txt`);
+    try {
+      await dumpProcessDataTse(outputFile);
+      const dump = await readFile(outputFile);
+      const filename = `fairpos_tse_process_data_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
+      await logSystemEvent(
+        'info', 'tse_export',
+        `TSE-Process-Data-Dump heruntergeladen (${req.adminUser.name}).`,
+      );
+      reply
+        .header('Content-Type', 'text/plain; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(dump);
     } catch (e) {
       return reply.status(502).send({ error: describeTseError(e) });
     } finally {

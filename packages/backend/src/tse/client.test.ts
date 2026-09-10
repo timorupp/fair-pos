@@ -124,6 +124,24 @@ describe('tse/client', () => {
     expect(info.tseCertificationId).toBe('BSI-K-TSE-0001');
   });
 
+  it('parses the info command\'s needsSetup field (Task #131)', async () => {
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: {
+        hasPassedSelfTest: false, hasValidTime: false,
+        startedTransactions: 0, maxStartedTransactions: 512,
+        remainingSignatures: 0, maxSignatures: 0,
+        certificateExpirationDate: 0, timeUntilNextSelfTest: 0, timeUntilNextTimeSynchronization: 0,
+        tseCertificationId: '', formFactor: 'USB', tseSerialNumber: '',
+        needsSetup: true,
+      },
+    });
+    await configureTse();
+    const { getTseInfo } = await import('./client.js');
+    const info = await getTseInfo();
+    expect(info.needsSetup).toBe(true);
+  });
+
   it('throws when the CLI produces no output at all', async () => {
     // Point at a path that will fail to execute, simulating a missing/broken binary.
     process.env['TSE_CLI_PATH'] = '/nonexistent/tseCli';
@@ -139,5 +157,52 @@ describe('tse/client', () => {
     // Just verifying these don't collide/throw when issued back-to-back —
     // the actual ordering guarantee is covered by queue.test.ts.
     await Promise.all([maintainTse('1234'), maintainTse('1234'), maintainTse('1234')]);
+  });
+
+  it('unblockPin resolves on success', async () => {
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({ ok: true, result: {} });
+    process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-unblock-calls.log';
+    const fs = await import('node:fs');
+    fs.writeFileSync('/tmp/tsecli-unblock-calls.log', '');
+    await configureTse();
+    const { unblockPin } = await import('./client.js');
+    await unblockPin('timeAdmin', '111111', '54321');
+    const calls = fs.readFileSync('/tmp/tsecli-unblock-calls.log', 'utf8').trim().split('\n');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('unblock timeAdmin 111111 54321');
+    delete process.env['TSE_STUB_LOG_FILE'];
+  });
+
+  it('unblockPin rejects with TseError.remainingRetries when the PUK was wrong', async () => {
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: false,
+      error: { code: 4352, message: 'worm_user_unblock failed', remainingRetries: 2 },
+    });
+    process.env['TSE_STUB_EXIT_CODE'] = '1';
+    await configureTse();
+    const { unblockPin } = await import('./client.js');
+    await expect(unblockPin('admin', 'wrong1', '54321')).rejects.toMatchObject({
+      name: 'TseError',
+      code: 4352,
+      remainingRetries: 2,
+    });
+  });
+
+  it('factoryResetTse resolves on success', async () => {
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({ ok: true, result: {} });
+    await configureTse();
+    const { factoryResetTse } = await import('./client.js');
+    await expect(factoryResetTse()).resolves.toBeUndefined();
+  });
+
+  it('dumpProcessDataTse writes the CLI-reported dump to the given file', async () => {
+    const fs = await import('node:fs');
+    const outputFile = '/tmp/tsecli-dump-test-output.txt';
+    process.env['TSE_STUB_DUMP_CONTENT'] = 'id\ttype\tprocessData\n1\tstart\tAAA\n';
+    await configureTse();
+    const { dumpProcessDataTse } = await import('./client.js');
+    await dumpProcessDataTse(outputFile);
+    expect(fs.readFileSync(outputFile, 'utf8')).toBe('id\ttype\tprocessData\n1\tstart\tAAA\n');
+    delete process.env['TSE_STUB_DUMP_CONTENT'];
   });
 });

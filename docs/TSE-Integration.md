@@ -225,14 +225,29 @@ Einstellungen → System konfigurierbar, gespeichert als `tse_mount_point` /
 `company_name`). `tse/settings.ts` spiegelt Mount-Pfad und
 Client-ID beim Start und nach jedem Speichern synchron in `config` (siehe
 config.ts), damit der heiße Kassierpfad weiterhin ohne DB-Zugriff auskommt.
-Admin-PIN/PUK/Credential-Seed werden bewusst NICHT über die UI abgefragt — die
-einmalige Hardware-Inbetriebnahme (`setup`) ist nicht Teil dieser UI-Iteration.
 Ein "TSE testen"-Button ruft `GET /api/admin/tse/status` auf, der live `info`
 aufruft und Self-Test-Status, Restsignaturen, Zertifikatsablauf usw. anzeigt.
 Daneben ein "Zeit synchronisieren"-Button (`POST /api/admin/tse/maintain`,
 liest die TimeAdmin-PIN frisch aus `system_setting` und ruft `maintainTse()`
 auf) — derselbe manuelle Auslöser, der auch automatisch vom
 Hintergrund-Health-Job (Abschnitt 6, Punkt 2) verwendet wird.
+
+**Frühere Entscheidung revidiert (Task #131, 2026-09-10):** Admin-PIN/PUK/
+CredentialSeed wurden bis dahin bewusst nicht über die UI abgefragt — die
+einmalige Hardware-Inbetriebnahme (`setup`) war nicht Teil der UI. Nach einem
+realen PUK-Längenfehler beim manuellen CLI-Aufruf entschied der Nutzer, dass
+die rein manuelle Kommandozeilen-Bedienung zu fehleranfällig ist. Seitdem gibt
+es ein "TSE-Tools"-Panel (Einstellungen → TSE) mit Dialogen für `setup`,
+Admin-/TimeAdmin-PIN entsperren (`unblock`, neu im CLI), Werksreset
+(`factoryReset`) und den Process-Data-Dump (`dumpProcessData`) — jeweils mit
+serverseitiger Formatvalidierung (`tse/validation.ts`) vor dem `tseCli`-Aufruf.
+Die zugrundeliegende Sicherheitsanforderung bleibt unverändert: diese Werte
+werden weiterhin nie dauerhaft gespeichert, nur transient pro Aufruf
+durchgereicht — die UI ändert nur, woher der Wert eingegeben wird (Web-Formular
+statt Terminal), nicht was damit geschieht. Siehe `BACKLOG-DONE.md` Task #131
+für den vollständigen Umfang, inklusive einer Checkbox "Automatische
+Zeit-Synchronisation aktiv", die sich bei einem PIN-Fehler des
+Hintergrund-Health-Checks selbst deaktiviert (Anschluss an Task #109).
 
 **Umgesetzt (Task #51):** Den Mount-Pfad muss der Admin nicht mehr von Hand
 eintippen — ein "Auto-erkennen"-Button (`POST /api/admin/tse/detect`,

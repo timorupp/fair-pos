@@ -30,7 +30,7 @@ const DEFAULT_CLI_PATH = path.join(
 interface CliEnvelope<T> {
   ok: boolean;
   result?: T;
-  error?: { code: number; message: string };
+  error?: { code: number; message: string; remainingRetries?: number };
 }
 
 /**
@@ -130,7 +130,7 @@ async function runCli<T>(
   }
   if (!parsed.ok) {
     const e = parsed.error ?? { code: -1, message: 'unknown error' };
-    throw new TseError(e.code, e.message);
+    throw new TseError(e.code, e.message, e.remainingRetries);
   }
   return parsed.result as T;
 }
@@ -285,5 +285,56 @@ export function exportTar(outputFile: string): Promise<void> {
   return enqueueTseCall(async () => {
     const { mountPoint } = requireTseConfig();
     await runCli<Record<string, never>>(mountPoint, 'exportTar', [outputFile], EXPORT_TIMEOUT_MS);
+  });
+}
+
+/**
+ * Resets a *development-firmware* TSE to its factory default state (empties
+ * the TSE Store, resets PUK/all PINs, drops client registration). Fails
+ * harmlessly on real/production firmware — the SDK only permits this on
+ * development hardware by design (see `native/tse-cli`'s `cmdFactoryReset`).
+ */
+export function factoryResetTse(): Promise<void> {
+  return enqueueTseCall(async () => {
+    const { mountPoint } = requireTseConfig();
+    await runCli<Record<string, never>>(mountPoint, 'factoryReset', [], SELF_TEST_TIMEOUT_MS);
+  });
+}
+
+/**
+ * Resets a blocked Admin or TimeAdmin PIN back to a usable state, given the
+ * current PUK. On firmware < 2.0.0 this must always be the Admin PUK, even
+ * to unblock TimeAdmin; on firmware >= 2.0.0 the TimeAdmin PUK is set
+ * identically to the Admin PUK during `setup`, so either works there too
+ * (see `worm_user_unblock`'s doc comment in `WormDLL.h`).
+ *
+ * @param user - Which user's PIN to unblock.
+ * @param puk - The current PUK for that user.
+ * @param newPin - The new 5-digit PIN to set.
+ * @throws {TseError} With `remainingRetries` set when `puk` itself was wrong.
+ */
+export function unblockPin(
+  user: 'admin' | 'timeAdmin',
+  puk: string,
+  newPin: string,
+): Promise<void> {
+  return enqueueTseCall(async () => {
+    const { mountPoint } = requireTseConfig();
+    await runCli<Record<string, never>>(mountPoint, 'unblock', [user, puk, newPin]);
+  });
+}
+
+/**
+ * Dumps every process-data entry currently stored on the TSE to a
+ * tab-separated text file — a diagnostic tool (Task #102) for comparing
+ * what the TSE actually recorded against FairPOS's own database, never
+ * called by FairPOS itself outside an explicit admin action.
+ *
+ * @param outputFile - Absolute path the dump will be written to.
+ */
+export function dumpProcessDataTse(outputFile: string): Promise<void> {
+  return enqueueTseCall(async () => {
+    const { mountPoint } = requireTseConfig();
+    await runCli<Record<string, never>>(mountPoint, 'dumpProcessData', [outputFile], EXPORT_TIMEOUT_MS);
   });
 }

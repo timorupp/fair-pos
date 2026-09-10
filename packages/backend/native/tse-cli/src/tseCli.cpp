@@ -299,6 +299,14 @@ int cmdInfo(WormContext *ctx) {
     return printError(err, "worm_info_read failed");
   }
 
+  // Whether the TSE still needs the one-time `setup` provisioning — read
+  // tolerantly like the certificate chain above: a failure here shouldn't
+  // block the rest of `info`, just leave the field at its safe default
+  // (false, i.e. "assume already set up") since callers only use this to
+  // decide whether to offer the Setup tool at all (Task #131).
+  int needsSetupRaw = 0;
+  worm_tse_needs_setup(ctx, &needsSetupRaw);
+
   const unsigned char *serial;
   worm_uint serialLength;
   worm_info_tseSerialNumber(info, &serial, &serialLength);
@@ -343,7 +351,8 @@ int cmdInfo(WormContext *ctx) {
       "\"signatureAlgorithm\":\"%s\","
       "\"logTimeFormat\":\"%s\","
       "\"publicKey\":\"%s\","
-      "\"certificateChain\":\"%s\""
+      "\"certificateChain\":\"%s\","
+      "\"needsSetup\":%s"
       "}}\n",
       worm_info_hasPassedSelfTest(info) ? "true" : "false",
       worm_info_hasValidTime(info) ? "true" : "false",
@@ -356,7 +365,8 @@ int cmdInfo(WormContext *ctx) {
       toHex(serial, serialLength).c_str(),
       worm_signatureAlgorithm(), worm_logTimeFormat(),
       base64Encode(publicKey, publicKeyLength).c_str(),
-      certificateChainB64.c_str());
+      certificateChainB64.c_str(),
+      needsSetupRaw ? "true" : "false");
 
   worm_info_free(info);
   return 0;
@@ -395,6 +405,40 @@ int cmdFactoryReset(WormContext *ctx, int argc, char **argv) {
   if (argc != 0) return printUsageError("factoryReset takes no arguments");
   WormError err = worm_tse_factoryReset(ctx);
   if (err != WORM_ERROR_NOERROR) return printError(err, "worm_tse_factoryReset failed");
+  std::printf("{\"ok\":true,\"result\":{}}\n");
+  return 0;
+}
+
+/** `unblock <user: admin|timeAdmin> <puk> <newPin>` — resets a blocked Admin
+ * or TimeAdmin PIN via `worm_user_unblock`. Requires the current PUK for
+ * that user (per `WormDLL.h`: on firmware < 2.0.0 this must always be the
+ * Admin PUK, even to unblock TimeAdmin; on firmware >= 2.0.0 the TimeAdmin
+ * PUK is set identically to the Admin PUK during `setup`, so either works
+ * there too). Reports `remainingRetries` in the error response on a failed
+ * attempt (wrong PUK) — the SDK only sets it in that case — so the caller
+ * can warn before the PUK itself gets blocked (Task #131). */
+int cmdUnblock(WormContext *ctx, int argc, char **argv) {
+  if (argc != 3) return printUsageError("unblock needs 3 arguments");
+  std::string userArg(argv[0]), puk(argv[1]), newPin(argv[2]);
+
+  WormUserId user;
+  if (userArg == "admin") user = WORM_USER_ADMIN;
+  else if (userArg == "timeAdmin") user = WORM_USER_TIME_ADMIN;
+  else return printUsageError("unblock: first argument must be \"admin\" or \"timeAdmin\"");
+
+  int remainingRetries = -1;
+  WormError err = worm_user_unblock(
+      ctx, user,
+      (const unsigned char *)puk.data(), (int)puk.size(),
+      (const unsigned char *)newPin.data(), (int)newPin.size(),
+      &remainingRetries);
+  if (err != WORM_ERROR_NOERROR) {
+    std::printf(
+        "{\"ok\":false,\"error\":{\"code\":%d,\"message\":\"worm_user_unblock failed\",\"remainingRetries\":%d}}\n",
+        (int)err, remainingRetries);
+    return 1;
+  }
+
   std::printf("{\"ok\":true,\"result\":{}}\n");
   return 0;
 }
@@ -516,7 +560,7 @@ int cmdDumpProcessData(WormContext *ctx, int argc, char **argv) {
 int main(int argc, char **argv) {
   if (argc < 3) {
     return printUsageError(
-        "usage: tseCli <mountPoint> <setup|maintain|start|update|finish|info|exportTar|factoryReset|deleteStoredData|dumpProcessData> [args...]");
+        "usage: tseCli <mountPoint> <setup|maintain|start|update|finish|info|exportTar|factoryReset|unblock|deleteStoredData|dumpProcessData> [args...]");
   }
   const char *mountPoint = argv[1];
   std::string command(argv[2]);
@@ -536,6 +580,7 @@ int main(int argc, char **argv) {
   else if (command == "info") exitCode = cmdInfo(ctx);
   else if (command == "exportTar") exitCode = cmdExportTar(ctx, cmdArgc, cmdArgs);
   else if (command == "factoryReset") exitCode = cmdFactoryReset(ctx, cmdArgc, cmdArgs);
+  else if (command == "unblock") exitCode = cmdUnblock(ctx, cmdArgc, cmdArgs);
   else if (command == "deleteStoredData") exitCode = cmdDeleteStoredData(ctx, cmdArgc, cmdArgs);
   else if (command == "dumpProcessData") exitCode = cmdDumpProcessData(ctx, cmdArgc, cmdArgs);
   else exitCode = printUsageError("unknown command");

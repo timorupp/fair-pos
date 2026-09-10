@@ -36,6 +36,7 @@ beforeEach(async () => {
   config.tseMountPoint = null;
   config.tseClientId = null;
   config.tseCliPath = TSE_CLI_STUB_PATH;
+  config.tseAutoMaintainEnabled = true;
   resetTseHealthState();
   delete process.env['TSE_STUB_STDOUT'];
   delete process.env['TSE_STUB_EXIT_CODE'];
@@ -118,5 +119,67 @@ describe('tick()', () => {
     const rows = await logRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ severity: 'info', category: 'tse_health' });
+  });
+
+  it('does not retry maintain on every consecutive unhealthy tick (Task #109 cooldown)', async () => {
+    config.tseMountPoint = '/mnt/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    await pool.query(
+      `INSERT INTO system_setting (key, value) VALUES ('tse_time_admin_pin', '123456')`,
+    );
+    process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-cooldown-calls.log';
+    const fs = await import('node:fs');
+    fs.writeFileSync('/tmp/tsecli-cooldown-calls.log', '');
+    // info always reports unhealthy; maintain (a separate CLI invocation)
+    // always fails with a non-PIN error (default stub code 1).
+    process.env['TSE_STUB_STDOUT'] = infoEnvelope(false, true);
+    process.env['TSE_STUB_MAINTAIN_FAILS'] = '1';
+
+    await tick(); // first unhealthy tick — attempts maintain immediately
+    await tick(); // second consecutive unhealthy tick — cooldown should skip the retry
+
+    const calls = fs.readFileSync('/tmp/tsecli-cooldown-calls.log', 'utf8').trim().split('\n').filter(Boolean);
+    const maintainCalls = calls.filter((c) => c.includes(' maintain '));
+    expect(maintainCalls).toHaveLength(1);
+    delete process.env['TSE_STUB_LOG_FILE'];
+    delete process.env['TSE_STUB_MAINTAIN_FAILS'];
+  });
+
+  it('disables auto-maintain and stops retrying once maintain fails with a PIN authentication error', async () => {
+    config.tseMountPoint = '/mnt/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    await pool.query(
+      `INSERT INTO system_setting (key, value) VALUES ('tse_time_admin_pin', '123456')`,
+    );
+    process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-pin-disable-calls.log';
+    const fs = await import('node:fs');
+    fs.writeFileSync('/tmp/tsecli-pin-disable-calls.log', '');
+
+    // info() succeeds (reports unhealthy); maintain() fails with
+    // WORM_ERROR_AUTHENTICATION_FAILED (0x1100 = 4352).
+    process.env['TSE_STUB_STDOUT'] = infoEnvelope(false, true);
+    process.env['TSE_STUB_MAINTAIN_FAILS'] = '1';
+    process.env['TSE_STUB_MAINTAIN_ERROR_CODE'] = '4352';
+
+    await tick();
+
+    expect(config.tseAutoMaintainEnabled).toBe(false);
+    const setting = await pool.query<{ value: string }>(
+      `SELECT value FROM system_setting WHERE key = 'tse_auto_maintain_enabled'`,
+    );
+    expect(setting.rows[0]?.value).toBe('false');
+
+    const rows = await logRows();
+    expect(rows.some((r) => r.severity === 'error' && /deaktiviert/.test(r.message))).toBe(true);
+
+    // A further tick, still unhealthy, must not attempt maintain again —
+    // config.tseAutoMaintainEnabled is now false.
+    fs.writeFileSync('/tmp/tsecli-pin-disable-calls.log', '');
+    await tick();
+    const calls = fs.readFileSync('/tmp/tsecli-pin-disable-calls.log', 'utf8').trim().split('\n').filter(Boolean);
+    expect(calls.some((c) => c.includes(' maintain '))).toBe(false);
+    delete process.env['TSE_STUB_LOG_FILE'];
+    delete process.env['TSE_STUB_MAINTAIN_FAILS'];
+    delete process.env['TSE_STUB_MAINTAIN_ERROR_CODE'];
   });
 });

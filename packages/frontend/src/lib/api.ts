@@ -32,6 +32,8 @@ export interface TseInfo {
   logTimeFormat: string;
   /** Base64-encoded public key, extracted from the TSE's certificate. */
   publicKey: string;
+  /** Whether the TSE still needs the one-time `setup` provisioning (Task #131). */
+  needsSetup: boolean;
 }
 
 /** Response shape of `GET /api/admin/tse/status`. */
@@ -380,6 +382,25 @@ export const api = {
        * FairPOS does not interpret the contents.
        */
       exportDownloadUrl: (): string => '/api/admin/tse/export',
+      /**
+       * One-time provisioning of a fresh TSE (Task #131 "TSE-Tools").
+       * `credentialSeed`/`adminPuk`/`adminPin`/`timeAdminPin` are never
+       * persisted anywhere — sent once, used, discarded. Uses the
+       * already-saved Mount-Pfad/Client-ID from the TSE-Verbindung panel.
+       */
+      setup: (data: { credentialSeed: string; adminPuk: string; adminPin: string; timeAdminPin: string }): Promise<{ ok: true }> =>
+        request('POST', '/admin/tse/setup', data),
+      /**
+       * Resets a blocked Admin or TimeAdmin PIN, given the current PUK
+       * (Task #109/#131). On a failed attempt the thrown error carries
+       * `remainingRetries` when the TSE reported one.
+       */
+      unblock: (data: { user: 'admin' | 'timeAdmin'; puk: string; newPin: string }): Promise<{ ok: true }> =>
+        request('POST', '/admin/tse/unblock', data),
+      /** Resets a *development-firmware* TSE to factory default (Task #131) — fails harmlessly on real/production hardware. */
+      factoryReset: (): Promise<{ ok: true }> => request('POST', '/admin/tse/factory-reset'),
+      /** Tab-separated dump of every process-data entry currently stored on the TSE (Task #102/#131) — a diagnostic tool, not interpreted by FairPOS. */
+      dumpProcessDataDownloadUrl: (): string => '/api/admin/tse/dump-process-data',
     },
 
     closings: {

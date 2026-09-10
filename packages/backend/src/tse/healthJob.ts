@@ -23,22 +23,75 @@
  * synchronisieren" button — signing without a working TSE is an explicitly
  * tolerated operating mode (AEAO zu § 146a AO, Nr. 1.14.3), so this job
  * must never throw out of `tick()`.
+ *
+ * Task #109/#131: two safeguards against retrying a failing `maintainTse()`
+ * (self-test + `worm_tse_updateTime`) too often — both PIN-blocking and the
+ * TSE's own lifetime `updateTime` call budget are at stake, see the SDK
+ * header (`WormDLL.h`) and D-055 for the full analysis.
+ * - `config.tseAutoMaintainEnabled` (Einstellungen -> TSE checkbox) is
+ *   flipped off automatically, and persisted, the moment an attempt fails
+ *   with a PIN authentication error ({@link isPinAuthError}) — an admin must
+ *   re-enable it manually after fixing the PIN.
+ * - {@link MAINTAIN_RETRY_COOLDOWN_MS} throttles repeated attempts while the
+ *   TSE stays unhealthy for any other reason.
  */
 import { config } from '../config.js';
 import { query } from '../db/client.js';
 import { logSystemEvent } from '../system/log.js';
 import { getTseInfo, maintainTse } from './client.js';
-import { describeTseError } from './signing.js';
+import { describeTseError, isPinAuthError } from './signing.js';
 
 const POLL_INTERVAL_MS = 60_000;
 const LOG_CATEGORY = 'tse_health';
 
+/**
+ * Minimum time between two consecutive automatic `maintainTse()` attempts
+ * while the TSE stays unhealthy for a non-PIN reason (Task #109) — without
+ * this, a persistently unhealthy TSE (loose connection, hardware fault)
+ * would call `worm_tse_updateTime` once a minute forever, exhausting its
+ * documented lifetime budget of 150,000 calls in ~104 days. The very first
+ * attempt after a healthy→unhealthy transition always runs immediately
+ * (unaffected by this cooldown) so a transient blip still recovers fast.
+ */
+export const MAINTAIN_RETRY_COOLDOWN_MS = 15 * 60_000;
+
 /** Whether the most recent tick found the TSE healthy — tracked so we only log/act on changes, not every tick. */
 let wasHealthy = true;
+
+/** Timestamp (`Date.now()`) of the last automatic `maintainTse()` attempt, or `null` since the last healthy tick — drives {@link MAINTAIN_RETRY_COOLDOWN_MS}. */
+let lastMaintainAttemptAt: number | null = null;
+
+/** Whether we've already logged that automatic maintenance is skipped because `config.tseAutoMaintainEnabled` is off — logged once per disabled episode, not every tick. */
+let loggedAutoMaintainDisabled = false;
 
 /** Resets the in-memory health state — test-only, so each test starts from a known state regardless of tick order in earlier tests. */
 export function resetTseHealthState(): void {
   wasHealthy = true;
+  lastMaintainAttemptAt = null;
+  loggedAutoMaintainDisabled = false;
+}
+
+/**
+ * Persists `tse_auto_maintain_enabled = false` and mirrors it into `config`
+ * (Task #109/#131) — called the moment an automatic `maintainTse()` attempt
+ * fails specifically due to a PIN authentication error. Stops the health
+ * job from repeating the same failing PIN every minute, which would
+ * otherwise permanently block it within 3 attempts (far sooner than the
+ * ~104-day `updateTime` frequency limit the cooldown above guards against).
+ * An admin must explicitly re-enable this in Einstellungen -> TSE after
+ * fixing the PIN.
+ */
+async function disableAutoMaintain(): Promise<void> {
+  config.tseAutoMaintainEnabled = false;
+  await query(
+    `INSERT INTO system_setting (key, value) VALUES ('tse_auto_maintain_enabled', 'false')
+       ON CONFLICT (key) DO UPDATE SET value = 'false', updated_at = now()`,
+  );
+  await logSystemEvent(
+    'error', LOG_CATEGORY,
+    'Automatische Zeit-Synchronisation wegen falscher oder gesperrter TimeAdmin-PIN deaktiviert — ' +
+    'PIN prüfen/entsperren und danach in Einstellungen -> TSE wieder aktivieren.',
+  );
 }
 
 /**
@@ -64,10 +117,34 @@ export async function tick(): Promise<void> {
       await logSystemEvent('info', LOG_CATEGORY, 'TSE wieder gesund — Zeit synchron, Self-Test bestanden.');
       wasHealthy = true;
     }
+    lastMaintainAttemptAt = null;
+    loggedAutoMaintainDisabled = false;
     return;
   }
 
+  const wasAlreadyUnhealthy = !wasHealthy;
   wasHealthy = false;
+
+  if (!config.tseAutoMaintainEnabled) {
+    if (!loggedAutoMaintainDisabled) {
+      await logSystemEvent(
+        'warning', LOG_CATEGORY,
+        'TSE ungesund, aber automatische Zeit-Synchronisation ist deaktiviert — kein automatischer Versuch, bis ein Admin sie in Einstellungen -> TSE wieder aktiviert.',
+      );
+      loggedAutoMaintainDisabled = true;
+    }
+    return;
+  }
+
+  // Task #109: don't hammer worm_tse_updateTime every single tick while the
+  // TSE stays unhealthy for a non-PIN reason — see MAINTAIN_RETRY_COOLDOWN_MS.
+  if (
+    wasAlreadyUnhealthy && lastMaintainAttemptAt !== null &&
+    Date.now() - lastMaintainAttemptAt < MAINTAIN_RETRY_COOLDOWN_MS
+  ) {
+    return;
+  }
+
   const pinResult = await query<{ value: string }>(
     `SELECT value FROM system_setting WHERE key = 'tse_time_admin_pin'`,
   );
@@ -77,12 +154,14 @@ export async function tick(): Promise<void> {
     return;
   }
 
+  lastMaintainAttemptAt = Date.now();
   try {
     await maintainTse(timeAdminPin);
     await logSystemEvent('info', LOG_CATEGORY, 'Selbsttest erfolgreich');
     wasHealthy = true;
   } catch (e) {
     await logSystemEvent('warning', LOG_CATEGORY, `Automatischer Self-Test + Zeitsync fehlgeschlagen: ${describeTseError(e)}`);
+    if (isPinAuthError(e)) await disableAutoMaintain();
   }
 }
 

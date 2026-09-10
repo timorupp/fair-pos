@@ -39,6 +39,29 @@ export function describeTseError(e: unknown): string {
 }
 
 /**
+ * `WORM_ERROR_AUTHENTICATION_FAILED` (wrong PIN/PUK entered) and
+ * `WORM_ERROR_AUTHENTICATION_PIN_BLOCKED` (already blocked) — see
+ * `native/tse-cli/vendor/include/WormDLL/wormError.h`.
+ */
+const PIN_AUTH_ERROR_CODES = new Set([0x1100, 0x1201]);
+
+/**
+ * Whether a caught error is specifically a PIN authentication failure (wrong
+ * or already-blocked PIN), as opposed to any other TSE error (unreachable,
+ * self-test failed, transaction counter exhausted, ...). Used by
+ * `tse/healthJob.ts` (Task #109/#131) to tell "the stored TimeAdmin PIN is
+ * wrong" apart from every other reason `maintainTse()` might fail — only the
+ * former risks permanently blocking the PIN if retried on every tick, so
+ * only it should stop the automatic retry loop.
+ *
+ * @param e - The value caught from a failed `client.ts` call.
+ * @returns Whether `e` is a {@link TseError} with a PIN-authentication code.
+ */
+export function isPinAuthError(e: unknown): boolean {
+  return e instanceof TseError && PIN_AUTH_ERROR_CODES.has(e.code);
+}
+
+/**
  * User-facing warning shown in the register UI for any failed signing
  * attempt — deliberately generic (Task #72): the real reason (from
  * {@link describeTseError}) is recorded via `recordTseFailure` and only

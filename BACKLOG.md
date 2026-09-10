@@ -23,55 +23,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   `docs/TSE-CLI-Referenz.md` Abschnitt 2/3. Der eigentliche Abgleich selbst
   ist Teil dieses Tasks (#47) und steht noch aus, **nicht** bereits erledigt.
 
-- [Task] **#109** Schutz gegen zu häufige TSE-Zeitsynchronisation (`worm_tse_updateTime`)
-  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
-  Release erledigen.**
-
-  **Klassifikation: Bug (Schwere: mittel bis hoch — kein akutes Problem im
-  Normalbetrieb, aber ein von der SDK-Doku ausdrücklich als schädlich
-  beschriebenes Szenario ohne jede Absicherung im Code).** Gefunden
-  2026-09-02 bei einer Nutzerfrage zu `dumpProcessData`-Testdaten — siehe
-  D-055 für die vollständige Analyse.
-
-  **Kurzfassung:** `tse/healthJob.ts`s minütlicher `tick()` ruft bei jedem
-  "TSE ungesund"-Snapshot erneut `maintainTse()` auf (Selbsttest +
-  `worm_tse_updateTime`) — ohne Backoff/Cooldown über das
-  60-Sekunden-Ticksintervall hinaus. Der SDK-Header (`WormDLL.h`, Abschnitt
-  "Common Issues" → "Update Time Frequency") warnt ausdrücklich: nicht
-  signifikant öfter aufrufen als `worm_info_maxTimeSynchronizationDelay"
-  vorsieht; die TSE ist für maximal **150.000** `updateTime`-Aufrufe
-  über ihre gesamte Lebensdauer spezifiziert — "if the time gets
-  synchronized more often than that, the TSE might get damaged." Bei
-  einem dauerhaft "ungesund" gemeldeten Zustand (Bug, Wackelkontakt,
-  Fehlkonfiguration) würde das Limit bei einem Aufruf pro Minute in ca.
-  104 Tagen aufgebraucht.
-
-  **Ergänzung 2026-09-06 (Nutzerhinweis) — zweites, dringlicheres Risiko in
-  derselben Schleife:** `maintainTse()` authentifiziert sich mit der
-  `tse_time_admin_pin`-Einstellung. Laut SDK-Header haben PINs einen
-  Retry-Zähler von 3 — bei drei Fehlversuchen wird die PIN blockiert und
-  ist nur noch über die PUK entsperrbar. Ist die hinterlegte PIN falsch
-  (z. B. Tippfehler bei der Ersteinrichtung), würde derselbe minütliche
-  Retry-Loop die PIN bereits nach spätestens 3 Minuten dauerhaft
-  blockieren — nicht erst nach 104 Tagen wie beim `updateTime`-Limit.
-  Jede Lösung für diesen Task muss beide Fälle gemeinsam abdecken, siehe
-  D-055 für die vollständige Analyse inkl. SDK-Zitat.
-
-  **Ausdrücklich noch offen — Entscheidung über die beste Lösung steht
-  noch aus, hier bewusst nicht vorweggenommen.** Denkbare Ansätze (nicht
-  abschließend, nicht bewertet):
-  - Exponentielles Backoff zwischen aufeinanderfolgenden
-    `maintainTse()`-Versuchen statt fixem 60s-Takt.
-  - Fester Mindestabstand zwischen zwei `updateTime`-Aufrufen (z. B.
-    orientiert an `worm_info_maxTimeSynchronizationDelay`), unabhängig vom
-    Health-Job-Takt.
-  - Tageslimit/Gesamtzähler für automatische Maintain-Versuche, danach nur
-    noch manuelles Eingreifen (Admin-Alarm statt Dauerschleife).
-  - Kombination aus den obigen.
-
-  Vor der Umsetzung: Nutzerentscheidung, welcher Ansatz (oder welche
-  Kombination) gewünscht ist.
-
 - [Task] **#112** Firmendaten/Logo auf Rechnungs-PDF und Reprint werden live geladen statt zum Verkaufszeitpunkt eingefroren
   **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
   Release erledigen.**
@@ -408,84 +359,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   durchgehend sichtbarer Banner statt einmaligem Alert gedacht, analog zu
   einem persistenten Status-Hinweis.
 
-- [Task] **#131** "TSE-Tools" — Admin-UI für TSE-Verwaltungsfunktionen (statt reinem CLI-Handling)
-  **Klassifikation: Feature/UX-Verbesserung, größerer Scope — Nutzer-Vision,
-  noch nicht final entschieden, weitere Bewertung nötig.** Angelegt
-  2026-09-10 (Nutzerwunsch), ausgelöst durch den PUK-Längenfehler beim
-  heutigen `setup`-Aufruf (5- statt 6-stellig, siehe Fehlercode `4103`) und
-  die fehlende Möglichkeit, eine gesperrte TimeAdmin-PIN zu entsperren.
-
-  **Kernproblem laut Nutzer:** "das mit der CLI ist sehr fehleranfällig" —
-  die rein manuelle Kommandozeilen-Bedienung der TSE-Verwaltungsfunktionen
-  hat keine clientseitige Validierung und lädt zu genau solchen Fehlern ein.
-
-  **Wichtige Vorgeschichte, die dieser Task bewusst infrage stellt:**
-  `docs/TSE-Integration.md` Abschnitt 7 dokumentiert die **bewusste
-  Entscheidung**, Admin-PIN/PUK/CredentialSeed **nicht** über die Admin-UI
-  abzufragen — "die einmalige Hardware-Inbetriebnahme (`setup`) ist nicht
-  Teil dieser UI-Iteration" (Stand August 2026). Dieser Task würde diese
-  frühere Entscheidung revidieren. Die zugrundeliegende
-  Sicherheitsanforderung bleibt aber unverändert bestehen und muss auch bei
-  UI-Unterstützung eingehalten werden: Admin-PIN/PUK/CredentialSeed dürfen
-  laut KassenSichV-Vorgabe **niemals dauerhaft gespeichert werden** (weder
-  in `system_setting` noch sonstwo) — nur transient pro Aufruf durch
-  Frontend → Backend → `tseCli` durchgereicht, exakt wie das heute schon für
-  die TimeAdmin-PIN (einzige dauerhaft speicherbare Ausnahme) gehandhabt
-  wird.
-
-  **Vorschlag: neuer Bereich "TSE-Tools" unter Einstellungen → TSE**, mit
-  folgenden Werkzeugen (Stand pro Werkzeug: CLI-Unterstützung vorhanden?
-  UI vorhanden?):
-  1. **TSE auf Werkseinstellung zurücksetzen** (nur Entwickler-TSE) — CLI:
-     ✅ `factoryReset` (`cmdFactoryReset`) bereits vorhanden. UI: ❌ fehlt.
-  2. **Prüfen, ob die TSE initialisiert ist** — CLI: ⚠️ `worm_tse_needs_setup`
-     wird aktuell nur intern in `cmdSetup` abgefragt, ist aber kein
-     eigenständig abrufbarer Wert (auch nicht Teil von `info`s JSON-Ausgabe)
-     — **CLI-Erweiterung nötig** (z. B. neues Feld in `info` statt eigenem
-     Befehl, da rein lesend). UI: ❌ fehlt.
-  3. **TSE initialisieren** (Client-ID, TimeAdmin-PIN, Admin-PIN, PUK) — CLI:
-     ✅ `setup` vorhanden, aber ohne serverseitige Formatvalidierung (siehe
-     heutiger Vorfall). UI: ❌ fehlt, bisher nur CLI-Referenz dokumentiert.
-     **Nutzeranforderung:** Längenprüfung (PUK exakt 6-stellig, Admin-PIN/
-     TimeAdmin-PIN exakt 5-stellig — siehe die heute in
-     `docs/TSE-CLI-Referenz.md`/`docs/Installationsanleitung.md` ergänzten
-     Angaben), nur Ziffern bei PIN/PUK, keine Sonderzeichen in der Client-ID
-     — jeweils **vor** dem eigentlichen `setup`-Aufruf geprüft, damit ein
-     Formatfehler gar nicht erst bis zur TSE vordringt. **CredentialSeed-Feld
-     (Task #129, recherchiert 2026-09-10):** mit `SwissbitSwissbit`
-     vorausfüllen, aber editierbar lassen — Praxisrecherche (drei
-     unabhängige Quellen, siehe `BACKLOG-DONE.md` Task #129) bestätigt
-     `SwissbitSwissbit` als weit überwiegenden Praxiswert, aber mehrere
-     Händler können nachweislich abweichen; kein blindes Hardcoding, dafür
-     deutlicher Hinweis auf den Händler-Abgleich und das
-     3-Fehlversuche-Sperrrisiko direkt am Feld.
-  4. **Admin-PIN entsperren** — CLI: ❌ `worm_user_unblock` nirgends
-     verdrahtet — **CLI-Erweiterung nötig.** UI: ❌ fehlt.
-  5. **TimeAdmin-PIN entsperren** — CLI: ❌ `worm_user_unblock` nirgends
-     verdrahtet — **CLI-Erweiterung nötig** (unmittelbarer Auslöser dieses
-     Tasks). UI: ❌ fehlt. Mechanismus laut SDK: `worm_user_unblock(ctx,
-     WORM_USER_TIME_ADMIN, <puk>, <neue 5-stellige PIN>, &remainingRetries)`
-     — braucht bei Firmware ≥2.0.0 die TimeAdmin-PUK (identisch zur
-     Admin-PUK, gemeinsam bei `setup` gesetzt), bei Firmware <2.0.0 immer
-     die Admin-PUK.
-  6. **Dump Process Data** — CLI: ✅ `dumpProcessData` bereits vorhanden
-     (Task #102). UI: ❌ fehlt. **Offene UX-Frage vom Nutzer:** gehört das
-     eher zu "TSE-Tools" (Diagnose) oder zu den Exporten (wo aktuell der
-     TAR-Export sitzt — Abschnitt "TSE-Rohdatenexport" auf derselben Seite,
-     `settings/tse/+page.svelte`)? Noch zu entscheiden.
-  7. **Offene Prüfung (Nutzer):** ob weitere bestehende TSE-Funktionen besser
-     unter denselben "TSE-Tools"-Bereich zusammengefasst werden sollten,
-     statt verstreut auf derselben Seite zu bleiben — aktuell vorhanden:
-     "TSE testen" (`info`), "Zeit synchronisieren" (`maintain`),
-     "TSE-Rohdaten exportieren" (`exportTar`), alle bereits auf
-     `settings/tse/+page.svelte`. Zusätzlich: `deleteStoredData` hat bisher
-     **überhaupt keine UI** (nur CLI, sicherheitskritisch/unwiederbringlich,
-     siehe `docs/TSE-Integration.md`) — gehört ggf. ebenfalls hierher.
-
-  **Grundsatz (Nutzer):** Für jedes UI-Werkzeug zuerst prüfen, ob die
-  zugrundeliegende `tseCli`-Funktion überhaupt existiert — falls nicht,
-  muss sie zuerst dort ergänzt werden, bevor die UI darauf aufbauen kann.
-
 ## Findings
 
 - [Finding] **D-033** (mittel, Backend / Excel-Export) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
@@ -514,10 +387,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   - Drei neue Integrationstests (Lücken-Tag-Nullabschluss + danach entsperrt, kein doppelter Nullabschluss bei wiederholtem Klick) laufen grün gegen eine echte Postgres-Instanz; bestehende Tests mit fest codiertem historischem Datum (`2026-06-24`) auf relative Daten umgestellt, da die Korrektur das Verhalten bei großem Abstand zu "heute" grundlegend ändert.
 
   **Noch ausstehend: echter Live-Test.** Der Nutzer hat aktuell keine Kasse mit einem offenen/Lücken-Tag mehr (muss ~2 Tage abwarten, bis sich die Situation im echten Betrieb erneut ergibt) — bis dahin bleibt dieser Eintrag offen, auch wenn Code-Fix + automatisierte Tests bereits stehen.
-
-- [Finding] **D-055** (mittel, Backend / TSE-Health-Job) — Gefunden 2026-09-02 — Kontext: Bei Nutzerfragen zur TSE-Nutzung/Steuersätzen gefunden (2026-09-02)
-  Nutzerfrage zu `dumpProcessData`-Testdaten führte zur Prüfung, ob die minütliche TSE-Gesundheitsprüfung (`tse/healthJob.ts`) der TSE schaden könnte. Die routinemäßige Minutenabfrage selbst ist unkritisch (`getTseInfo()`, reiner Lesebefehl, erzeugt keinen Log-Eintrag). Aber: `tick()`s "TSE ungesund"-Zweig ruft bei jedem Fehlschlag erneut `maintainTse()` auf (Selbsttest + `worm_tse_updateTime`) — **ohne jeglichen Backoff/Cooldown** über das 60-Sekunden-Ticksintervall hinaus. Der SDK-Header warnt explizit (Abschnitt „Common Issues" → „Update Time Frequency"): `worm_tse_updateTime` "should NOT be called significantly more often than announced in `worm_info_maxTimeSynchronizationDelay`" (typischerweise im Bereich von Stunden/einem Tag) — "the guaranteed number of supported update time commands is 150000... If the time gets synchronized more often than that, the TSE might get damaged." Würde eine TSE aus irgendeinem Grund dauerhaft als "ungesund" gemeldet (Bug, Wackelkontakt, Fehlkonfiguration, die `maintainTse()` scheinbar erfolgreich durchläuft, `hasValidTime` danach aber weiterhin `false` liefert), würde jede Minute ein neuer `updateTime`-Aufruf ausgelöst — bei diesem Takt wäre das 150.000er-Lebensdauer-Limit in ca. 104 Tagen aufgebraucht. Aktuell rein hypothetisch (im Normalbetrieb ist "ungesund" selten/kurz), aber genau die Art Dauerschleife, vor der die SDK-Doku ausdrücklich warnt. **Ergänzung 2026-09-06:** Dieselbe ungebremste Schleife hat noch ein zweites, deutlich akuteres Risiko — `maintainTse()` authentifiziert sich dabei mit dem `tse_time_admin_pin`-Setting. Laut SDK-Header (`WormDLL.h` Zeile 2273f.): "PINs have a retry counter of 3. If a wrong PIN has been entered 3 times, the PIN will be blocked and must be unblocked with the PUK." Ist die hinterlegte TimeAdmin-PIN aus irgendeinem Grund falsch (Tippfehler bei der Ersteinrichtung, versehentlich geändert), würde der minütliche Retry-Loop die PIN nach spätestens 3 Minuten (statt erst nach 104 Tagen wie beim Update-Time-Limit) dauerhaft blockieren — Entsperrung nur über die separat aufbewahrte PUK möglich. Deutlich dringlicher als das Lebensdauer-Limit, da es in Minuten statt Monaten eintritt.
-  Siehe Task #109 — Lösungsansatz (Backoff/Cooldown-Strategie) noch nicht entschieden, mehrere Optionen möglich; muss jetzt auch das PIN-Blockierungsrisiko abdecken, nicht nur das `updateTime`-Lebensdauerlimit.
 
 - [Finding] **D-058** (niedrig-mittel, Backend / Rechnungs-PDF) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02)
   Firmendaten (Name/Adresse/Steuernummer/USt-IdNr.) und das Firmenlogo werden bei **jedem** PDF-Abruf/Reprint einer Rechnung live aus `system_setting`/dem aktuell gespeicherten Logo geladen (`receipt/data.ts`s `loadReceiptWhere()`/`loadCompanySettings()`/`loadLogoFor()`), nicht zum Verkaufszeitpunkt eingefroren — weder `invoice` noch eine andere Tabelle speichert einen Snapshot. Sowohl `GET /:id/pdf` als auch `POST /:id/reprint` (`admin/invoices.ts`) rendern die Belegblöcke bei jedem Aufruf neu aus aktuellen Stammdaten, statt den ursprünglich beim Verkauf erzeugten `print_job`-Datensatz wiederzuverwenden. Folge: ändert ein Admin später Firmenname/Adresse/Logo, zeigt die PDF-Ansicht/ein Reprint einer alten Rechnung die **neuen** Daten statt der zum Verkaufszeitpunkt gültigen — die eigentlich TSE-relevanten Felder (Beträge, Steueraufschlüsselung, Transaktionsnummer, Signatur, Belegnummer) bleiben davon unberührt, da sie aus echten Snapshot-Spalten auf `invoice`/`order_item` kommen; betroffen ist nur der "Briefkopf".

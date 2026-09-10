@@ -45,6 +45,14 @@ export const config = {
   // something actually tries to use the TSE while these are still null.
   tseMountPoint: null as string | null,
   tseClientId: null as string | null,
+  // Whether the background health job (tse/healthJob.ts) is allowed to
+  // automatically run maintainTse() when it detects a problem. Defaults to
+  // true; the health job itself flips this to false (and persists it) the
+  // moment a maintain attempt fails specifically due to a wrong/blocked
+  // TimeAdmin PIN (Task #109/#131) — repeating that same failed PIN every
+  // minute would permanently block it within 3 attempts. An admin must
+  // re-enable this explicitly (Einstellungen -> TSE) after fixing the PIN.
+  tseAutoMaintainEnabled: true,
   // Override point for tests — points at a stub script instead of the real,
   // gitignored, hardware-dependent binary. Not meant to be set in production.
   tseCliPath: process.env['TSE_CLI_PATH'] ?? null,

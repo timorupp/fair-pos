@@ -110,13 +110,12 @@ Vollständiges Praxisbeispiel: `docs/Installationsanleitung.md` Abschnitt 8.3.
 > gesperrt** — keine Wiederherstellung möglich. Credential-Seed vor dem
 > ersten Aufruf unbedingt beim Händler verifizieren.
 
-**Einziger Befehl in dieser Liste, den FairPOS selbst nie aufruft.** Ein
-`setupTse()`-Wrapper existiert zwar in `tse/client.ts`, wird aber von keiner
-Route verwendet — bewusst kein Admin-UI-Schritt (siehe
-`docs/TSE-Integration.md` Abschnitt 7), immer nur dieser manuelle
-CLI-Aufruf bei der Erstinbetriebnahme. Muss trotzdem einmalig gemacht
-werden — nur eben ausschließlich hier auf der Kommandozeile, nicht über die
-Anwendung.
+**Seit Task #131 auch über die Admin-UI erreichbar** (Button "TSE
+initialisieren" in den TSE-Tools, Einstellungen → TSE) — `setupTse()` in
+`tse/client.ts` ist jetzt über `POST /api/admin/tse/setup` verdrahtet, mit
+serverseitiger Formatvalidierung (PUK/PIN-Länge, nur Ziffern) vor dem
+eigentlichen Aufruf. Der manuelle CLI-Aufruf bleibt weiterhin möglich und
+äquivalent — z. B. wenn die Admin-UI selbst nicht erreichbar ist.
 
 ### `maintain` — Self-Test + Zeitsynchronisation
 
@@ -140,7 +139,11 @@ Signaturalgorithmus/Zeitformat/Public-Key sowie (Task #120) die volle
 Zertifikatskette (`worm_getLogMessageCertificate`, Base64-kodiertes PEM,
 Feld `certificateChain`) für `tse.csv`s `TSE_ZERTIFIKAT_I/II` — leeres
 Feld statt Fehlschlag, falls die TSE sie gerade nicht liefern kann (z. B.
-Self-Test noch nicht bestanden). Entspricht dem "TSE testen"-Button.
+Self-Test noch nicht bestanden). Zusätzlich (Task #131) das Feld
+`needsSetup` (`worm_tse_needs_setup`) — ob die TSE noch die einmalige
+`setup`-Inbetriebnahme braucht; ebenfalls leer/`false` statt Fehlschlag,
+falls die zugrundeliegende Abfrage selbst scheitert. Entspricht dem
+"TSE testen"-Button (Einstellungen → TSE → TSE-Tools).
 
 ### `exportTar` — Rohdaten-Vollexport
 
@@ -169,7 +172,33 @@ TSEs and will be removed from the final product."* Auf einer echten
 Produktiv-TSE schlägt der Aufruf einfach fehl (Fehler, keine Wirkung) — kein
 Risiko für eine versehentliche Ausführung am falschen Gerät. **Nie von
 FairPOS aufgerufen** — reines Admin-Werkzeug für Test-/Entwicklungszyklen
-mit einer physischen Entwickler-TSE.
+mit einer physischen Entwickler-TSE. Seit Task #131 auch über den Button
+"Werkseinstellung (Entwickler-TSE)" in den TSE-Tools erreichbar, mit
+Tipp-Bestätigung ("ZURÜCKSETZEN" eintippen) vor der Ausführung.
+
+### `unblock` — Gesperrte Admin-/TimeAdmin-PIN entsperren
+
+```bash
+tseCli <mount-pfad> unblock <admin|timeAdmin> <puk> <neue-pin>
+```
+Wraps `worm_user_unblock`. Setzt die PIN des angegebenen Nutzers zurück,
+sofern die aktuelle PUK bekannt ist — auf Firmware < 2.0.0 muss das immer
+die Admin-PUK sein (auch für `timeAdmin`), auf Firmware ≥ 2.0.0 ist die
+TimeAdmin-PUK ohnehin identisch zur Admin-PUK (beide werden gemeinsam bei
+`setup` festgelegt). `<neue-pin>` muss wie bei `setup` genau 5-stellig
+sein. Schlägt der Aufruf fehl (falsche PUK), liefert die JSON-Antwort
+zusätzlich `remainingRetries` — Anzahl verbleibender Versuche, bevor die
+PUK selbst (temporär) gesperrt wird.
+
+Ausgelöst durch Task #109/#131: der Hintergrund-Health-Check ruft
+`maintain` automatisch auf und hätte bei einer falsch hinterlegten
+TimeAdmin-PIN dieselbe PIN binnen 3 Minuten dauerhaft gesperrt — seitdem
+gibt es diesen Befehl zum Entsperren, plus eine Checkbox "Automatische
+Zeit-Synchronisation aktiv" (Einstellungen → TSE → TSE-Tools), die sich in
+genau diesem Fall automatisch deaktiviert. Seit Task #131 auch über die
+Buttons "Admin-PIN entsperren"/"TimeAdmin-PIN entsperren" in den TSE-Tools
+erreichbar (PUK und neue PIN müssen dort jeweils doppelt eingegeben
+werden, zur Tippfehler-Vermeidung).
 
 ### `deleteStoredData` — Gespeicherte Rohdaten löschen
 
@@ -247,8 +276,9 @@ Funktioniert nur, solange die Daten noch nicht per `deleteStoredData`
 gelöscht wurden — danach bleibt nur noch der raue TAR-Export (Abschnitt 1
 der Übersicht in `docs/TSE-Integration.md` Abschnitt 11).
 
-**Nie von FairPOS aufgerufen** — reines Diagnose-/Testing-Werkzeug, bewusst
-nicht ins Backend/die Admin-UI eingebaut.
+**Seit Task #131 auch über die Admin-UI erreichbar** (Button
+"Process-Data-Dump" in den TSE-Tools, Einstellungen → TSE) — reines
+Diagnose-/Testing-Werkzeug, FairPOS interpretiert den Inhalt selbst nicht.
 
 ### `start` / `update` / `finish` — Fiskaltransaktionen
 

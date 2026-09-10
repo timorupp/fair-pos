@@ -40,6 +40,8 @@ export interface TseInfo {
   publicKey: string;
   /** Base64-encoded PEM certificate chain (`worm_getLogMessageCertificate`, Task #120), leaf certificate first — for `tse.csv` fields `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II`, not needed for QR-code verification. Empty string if the TSE couldn't provide it (e.g. self-test not yet passed). */
   certificateChain: string;
+  /** Whether the TSE still needs the one-time `setup` provisioning (Task #131) — read tolerantly, defaults to `false` ("assume already set up") if the underlying SDK call itself fails. */
+  needsSetup: boolean;
 }
 
 /**
@@ -51,6 +53,8 @@ export class TseError extends Error {
   constructor(
     public readonly code: number,
     message: string,
+    /** Retries left before the PUK used in an `unblock` attempt gets (temporarily) blocked itself — only ever set by a failed `unblock` call (Task #131), `undefined` for every other command. */
+    public readonly remainingRetries?: number,
   ) {
     super(message);
     this.name = 'TseError';

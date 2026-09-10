@@ -2,6 +2,16 @@
   import { onMount } from 'svelte';
   import { api, type TseStatus, type TseMountCandidate } from '$lib/api';
   import { copyToClipboard } from '$lib/clipboard';
+  import Modal from '$lib/components/Modal.svelte';
+
+  /** Admin-PUK: exactly 6 digits (Task #131 — see docs/TSE-CLI-Referenz.md). */
+  function isValidPuk(value: string): boolean {
+    return /^[0-9]{6}$/.test(value);
+  }
+  /** Admin-/TimeAdmin-PIN: exactly 5 digits. */
+  function isValidPin(value: string): boolean {
+    return /^[0-9]{5}$/.test(value);
+  }
 
   let settings: Record<string, string> = $state({});
   let editableLoading = $state(true);
@@ -131,6 +141,147 @@
     if (!tseResult) return;
     copyToClipboard(JSON.stringify(tseResult, null, 2));
   }
+
+  // ── TSE-Tools (Task #131) — automatische Zeit-Synchronisation ──────────────
+  let autoMaintainSaving = $state(false);
+  let autoMaintainError = $state('');
+
+  /** Immediately persists the checkbox — a live operational toggle, not part of the "TSE-Verbindung" Speichern-Formular. */
+  async function toggleAutoMaintain(enabled: boolean): Promise<void> {
+    autoMaintainSaving = true; autoMaintainError = '';
+    try {
+      await api.admin.settings.save({ tse_auto_maintain_enabled: String(enabled) });
+      settings['tse_auto_maintain_enabled'] = String(enabled);
+    } catch (e) {
+      autoMaintainError = e instanceof Error ? e.message : 'Fehler';
+    } finally { autoMaintainSaving = false; }
+  }
+
+  // ── TSE-Tools — TSE testen (Task #131: jetzt als Dialog) ────────────────────
+  let testOpen = $state(false);
+
+  async function openTest(): Promise<void> {
+    testOpen = true;
+    await testTse();
+  }
+
+  // ── TSE-Tools — Zeit synchronisieren ─────────────────────────────────────────
+  let maintainOpen = $state(false);
+
+  function openMaintain(): void {
+    maintainError = ''; maintainSuccess = false;
+    maintainOpen = true;
+  }
+
+  // ── TSE-Tools — TSE initialisieren (Task #131) ──────────────────────────────
+  let setupOpen = $state(false);
+  let setupCredentialSeed = $state('SwissbitSwissbit');
+  let setupAdminPuk = $state('');
+  let setupAdminPukConfirm = $state('');
+  let setupAdminPin = $state('');
+  let setupAdminPinConfirm = $state('');
+  let setupTimeAdminPin = $state('');
+  let setupTimeAdminPinConfirm = $state('');
+  let setupBusy = $state(false);
+  let setupError = $state('');
+  let setupSuccess = $state(false);
+
+  /**
+   * Same rules the backend enforces (Task #131) — checked here too so a
+   * typo (like the 5-digit PUK that triggered this whole feature) is caught
+   * before the request even goes out, not just after a round trip.
+   */
+  let setupValid = $derived(
+    setupCredentialSeed.trim().length > 0 &&
+    isValidPuk(setupAdminPuk) && setupAdminPuk === setupAdminPukConfirm &&
+    isValidPin(setupAdminPin) && setupAdminPin === setupAdminPinConfirm &&
+    isValidPin(setupTimeAdminPin) && setupTimeAdminPin === setupTimeAdminPinConfirm,
+  );
+
+  function openSetup(): void {
+    setupCredentialSeed = 'SwissbitSwissbit';
+    setupAdminPuk = ''; setupAdminPukConfirm = '';
+    setupAdminPin = ''; setupAdminPinConfirm = '';
+    setupTimeAdminPin = ''; setupTimeAdminPinConfirm = '';
+    setupError = ''; setupSuccess = false;
+    setupOpen = true;
+  }
+
+  async function submitSetup(): Promise<void> {
+    if (!setupValid) return;
+    setupBusy = true; setupError = ''; setupSuccess = false;
+    try {
+      await api.admin.tse.setup({
+        credentialSeed: setupCredentialSeed,
+        adminPuk: setupAdminPuk, adminPin: setupAdminPin, timeAdminPin: setupTimeAdminPin,
+      });
+      setupSuccess = true;
+    } catch (e) {
+      setupError = e instanceof Error ? e.message : 'Fehler';
+    } finally { setupBusy = false; }
+  }
+
+  // ── TSE-Tools — Admin-/TimeAdmin-PIN entsperren (Task #109/#131) ────────────
+  let unblockOpen = $state(false);
+  let unblockUser: 'admin' | 'timeAdmin' = $state('admin');
+  let unblockPuk = $state('');
+  let unblockPukConfirm = $state('');
+  let unblockNewPin = $state('');
+  let unblockNewPinConfirm = $state('');
+  let unblockBusy = $state(false);
+  let unblockError = $state('');
+  let unblockSuccess = $state(false);
+  let unblockRemainingRetries: number | null = $state(null);
+
+  let unblockValid = $derived(
+    isValidPuk(unblockPuk) && unblockPuk === unblockPukConfirm &&
+    isValidPin(unblockNewPin) && unblockNewPin === unblockNewPinConfirm,
+  );
+
+  function openUnblock(user: 'admin' | 'timeAdmin'): void {
+    unblockUser = user;
+    unblockPuk = ''; unblockPukConfirm = '';
+    unblockNewPin = ''; unblockNewPinConfirm = '';
+    unblockError = ''; unblockSuccess = false; unblockRemainingRetries = null;
+    unblockOpen = true;
+  }
+
+  async function submitUnblock(): Promise<void> {
+    if (!unblockValid) return;
+    unblockBusy = true; unblockError = ''; unblockSuccess = false; unblockRemainingRetries = null;
+    try {
+      await api.admin.tse.unblock({ user: unblockUser, puk: unblockPuk, newPin: unblockNewPin });
+      unblockSuccess = true;
+    } catch (e) {
+      unblockError = e instanceof Error ? e.message : 'Fehler';
+      const retries = (e as { remainingRetries?: unknown })?.remainingRetries;
+      if (typeof retries === 'number') unblockRemainingRetries = retries;
+    } finally { unblockBusy = false; }
+  }
+
+  // ── TSE-Tools — TSE auf Werkseinstellung zurücksetzen (Task #131) ───────────
+  const FACTORY_RESET_CONFIRM_PHRASE = 'ZURÜCKSETZEN';
+  let factoryResetOpen = $state(false);
+  let factoryResetConfirmText = $state('');
+  let factoryResetBusy = $state(false);
+  let factoryResetError = $state('');
+  let factoryResetSuccess = $state(false);
+
+  function openFactoryReset(): void {
+    factoryResetConfirmText = ''; factoryResetError = ''; factoryResetSuccess = false;
+    factoryResetOpen = true;
+  }
+
+  async function submitFactoryReset(): Promise<void> {
+    if (factoryResetConfirmText !== FACTORY_RESET_CONFIRM_PHRASE) return;
+    factoryResetBusy = true; factoryResetError = ''; factoryResetSuccess = false;
+    try {
+      await api.admin.tse.factoryReset();
+      factoryResetSuccess = true;
+    } catch (e) {
+      factoryResetError = e instanceof Error ? e.message : 'Fehler';
+    } finally { factoryResetBusy = false; }
+  }
 </script>
 
 <div class="page">
@@ -213,68 +364,222 @@
     </div>
   </section>
 
-  <!-- TSE connection test ───────────────────────────────────────────────────── -->
+  <!-- TSE-Tools (Task #131) ─────────────────────────────────────────────────── -->
   <section class="card">
-    <h2>TSE-Status</h2>
-    <p class="hint">Prüft die Verbindung zur konfigurierten TSE und zeigt deren aktuelle Statusdaten an.</p>
-    <button class="btn-ghost" onclick={testTse} disabled={tseTesting}>
-      {tseTesting ? 'Teste…' : 'TSE testen'}
-    </button>
-    <button class="btn-ghost" onclick={runMaintain} disabled={maintaining}>
-      {maintaining ? 'Synchronisiere…' : 'Zeit synchronisieren'}
-    </button>
-
-    {#if tseTestError}<p class="error-text">{tseTestError}</p>{/if}
-    {#if maintainError}<p class="error-text">{maintainError}</p>{/if}
-    {#if maintainSuccess}<p class="success-text">Self-Test + Zeitsync erfolgreich.</p>{/if}
-
-    {#if tseResult}
-      {#if !tseResult.configured}
-        <p class="muted">TSE ist nicht konfiguriert — Mount-Pfad und Client-ID oben eintragen und speichern.</p>
-      {:else if tseResult.error}
-        <p class="error-text">TSE-Fehler: {tseResult.error}</p>
-      {:else if tseResult.info}
-        <dl class="kv">
-          <dt>Self-Test bestanden</dt><dd>{tseResult.info.hasPassedSelfTest ? 'Ja' : 'Nein'}</dd>
-          <dt>Uhrzeit synchronisiert</dt><dd>{tseResult.info.hasValidTime ? 'Ja' : 'Nein'}</dd>
-          <dt>Seriennummer</dt><dd><code>{tseResult.info.tseSerialNumber}</code></dd>
-          <dt>Zertifizierungs-ID</dt><dd><code>{tseResult.info.tseCertificationId}</code></dd>
-          <dt>Formfaktor</dt><dd>{tseResult.info.formFactor}</dd>
-          <dt>Laufende Transaktionen</dt><dd>{tseResult.info.startedTransactions} / {tseResult.info.maxStartedTransactions}</dd>
-          <dt>Verbleibende Signaturen</dt><dd>{tseResult.info.remainingSignatures.toLocaleString('de-DE')} / {tseResult.info.maxSignatures.toLocaleString('de-DE')}</dd>
-          <dt>Zertifikat gültig bis</dt><dd>{new Date(tseResult.info.certificateExpirationDate * 1000).toLocaleDateString('de-DE')}</dd>
-          <dt>Nächster Self-Test</dt><dd>in {formatDaysFromSeconds(tseResult.info.timeUntilNextSelfTest)}</dd>
-          <dt>Nächste Zeitsynchronisation</dt><dd>in {formatDaysFromSeconds(tseResult.info.timeUntilNextTimeSynchronization)}</dd>
-          <dt>Signaturalgorithmus</dt><dd><code>{tseResult.info.signatureAlgorithm}</code></dd>
-          <dt>Zeitformat</dt><dd><code>{tseResult.info.logTimeFormat}</code></dd>
-          <dt>Public Key</dt><dd><code class="pubkey">{tseResult.info.publicKey}</code></dd>
-        </dl>
-
-        <details>
-          <summary>Rohdaten (JSON)</summary>
-          <div class="raw-row">
-            <pre class="raw-json">{JSON.stringify(tseResult.info, null, 2)}</pre>
-            <button class="btn-ghost" onclick={copyTseResult} title="In Zwischenablage kopieren">Kopieren</button>
-          </div>
-        </details>
-      {/if}
-    {/if}
-  </section>
-
-  <!-- Raw TSE data export (Task #103) ───────────────────────────────────────── -->
-  <section class="card">
-    <h2>TSE-Rohdatenexport</h2>
+    <h2>TSE-Tools</h2>
     <p class="hint">
-      Lädt das komplette, bisher auf der TSE gespeicherte Log als rohes
-      TR-03153-Archiv (TAR) herunter — unabhängig von der FairPOS-Datenbank,
-      z. B. zum Abgleich oder zur Archivierung. Immer ein Vollexport: die TSE
-      unterstützt ab Firmware 2.0.0 keine Filterung nach Datum mehr, ein
-      Zeitraum müsste nachträglich selbst aus dem TAR herausgefiltert werden.
-      FairPOS interpretiert den Inhalt nicht.
+      Verwaltungsfunktionen für die oben konfigurierte TSE — jedes Werkzeug
+      öffnet sich in einem eigenen Dialog. Ersetzt die bisher rein manuelle
+      Kommandozeilen-Bedienung, die keine Eingabeprüfung kennt (siehe Task
+      #131 in <code>BACKLOG.md</code>).
     </p>
-    <a class="btn-ghost" href={api.admin.tse.exportDownloadUrl()}>TSE-Rohdaten exportieren</a>
+    <div class="tool-grid">
+      <button class="btn-ghost" onclick={openTest}>TSE testen</button>
+      <button class="btn-ghost" onclick={openMaintain}>Zeit synchronisieren</button>
+      <button class="btn-ghost" onclick={openSetup}>TSE initialisieren</button>
+      <button class="btn-ghost" onclick={() => openUnblock('admin')}>Admin-PIN entsperren</button>
+      <button class="btn-ghost" onclick={() => openUnblock('timeAdmin')}>TimeAdmin-PIN entsperren</button>
+      <button class="btn-ghost tool-danger" onclick={openFactoryReset}>Werkseinstellung (Entwickler-TSE)</button>
+      <a class="btn-ghost" href={api.admin.tse.exportDownloadUrl()}>TSE-Rohdaten exportieren</a>
+      <a class="btn-ghost" href={api.admin.tse.dumpProcessDataDownloadUrl()}>Process-Data-Dump</a>
+    </div>
   </section>
 </div>
+
+<!-- TSE testen ──────────────────────────────────────────────────────────────── -->
+<Modal bind:open={testOpen} title="TSE testen">
+  {#if tseTesting}
+    <p class="muted">Teste…</p>
+  {:else if tseTestError}
+    <p class="error-text">{tseTestError}</p>
+  {:else if tseResult}
+    {#if !tseResult.configured}
+      <p class="muted">TSE ist nicht konfiguriert — Mount-Pfad und Client-ID oben eintragen und speichern.</p>
+    {:else if tseResult.error}
+      <p class="error-text">TSE-Fehler: {tseResult.error}</p>
+    {:else if tseResult.info}
+      <dl class="kv">
+        <dt>Benötigt Setup</dt><dd>{tseResult.info.needsSetup ? 'Ja' : 'Nein'}</dd>
+        <dt>Self-Test bestanden</dt><dd>{tseResult.info.hasPassedSelfTest ? 'Ja' : 'Nein'}</dd>
+        <dt>Uhrzeit synchronisiert</dt><dd>{tseResult.info.hasValidTime ? 'Ja' : 'Nein'}</dd>
+        <dt>Seriennummer</dt><dd><code>{tseResult.info.tseSerialNumber}</code></dd>
+        <dt>Zertifizierungs-ID</dt><dd><code>{tseResult.info.tseCertificationId}</code></dd>
+        <dt>Formfaktor</dt><dd>{tseResult.info.formFactor}</dd>
+        <dt>Laufende Transaktionen</dt><dd>{tseResult.info.startedTransactions} / {tseResult.info.maxStartedTransactions}</dd>
+        <dt>Verbleibende Signaturen</dt><dd>{tseResult.info.remainingSignatures.toLocaleString('de-DE')} / {tseResult.info.maxSignatures.toLocaleString('de-DE')}</dd>
+        <dt>Zertifikat gültig bis</dt><dd>{new Date(tseResult.info.certificateExpirationDate * 1000).toLocaleDateString('de-DE')}</dd>
+        <dt>Nächster Self-Test</dt><dd>in {formatDaysFromSeconds(tseResult.info.timeUntilNextSelfTest)}</dd>
+        <dt>Nächste Zeitsynchronisation</dt><dd>in {formatDaysFromSeconds(tseResult.info.timeUntilNextTimeSynchronization)}</dd>
+        <dt>Signaturalgorithmus</dt><dd><code>{tseResult.info.signatureAlgorithm}</code></dd>
+        <dt>Zeitformat</dt><dd><code>{tseResult.info.logTimeFormat}</code></dd>
+        <dt>Public Key</dt><dd><code class="pubkey">{tseResult.info.publicKey}</code></dd>
+      </dl>
+
+      <details>
+        <summary>Rohdaten (JSON)</summary>
+        <div class="raw-row">
+          <pre class="raw-json">{JSON.stringify(tseResult.info, null, 2)}</pre>
+          <button class="btn-ghost" onclick={copyTseResult} title="In Zwischenablage kopieren">Kopieren</button>
+        </div>
+      </details>
+    {/if}
+  {/if}
+  <div class="dialog-footer">
+    <button class="btn-ghost" onclick={testTse} disabled={tseTesting}>{tseTesting ? 'Teste…' : 'Erneut testen'}</button>
+  </div>
+</Modal>
+
+<!-- Zeit synchronisieren + automatische Zeit-Synchronisation (Task #109/#131) -->
+<Modal bind:open={maintainOpen} title="Zeit synchronisieren">
+  <p class="hint">
+    Führt Self-Test + Zeitsynchronisation einmalig aus — nötig nach einer
+    frischen TSE-Einrichtung, bevor der Hintergrund-Health-Check die erste
+    reguläre Prüfung durchführt.
+  </p>
+  <button class="btn-ghost" onclick={runMaintain} disabled={maintaining}>
+    {maintaining ? 'Synchronisiere…' : 'Jetzt ausführen'}
+  </button>
+  {#if maintainError}<p class="error-text">{maintainError}</p>{/if}
+  {#if maintainSuccess}<p class="success-text">Self-Test + Zeitsync erfolgreich.</p>{/if}
+
+  <hr class="dialog-divider" />
+
+  <label class="checkbox-row">
+    <input
+      type="checkbox"
+      checked={settings['tse_auto_maintain_enabled'] !== 'false'}
+      disabled={autoMaintainSaving}
+      onchange={(e) => toggleAutoMaintain(e.currentTarget.checked)}
+    />
+    Automatische Zeit-Synchronisation aktiv
+  </label>
+  <p class="hint">
+    Deaktiviert sich automatisch, wenn die TSE eine falsche oder gesperrte
+    TimeAdmin-PIN meldet, und muss dann hier wieder manuell aktiviert werden
+    (nachdem die PIN geprüft/entsperrt wurde) — verhindert, dass der
+    Hintergrund-Health-Check dieselbe falsche PIN minütlich wiederholt und
+    sie so dauerhaft sperrt.
+  </p>
+  {#if autoMaintainError}<p class="error-text">{autoMaintainError}</p>{/if}
+</Modal>
+
+<!-- TSE initialisieren (Task #131) ───────────────────────────────────────────── -->
+<Modal bind:open={setupOpen} title="TSE initialisieren">
+  <p class="hint">
+    Einmalige Erstinbetriebnahme einer fabrikneuen TSE. Verwendet den oben
+    gespeicherten Mount-Pfad und die Client-ID. Diese Werte werden nie
+    dauerhaft gespeichert — nur für diesen einen Aufruf verwendet.
+  </p>
+  <p class="warning-text">
+    ⚠️ Ein falscher CredentialSeed kann die TSE nach drei Fehlversuchen
+    <strong>unwiderruflich sperren</strong>. Im Zweifel beim TSE-Händler
+    verifizieren, nicht raten (siehe Task #129).
+  </p>
+
+  <div class="field">
+    <label for="setup-seed">CredentialSeed</label>
+    <input id="setup-seed" bind:value={setupCredentialSeed} disabled={setupBusy} />
+  </div>
+  <div class="field">
+    <label for="setup-puk">Admin-PUK (6-stellig, nur Ziffern)</label>
+    <input id="setup-puk" type="password" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={setupAdminPuk} disabled={setupBusy} />
+  </div>
+  <div class="field">
+    <label for="setup-puk-confirm">Admin-PUK bestätigen</label>
+    <input id="setup-puk-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={setupAdminPukConfirm} disabled={setupBusy} />
+  </div>
+  <div class="field">
+    <label for="setup-pin">Admin-PIN (5-stellig, nur Ziffern)</label>
+    <input id="setup-pin" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupAdminPin} disabled={setupBusy} />
+  </div>
+  <div class="field">
+    <label for="setup-pin-confirm">Admin-PIN bestätigen</label>
+    <input id="setup-pin-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupAdminPinConfirm} disabled={setupBusy} />
+  </div>
+  <div class="field">
+    <label for="setup-time-pin">TimeAdmin-PIN (5-stellig, nur Ziffern)</label>
+    <input id="setup-time-pin" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupTimeAdminPin} disabled={setupBusy} />
+  </div>
+  <div class="field">
+    <label for="setup-time-pin-confirm">TimeAdmin-PIN bestätigen</label>
+    <input id="setup-time-pin-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupTimeAdminPinConfirm} disabled={setupBusy} />
+  </div>
+
+  {#if setupError}<p class="error-text">{setupError}</p>{/if}
+  {#if setupSuccess}<p class="success-text">TSE erfolgreich initialisiert.</p>{/if}
+
+  <div class="dialog-footer">
+    <button class="btn-primary" onclick={submitSetup} disabled={!setupValid || setupBusy}>
+      {setupBusy ? 'Initialisiere…' : 'TSE initialisieren'}
+    </button>
+  </div>
+</Modal>
+
+<!-- Admin-/TimeAdmin-PIN entsperren (Task #109/#131) ──────────────────────────── -->
+<Modal bind:open={unblockOpen} title={unblockUser === 'admin' ? 'Admin-PIN entsperren' : 'TimeAdmin-PIN entsperren'}>
+  <p class="hint">
+    Setzt eine gesperrte {unblockUser === 'admin' ? 'Admin' : 'TimeAdmin'}-PIN
+    zurück. Braucht die aktuelle PUK — auf Firmware &lt; 2.0.0 immer die
+    Admin-PUK (auch für TimeAdmin), auf Firmware ≥ 2.0.0 ist die
+    TimeAdmin-PUK ohnehin identisch zur Admin-PUK.
+  </p>
+
+  <div class="field">
+    <label for="unblock-puk">Aktuelle PUK (6-stellig, nur Ziffern)</label>
+    <input id="unblock-puk" type="password" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={unblockPuk} disabled={unblockBusy} />
+  </div>
+  <div class="field">
+    <label for="unblock-puk-confirm">PUK bestätigen</label>
+    <input id="unblock-puk-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={unblockPukConfirm} disabled={unblockBusy} />
+  </div>
+  <div class="field">
+    <label for="unblock-new-pin">Neue PIN (5-stellig, nur Ziffern)</label>
+    <input id="unblock-new-pin" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={unblockNewPin} disabled={unblockBusy} />
+  </div>
+  <div class="field">
+    <label for="unblock-new-pin-confirm">Neue PIN bestätigen</label>
+    <input id="unblock-new-pin-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={unblockNewPinConfirm} disabled={unblockBusy} />
+  </div>
+
+  {#if unblockError}
+    <p class="error-text">
+      {unblockError}
+      {#if unblockRemainingRetries !== null}
+        — noch {unblockRemainingRetries} Versuch{unblockRemainingRetries === 1 ? '' : 'e'}, bevor die PUK selbst gesperrt wird.
+      {/if}
+    </p>
+  {/if}
+  {#if unblockSuccess}<p class="success-text">PIN erfolgreich entsperrt.</p>{/if}
+
+  <div class="dialog-footer">
+    <button class="btn-primary" onclick={submitUnblock} disabled={!unblockValid || unblockBusy}>
+      {unblockBusy ? 'Entsperre…' : 'Entsperren'}
+    </button>
+  </div>
+</Modal>
+
+<!-- TSE auf Werkseinstellung zurücksetzen (Task #131) ─────────────────────────── -->
+<Modal bind:open={factoryResetOpen} title="TSE auf Werkseinstellung zurücksetzen">
+  <p class="warning-text">
+    ⚠️ Setzt PUK/alle PINs zurück, entfernt die Client-Registrierung und
+    leert den TSE-Speicher — <strong>unwiderruflich</strong>. Funktioniert
+    nur auf einer Entwickler-TSE; auf echter Produktiv-Hardware schlägt der
+    Aufruf durch die TSE selbst folgenlos fehl.
+  </p>
+  <div class="field">
+    <label for="factory-reset-confirm">Zum Bestätigen "{FACTORY_RESET_CONFIRM_PHRASE}" eingeben</label>
+    <input id="factory-reset-confirm" bind:value={factoryResetConfirmText} disabled={factoryResetBusy} />
+  </div>
+
+  {#if factoryResetError}<p class="error-text">{factoryResetError}</p>{/if}
+  {#if factoryResetSuccess}<p class="success-text">TSE auf Werkseinstellung zurückgesetzt.</p>{/if}
+
+  <div class="dialog-footer">
+    <button class="btn-primary tool-danger" onclick={submitFactoryReset} disabled={factoryResetConfirmText !== FACTORY_RESET_CONFIRM_PHRASE || factoryResetBusy}>
+      {factoryResetBusy ? 'Setze zurück…' : 'Zurücksetzen'}
+    </button>
+  </div>
+</Modal>
 
 <style>
   .card {
@@ -311,4 +616,16 @@
     background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-sm);
   }
   details summary { cursor: pointer; font-size: 0.85rem; color: var(--color-text-muted); margin-top: 0.75rem; }
+
+  /* TSE-Tools (Task #131) */
+  .tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; }
+  .tool-grid a.btn-ghost { text-align: center; text-decoration: none; }
+  .tool-danger { color: #d9534f; border-color: #d9534f; }
+  .dialog-footer { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border); }
+  .dialog-divider { border: none; border-top: 1px solid var(--color-border); margin: 1rem 0; }
+  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer; }
+  .warning-text {
+    font-size: 0.85rem; color: #d9534f; background: rgba(217, 83, 79, 0.08);
+    border: 1px solid rgba(217, 83, 79, 0.3); border-radius: var(--radius-sm); padding: 0.6rem 0.75rem;
+  }
 </style>
