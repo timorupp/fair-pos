@@ -16,6 +16,12 @@ npm ci
 echo "==> Build (shared -> backend -> frontend)"
 npm run build
 
+echo "==> tseCli neu bauen"
+# Eigener Schritt, weil er nicht Teil von "npm run build" ist (C++, kein
+# npm-Workspace) — sonst bleibt die Binary nach einem `git pull` unbemerkt
+# auf dem alten Stand, auch wenn sich tseCli.cpp geändert hat.
+packages/backend/native/tse-cli/build.sh
+
 echo "==> Frontend-SPA nach packages/backend/public/ kopieren"
 rm -rf packages/backend/public
 mkdir -p packages/backend/public

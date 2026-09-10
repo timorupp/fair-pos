@@ -419,7 +419,7 @@ voraussetzt) sind als idempotente Skripte in `scripts/install/` hinterlegt:
 |---|---|
 | `scripts/install/01-system.sh` | Node.js + PostgreSQL (Ubuntu-Standardpaket) + Build-Tools installieren |
 | `scripts/install/02-database.sh` | Rolle + Datenbank anlegen (liest Werte aus `.env`) |
-| `scripts/install/03-build.sh` | `npm ci`, Build, Frontend-Kopie nach `packages/backend/public/` |
+| `scripts/install/03-build.sh` | `npm ci`, Build, `tseCli` neu bauen, Frontend-Kopie nach `packages/backend/public/` |
 | `scripts/install/04-systemd.sh` | systemd-Unit installieren + aktivieren |
 | `scripts/install/smoke-test.sh` | DB-Verbindung, TSE-Erreichbarkeit (falls konfiguriert), Backend-Healthcheck |
 | `scripts/install/update.sh` | Update-Ablauf (Abschnitt 12) — als `sudo` von einem beliebigen Account startbar, führt `git pull`/`npm ci`/Build/Migration intern selbst als Service-User aus (liest den Namen aus der installierten systemd-Unit), nur der Neustart läuft als root |
@@ -492,22 +492,32 @@ TSE-Status (`GET /api/admin/tse/status`, falls konfiguriert), Login als Admin
 sudo /opt/fairpos/scripts/install/update.sh
 ```
 
-Führt den kompletten Ablauf aus (`git pull`, `npm ci`, Build, Frontend-Kopie,
-Migration, Neustart, Smoke-Test) — `git`/`npm`/Migration laufen dabei intern
-als Service-User, nicht als root, auch wenn das Skript selbst per `sudo`
-gestartet wird. Äquivalent manuell, falls das Skript einmal nicht zur Hand
-ist:
+Führt den kompletten Ablauf aus (`git pull`, `npm ci`, Build, `tseCli`
+neu bauen, Frontend-Kopie, Migration, Neustart, Smoke-Test) —
+`git`/`npm`/Migration laufen dabei intern als Service-User, nicht als root,
+auch wenn das Skript selbst per `sudo` gestartet wird. Äquivalent manuell,
+falls das Skript einmal nicht zur Hand ist:
 
 ```bash
 cd /opt/fairpos
 git pull
 npm ci --prefer-offline
 npm run build
+packages/backend/native/tse-cli/build.sh
 rm -rf packages/backend/public && mkdir -p packages/backend/public
 cp -r packages/frontend/build/* packages/backend/public/
 npm run db:migrate
 sudo systemctl restart fairpos
 ```
+
+> ⚠️ **`tseCli` neu bauen nicht vergessen.** Die Binary (`native/tse-cli/vendor/bin/tseCli`)
+> ist ein C++-Build-Artefakt, kein npm-Workspace — `npm run build` baut sie
+> **nicht** mit. Ein reiner `git pull` + `npm run build` lässt sie unbemerkt
+> auf dem alten Stand, selbst wenn sich `tseCli.cpp` geändert hat (live
+> 2026-09-10 aufgefallen: neue `info`-Felder fehlten trotz aktuellem
+> Checkout, bis die Binary manuell neu gebaut wurde). Seit demselben Datum
+> ist der Build-Schritt oben fest in `update.sh`/`03-build.sh` verdrahtet —
+> nur beim manuellen Update-Weg selbst dran denken.
 
 ---
 

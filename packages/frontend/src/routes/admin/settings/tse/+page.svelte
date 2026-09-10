@@ -445,6 +445,13 @@
           />
           Automatische Zeit-Synchronisation aktiv
         </label>
+        {#if settings['tse_auto_maintain_enabled'] === 'false'}
+          <p class="warning-text">
+            Für den Normalbetrieb muss die automatische Zeitsynchronisierung
+            aktiv sein. Nur so kann eine dauerhafte Verfügbarkeit der TSE
+            sichergestellt werden.
+          </p>
+        {/if}
         <p class="hint">
           Deaktiviert sich automatisch, wenn die TSE eine falsche oder gesperrte
           TimeAdmin-PIN meldet, und muss dann hier wieder manuell aktiviert werden
@@ -492,7 +499,7 @@
 </div>
 
 <!-- TSE testen ──────────────────────────────────────────────────────────────── -->
-<Modal bind:open={testOpen} title="TSE testen">
+<Modal bind:open={testOpen} title="TSE testen" maxWidth="880px">
   {#if tseTesting}
     <p class="muted">Teste…</p>
   {:else if tseTestError}
@@ -566,6 +573,7 @@
     frischen TSE-Einrichtung, bevor der Hintergrund-Health-Check die erste
     reguläre Prüfung durchführt.
   </p>
+  <p class="hint">Verwendet die auf der Hauptseite konfigurierte TimeAdmin-PIN.</p>
   <button class="btn-ghost" onclick={runMaintain} disabled={maintaining}>
     {maintaining ? 'Synchronisiere…' : 'Jetzt ausführen'}
   </button>
@@ -711,10 +719,10 @@
 <!-- TSE-Rohdaten exportieren (Task #131 follow-up) ────────────────────────────── -->
 <Modal bind:open={exportOpen} title="TSE-Rohdaten exportieren">
   <p class="hint">
-    Lädt den vollständigen TR-03153-Rohdatenexport der TSE herunter (Task
-    #103) — immer ein Vollexport, kein Datumsfilter (die TSE-eigenen
-    gefilterten Export-Funktionen funktionieren ab Firmware 2.0.0 nicht
-    mehr). FairPOS interpretiert den Inhalt nicht.
+    Lädt den vollständigen TR-03153-Rohdatenexport der TSE herunter —
+    immer ein Vollexport, kein Datumsfilter (die TSE-eigenen gefilterten
+    Export-Funktionen funktionieren ab Firmware 2.0.0 nicht mehr). FairPOS
+    interpretiert den Inhalt nicht.
   </p>
   {#if exportError}<p class="error-text">{exportError}</p>{/if}
   {#if exportSuccess}<p class="success-text">Datei heruntergeladen.</p>{/if}
@@ -729,8 +737,8 @@
 <Modal bind:open={dumpOpen} title="Process-Data-Dump">
   <p class="hint">
     Lädt eine tabgetrennte Auflistung aller auf der TSE gespeicherten
-    Process-Data-Einträge herunter (Task #102) — Diagnosewerkzeug zum
-    Abgleich gegen die eigene Datenbank, wird von FairPOS nicht ausgewertet.
+    Process-Data-Einträge herunter — Diagnosewerkzeug zum Abgleich gegen
+    die eigene Datenbank, wird von FairPOS nicht ausgewertet.
   </p>
   {#if dumpError}<p class="error-text">{dumpError}</p>{/if}
   {#if dumpSuccess}<p class="success-text">Datei heruntergeladen.</p>{/if}
@@ -766,7 +774,7 @@
   .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
   .field:last-child { margin-bottom: 0; }
   .field label { font-size: 0.85rem; color: var(--color-text-muted); }
-  .field input { width: 100%; max-width: 360px; }
+  .field input:not([type="checkbox"]) { width: 100%; max-width: 360px; }
   .success-text { color: #4caf7d; font-size: 0.875rem; }
   .form-footer { max-width: 640px; padding-top: 0.5rem; }
 
@@ -786,5 +794,6 @@
   .warning-text {
     font-size: 0.85rem; color: #d9534f; background: rgba(217, 83, 79, 0.08);
     border: 1px solid rgba(217, 83, 79, 0.3); border-radius: var(--radius-sm); padding: 0.6rem 0.75rem;
+    margin-bottom: 0.75rem;
   }
 </style>

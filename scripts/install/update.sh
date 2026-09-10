@@ -74,6 +74,14 @@ run_as_service_user "npm ci --prefer-offline"
 echo "==> Build (als $SERVICE_USER)"
 run_as_service_user "npm run build"
 
+echo "==> tseCli neu bauen (als $SERVICE_USER)"
+# Eigener Build-Schritt, weil er nicht Teil von "npm run build" ist (C++,
+# kein npm-Workspace) — ein reiner `git pull` + npm-Build lässt die
+# TSE-CLI-Binary sonst unbemerkt auf dem alten Stand, selbst wenn sich
+# tseCli.cpp geändert hat (live 2026-09-10 aufgefallen: neue info-Felder
+# fehlten trotz aktuellem Checkout, bis die Binary manuell neu gebaut wurde).
+run_as_service_user "packages/backend/native/tse-cli/build.sh"
+
 echo "==> Frontend-SPA nach packages/backend/public/ kopieren (als $SERVICE_USER)"
 run_as_service_user "rm -rf packages/backend/public && mkdir -p packages/backend/public && cp -r packages/frontend/build/. packages/backend/public/"
 

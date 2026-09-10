@@ -11,10 +11,12 @@
     open?: boolean;
     /** Title shown in the modal header. */
     title?: string;
+    /** Max width of the dialog box (any valid CSS length), for content that needs more room than the default (e.g. a wide status table). */
+    maxWidth?: string;
     children?: import('svelte').Snippet;
   }
 
-  let { open = $bindable(false), title = '', children }: Props = $props();
+  let { open = $bindable(false), title = '', maxWidth = '440px', children }: Props = $props();
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -39,7 +41,7 @@
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <div class="backdrop" role="presentation" onclick={close}>
-    <div class="modal" role="dialog" aria-modal="true" tabindex="-1" onclick={stopPropagation(bubble('click'))}>
+    <div class="modal" style="max-width: {maxWidth}" role="dialog" aria-modal="true" tabindex="-1" onclick={stopPropagation(bubble('click'))}>
       <div class="modal-header">
         <h2>{title}</h2>
         <button class="close-btn" onclick={close} aria-label="Schließen">✕</button>
