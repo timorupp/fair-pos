@@ -142,6 +142,27 @@ describe('tse/client', () => {
     expect(info.needsSetup).toBe(true);
   });
 
+  it('parses PUK blocking durations, including the null sentinel (Task #131 follow-up, D-066)', async () => {
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: {
+        hasPassedSelfTest: true, hasValidTime: true,
+        startedTransactions: 0, maxStartedTransactions: 512,
+        remainingSignatures: 0, maxSignatures: 0,
+        certificateExpirationDate: 0, timeUntilNextSelfTest: 0, timeUntilNextTimeSynchronization: 0,
+        tseCertificationId: '', formFactor: 'USB', tseSerialNumber: '',
+        needsSetup: false,
+        pukBlockingDurationAdminSeconds: 8,
+        pukBlockingDurationTimeAdminSeconds: null,
+      },
+    });
+    await configureTse();
+    const { getTseInfo } = await import('./client.js');
+    const info = await getTseInfo();
+    expect(info.pukBlockingDurationAdminSeconds).toBe(8);
+    expect(info.pukBlockingDurationTimeAdminSeconds).toBeNull();
+  });
+
   it('throws when the CLI produces no output at all', async () => {
     // Point at a path that will fail to execute, simulating a missing/broken binary.
     process.env['TSE_CLI_PATH'] = '/nonexistent/tseCli';

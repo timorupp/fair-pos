@@ -4517,6 +4517,53 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
     strukturelles Problem. `deleteStoredData` weiterhin bewusst nicht
     verdrahtet.
 
+  **Nachgebessert 2026-09-10 (Live-Test der TSE-Tools deckte mehrere
+  UX-Probleme auf):**
+  - **PIN/PUK-Sperrstatus sichtbar gemacht (D-066-Fortsetzung):** `info`
+    liefert jetzt zusätzlich `pukBlockingDurationAdminSeconds`/
+    `...TimeAdminSeconds` (`worm_info_pukBlockingDurationAdmin`/
+    `...TimeAdmin`, `null`-Sentinel für "Self-Test nicht bestanden") —
+    einziger passiv auslesbarer Sperr-Indikator, da die SDK für den
+    PIN-Sperrstatus/Fehlversuchszähler kein entsprechendes Feld anbietet
+    (nur transient aus einer Login-/Unblock-Fehlerantwort ablesbar, was
+    selbst einen Versuch verbraucht). Im "TSE testen"-Dialog angezeigt.
+  - **Alle PIN/PUK-Felder in den TSE-Tools-Dialogen (Setup, Unblock) von
+    maskiertem Passwortfeld auf sichtbare Texteingabe umgestellt** —
+    Tippfehler sollen sichtbar sein statt hinter Punkten versteckt.
+  - **Client-ID im Setup-Dialog entkoppelt:** verwendete vorher stillschweigend
+    die auf der TSE-Verbindung-Karte gespeicherte Client-ID; ist jetzt ein
+    eigenes Dialogfeld (Backend: `setupTse()`/`POST /setup` nehmen `clientId`
+    explizit entgegen, keine Pflicht mehr, dass `tse_client_id` vorher
+    gespeichert ist — nur der Mount-Pfad muss es sein). Bei Erfolg wird die
+    eingegebene Client-ID als neue `tse_client_id`-Einstellung persistiert
+    und auf der Karte ohne Reload reflektiert — nötig für den Fall einer
+    zweiten/anderen TSE, bei dem `setup` absichtlich eine andere Client-ID
+    registrieren soll als die zuvor gespeicherte.
+  - **Automatische-Zeit-Synchronisation-Checkbox verschoben:** vom
+    "Zeit synchronisieren"-Dialog auf die TSE-Verbindung-Karte, direkt
+    unter dem TimeAdmin-PIN-Feld — logisch näher an der PIN, die sie
+    betrifft.
+  - **TSE-Rohdatenexport/Process-Data-Dump von `<a href>`-Downloadlink auf
+    Dialog mit Download-Button umgestellt:** ein direkter Link auf eine
+    fehlschlagende Route navigierte den Browser zu einer rohen
+    JSON-Fehlerseite statt eine Fehlermeldung inline zu zeigen (z. B. wenn
+    die TSE gerade gesperrt ist). Neue `api.ts`-Helper `requestFile()`
+    (holt die Datei per `fetch`, wirft bei Fehler wie `request()`) +
+    `$lib/download.ts`s `saveBlob()` (löst den eigentlichen Browser-Download
+    erst nach erfolgreicher Prüfung aus).
+  - **Warntexte präzisiert/ergänzt:** CredentialSeed-Warnung im Setup-Dialog
+    ersetzt durch eine Version-1/Version-2-differenzierte Formulierung
+    (dauerhafte Sperre vs. Zeitsperre, siehe D-066); dieselbe
+    PUK-spezifische Warnung neu im Unblock-Dialog ergänzt (hatte vorher gar
+    keine); TSE-Tools-Karte bekommt zusätzlichen Warnhinweis, dass die
+    Werkzeuge nur für Swissbit-TSEs vorgesehen sind und die TSE dauerhaft
+    beschädigen können. `docs/TSE-CLI-Referenz.md`s Credential-Seed-Warnung
+    im `setup`-Abschnitt ebenso auf die Version-1/2-Unterscheidung
+    korrigiert (vorher unbedingt "dauerhaft gesperrt" behauptet, was auf
+    Firmware ≥ 2.0.0 nicht mehr zutrifft).
+  - **Tool-Buttons von Grid auf einspaltige Liste umgestellt** — das Grid
+    wirkte bei acht Werkzeugen unübersichtlich.
+
 - [Task] **#109** Schutz gegen zu häufige TSE-Zeitsynchronisation (`worm_tse_updateTime`)
   **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
   Release erledigen.**
@@ -4768,6 +4815,20 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Vom vollen Integrationstest-Lauf aufgedeckt: `GET /api/admin/settings/receipt-preview` (Bon-Vorschau in Unternehmensdaten) zeigte das Firmenlogo nach der Block-Modell-Umstellung gar nicht mehr an, obwohl konfiguriert und die Checkbox aktiv. Ursache: die Route baut ihr `ReceiptData`-Objekt manuell zusammen (`logoPng`/`logoWidth`/`logoHeight`/`logoWidthFactor`), setzt aber `logoEscPos` nie — der neue gemeinsame Block-Builder (`receipt/blocks.ts`) verlangt für den Bild-Block jetzt beide Repräsentationen gleichzeitig (PNG fürs PDF, ESC/POS-Raster für den Ausdruck), da ein Block ja für beide Renderer gilt. Die echten Druck-Pfade (`receipt/data.ts`) setzten `logoEscPos` bereits korrekt — nur dieser eine Vorschau-Endpunkt (baute `ReceiptData` von Hand statt über `receipt/data.ts` zu laden) hatte die Lücke.
   **Behoben (2026-09-01):** `routes/admin/settings.ts`s `receipt-preview`-Handler ergänzt `logoEscPos: logo?.escposBytes ?? null`. Regressionstest `settings.receipt-preview.integration.test.ts` (bereits vorhanden, Task #98) hat den Fehler beim vollen Integrationslauf sofort aufgedeckt, keine neue Testdatei nötig. **Live bestätigt (2026-09-06).**
 
+- [Finding] **D-054** (hoch, Backend / Tagesabschluss (Z-Bon)) — Gefunden 2026-09-02 — Kontext: Live beim Testen der Admin-UI gefunden (2026-09-02)
+  Nutzer berichtet: „Alle Kassen abschließen" meldete 2 erstellte Z-Bons (2 Nullabschlüsse), aber nur eine Kasse hatte laut UI überhaupt einen offenen Tag — und genau diese Kasse zeigte danach weiterhin einen offenen Tag, der Z-Bon musste manuell nachgeholt werden. Ursache: `closeRegister()` stempelte den `daily_closing`-Eintrag immer mit `business_date = current_date` statt dem tatsächlichen Rechnungsdatum.
+  **Erledigt 2026-09-03:** neue Funktion `closeAllPendingDays()` ermittelte vor dem Abschließen die tatsächlich vorkommenden Kalendertage unter den unzugeordneten Rechnungen und schloss chronologisch aufsteigend einmal pro Tag. Siehe Task #106.
+
+  **Nachgebessert 2026-09-06 (Live-Test mit 3 Kassen und echten Lücken-Tagen deckte weitere Bugs auf):**
+  - **Kernursache:** `closeAllPendingDays()` ermittelte die zu schließenden Tage über `DISTINCT created_at::date` auf unzugeordneten Rechnungen — ein Kalendertag ganz ohne Buchung ("Lücke") tauchte darin nie auf und konnte dadurch **nie** geschlossen werden, obwohl die "ausstehend"-Erkennung (`findPendingDaysForRegister()`) für genau diesen Tag weiterhin einen Abschluss verlangte. Die betroffene Kasse blieb dadurch dauerhaft "1 Tag ausstehend", egal wie oft abgeschlossen wurde.
+  - **Zweiter Fund:** wiederholtes Klicken auf einer bereits vollständig abgeschlossenen, untätigen Kasse erzeugte bei jedem Klick einen weiteren Nullabschluss für denselben Geschäftstag (keine Prüfung, ob heute schon abgeschlossen war).
+  - **Fix:** `closeAllPendingDays()` durch `closePastPendingDays()` ersetzt — nutzt jetzt exakt dieselbe Tagesliste wie `findPendingDaysForRegister()` (eine einzige Quelle der Wahrheit statt zweier potenziell abweichender Definitionen), wodurch Lücken-Tage automatisch einen Nullabschluss bekommen. Ergänzt um `closeTodayUnlessAlreadyClosed()` — schließt den heutigen Tag nur, wenn tatsächlich unzugeordnete Rechnungen vorliegen oder heute noch gar nicht abgeschlossen wurde.
+  - **"Alle Kassen abschließen" (systemweiter Button + `POST /closings/close-all`) komplett entfernt** (Nutzerentscheidung) — ein blinder Sammel-Abschluss über alle Kassen wurde als zu riskant eingestuft; jede Kasse wird jetzt einzeln aus ihrer Detailseite abgeschlossen (`docs/Anforderungen.md` entsprechend nachgezogen).
+  - **Fehlender UI-Refresh behoben:** neuer Store `lib/stores/pendingClosings.ts` — beide Kassen-Detail-Aktionen ("Tagesabschluss jetzt durchführen", "ausstehende Tage nachholen") aktualisieren jetzt das globale Banner sofort, nicht erst nach manuellem Neuladen oder Routenwechsel.
+  - **"Null"-Markierung** in der Abschluss-Tabelle durch echte Spalte "Nullabschluss" (mit "X" bei Nullabschlüssen) ersetzt, statt eines unklaren Textes hinter den Buttons.
+  - Drei neue Integrationstests (Lücken-Tag-Nullabschluss + danach entsperrt, kein doppelter Nullabschluss bei wiederholtem Klick) laufen grün gegen eine echte Postgres-Instanz; bestehende Tests mit fest codiertem historischem Datum (`2026-06-24`) auf relative Daten umgestellt, da die Korrektur das Verhalten bei großem Abstand zu "heute" grundlegend ändert.
+  **Live-Test bestätigt (2026-09-10):** mehrere ausstehende Tage (inkl. Lücken-Tage) über mehrere Kassen erzeugt, Anzeige an allen UI-Stellen (Banner, Dashboard-Kachel, Kassenliste-Badge, Kassendetail-Karte) korrekt, Bedienungskasse-Sperre (409) korrekt, „ausstehende Tage nachholen" schließt chronologisch korrekt ohne doppelten Nullabschluss, heutiger Tag danach separat abschließbar. Siehe `docs/Manueller-Testplan.md` Abschnitt 5/6.
+
 - [Finding] **D-055** (mittel, Backend / TSE-Health-Job) — Gefunden 2026-09-02 — Kontext: Bei Nutzerfragen zur TSE-Nutzung/Steuersätzen gefunden (2026-09-02)
   Nutzerfrage zu `dumpProcessData`-Testdaten führte zur Prüfung, ob die minütliche TSE-Gesundheitsprüfung (`tse/healthJob.ts`) der TSE schaden könnte. Die routinemäßige Minutenabfrage selbst ist unkritisch (`getTseInfo()`, reiner Lesebefehl, erzeugt keinen Log-Eintrag). Aber: `tick()`s "TSE ungesund"-Zweig rief bei jedem Fehlschlag erneut `maintainTse()` auf (Selbsttest + `worm_tse_updateTime`) — **ohne jeglichen Backoff/Cooldown** über das 60-Sekunden-Ticksintervall hinaus. Der SDK-Header warnt explizit (Abschnitt „Common Issues" → „Update Time Frequency"): `worm_tse_updateTime` "should NOT be called significantly more often than announced in `worm_info_maxTimeSynchronizationDelay`" (typischerweise im Bereich von Stunden/einem Tag) — "the guaranteed number of supported update time commands is 150000... If the time gets synchronized more often than that, the TSE might get damaged." Würde eine TSE aus irgendeinem Grund dauerhaft als "ungesund" gemeldet, würde jede Minute ein neuer `updateTime`-Aufruf ausgelöst — bei diesem Takt wäre das 150.000er-Lebensdauer-Limit in ca. 104 Tagen aufgebraucht. **Ergänzung 2026-09-06:** Dieselbe ungebremste Schleife hatte noch ein zweites, deutlich akuteres Risiko — `maintainTse()` authentifiziert sich dabei mit dem `tse_time_admin_pin`-Setting. Laut SDK-Header (`WormDLL.h` Zeile 2273f.): "PINs have a retry counter of 3. If a wrong PIN has been entered 3 times, the PIN will be blocked and must be unblocked with the PUK." Ist die hinterlegte TimeAdmin-PIN aus irgendeinem Grund falsch, würde der minütliche Retry-Loop die PIN nach spätestens 3 Minuten (statt erst nach 104 Tagen wie beim Update-Time-Limit) dauerhaft blockieren.
   **Erledigt 2026-09-10, siehe Task #109/#131:** `config.tseAutoMaintainEnabled` deaktiviert sich automatisch und dauerhaft (persistiert in `system_setting`), sobald ein automatischer `maintainTse()`-Versuch mit einem PIN-Authentifizierungsfehler fehlschlägt (`isPinAuthError()`, `tse/signing.ts`) — deckt das dringlichere PIN-Risiko vollständig ab. `MAINTAIN_RETRY_COOLDOWN_MS` (15 Minuten) drosselt wiederholte Versuche bei jedem anderen Dauer-Fehlerzustand — senkt die `updateTime`-Abnutzungsrate um den Faktor 15. Volle Details in Task #109 (Lösung) und Task #131 (Checkbox-UI zum manuellen Wiederaktivieren).
@@ -4891,3 +4952,7 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
 - [Finding] **T-022** (mittel, Backend / Excel-Endpoint) — Gefunden 2026-06-24 — Kontext: Während Excel-Export-Implementierung gefunden
   DB-Query-Pfad ungetestet.
   **Teilweise erledigt 2026-06-24:** Smoke-Test in `admin-routes.integration.test.ts` prüft den Tagesexport (XLSX-Magic-Bytes + 400 bei invalidem Datum). Vollständige Datenkorrektheit über das Workbook hinweg bleibt offen — kann nachgezogen werden wenn echte Daten hereinkommen.
+
+- [Finding] **D-066** (niedrig, Frontend / TSE-Tools) — Gefunden 2026-09-10 — Kontext: Live-Test der TSE-Tools-UI (Task #131), TimeAdmin-PIN mit absichtlich falscher PUK entsperrt
+  Nutzer berichtet: Der Entsperren-Dialog zeigte nach einem Fehlversuch „…noch 3 Versuche, bevor die PUK selbst gesperrt wird." — dieselbe Meldung erschien unverändert auch nach weiteren Fehlversuchen, obwohl der Text einen Countdown suggeriert. Ursache in `WormDLL.h` (`worm_user_unblock`-Doku) gefunden: „For TSEs with software version >= 2.0.0, this will always be set to 3 as the PUK will only be blocked temporarily." — `remainingRetries` zählt auf Firmware ≥ 2.0.0 **nicht** pro Fehlversuch herunter, sondern steht bei jedem Fehlschlag fest auf `3`; ein echter Countdown existiert laut SDK nur auf Firmware < 2.0.0.
+  **Behoben 2026-09-10:** `+page.svelte` zeigt den spezifischen Zahlenwert nur noch, wenn `remainingRetries < 3` (echtes Signal); bei `=== 3` erscheint stattdessen ein allgemeiner Hinweis ohne falsche Zahlenangabe. `docs/TSE-CLI-Referenz.md` (Abschnitt `unblock`) entsprechend korrigiert.

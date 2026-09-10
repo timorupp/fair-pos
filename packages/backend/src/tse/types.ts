@@ -42,6 +42,10 @@ export interface TseInfo {
   certificateChain: string;
   /** Whether the TSE still needs the one-time `setup` provisioning (Task #131) — read tolerantly, defaults to `false` ("assume already set up") if the underlying SDK call itself fails. */
   needsSetup: boolean;
+  /** Seconds for which the Admin PUK is currently blocked, `0` if not blocked, or `null` if unreadable (self-test not yet passed). On firmware < 2.0.0 this is always `0` — that firmware has no blocking-duration concept and permanently blocks the PUK after 3 wrong attempts instead (Task #131 follow-up, D-066). */
+  pukBlockingDurationAdminSeconds: number | null;
+  /** Same as {@link pukBlockingDurationAdminSeconds}, for the TimeAdmin PUK. */
+  pukBlockingDurationTimeAdminSeconds: number | null;
 }
 
 /**

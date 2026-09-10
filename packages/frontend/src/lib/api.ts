@@ -34,6 +34,10 @@ export interface TseInfo {
   publicKey: string;
   /** Whether the TSE still needs the one-time `setup` provisioning (Task #131). */
   needsSetup: boolean;
+  /** Seconds for which the Admin PUK is currently blocked, `0` if not blocked, `null` if unreadable (self-test not passed). Always `0` on firmware < 2.0.0 (no blocking-duration concept there). */
+  pukBlockingDurationAdminSeconds: number | null;
+  /** Same as {@link pukBlockingDurationAdminSeconds}, for the TimeAdmin PUK. */
+  pukBlockingDurationTimeAdminSeconds: number | null;
 }
 
 /** Response shape of `GET /api/admin/tse/status`. */
@@ -93,6 +97,29 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+/**
+ * Fetches a binary file from an endpoint that streams the file directly on
+ * success but responds with a JSON `{error}` body (like `request()` above)
+ * on failure — e.g. TSE-Rohdatenexport/Process-Data-Dump (Task #131
+ * follow-up). A plain `<a href>` to such an endpoint can't distinguish the
+ * two cases — a failure just navigates the browser to a raw JSON error
+ * page instead of showing it inline — so callers fetch first, check for an
+ * error, and only then trigger the actual save (see `$lib/download.ts`).
+ *
+ * @param path - API path (without the `/api` prefix), as for `request()`.
+ * @returns The file content and the filename from `Content-Disposition`.
+ */
+async function requestFile(path: string): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`/api${path}`, { credentials: 'include' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error((data['error'] as string | undefined) ?? 'Unbekannter Fehler');
+  }
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  return { blob: await res.blob(), filename: match?.[1] ?? 'download' };
 }
 
 /** All available API calls, grouped by domain. */
@@ -379,16 +406,23 @@ export const api = {
        * Raw TR-03153 TAR archive of everything currently stored on the TSE
        * (Task #103) — always a full export, no date-range filter (the TSE's
        * own filtered-export functions no longer work on firmware >= 2.0.0).
-       * FairPOS does not interpret the contents.
+       * FairPOS does not interpret the contents. Throws on failure (e.g. TSE
+       * locked/unreachable) instead of silently downloading an error page
+       * (Task #131 follow-up) — see `requestFile`.
        */
-      exportDownloadUrl: (): string => '/api/admin/tse/export',
+      export: (): Promise<{ blob: Blob; filename: string }> => requestFile('/admin/tse/export'),
       /**
-       * One-time provisioning of a fresh TSE (Task #131 "TSE-Tools").
-       * `credentialSeed`/`adminPuk`/`adminPin`/`timeAdminPin` are never
-       * persisted anywhere — sent once, used, discarded. Uses the
-       * already-saved Mount-Pfad/Client-ID from the TSE-Verbindung panel.
+       * One-time provisioning of a fresh TSE (Task #131 "TSE-Tools"). Uses
+       * the already-saved Mount-Pfad from the TSE-Verbindung panel, but
+       * `clientId` is its own dialog field, independent from that panel's
+       * Client-ID — `setup` is exactly the operation that can register a
+       * *different* one. `credentialSeed`/`adminPuk`/`adminPin`/
+       * `timeAdminPin` are never persisted anywhere — sent once, used,
+       * discarded; `clientId` is persisted as the new `tse_client_id`
+       * setting on success (returned here so the caller can reflect it
+       * without a reload).
        */
-      setup: (data: { credentialSeed: string; adminPuk: string; adminPin: string; timeAdminPin: string }): Promise<{ ok: true }> =>
+      setup: (data: { clientId: string; credentialSeed: string; adminPuk: string; adminPin: string; timeAdminPin: string }): Promise<{ ok: true; clientId: string }> =>
         request('POST', '/admin/tse/setup', data),
       /**
        * Resets a blocked Admin or TimeAdmin PIN, given the current PUK
@@ -399,8 +433,13 @@ export const api = {
         request('POST', '/admin/tse/unblock', data),
       /** Resets a *development-firmware* TSE to factory default (Task #131) — fails harmlessly on real/production hardware. */
       factoryReset: (): Promise<{ ok: true }> => request('POST', '/admin/tse/factory-reset'),
-      /** Tab-separated dump of every process-data entry currently stored on the TSE (Task #102/#131) — a diagnostic tool, not interpreted by FairPOS. */
-      dumpProcessDataDownloadUrl: (): string => '/api/admin/tse/dump-process-data',
+      /**
+       * Tab-separated dump of every process-data entry currently stored on
+       * the TSE (Task #102/#131) — a diagnostic tool, not interpreted by
+       * FairPOS. Throws on failure instead of silently downloading an error
+       * page (Task #131 follow-up) — see `requestFile`.
+       */
+      dumpProcessData: (): Promise<{ blob: Blob; filename: string }> => requestFile('/admin/tse/dump-process-data'),
     },
 
     closings: {

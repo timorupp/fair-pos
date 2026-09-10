@@ -102,20 +102,31 @@ registriert den Client, aktiviert den CTSS-Zugriff.
 
 Vollständiges Praxisbeispiel: `docs/Installationsanleitung.md` Abschnitt 8.3.
 
-> ⚠️ **Ein falscher Credential-Seed kann die TSE unwiderruflich sperren.**
-> `setup` versucht mit dem angegebenen Credential-Seed den werksseitigen
-> PUK zu ändern. Ist der Credential-Seed falsch, wird daraus der falsche
-> ursprüngliche PUK abgeleitet und der Änderungsversuch schlägt fehl. Nach
-> **drei** solchen Fehlversuchen ist die TSE **dauerhaft und unwiderruflich
-> gesperrt** — keine Wiederherstellung möglich. Credential-Seed vor dem
-> ersten Aufruf unbedingt beim Händler verifizieren.
+> ⚠️ **Ein falscher Credential-Seed kann die TSE sperren.** `setup`
+> versucht mit dem angegebenen Credential-Seed den werksseitigen PUK zu
+> ändern. Ist der Credential-Seed falsch, wird daraus der falsche
+> ursprüngliche PUK abgeleitet und der Änderungsversuch schlägt fehl (das
+> ist derselbe `worm_user_change_puk`-Mechanismus wie bei `unblock` oben,
+> siehe D-066): auf **Firmware < 2.0.0** ist die TSE nach **drei** solchen
+> Fehlversuchen **dauerhaft und unwiderruflich gesperrt** — keine
+> Wiederherstellung möglich. Auf **Firmware ≥ 2.0.0** löst das stattdessen
+> eine exponentiell wachsende Zeitsperre aus (1s, 2s, 4s, … ohne
+> Obergrenze), die bei genug Fehlversuchen ebenfalls faktisch permanent
+> werden kann. In beiden Fällen: Credential-Seed vor dem ersten Aufruf
+> unbedingt beim Händler verifizieren, nicht raten.
 
 **Seit Task #131 auch über die Admin-UI erreichbar** (Button "TSE
 initialisieren" in den TSE-Tools, Einstellungen → TSE) — `setupTse()` in
 `tse/client.ts` ist jetzt über `POST /api/admin/tse/setup` verdrahtet, mit
-serverseitiger Formatvalidierung (PUK/PIN-Länge, nur Ziffern) vor dem
-eigentlichen Aufruf. Der manuelle CLI-Aufruf bleibt weiterhin möglich und
-äquivalent — z. B. wenn die Admin-UI selbst nicht erreichbar ist.
+serverseitiger Formatvalidierung (Client-ID-Zeichensatz/-Länge,
+PUK/PIN-Länge, nur Ziffern) vor dem eigentlichen Aufruf. Die Client-ID ist
+in diesem Dialog ein eigenes Feld, bewusst unabhängig von der auf der
+TSE-Verbindung-Karte gespeicherten — `setup` ist genau die Aktion, die eine
+**andere** Client-ID registrieren kann (zweite TSE, oder eine frische, die
+noch nirgends gespeichert ist); bei Erfolg wird die eingegebene Client-ID
+als neue `tse_client_id`-Einstellung übernommen. Der manuelle CLI-Aufruf
+bleibt weiterhin möglich und äquivalent — z. B. wenn die Admin-UI selbst
+nicht erreichbar ist.
 
 ### `maintain` — Self-Test + Zeitsynchronisation
 
@@ -144,6 +155,18 @@ Self-Test noch nicht bestanden). Zusätzlich (Task #131) das Feld
 `setup`-Inbetriebnahme braucht; ebenfalls leer/`false` statt Fehlschlag,
 falls die zugrundeliegende Abfrage selbst scheitert. Entspricht dem
 "TSE testen"-Button (Einstellungen → TSE → TSE-Tools).
+
+Seit D-066 (2026-09-10) zusätzlich `pukBlockingDurationAdminSeconds`/
+`pukBlockingDurationTimeAdminSeconds` (`worm_info_pukBlockingDurationAdmin`/
+`...TimeAdmin`) — Sekunden, für die die jeweilige PUK aktuell gesperrt ist,
+`0` falls nicht gesperrt, `null` falls (noch) nicht auslesbar (Self-Test
+nicht bestanden). Auf Firmware < 2.0.0 immer `0` (dort gibt es kein
+Sperrzeit-Konzept, siehe `unblock` oben). **Das sind die einzigen passiv
+auslesbaren Sperr-Infos** — für den PIN-Sperrstatus oder die Anzahl
+bisheriger Fehlversuche (weder PIN noch PUK) bietet die SDK kein
+entsprechendes Feld; das lässt sich nur transient aus der Fehlerantwort
+eines tatsächlichen Login-/Unblock-Versuchs ablesen (verbraucht dabei
+selbst einen Versuch).
 
 ### `exportTar` — Rohdaten-Vollexport
 
@@ -187,8 +210,13 @@ die Admin-PUK sein (auch für `timeAdmin`), auf Firmware ≥ 2.0.0 ist die
 TimeAdmin-PUK ohnehin identisch zur Admin-PUK (beide werden gemeinsam bei
 `setup` festgelegt). `<neue-pin>` muss wie bei `setup` genau 5-stellig
 sein. Schlägt der Aufruf fehl (falsche PUK), liefert die JSON-Antwort
-zusätzlich `remainingRetries` — Anzahl verbleibender Versuche, bevor die
-PUK selbst (temporär) gesperrt wird.
+zusätzlich `remainingRetries` — laut `WormDLL.h`-Dokumentation zu
+`worm_user_unblock` wird dieser Wert **nur auf Firmware < 2.0.0** bei
+jedem Fehlversuch tatsächlich heruntergezählt; auf Firmware ≥ 2.0.0 steht
+er bei jedem Fehlschlag fest auf `3` ("the PUK will only be blocked
+temporarily") und ist damit **kein echter Zähler** — sollte in der UI
+nicht als Countdown dargestellt werden (live 2026-09-10 bestätigt: Wert
+blieb über mehrere Fehlversuche hinweg unverändert bei 3).
 
 Ausgelöst durch Task #109/#131: der Hintergrund-Health-Check ruft
 `maintain` automatisch auf und hätte bei einer falsch hinterlegten

@@ -136,7 +136,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] **Stornieren:** Positionen auswählen, Stornogrund wählen, bestätigen → Positionen als storniert markiert
 - [ ] **Kostenfrei:** wie oben mit `booking_type=free_of_charge`
 - [ ] **TSE-Warnung bei Storno/Kostenfrei:** erscheint als Alert (Dialog schließt sofort), AVSonstige-Signierung wird versucht
-- [ ] Register-Sperre: Bedienungskasse blockiert Bestellen/Kassieren, wenn für die Kasse ein ausstehender Z-Bon existiert (409, klare Fehlermeldung)
+- [x] Register-Sperre: Bedienungskasse blockiert Bestellen/Kassieren, wenn für die Kasse ein ausstehender Z-Bon existiert (409, klare Fehlermeldung) — getestet 2026-09-10
 
 ---
 
@@ -145,11 +145,17 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] Manueller Tagesabschluss für eine Kasse mit offenen (unabgeschlossenen) Rechnungen erzeugt korrekten Z-Bon (Summen, Steueraufschlüsselung, Storno-Summe)
 - [ ] Nullabschluss (keine Bewegung) wird als solcher markiert und gedruckt/angezeigt
 - [ ] Z-Bon-Nummer ist fortlaufend pro Kasse, keine Lücken
-- [ ] Ausstehende Tage werden im Banner/Badge angezeigt, bevor sie abgeschlossen werden
-- [ ] „Alle ausstehenden Tage jetzt nachholen" schließt sie chronologisch nacheinander ab
-- [ ] „Alle Kassen jetzt abschließen" (globaler Shortcut) funktioniert
+- [x] Ausstehende Tage werden an allen UI-Stellen angezeigt, bevor sie abgeschlossen werden (globales Banner, Dashboard-Kachel, Kassenliste-Badge, Kassendetail-Karte) — getestet 2026-09-10
+- [x] „Alle ausstehenden Tage jetzt nachholen" schließt sie chronologisch nacheinander ab — getestet 2026-09-10
+- [x] Heutigen Tag erst nach vollständigem Nachholen separat abschließen (Button vorher disabled mit Hinweistext) — getestet 2026-09-10
 - [ ] Z-Bon-PDF öffnet sich korrekt, Reprint enqueued einen neuen Druckauftrag
 - [ ] Nach Abschluss: betroffene Rechnungen sind dem Z-Bon zugeordnet und erscheinen nicht mehr als „offen"
+
+**Hinweis:** Der frühere Eintrag „„Alle Kassen jetzt abschließen" (globaler
+Shortcut) funktioniert" wurde entfernt — dieser systemweite Button/Endpunkt
+(`POST /closings/close-all`) wurde am 2026-09-06 bewusst gestrichen (siehe
+D-054 in `BACKLOG-DONE.md`); jede Kasse wird seither einzeln über ihre
+Detailseite abgeschlossen.
 
 ---
 

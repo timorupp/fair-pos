@@ -57,6 +57,17 @@ int printUsageError(const char *message) {
   return 1;
 }
 
+/** Formats a `worm_info_pukBlockingDuration*` value as a JSON number (of
+ * seconds) or `null` when the SDK couldn't read it yet — 0xFFFFFFFF is the
+ * documented sentinel for "self test not passed" (WormDLL.h). Firmware
+ * < 2.0.0 has no PUK-blocking-duration concept and always reports 0 here
+ * (that firmware permanently blocks the PUK after 3 wrong attempts instead —
+ * see docs/TSE-CLI-Referenz.md `unblock` section). */
+std::string jsonUint32OrNull(uint32_t value) {
+  if (value == 0xFFFFFFFFu) return "null";
+  return std::to_string(value);
+}
+
 /** Minimal Base64 encoder, for byte values the CLI reports back to Node
  * (the TSE's public key) that aren't plain hex — mirrors `toHex` above. */
 std::string base64Encode(const unsigned char *data, size_t len) {
@@ -289,7 +300,17 @@ int cmdFinish(WormContext *ctx, int argc, char **argv) {
  * firmware >= 2.0.0 the CTSS interface is active automatically once the
  * self-test has passed (`worm_info_isCtssInterfaceActive` — "same as
  * worm_info_hasPassedSelfTest"). Read tolerantly: on any error, report an
- * empty chain instead of failing the whole `info` command. */
+ * empty chain instead of failing the whole `info` command.
+ *
+ * Also reads the Admin-/TimeAdmin-PUK blocking duration
+ * (`worm_info_pukBlockingDurationAdmin`/`...TimeAdmin`, Task #131
+ * follow-up) — the SDK exposes this as an exponentially growing
+ * time-lock on firmware >= 2.0.0 instead of a fixed retry counter (see the
+ * `unblock` doc comment below), so it's the only passively-readable signal
+ * for "is this PUK currently blocked, and for how much longer". There is
+ * deliberately **no** equivalent PIN-blocked/attempt-count field here — the
+ * SDK has none; the only way to learn a PIN's block state is to actually
+ * attempt a login, which itself consumes a retry attempt. */
 int cmdInfo(WormContext *ctx) {
   WormInfo *info = worm_info_new(ctx);
   if (info == nullptr) return printError(WORM_ERROR_OUTOFMEM, "worm_info_new failed");
@@ -306,6 +327,11 @@ int cmdInfo(WormContext *ctx) {
   // decide whether to offer the Setup tool at all (Task #131).
   int needsSetupRaw = 0;
   worm_tse_needs_setup(ctx, &needsSetupRaw);
+
+  std::string pukBlockAdmin =
+      jsonUint32OrNull(worm_info_pukBlockingDurationAdmin(info));
+  std::string pukBlockTimeAdmin =
+      jsonUint32OrNull(worm_info_pukBlockingDurationTimeAdmin(info));
 
   const unsigned char *serial;
   worm_uint serialLength;
@@ -352,7 +378,9 @@ int cmdInfo(WormContext *ctx) {
       "\"logTimeFormat\":\"%s\","
       "\"publicKey\":\"%s\","
       "\"certificateChain\":\"%s\","
-      "\"needsSetup\":%s"
+      "\"needsSetup\":%s,"
+      "\"pukBlockingDurationAdminSeconds\":%s,"
+      "\"pukBlockingDurationTimeAdminSeconds\":%s"
       "}}\n",
       worm_info_hasPassedSelfTest(info) ? "true" : "false",
       worm_info_hasValidTime(info) ? "true" : "false",
@@ -366,7 +394,9 @@ int cmdInfo(WormContext *ctx) {
       worm_signatureAlgorithm(), worm_logTimeFormat(),
       base64Encode(publicKey, publicKeyLength).c_str(),
       certificateChainB64.c_str(),
-      needsSetupRaw ? "true" : "false");
+      needsSetupRaw ? "true" : "false",
+      pukBlockAdmin.c_str(),
+      pukBlockTimeAdmin.c_str());
 
   worm_info_free(info);
   return 0;

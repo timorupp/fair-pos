@@ -270,17 +270,33 @@ describe('POST /api/admin/tse/setup (Task #131)', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('rejects a missing/invalid client-id before ever calling the CLI', async () => {
+    const app = await getTestApp();
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/setup',
+      headers: { cookie: adminCookie },
+      payload: { clientId: 'invalid client id!', credentialSeed: 'SwissbitSwissbit', adminPuk: '123456', adminPin: '12345', timeAdminPin: '12345' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatch(/Client-ID/);
+  });
+
   it('rejects a 5-digit admin-puk before ever calling the CLI', async () => {
     const app = await getTestApp();
     await app.inject({
       method: 'PUT', url: '/api/admin/settings',
       headers: { cookie: adminCookie },
-      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+      payload: { tse_mount_point: '/mnt/fake-tse' },
     });
     const response = await app.inject({
       method: 'POST', url: '/api/admin/tse/setup',
       headers: { cookie: adminCookie },
-      payload: { credentialSeed: 'SwissbitSwissbit', adminPuk: '12345', adminPin: '12345', timeAdminPin: '12345' },
+      payload: { clientId: 'FairPOS-Test', credentialSeed: 'SwissbitSwissbit', adminPuk: '12345', adminPin: '12345', timeAdminPin: '12345' },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error).toMatch(/6-stellig/);
@@ -291,32 +307,36 @@ describe('POST /api/admin/tse/setup (Task #131)', () => {
     await app.inject({
       method: 'PUT', url: '/api/admin/settings',
       headers: { cookie: adminCookie },
-      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+      payload: { tse_mount_point: '/mnt/fake-tse' },
     });
     const response = await app.inject({
       method: 'POST', url: '/api/admin/tse/setup',
       headers: { cookie: adminCookie },
-      payload: { credentialSeed: 'SwissbitSwissbit', adminPuk: '123456', adminPin: 'abcde', timeAdminPin: '12345' },
+      payload: { clientId: 'FairPOS-Test', credentialSeed: 'SwissbitSwissbit', adminPuk: '123456', adminPin: 'abcde', timeAdminPin: '12345' },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error).toMatch(/5-stellig/);
   });
 
-  it('succeeds against the stub CLI when fully configured and validly formatted, and logs it', async () => {
+  it('succeeds against the stub CLI when fully configured and validly formatted, persists the client-id, and logs it', async () => {
     const app = await getTestApp();
     config.tseCliPath = TSE_CLI_STUB_PATH;
     await app.inject({
       method: 'PUT', url: '/api/admin/settings',
       headers: { cookie: adminCookie },
-      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+      payload: { tse_mount_point: '/mnt/fake-tse' },
     });
     const response = await app.inject({
       method: 'POST', url: '/api/admin/tse/setup',
       headers: { cookie: adminCookie },
-      payload: { credentialSeed: 'SwissbitSwissbit', adminPuk: '123456', adminPin: '12345', timeAdminPin: '12345' },
+      payload: { clientId: 'FairPOS-Test', credentialSeed: 'SwissbitSwissbit', adminPuk: '123456', adminPin: '12345', timeAdminPin: '12345' },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ ok: true });
+    expect(response.json()).toEqual({ ok: true, clientId: 'FairPOS-Test' });
+
+    const setting = await pool.query(`SELECT value FROM system_setting WHERE key = 'tse_client_id'`);
+    expect(setting.rows).toEqual([{ value: 'FairPOS-Test' }]);
+    expect(config.tseClientId).toBe('FairPOS-Test');
 
     const log = await pool.query(`SELECT severity, category FROM system_log`);
     expect(log.rows).toEqual([{ severity: 'info', category: 'tse_setup' }]);

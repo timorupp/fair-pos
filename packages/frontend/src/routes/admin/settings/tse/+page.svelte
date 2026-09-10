@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api, type TseStatus, type TseMountCandidate } from '$lib/api';
   import { copyToClipboard } from '$lib/clipboard';
+  import { saveBlob } from '$lib/download';
   import Modal from '$lib/components/Modal.svelte';
 
   /** Admin-PUK: exactly 6 digits (Task #131 — see docs/TSE-CLI-Referenz.md). */
@@ -11,6 +12,10 @@
   /** Admin-/TimeAdmin-PIN: exactly 5 digits. */
   function isValidPin(value: string): boolean {
     return /^[0-9]{5}$/.test(value);
+  }
+  /** TSE Client-ID: letters, digits, "-"/"_", max 30 chars (see `packages/backend/src/tse/validation.ts`). */
+  function isValidClientId(value: string): boolean {
+    return /^[A-Za-z0-9_-]{1,30}$/.test(value);
   }
 
   let settings: Record<string, string> = $state({});
@@ -137,6 +142,21 @@
     return `${Math.floor(seconds / 86400)} Tage`;
   }
 
+  /**
+   * Formats a PUK blocking duration (Task #131 follow-up, D-066) in the
+   * coarsest unit that keeps it readable — the SDK's exponential backoff
+   * starts at 1 second and can grow to "multi-year" long, so a fixed unit
+   * (e.g. always days, as {@link formatDaysFromSeconds} does) would show
+   * "0 Tage" for the first several doublings.
+   */
+  function formatPukBlockDuration(seconds: number): string {
+    if (seconds < 60) return `${seconds} Sekunde${seconds === 1 ? '' : 'n'}`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} Minute(n)`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} Stunde(n)`;
+    if (seconds < 365 * 86400) return `${Math.floor(seconds / 86400)} Tag(e)`;
+    return `${Math.floor(seconds / (365 * 86400))} Jahr(e)`;
+  }
+
   function copyTseResult() {
     if (!tseResult) return;
     copyToClipboard(JSON.stringify(tseResult, null, 2));
@@ -175,6 +195,7 @@
 
   // ── TSE-Tools — TSE initialisieren (Task #131) ──────────────────────────────
   let setupOpen = $state(false);
+  let setupClientId = $state('');
   let setupCredentialSeed = $state('SwissbitSwissbit');
   let setupAdminPuk = $state('');
   let setupAdminPukConfirm = $state('');
@@ -192,6 +213,7 @@
    * before the request even goes out, not just after a round trip.
    */
   let setupValid = $derived(
+    isValidClientId(setupClientId) &&
     setupCredentialSeed.trim().length > 0 &&
     isValidPuk(setupAdminPuk) && setupAdminPuk === setupAdminPukConfirm &&
     isValidPin(setupAdminPin) && setupAdminPin === setupAdminPinConfirm &&
@@ -199,6 +221,12 @@
   );
 
   function openSetup(): void {
+    // Pre-fills from the currently saved Client-ID as a convenience default,
+    // same as the CredentialSeed default below — but it's this dialog's own
+    // field from here on, not read from `settings` again on submit, since
+    // `setup` is exactly the operation that can register a *different*
+    // Client-ID (Task #131 follow-up).
+    setupClientId = settings['tse_client_id'] ?? '';
     setupCredentialSeed = 'SwissbitSwissbit';
     setupAdminPuk = ''; setupAdminPukConfirm = '';
     setupAdminPin = ''; setupAdminPinConfirm = '';
@@ -211,10 +239,14 @@
     if (!setupValid) return;
     setupBusy = true; setupError = ''; setupSuccess = false;
     try {
-      await api.admin.tse.setup({
+      const result = await api.admin.tse.setup({
+        clientId: setupClientId,
         credentialSeed: setupCredentialSeed,
         adminPuk: setupAdminPuk, adminPin: setupAdminPin, timeAdminPin: setupTimeAdminPin,
       });
+      // Reflect the newly-registered Client-ID on the TSE-Verbindung panel
+      // immediately, without a reload — the backend already persisted it.
+      settings['tse_client_id'] = result.clientId;
       setupSuccess = true;
     } catch (e) {
       setupError = e instanceof Error ? e.message : 'Fehler';
@@ -257,6 +289,57 @@
       const retries = (e as { remainingRetries?: unknown })?.remainingRetries;
       if (typeof retries === 'number') unblockRemainingRetries = retries;
     } finally { unblockBusy = false; }
+  }
+
+  // ── TSE-Tools — TSE-Rohdaten exportieren (Task #131 follow-up) ──────────────
+  let exportOpen = $state(false);
+  let exportBusy = $state(false);
+  let exportError = $state('');
+  let exportSuccess = $state(false);
+
+  function openExport(): void {
+    exportError = ''; exportSuccess = false;
+    exportOpen = true;
+  }
+
+  /**
+   * Fetches the export first and checks for an error before triggering the
+   * actual file save — a plain `<a href>` to this endpoint would instead
+   * navigate the browser to a raw JSON error page when the TSE is
+   * locked/unreachable, with no way to show it inline (Task #131 follow-up).
+   */
+  async function submitExport(): Promise<void> {
+    exportBusy = true; exportError = ''; exportSuccess = false;
+    try {
+      const { blob, filename } = await api.admin.tse.export();
+      saveBlob(blob, filename);
+      exportSuccess = true;
+    } catch (e) {
+      exportError = e instanceof Error ? e.message : 'Fehler';
+    } finally { exportBusy = false; }
+  }
+
+  // ── TSE-Tools — Process-Data-Dump (Task #131 follow-up) ─────────────────────
+  let dumpOpen = $state(false);
+  let dumpBusy = $state(false);
+  let dumpError = $state('');
+  let dumpSuccess = $state(false);
+
+  function openDump(): void {
+    dumpError = ''; dumpSuccess = false;
+    dumpOpen = true;
+  }
+
+  /** Same fetch-then-save pattern as {@link submitExport}, and for the same reason. */
+  async function submitDump(): Promise<void> {
+    dumpBusy = true; dumpError = ''; dumpSuccess = false;
+    try {
+      const { blob, filename } = await api.admin.tse.dumpProcessData();
+      saveBlob(blob, filename);
+      dumpSuccess = true;
+    } catch (e) {
+      dumpError = e instanceof Error ? e.message : 'Fehler';
+    } finally { dumpBusy = false; }
   }
 
   // ── TSE-Tools — TSE auf Werkseinstellung zurücksetzen (Task #131) ───────────
@@ -352,6 +435,25 @@
           disabled={saving}
         />
       </div>
+      <div class="field">
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            checked={settings['tse_auto_maintain_enabled'] !== 'false'}
+            disabled={autoMaintainSaving}
+            onchange={(e) => toggleAutoMaintain(e.currentTarget.checked)}
+          />
+          Automatische Zeit-Synchronisation aktiv
+        </label>
+        <p class="hint">
+          Deaktiviert sich automatisch, wenn die TSE eine falsche oder gesperrte
+          TimeAdmin-PIN meldet, und muss dann hier wieder manuell aktiviert werden
+          (nachdem die PIN geprüft/entsperrt wurde) — verhindert, dass der
+          Hintergrund-Health-Check dieselbe falsche PIN minütlich wiederholt und
+          sie so dauerhaft sperrt.
+        </p>
+        {#if autoMaintainError}<p class="error-text">{autoMaintainError}</p>{/if}
+      </div>
     {/if}
 
     {#if saveError}<p class="error-text">{saveError}</p>{/if}
@@ -368,10 +470,13 @@
   <section class="card">
     <h2>TSE-Tools</h2>
     <p class="hint">
-      Verwaltungsfunktionen für die oben konfigurierte TSE — jedes Werkzeug
-      öffnet sich in einem eigenen Dialog. Ersetzt die bisher rein manuelle
-      Kommandozeilen-Bedienung, die keine Eingabeprüfung kennt (siehe Task
-      #131 in <code>BACKLOG.md</code>).
+      Verwaltungsfunktionen für die TSE am oben konfigurierten Mount-Pfad.
+      Jedes Werkzeug öffnet sich in einem eigenen Dialog.
+    </p>
+    <p class="warning-text">
+      Achtung! Die Funktionen sind nur für TSEs der Firma Swissbit geeignet.
+      Keine Gewähr für korrekte Funktionsweise. Diese Funktionen können die
+      TSE dauerhaft und unwiderruflich beschädigen.
     </p>
     <div class="tool-grid">
       <button class="btn-ghost" onclick={openTest}>TSE testen</button>
@@ -380,8 +485,8 @@
       <button class="btn-ghost" onclick={() => openUnblock('admin')}>Admin-PIN entsperren</button>
       <button class="btn-ghost" onclick={() => openUnblock('timeAdmin')}>TimeAdmin-PIN entsperren</button>
       <button class="btn-ghost tool-danger" onclick={openFactoryReset}>Werkseinstellung (Entwickler-TSE)</button>
-      <a class="btn-ghost" href={api.admin.tse.exportDownloadUrl()}>TSE-Rohdaten exportieren</a>
-      <a class="btn-ghost" href={api.admin.tse.dumpProcessDataDownloadUrl()}>Process-Data-Dump</a>
+      <button class="btn-ghost" onclick={openExport}>TSE-Rohdaten exportieren</button>
+      <button class="btn-ghost" onclick={openDump}>Process-Data-Dump</button>
     </div>
   </section>
 </div>
@@ -413,7 +518,31 @@
         <dt>Signaturalgorithmus</dt><dd><code>{tseResult.info.signatureAlgorithm}</code></dd>
         <dt>Zeitformat</dt><dd><code>{tseResult.info.logTimeFormat}</code></dd>
         <dt>Public Key</dt><dd><code class="pubkey">{tseResult.info.publicKey}</code></dd>
+        <dt>Admin-PUK-Sperre</dt><dd>
+          {#if tseResult.info.pukBlockingDurationAdminSeconds === null}
+            unbekannt (Self-Test noch nicht bestanden)
+          {:else if tseResult.info.pukBlockingDurationAdminSeconds > 0}
+            gesperrt, noch {formatPukBlockDuration(tseResult.info.pukBlockingDurationAdminSeconds)}
+          {:else}
+            nicht gesperrt
+          {/if}
+        </dd>
+        <dt>TimeAdmin-PUK-Sperre</dt><dd>
+          {#if tseResult.info.pukBlockingDurationTimeAdminSeconds === null}
+            unbekannt (Self-Test noch nicht bestanden)
+          {:else if tseResult.info.pukBlockingDurationTimeAdminSeconds > 0}
+            gesperrt, noch {formatPukBlockDuration(tseResult.info.pukBlockingDurationTimeAdminSeconds)}
+          {:else}
+            nicht gesperrt
+          {/if}
+        </dd>
       </dl>
+      <p class="muted">
+        Hinweis: Die TSE bietet keinen passiven Abruf für den PIN-Sperrstatus
+        oder die Anzahl bisheriger Fehlversuche (weder für PINs noch für
+        PUKs) — nur die aktuelle PUK-Sperrzeit oben ist auslesbar, ohne
+        selbst einen Versuch zu verbrauchen.
+      </p>
 
       <details>
         <summary>Rohdaten (JSON)</summary>
@@ -429,7 +558,8 @@
   </div>
 </Modal>
 
-<!-- Zeit synchronisieren + automatische Zeit-Synchronisation (Task #109/#131) -->
+<!-- Zeit synchronisieren (Task #109/#131) — die automatische Zeit-Synchronisation
+     ist ein Feld auf der TSE-Verbindung-Karte oben, direkt unter der TimeAdmin-PIN -->
 <Modal bind:open={maintainOpen} title="Zeit synchronisieren">
   <p class="hint">
     Führt Self-Test + Zeitsynchronisation einmalig aus — nötig nach einer
@@ -441,68 +571,54 @@
   </button>
   {#if maintainError}<p class="error-text">{maintainError}</p>{/if}
   {#if maintainSuccess}<p class="success-text">Self-Test + Zeitsync erfolgreich.</p>{/if}
-
-  <hr class="dialog-divider" />
-
-  <label class="checkbox-row">
-    <input
-      type="checkbox"
-      checked={settings['tse_auto_maintain_enabled'] !== 'false'}
-      disabled={autoMaintainSaving}
-      onchange={(e) => toggleAutoMaintain(e.currentTarget.checked)}
-    />
-    Automatische Zeit-Synchronisation aktiv
-  </label>
-  <p class="hint">
-    Deaktiviert sich automatisch, wenn die TSE eine falsche oder gesperrte
-    TimeAdmin-PIN meldet, und muss dann hier wieder manuell aktiviert werden
-    (nachdem die PIN geprüft/entsperrt wurde) — verhindert, dass der
-    Hintergrund-Health-Check dieselbe falsche PIN minütlich wiederholt und
-    sie so dauerhaft sperrt.
-  </p>
-  {#if autoMaintainError}<p class="error-text">{autoMaintainError}</p>{/if}
 </Modal>
 
 <!-- TSE initialisieren (Task #131) ───────────────────────────────────────────── -->
 <Modal bind:open={setupOpen} title="TSE initialisieren">
   <p class="hint">
     Einmalige Erstinbetriebnahme einer fabrikneuen TSE. Verwendet den oben
-    gespeicherten Mount-Pfad und die Client-ID. Diese Werte werden nie
-    dauerhaft gespeichert — nur für diesen einen Aufruf verwendet.
+    gespeicherten Mount-Pfad; die Client-ID ist ein eigenes Feld unten (kann
+    von der oben gespeicherten abweichen, z. B. beim Hinzufügen einer
+    zweiten TSE). Diese Werte werden nie dauerhaft gespeichert — nur für
+    diesen einen Aufruf verwendet.
   </p>
   <p class="warning-text">
-    ⚠️ Ein falscher CredentialSeed kann die TSE nach drei Fehlversuchen
-    <strong>unwiderruflich sperren</strong>. Im Zweifel beim TSE-Händler
-    verifizieren, nicht raten (siehe Task #129).
+    Falsche Eingaben bei der PUK oder dem Credential Seed können die TSE
+    dauerhaft sperren (Version 1) oder eine Zeitsperre auslösen (Version
+    2). Bitte diese Angaben sehr sorgfältig und vorsichtig machen.
   </p>
 
+  <div class="field">
+    <label for="setup-client-id">Client-ID</label>
+    <input id="setup-client-id" bind:value={setupClientId} placeholder="z. B. FairPOS-1" disabled={setupBusy} />
+  </div>
   <div class="field">
     <label for="setup-seed">CredentialSeed</label>
     <input id="setup-seed" bind:value={setupCredentialSeed} disabled={setupBusy} />
   </div>
   <div class="field">
     <label for="setup-puk">Admin-PUK (6-stellig, nur Ziffern)</label>
-    <input id="setup-puk" type="password" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={setupAdminPuk} disabled={setupBusy} />
+    <input id="setup-puk" type="text" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={setupAdminPuk} disabled={setupBusy} />
   </div>
   <div class="field">
     <label for="setup-puk-confirm">Admin-PUK bestätigen</label>
-    <input id="setup-puk-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={setupAdminPukConfirm} disabled={setupBusy} />
+    <input id="setup-puk-confirm" type="text" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={setupAdminPukConfirm} disabled={setupBusy} />
   </div>
   <div class="field">
     <label for="setup-pin">Admin-PIN (5-stellig, nur Ziffern)</label>
-    <input id="setup-pin" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupAdminPin} disabled={setupBusy} />
+    <input id="setup-pin" type="text" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupAdminPin} disabled={setupBusy} />
   </div>
   <div class="field">
     <label for="setup-pin-confirm">Admin-PIN bestätigen</label>
-    <input id="setup-pin-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupAdminPinConfirm} disabled={setupBusy} />
+    <input id="setup-pin-confirm" type="text" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupAdminPinConfirm} disabled={setupBusy} />
   </div>
   <div class="field">
     <label for="setup-time-pin">TimeAdmin-PIN (5-stellig, nur Ziffern)</label>
-    <input id="setup-time-pin" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupTimeAdminPin} disabled={setupBusy} />
+    <input id="setup-time-pin" type="text" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupTimeAdminPin} disabled={setupBusy} />
   </div>
   <div class="field">
     <label for="setup-time-pin-confirm">TimeAdmin-PIN bestätigen</label>
-    <input id="setup-time-pin-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupTimeAdminPinConfirm} disabled={setupBusy} />
+    <input id="setup-time-pin-confirm" type="text" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={setupTimeAdminPinConfirm} disabled={setupBusy} />
   </div>
 
   {#if setupError}<p class="error-text">{setupError}</p>{/if}
@@ -523,29 +639,40 @@
     Admin-PUK (auch für TimeAdmin), auf Firmware ≥ 2.0.0 ist die
     TimeAdmin-PUK ohnehin identisch zur Admin-PUK.
   </p>
+  <p class="warning-text">
+    Eine falsche Eingabe der PUK kann die TSE dauerhaft sperren (Version 1)
+    oder eine Zeitsperre auslösen (Version 2). Bitte diese Angaben sehr
+    sorgfältig und vorsichtig machen.
+  </p>
 
   <div class="field">
     <label for="unblock-puk">Aktuelle PUK (6-stellig, nur Ziffern)</label>
-    <input id="unblock-puk" type="password" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={unblockPuk} disabled={unblockBusy} />
+    <input id="unblock-puk" type="text" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={unblockPuk} disabled={unblockBusy} />
   </div>
   <div class="field">
     <label for="unblock-puk-confirm">PUK bestätigen</label>
-    <input id="unblock-puk-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={unblockPukConfirm} disabled={unblockBusy} />
+    <input id="unblock-puk-confirm" type="text" autocomplete="off" inputmode="numeric" maxlength="6" bind:value={unblockPukConfirm} disabled={unblockBusy} />
   </div>
   <div class="field">
     <label for="unblock-new-pin">Neue PIN (5-stellig, nur Ziffern)</label>
-    <input id="unblock-new-pin" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={unblockNewPin} disabled={unblockBusy} />
+    <input id="unblock-new-pin" type="text" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={unblockNewPin} disabled={unblockBusy} />
   </div>
   <div class="field">
     <label for="unblock-new-pin-confirm">Neue PIN bestätigen</label>
-    <input id="unblock-new-pin-confirm" type="password" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={unblockNewPinConfirm} disabled={unblockBusy} />
+    <input id="unblock-new-pin-confirm" type="text" autocomplete="off" inputmode="numeric" maxlength="5" bind:value={unblockNewPinConfirm} disabled={unblockBusy} />
   </div>
 
   {#if unblockError}
+    <!-- WormDLL.h (worm_user_unblock): on firmware >= 2.0.0 remainingRetries is
+         always hardcoded to 3 on failure (the PUK is only ever blocked
+         temporarily) — it never actually counts down, so a value of exactly
+         3 carries no real information and must not be shown as a countdown. -->
     <p class="error-text">
       {unblockError}
-      {#if unblockRemainingRetries !== null}
+      {#if unblockRemainingRetries !== null && unblockRemainingRetries < 3}
         — noch {unblockRemainingRetries} Versuch{unblockRemainingRetries === 1 ? '' : 'e'}, bevor die PUK selbst gesperrt wird.
+      {:else if unblockRemainingRetries !== null}
+        — Achtung: Nach mehreren Fehlversuchen wird die PUK automatisch (temporär) gesperrt. Die TSE meldet auf dieser Firmware-Version keine genaue Versuchszahl.
       {/if}
     </p>
   {/if}
@@ -577,6 +704,39 @@
   <div class="dialog-footer">
     <button class="btn-primary tool-danger" onclick={submitFactoryReset} disabled={factoryResetConfirmText !== FACTORY_RESET_CONFIRM_PHRASE || factoryResetBusy}>
       {factoryResetBusy ? 'Setze zurück…' : 'Zurücksetzen'}
+    </button>
+  </div>
+</Modal>
+
+<!-- TSE-Rohdaten exportieren (Task #131 follow-up) ────────────────────────────── -->
+<Modal bind:open={exportOpen} title="TSE-Rohdaten exportieren">
+  <p class="hint">
+    Lädt den vollständigen TR-03153-Rohdatenexport der TSE herunter (Task
+    #103) — immer ein Vollexport, kein Datumsfilter (die TSE-eigenen
+    gefilterten Export-Funktionen funktionieren ab Firmware 2.0.0 nicht
+    mehr). FairPOS interpretiert den Inhalt nicht.
+  </p>
+  {#if exportError}<p class="error-text">{exportError}</p>{/if}
+  {#if exportSuccess}<p class="success-text">Datei heruntergeladen.</p>{/if}
+  <div class="dialog-footer">
+    <button class="btn-primary" onclick={submitExport} disabled={exportBusy}>
+      {exportBusy ? 'Exportiere…' : 'Herunterladen'}
+    </button>
+  </div>
+</Modal>
+
+<!-- Process-Data-Dump (Task #102/#131 follow-up) ──────────────────────────────── -->
+<Modal bind:open={dumpOpen} title="Process-Data-Dump">
+  <p class="hint">
+    Lädt eine tabgetrennte Auflistung aller auf der TSE gespeicherten
+    Process-Data-Einträge herunter (Task #102) — Diagnosewerkzeug zum
+    Abgleich gegen die eigene Datenbank, wird von FairPOS nicht ausgewertet.
+  </p>
+  {#if dumpError}<p class="error-text">{dumpError}</p>{/if}
+  {#if dumpSuccess}<p class="success-text">Datei heruntergeladen.</p>{/if}
+  <div class="dialog-footer">
+    <button class="btn-primary" onclick={submitDump} disabled={dumpBusy}>
+      {dumpBusy ? 'Exportiere…' : 'Herunterladen'}
     </button>
   </div>
 </Modal>
@@ -618,11 +778,10 @@
   details summary { cursor: pointer; font-size: 0.85rem; color: var(--color-text-muted); margin-top: 0.75rem; }
 
   /* TSE-Tools (Task #131) */
-  .tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; }
-  .tool-grid a.btn-ghost { text-align: center; text-decoration: none; }
+  .tool-grid { display: flex; flex-direction: column; gap: 0.5rem; max-width: 360px; }
+  .tool-grid button { width: 100%; }
   .tool-danger { color: #d9534f; border-color: #d9534f; }
   .dialog-footer { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border); }
-  .dialog-divider { border: none; border-top: 1px solid var(--color-border); margin: 1rem 0; }
   .checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer; }
   .warning-text {
     font-size: 0.85rem; color: #d9534f; background: rgba(217, 83, 79, 0.08);

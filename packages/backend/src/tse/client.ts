@@ -256,19 +256,34 @@ export function maintainTse(timeAdminPin: string): Promise<void> {
  * set up (by design — re-running setup on a live TSE is an operator error
  * that should surface, not be silently handled).
  *
- * @param opts - Credential seed and the four PINs/PUKs to configure.
+ * Deliberately takes `clientId` as an explicit argument instead of reading
+ * the already-saved `config.tseClientId` (unlike every other function in
+ * this file) — the already-saved value belongs to whichever TSE is
+ * currently registered, but `setup` is exactly the operation that can
+ * register a *different* one (e.g. adding a second TSE, or provisioning a
+ * fresh one before its Client-ID has been decided/saved anywhere yet).
+ * Only `config.tseMountPoint` needs to already be set. The caller is
+ * responsible for persisting `clientId` into settings afterward on success
+ * (see `routes/admin/tse.ts`'s `/setup` handler).
+ *
+ * @param opts - Client-ID plus the credential seed and the four PINs/PUKs to configure.
  */
 export function setupTse(opts: {
+  clientId: string;
   credentialSeed: string;
   adminPuk: string;
   adminPin: string;
   timeAdminPin: string;
 }): Promise<void> {
   return enqueueTseCall(async () => {
-    const { mountPoint, clientId } = requireTseConfig();
+    if (!config.tseMountPoint) {
+      throw new Error(
+        'TSE ist nicht konfiguriert (Mount-Pfad fehlt — Systemeinstellungen -> System in der Admin-UI).',
+      );
+    }
     await runCli<Record<string, never>>(
-      mountPoint, 'setup',
-      [clientId, opts.credentialSeed, opts.adminPuk, opts.adminPin, opts.timeAdminPin],
+      config.tseMountPoint, 'setup',
+      [opts.clientId, opts.credentialSeed, opts.adminPuk, opts.adminPin, opts.timeAdminPin],
       SELF_TEST_TIMEOUT_MS,
     );
   });

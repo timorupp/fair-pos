@@ -14,11 +14,13 @@ import {
 import { detectTse, listTseMountCandidates, type TseMountCandidate } from '../../tse/detect.js';
 import { TseError, type TseInfo } from '../../tse/types.js';
 import { describeTseError } from '../../tse/signing.js';
-import { isValidPin, isValidPuk } from '../../tse/validation.js';
+import { isValidClientId, isValidPin, isValidPuk } from '../../tse/validation.js';
+import { applyTseSettings } from '../../tse/settings.js';
 import { logSystemEvent } from '../../system/log.js';
 
 /** Body of `POST /api/admin/tse/setup`. */
 interface TseSetupBody {
+  clientId: string;
   credentialSeed: string;
   adminPuk: string;
   adminPin: string;
@@ -188,22 +190,30 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
   /**
    * POST /api/admin/tse/setup — one-time provisioning of a fresh TSE (Task
    * #131 "TSE-Tools", moves what used to be CLI-only into the Admin UI).
-   * Uses the already-configured `config.tseMountPoint`/`tseClientId` (set
-   * via the "TSE-Verbindung" panel on this same page) — the request only
-   * carries the four values that panel never asks for. Validates format
-   * (PUK/PIN length and digit-only) *before* ever calling `tseCli`, since a
-   * malformed value reaching the TSE itself risks counting toward the
-   * 3-attempt lockout (`docs/TSE-CLI-Referenz.md`). `credentialSeed` isn't
-   * format-checked beyond non-empty — there's no fixed length/charset to
-   * validate against (Task #129).
+   * Only `config.tseMountPoint` (set via the "TSE-Verbindung" panel) needs
+   * to already be configured — `clientId` is a field in this dialog itself,
+   * deliberately independent from the Client-ID saved on that panel, since
+   * `setup` is exactly the operation that can register a *different*
+   * Client-ID (a second TSE, or a fresh one that hasn't been saved
+   * anywhere yet). On success, `clientId` is persisted as the new
+   * `tse_client_id` setting so every subsequent TSE call (transactions,
+   * `maintain`, ...) uses the client just registered. Validates format
+   * (Client-ID charset/length, PUK/PIN length and digit-only) *before* ever
+   * calling `tseCli`, since a malformed value reaching the TSE itself risks
+   * counting toward the 3-attempt lockout (`docs/TSE-CLI-Referenz.md`).
+   * `credentialSeed` isn't format-checked beyond non-empty — there's no
+   * fixed length/charset to validate against (Task #129).
    */
   app.post<{ Body: Partial<TseSetupBody> }>('/setup', async (req, reply) => {
-    if (!config.tseMountPoint || !config.tseClientId) {
+    if (!config.tseMountPoint) {
       return reply.status(400).send({
-        error: 'TSE ist nicht konfiguriert — zuerst Mount-Pfad und Client-ID oben eintragen.',
+        error: 'TSE ist nicht konfiguriert — zuerst den Mount-Pfad oben eintragen.',
       });
     }
-    const { credentialSeed, adminPuk, adminPin, timeAdminPin } = req.body ?? {};
+    const { clientId, credentialSeed, adminPuk, adminPin, timeAdminPin } = req.body ?? {};
+    if (!clientId || !isValidClientId(clientId)) {
+      return reply.status(400).send({ error: 'Client-ID darf nur Buchstaben, Ziffern, "-" und "_" enthalten (max. 30 Zeichen).' });
+    }
     if (!credentialSeed) {
       return reply.status(400).send({ error: 'CredentialSeed fehlt.' });
     }
@@ -217,9 +227,15 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'TimeAdmin-PIN muss genau 5-stellig sein und darf nur Ziffern enthalten.' });
     }
     try {
-      await setupTse({ credentialSeed, adminPuk, adminPin, timeAdminPin });
-      await logSystemEvent('info', 'tse_setup', `TSE initialisiert (Admin-UI, ${req.adminUser.name}).`);
-      return reply.send({ ok: true });
+      await setupTse({ clientId, credentialSeed, adminPuk, adminPin, timeAdminPin });
+      await query(
+        `INSERT INTO system_setting (key, value) VALUES ('tse_client_id', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [clientId],
+      );
+      applyTseSettings({ tse_client_id: clientId });
+      await logSystemEvent('info', 'tse_setup', `TSE initialisiert (Client-ID "${clientId}", Admin-UI, ${req.adminUser.name}).`);
+      return reply.send({ ok: true, clientId });
     } catch (e) {
       return reply.status(502).send({ error: describeTseError(e) });
     }
