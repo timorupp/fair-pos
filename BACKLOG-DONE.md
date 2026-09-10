@@ -4380,6 +4380,58 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
 
   Kopfzeile der Datei aktualisiert (Migrationsstand 0001–0031, Methodik-Hinweis).
 
+- [Task] **#129** Prüfen, ob der CredentialSeed wirklich händlerabhängig ist
+  **Klassifikation: Doku-Korrektur-Verdacht (noch nicht verifiziert).**
+  Angelegt 2026-09-10 (Nutzerwunsch).
+
+  **Hintergrund:** `docs/Installationsanleitung.md` und
+  `docs/TSE-CLI-Referenz.md` behaupten, der CredentialSeed für `setup`
+  werde vom **TSE-Händler** vergeben (häufig, aber nicht garantiert,
+  `SwissbitSwissbit`) und solle im Zweifel beim Händler verifiziert werden.
+  Diese Aussage stammt aus einer vom Nutzer eingebrachten Quelle. Auslöser
+  für die Prüfung: der tatsächliche TSE-Händler des Nutzers war auf
+  Nachfrage verwirrt über die Frage nach dem CredentialSeed — deutete
+  darauf hin, dass das keine übliche Information ist, die ein TSE-Händler
+  seinen Kunden typischerweise liefert.
+
+  **Recherche 2026-09-10 — drei unabhängige, nicht-behördliche
+  Praxisquellen** (allgemeine Web-Recherche zulässig, da keine
+  Compliance-Prüfung gegen einen offiziellen Standard im Sinne von
+  AGENTS.md, sondern eine herstellerspezifische Praxisfrage):
+  - [Gastro-MIS](https://support.gastro-mis.de/support/solutions/articles/36000214626-pin-puk-credentialseed)
+    (POS-Softwarehersteller mit eigenem Swissbit-TSE-Support, zwei
+    verschiedene Support-Artikel): `SwissbitSwissbit` für über sie
+    bezogene TSEs — **explizit**: "Ein anderer Händler kann einen anderen
+    CredentialSeed haben!"
+  - [Markus Soft](https://markus-software.de/tse/) (anderer
+    POS-Softwarehersteller): `SwissbitSwissbit` ist der vorausgefüllte
+    Standardwert — "es sei denn Sie haben zu Ihrem TSE USB Stick eine
+    andere Info Ihres Lieferanten vorliegen."
+  - [bwurst/python-tse](https://github.com/bwurst/python-tse) (unabhängiges
+    Open-Source-Projekt, kein Händler): "muss nach derzeitigen
+    Informationen immer der feste String 'SwissbitSwissbit' sein" —
+    unqualifiziert, aber die Formulierung "nach derzeitigen Informationen"
+    liest sich als eigene Einschätzung des Autors statt verifizierter
+    Fakt; Händlerabhängigkeit wird dort schlicht nicht thematisiert
+    (Schweigen, kein Widerspruch).
+
+  **Ergebnis: bestätigt, händlerabhängig — bestehende Doku-Aussage war
+  bereits korrekt, keine Korrektur nötig.** `SwissbitSwissbit` ist der weit
+  überwiegende Praxiswert (von allen drei Quellen bestätigt), aber
+  **zwei von drei unabhängigen kommerziellen Quellen mit echter
+  Support-Erfahrung** warnen übereinstimmend, dass einzelne Händler
+  abweichen können — kein Einzelfall, sondern von zwei verschiedenen
+  Anbietern unabhängig bestätigt. Angesichts der irreversiblen Folge eines
+  falschen Seeds (TSE-Sperrung nach 3 Fehlversuchen) bleibt die bestehende
+  Empfehlung (Nutzereingabe verlangen, im Zweifel beim Händler verifizieren,
+  nicht hardcoden) richtig.
+
+  **UX-Empfehlung für Task #131 übernommen:** Feld für den CredentialSeed
+  in der geplanten "TSE-Tools"-Setup-UI mit `SwissbitSwissbit` **vorausfüllen,
+  aber editierbar lassen** — reduziert Reibung im Normalfall (entspricht
+  Markus Softs eigenem UX-Muster), verhindert aber nicht die bewusste
+  Korrektur bei einem abweichenden Händler. Kein blindes Hardcoding.
+
 ## Findings
 
 - [Finding] **D-001** (mittel, Datenmodell) — Gefunden 2026-06-24

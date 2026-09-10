@@ -359,12 +359,22 @@ Bash-History):
   PUK/PIN, der bei diesem `setup`-Aufruf aber zwingend durch neue,
   selbst gewählte Werte ersetzt wird. Die hier übergebenen `<admin-puk>`/
   `<admin-pin>` sind also die **neuen**, vom Verein selbst festgelegten
-  Werte — nicht Werte aus irgendwelchen Herstellerunterlagen.
-- **Client-ID** — bei der Erstregistrierung eines neuen Clients frei
-  wählbar (z.B. `FairPOS-1`). Soll stattdessen ein **bestehender** Client
-  zurückgesetzt werden (z. B. weil dessen PIN gesperrt wurde), muss hier
-  exakt dessen bereits vergebene Client-ID eingetragen werden — nicht neu
-  frei wählbar.
+  Werte — nicht Werte aus irgendwelchen Herstellerunterlagen. **Feste
+  Längen, von der TSE hart geprüft:** `<admin-puk>` muss genau **6-stellig**
+  sein, `<admin-pin>` und `<time-admin-pin>` müssen genau **5-stellig**
+  sein — jeweils nur Ziffern. Eine falsche Länge lässt `setup` sofort mit
+  `WORM_ERROR_TSE_INVALID_PARAMETER` (Fehlercode `4103`) fehlschlagen.
+- **Client-ID** — frei wählbar (z.B. `FairPOS-1`), aber nur bei diesem
+  einen, allerersten `setup`-Aufruf: `setup` bricht danach für immer mit
+  `"TSE is already set up"` ab, sobald die TSE einmal erfolgreich
+  eingerichtet wurde — unabhängig vom Zustand von PIN/PUK. **Korrektur
+  (2026-09-10):** Ein erneuter `setup`-Aufruf ist entgegen einer früheren
+  Annahme in diesem Dokument **kein** Weg, eine gesperrte PIN
+  zurückzusetzen oder die Client-ID nachträglich zu ändern — die TSE lässt
+  sich damit nicht "zurücksetzen". Für eine gesperrte Admin-PIN oder
+  TimeAdmin-PIN gibt es aktuell **keine unterstützte Möglichkeit** in
+  FairPOS (`worm_user_unblock` ist im `tseCli` bisher nicht implementiert),
+  siehe Task #131.
 
 ```bash
 sudo -u fairpos /opt/fairpos/packages/backend/native/tse-cli/vendor/bin/tseCli \

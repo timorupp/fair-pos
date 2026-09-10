@@ -317,6 +317,175 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Noch nicht bewertet: welche der genannten Optionen (oder Kombination)
   sinnvoll ist, ob eine `event_id`-Migration auf `print_job` nötig ist.
 
+- [Task] **#130** Echter Trainingsmodus (DSFinV-K `AVTraining`) implementieren
+  **Klassifikation: Feature, noch nicht bewertet/entschieden — Diskussionsstand,
+  keine finale Design-Entscheidung.** Angelegt 2026-09-10 (Nutzerwunsch).
+
+  **Anforderungen aus der offiziellen DSFinV-K-2.4-Spezifikation (bzst.de,
+  Abschnitt 4.2.6 "Trainingsbuchungen" + Anhang B "AVTraining", recherchiert
+  2026-09-10):**
+  - Trainingsbuchungen sollen **nicht** an der TSE vorbeigehen — sie müssen
+    weiterhin protokolliert und über die TSE abgesichert werden (historischer
+    Hintergrund laut Spezifikation: "Trainingsbediener"-Modi wurden in der
+    Vergangenheit missbraucht, um echte Bareinnahmen zu verschleiern).
+  - Der Trainingsmodus muss **aktiv angesteuert** werden — kein
+    versehentliches Hineinrutschen.
+  - Alle Handlungen im Trainingsmodus müssen dokumentiert, gesondert
+    gekennzeichnet und über die DSFinV-K abgebildet werden (`BON_TYP =
+    AVTraining`).
+  - **Keine Auswirkung auf den Kassenabschluss** — ausgeschlossen aus
+    Umsatz-/Steuertotals.
+  - **Keine echte Bezahlung** darf im Trainingsmodus stattfinden — die
+    Erfassung von Zahlungsarten ist nur zu Trainingszwecken (simuliert)
+    erlaubt. `AVTraining` ist dabei die einzige Ausnahme von der sonstigen
+    Regel, dass alle `AV*`-Vorgangstypen nur die Zahlart "Keine" nutzen
+    dürfen.
+
+  **Bestehende Lücke bei FairPOS:** `invoice.receipt_type` hat bereits den
+  Wert `'training'` im Schema/CHECK-Constraint vorgesehen (und
+  `docs/Rechtliche-Anforderungen.md` Abschnitt 6.2 verweist korrekt auf
+  `AVTraining`) — **wird aber im gesamten Code nirgends tatsächlich
+  gesetzt.** Kein UI-Toggle, keine Route erzeugt je eine `training`-Buchung.
+  Reine Schema-Vorbereitung ohne Implementierung.
+
+  **Erstes Brainstorming des Nutzers (2026-09-10, zur späteren Bewertung,
+  keine Entscheidung):**
+  - Trainingsmodus als **Flag auf der Kasse** (`register`), nicht pro
+    Vorgang/Transaktion.
+  - Vorteil: nutzt die bestehende Berechtigungssteuerung (`user_register`)
+    gleich mit — Anwender wählen die Trainingskasse bewusst aus, das erfüllt
+    die "aktiv ansteuern"-Anforderung praktisch von selbst.
+  - Als Trainingskasse markierte Register fließen nicht in einen anderen
+    (echten) Kassenabschluss ein — jede Kasse hat ohnehin ihre eigene
+    `daily_closing`-Sequenz.
+  - Für als Training markierte Kassen müsste spezielle Logik greifen
+    (z. B. andere Art der TSE-Buchung/-Kennzeichnung als bei einer echten
+    Kasse).
+  - **Sicherheitsmechanismus:** Das Trainings-Flag lässt sich nur umschalten,
+    solange die Kasse noch **keine** Buchungen hat. Sobald irgendeine Buchung
+    für eine Kasse existiert, ist der Umschalter gesperrt — verhindert sowohl
+    das nachträgliche "Training-Waschen" einer echten Kasse mit
+    Bestandshistorie als auch das versehentliche Umschalten einer
+    Produktivkasse.
+
+  **Offene Fragen / weitere Optionen, noch zu bewerten:**
+  - **Wichtigste technische Unbekannte:** Erfordert `AVTraining` eine eigene
+    TSE-seitige Kennzeichnung (z. B. eigene `processType`/Vorgangsart bei
+    `worm_transaction_start`, analog zu `Kassenbeleg-V1`/`Bestellung-V1`/
+    `SonstigerVorgang` in `tse/processData.ts`), oder ist "Training" eine
+    reine Export-Klassifikation (normale TSE-Signatur wie bisher, nur beim
+    DSFinV-K-Export als `AVTraining` statt `Beleg`/`AVBestellung`/
+    `AVSonstige` ausgegeben)? Das entscheidet maßgeblich den Implementierungs-
+    umfang (nur Backend-Route + Export vs. auch `native/tse-cli`-Änderungen)
+    und ist bisher nicht recherchiert (AEAO zu § 146a Nr. 2.2.3.5/2.2.3.6
+    wäre der nächste Ansatzpunkt, siehe `docs/Rechtliche-Anforderungen.md`
+    Abschnitt 6.2 für den bisherigen Kontext zu "Art des Vorgangs"/"Daten des
+    Vorgangs").
+  - **Alternative: Toggle auf Session-/Login-Ebene statt fest an der Kasse.**
+    Vorteil: keine dauerhaft "verbrauchte" Trainingskasse nötig, jede Kasse
+    könnte ad hoc als Trainingskasse dienen. Nachteil: schwächerer Schutz vor
+    versehentlichen echten Buchungen (Vergessen, den Toggle wieder
+    umzustellen) als eine physisch/organisatorisch getrennte, klar
+    beschriftete Trainingskasse — die Kassen-Flag-Idee des Nutzers erscheint
+    hier robuster.
+  - **Ergänzend denkbar: eigenes "Trainings-Event"** (nutzt das bestehende
+    Event-Datenmodell zur Trennung von Artikeln/Layouts/Floor-Plan) — würde
+    aber die eigentliche `AVTraining`-Kennzeichnungspflicht nicht ersetzen,
+    da laut Spezifikation *jede* Übungsbuchung als solche markiert werden
+    muss, unabhängig davon, ob sie auf einem separaten Event stattfindet.
+    Höchstens als organisatorische Ergänzung zur Kassen-Flag-Idee sinnvoll,
+    nicht als Ersatz.
+
+  **Zusätzliche Anforderung (Nutzer, 2026-09-10):** Im Bonkasse-/
+  Bedienungskasse-Frontend soll bei aktivem Trainingsmodus durchgehend ein
+  Warnbanner angezeigt werden, ähnlich der bestehenden TSE-Fehler-Anzeige —
+  vermeidet, dass ein Anwender vergisst, dass er gerade auf einer
+  Trainingskasse arbeitet. Bestehende Vorbilder im Register-Frontend, an
+  denen sich das orientieren kann: der Vollbild-Sperrhinweis bei
+  ausstehendem Tagesabschluss (`register/[id]/+page.svelte`, `locked`-Zweig)
+  und die punktuellen `tse_warning`-`alert()`-Hinweise nach Bestellung/Storno
+  (`order`/`checkout`-Seiten) — für den Trainingsmodus eher als
+  durchgehend sichtbarer Banner statt einmaligem Alert gedacht, analog zu
+  einem persistenten Status-Hinweis.
+
+- [Task] **#131** "TSE-Tools" — Admin-UI für TSE-Verwaltungsfunktionen (statt reinem CLI-Handling)
+  **Klassifikation: Feature/UX-Verbesserung, größerer Scope — Nutzer-Vision,
+  noch nicht final entschieden, weitere Bewertung nötig.** Angelegt
+  2026-09-10 (Nutzerwunsch), ausgelöst durch den PUK-Längenfehler beim
+  heutigen `setup`-Aufruf (5- statt 6-stellig, siehe Fehlercode `4103`) und
+  die fehlende Möglichkeit, eine gesperrte TimeAdmin-PIN zu entsperren.
+
+  **Kernproblem laut Nutzer:** "das mit der CLI ist sehr fehleranfällig" —
+  die rein manuelle Kommandozeilen-Bedienung der TSE-Verwaltungsfunktionen
+  hat keine clientseitige Validierung und lädt zu genau solchen Fehlern ein.
+
+  **Wichtige Vorgeschichte, die dieser Task bewusst infrage stellt:**
+  `docs/TSE-Integration.md` Abschnitt 7 dokumentiert die **bewusste
+  Entscheidung**, Admin-PIN/PUK/CredentialSeed **nicht** über die Admin-UI
+  abzufragen — "die einmalige Hardware-Inbetriebnahme (`setup`) ist nicht
+  Teil dieser UI-Iteration" (Stand August 2026). Dieser Task würde diese
+  frühere Entscheidung revidieren. Die zugrundeliegende
+  Sicherheitsanforderung bleibt aber unverändert bestehen und muss auch bei
+  UI-Unterstützung eingehalten werden: Admin-PIN/PUK/CredentialSeed dürfen
+  laut KassenSichV-Vorgabe **niemals dauerhaft gespeichert werden** (weder
+  in `system_setting` noch sonstwo) — nur transient pro Aufruf durch
+  Frontend → Backend → `tseCli` durchgereicht, exakt wie das heute schon für
+  die TimeAdmin-PIN (einzige dauerhaft speicherbare Ausnahme) gehandhabt
+  wird.
+
+  **Vorschlag: neuer Bereich "TSE-Tools" unter Einstellungen → TSE**, mit
+  folgenden Werkzeugen (Stand pro Werkzeug: CLI-Unterstützung vorhanden?
+  UI vorhanden?):
+  1. **TSE auf Werkseinstellung zurücksetzen** (nur Entwickler-TSE) — CLI:
+     ✅ `factoryReset` (`cmdFactoryReset`) bereits vorhanden. UI: ❌ fehlt.
+  2. **Prüfen, ob die TSE initialisiert ist** — CLI: ⚠️ `worm_tse_needs_setup`
+     wird aktuell nur intern in `cmdSetup` abgefragt, ist aber kein
+     eigenständig abrufbarer Wert (auch nicht Teil von `info`s JSON-Ausgabe)
+     — **CLI-Erweiterung nötig** (z. B. neues Feld in `info` statt eigenem
+     Befehl, da rein lesend). UI: ❌ fehlt.
+  3. **TSE initialisieren** (Client-ID, TimeAdmin-PIN, Admin-PIN, PUK) — CLI:
+     ✅ `setup` vorhanden, aber ohne serverseitige Formatvalidierung (siehe
+     heutiger Vorfall). UI: ❌ fehlt, bisher nur CLI-Referenz dokumentiert.
+     **Nutzeranforderung:** Längenprüfung (PUK exakt 6-stellig, Admin-PIN/
+     TimeAdmin-PIN exakt 5-stellig — siehe die heute in
+     `docs/TSE-CLI-Referenz.md`/`docs/Installationsanleitung.md` ergänzten
+     Angaben), nur Ziffern bei PIN/PUK, keine Sonderzeichen in der Client-ID
+     — jeweils **vor** dem eigentlichen `setup`-Aufruf geprüft, damit ein
+     Formatfehler gar nicht erst bis zur TSE vordringt. **CredentialSeed-Feld
+     (Task #129, recherchiert 2026-09-10):** mit `SwissbitSwissbit`
+     vorausfüllen, aber editierbar lassen — Praxisrecherche (drei
+     unabhängige Quellen, siehe `BACKLOG-DONE.md` Task #129) bestätigt
+     `SwissbitSwissbit` als weit überwiegenden Praxiswert, aber mehrere
+     Händler können nachweislich abweichen; kein blindes Hardcoding, dafür
+     deutlicher Hinweis auf den Händler-Abgleich und das
+     3-Fehlversuche-Sperrrisiko direkt am Feld.
+  4. **Admin-PIN entsperren** — CLI: ❌ `worm_user_unblock` nirgends
+     verdrahtet — **CLI-Erweiterung nötig.** UI: ❌ fehlt.
+  5. **TimeAdmin-PIN entsperren** — CLI: ❌ `worm_user_unblock` nirgends
+     verdrahtet — **CLI-Erweiterung nötig** (unmittelbarer Auslöser dieses
+     Tasks). UI: ❌ fehlt. Mechanismus laut SDK: `worm_user_unblock(ctx,
+     WORM_USER_TIME_ADMIN, <puk>, <neue 5-stellige PIN>, &remainingRetries)`
+     — braucht bei Firmware ≥2.0.0 die TimeAdmin-PUK (identisch zur
+     Admin-PUK, gemeinsam bei `setup` gesetzt), bei Firmware <2.0.0 immer
+     die Admin-PUK.
+  6. **Dump Process Data** — CLI: ✅ `dumpProcessData` bereits vorhanden
+     (Task #102). UI: ❌ fehlt. **Offene UX-Frage vom Nutzer:** gehört das
+     eher zu "TSE-Tools" (Diagnose) oder zu den Exporten (wo aktuell der
+     TAR-Export sitzt — Abschnitt "TSE-Rohdatenexport" auf derselben Seite,
+     `settings/tse/+page.svelte`)? Noch zu entscheiden.
+  7. **Offene Prüfung (Nutzer):** ob weitere bestehende TSE-Funktionen besser
+     unter denselben "TSE-Tools"-Bereich zusammengefasst werden sollten,
+     statt verstreut auf derselben Seite zu bleiben — aktuell vorhanden:
+     "TSE testen" (`info`), "Zeit synchronisieren" (`maintain`),
+     "TSE-Rohdaten exportieren" (`exportTar`), alle bereits auf
+     `settings/tse/+page.svelte`. Zusätzlich: `deleteStoredData` hat bisher
+     **überhaupt keine UI** (nur CLI, sicherheitskritisch/unwiederbringlich,
+     siehe `docs/TSE-Integration.md`) — gehört ggf. ebenfalls hierher.
+
+  **Grundsatz (Nutzer):** Für jedes UI-Werkzeug zuerst prüfen, ob die
+  zugrundeliegende `tseCli`-Funktion überhaupt existiert — falls nicht,
+  muss sie zuerst dort ergänzt werden, bevor die UI darauf aufbauen kann.
+
 ## Findings
 
 - [Finding] **D-033** (mittel, Backend / Excel-Export) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden

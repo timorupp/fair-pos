@@ -89,6 +89,16 @@ registriert den Client, aktiviert den CTSS-Zugriff.
   PUK/PIN, den dieser Aufruf zwingend durch neue, selbst gewählte Werte
   ersetzt. `<admin-puk>`/`<admin-pin>` sind also die vom Verein selbst
   festgelegten neuen Werte.
+- **Feste Längen, von der TSE hart geprüft** (laut `WormDLL.h`
+  `worm_user_deriveInitialCredentials`/`worm_user_change_puk`/
+  `worm_user_change_pin`): `<admin-puk>` muss **genau 6-stellig** sein,
+  `<admin-pin>` und `<time-admin-pin>` müssen **genau 5-stellig** sein —
+  jeweils nur Ziffern. Eine falsche Länge lässt `setup` sofort mit
+  `WORM_ERROR_TSE_INVALID_PARAMETER` (Fehlercode `4103`) fehlschlagen, noch
+  bevor die TSE den Credential-Seed überhaupt zur PUK-Herleitung verwendet
+  — zählt nach bisherigem Kenntnisstand daher **nicht** zu den unten
+  beschriebenen drei kritischen Fehlversuchen (dafür fehlt aber eine
+  Bestätigung durch den Hersteller/die SDK-Doku).
 
 Vollständiges Praxisbeispiel: `docs/Installationsanleitung.md` Abschnitt 8.3.
 
