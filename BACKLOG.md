@@ -359,6 +359,136 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   durchgehend sichtbarer Banner statt einmaligem Alert gedacht, analog zu
   einem persistenten Status-Hinweis.
 
+- [Task] **#132** TSE-Zertifikatsablauf prüfen und warnen (Self-Test + Zeitsync bleiben grün, obwohl Signieren nicht mehr geht)
+  **Klassifikation: Bug/Feature, live gefunden (2026-09-12).** Nutzer
+  berichtet: TSE zeigte weiterhin bestandenen Self-Test und synchronisierte
+  Zeit, Transaktionssignaturen schlugen aber fehl — Ursache war ein
+  abgelaufenes TSE-Zertifikat. `worm_info_certificateExpirationDate`
+  (`WormDLL.h`) wird weder vom manuellen "TSE testen" noch vom
+  zyklischen Hintergrund-Health-Check (`tse/healthJob.ts`, prüft aktuell
+  nur `hasValidTime`/`hasPassedSelfTest`) ausgewertet — beide bleiben
+  also "grün", bis der erste echte Signierversuch fehlschlägt.
+
+  **Wichtiger Fund zur Uhrzeit:** `WormDLL.h`-Doku zu
+  `worm_info_certificateExpirationDate`: *"This is the timestamp (as
+  seconds since Unix Epoch) after which the certificate... will be
+  invalid."* — der Wert ist ein **voller Unix-Timestamp mit Uhrzeit**,
+  keine reine Kalenderdatum-Angabe. Erklärt den beobachteten Effekt
+  (TSE wurde am Ablauftag gegen ca. 15 Uhr ungültig, nicht erst um
+  Mitternacht): das exakte Ablaufmoment hat eine Uhrzeit, FairPOS zeigt
+  aktuell aber nirgends mehr als das Datum — `+page.svelte`s "TSE
+  testen"-Dialog rendert `certificateExpirationDate` bisher nur über
+  `toLocaleDateString('de-DE')`, die Uhrzeit wird verworfen.
+
+  **Anforderungen (Nutzer):**
+  1. Im manuellen "TSE testen"-Dialog (Einstellungen → TSE → TSE-Tools):
+     das Feld "Zertifikat gültig bis" rot mit Warnung darstellen, wenn
+     das Ablaufdatum heute oder in der Vergangenheit liegt.
+  2. Im zyklischen Hintergrund-Self-Test (`tse/healthJob.ts`s `tick()`):
+     dieselbe Prüfung ergänzen — bei Ablaufdatum heute oder in der
+     Vergangenheit eine Warnung ins `system_log` schreiben **und** auf
+     dem Dashboard sichtbar machen.
+  3. Die Uhrzeit-Frage oben klären: entweder die Uhrzeit mit anzeigen
+     (Datum **und** Uhrzeit statt nur Datum, überall wo der Wert
+     gerendert wird) oder bewusst dokumentieren, warum nur das Datum
+     gezeigt wird — aktuell ist es unbeabsichtigt inkonsistent
+     (Rohwert hat Uhrzeit, Anzeige nicht).
+
+  **Umsetzungshinweis (noch nicht bewertet, nur beobachtet):** Das
+  Admin-Dashboard (`admin/+page.svelte`) zeigt bereits eine
+  "TSE-Status"-Kachel, die den jeweils letzten `tse_health`-Log-Eintrag
+  anzeigt (`⚠ Auffällig` nur bei `severity: 'warning'`, sonst immer
+  `✓ Gesund` — auch bei `'error'`, das die Kachel aktuell nicht
+  gesondert behandelt). Ein neuer `tse_health`-Log-Eintrag mit
+  `severity: 'warning'` aus Punkt 2 würde dort vermutlich automatisch
+  erscheinen, ohne dass die Dashboard-Kachel selbst geändert werden
+  muss — nicht abschließend geprüft, nur als Ansatzpunkt notiert.
+
+  **Offene Frage:** Nutzer nennt als Schwelle explizit "heute oder in
+  der Vergangenheit" (spätestmöglicher Zeitpunkt) für beide Prüfungen —
+  noch zu klären, ob zusätzlich eine frühzeitigere Vorwarnung (z. B.
+  30/60 Tage vor Ablauf) sinnvoll wäre, um genug Vorlauf für eine
+  Zertifikatsverlängerung/TSE-Austausch zu haben, oder ob das bewusst
+  nicht gewünscht ist. Siehe auch Task #133 (aktiver Signaturtest) als
+  robusterer, direkterer Ansatz, der dieses und andere
+  Signierprobleme gleichermaßen abdecken würde.
+
+- [Task] **#133** "Signatur testen" — echten Testvorgang gegen die TSE in den TSE-Tools anbieten
+  **Klassifikation: Feature, noch nicht bewertet.** Angelegt 2026-09-12
+  (Nutzerwunsch), direkt motiviert durch Task #132: Self-Test und
+  Zeitsync allein erkennen nicht jedes Signierproblem (siehe #132 —
+  Self-Test + Zeitsync waren grün, während das Zertifikat bereits
+  abgelaufen war und echte Signaturen fehlschlugen). Ein echter
+  Test-Vorgang (`start`/`finish` gegen die TSE) würde das direkt und
+  zuverlässig aufdecken, unabhängig von der genauen Ursache.
+
+  **Nutzerfrage, noch offen:** Gibt es einen Vorgangstyp, den man dafür
+  "gefahrlos" verwenden kann — ohne reale Umsätze/den Kassenabschluss/
+  DSFinV-K-Exporte zu verfälschen? FairPOS kennt aktuell nur drei feste
+  TSE-`processType`-Werte (`tse/processData.ts`): `Kassenbeleg-V1`,
+  `Bestellung-V1`, `SonstigerVorgang` — keiner davon ist als "nur ein
+  Test, zählt nicht als Umsatz" gedacht. Zwei Kandidaten, beide noch
+  nicht bewertet/entschieden:
+  1. **`AVBelegabbruch`-Muster wiederverwenden:** FairPOS kennt bereits
+     den Fall, dass eine gestartete Transaktion sofort per Zweit-`finish`
+     als abgebrochen geschlossen wird (bisher nur für den Fall eines
+     mitten im Vorgang unterbrochenen Verbindungsabbruchs, siehe
+     `docs/Manueller-Testplan.md` Abschnitt 9). Noch zu klären: wird ein
+     `AVBelegabbruch`-Vorgang von der DSFinV-K-Exportlogik und den
+     Kassenabschluss-Summen zuverlässig ausgeschlossen (wie ein
+     abgebrochener/nicht abgeschlossener Vorgang), oder taucht er dort
+     trotzdem als (Null-)Vorgang auf?
+  2. **An Task #130 (Trainingsmodus/`AVTraining`) koppeln:** genau dafür
+     sieht die DSFinV-K-Spezifikation `AVTraining` vor — "echte TSE-Signatur,
+     aber explizit aus Umsatz-/Kassenabschluss-Totals ausgeschlossen".
+     Setzt aber voraus, dass Task #130 erst implementiert ist.
+
+  **Weitere offene Punkte:**
+  - Ein Testvorgang verbraucht trotzdem einen Slot im begrenzten
+    Transaktionszähler/Speicher der TSE — sollte wie die anderen
+    TSE-Tools eine bewusste, manuelle Admin-Aktion bleiben, nicht
+    automatisch/periodisch laufen (anders als der zyklische
+    Health-Check aus Task #132, der nur passiv den Info-Status liest).
+  - Wo in der TSE-Tools-Liste einordnen (vermutlich neben "TSE testen"),
+    und wie das Ergebnis darstellen (Erfolg/Fehler + evtl. TAN/Signatur
+    zur Kontrolle, ähnlich dem bestehenden "TSE testen"-Dialog).
+
+- [Task] **#134** Neues Dokument "Veranstaltungscheckliste" (docs/)
+  **Klassifikation: Doku, angelegt 2026-09-12 (Nutzerwunsch).** Neues
+  Dokument unter `docs/` (noch kein Dateiname festgelegt, Vorschlag:
+  `docs/Veranstaltungscheckliste.md`) mit operativen Checklisten rund
+  um eine einzelne Veranstaltung — abzugrenzen von den bereits
+  bestehenden, aber anders geschnittenen Checklisten in
+  `docs/Organisatorische-Anleitung.md` Abschnitt 4 ("Jährliche Aufgaben")
+  und Abschnitt 5 ("Inbetriebnahme-Checkliste", einmalig bei
+  Ersteinrichtung) — dieses neue Dokument ist stattdessen pro
+  Veranstaltung bzw. pro Veranstaltungstag gedacht.
+
+  **Vom Nutzer vorgegebene Gliederung + Punkte:**
+  - **Vor der Veranstaltung:**
+    - Unternehmensdaten eingeben
+    - Drucker einrichten
+    - Artikel anlegen
+    - TSE-Ablaufdatum prüfen (siehe Task #132 — dieselbe Prüfung wie im
+      manuellen "TSE testen"-Dialog, hier als organisatorischer Schritt)
+    - Bonpapierrollen bereitstellen
+  - **Vor jedem Veranstaltungstag:** vom Nutzer noch **keine** konkreten
+    Punkte genannt — offen, mit Nutzer zu klären, bevor das Dokument
+    geschrieben wird. Denkbare Kandidaten (nur Vorschlag, nicht
+    bestätigt): Kassen/Drucker-Funktionstest, Bonrollen-/Wechselgeld-
+    Bestand je Kasse prüfen, TSE-Status ("TSE testen") prüfen.
+  - **Nach jedem Veranstaltungstag:**
+    - Kassenabschluss (Z-Bon) durchführen
+    - Sicherung der DSFinV-K-Daten
+
+  **Noch offen:** genauer Dateiname/Titel, ob als eigenständiges Dokument
+  oder als neuer Abschnitt in `docs/Organisatorische-Anleitung.md` (Nutzer
+  sagte explizit "neues Dokument" — als eigenständige Datei angelegt,
+  nicht als Abschnitt dort), die fehlenden Punkte für "vor jedem
+  Veranstaltungstag", und ob `AGENTS.md`s Liste der Kerndokumente um den
+  neuen Dateinamen ergänzt werden soll (bisherige Konvention: alle
+  `docs/`-Dokumente werden dort mit einer Zeile aufgeführt).
+
 ## Findings
 
 - [Finding] **D-033** (mittel, Backend / Excel-Export) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden

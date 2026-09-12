@@ -118,3 +118,74 @@ describe('GET /api/admin/exports/excel/event', () => {
     expect(response.statusCode).toBe(401);
   });
 });
+
+describe('GET /api/admin/exports/excel/day', () => {
+  it('includes only invoices of the active event, not a different event\'s invoice on the same calendar day (D-067)', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now() - interval '1 day', now() + interval '1 day') RETURNING id`,
+    );
+    const foreignRegister = await createTestRegister({ name: 'Fremd', eventId: otherEvent.rows[0]!.id });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'sales_receipt', 'cash', now())`,
+      [foreignRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Bier', 'Getränke', 19, 'standard', 5, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      [foreignRegister.id],
+    );
+
+    const ownRegister = await createTestRegister({ name: 'Eigen', eventId: config.activeEventId });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 2, 'sales_receipt', 'cash', now())`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Wein', 'Getränke', 19, 'standard', 7, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      [ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/exports/excel/day?date=${today}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    const articleNames: unknown[] = [];
+    for (let row = 4; row <= sheet.rowCount; row++) {
+      const value = sheet.getCell(row, 7).value;
+      if (value !== null && value !== undefined) articleNames.push(value);
+    }
+    expect(articleNames).toEqual(['Wein']);
+  });
+
+  it('returns 404 when no event is active', async () => {
+    const previousActiveEventId = config.activeEventId;
+    config.activeEventId = null;
+    try {
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'GET', url: '/api/admin/exports/excel/day?date=2026-01-01',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(404);
+    } finally {
+      config.activeEventId = previousActiveEventId;
+    }
+  });
+
+  it('rejects the request without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/exports/excel/day?date=2026-01-01' });
+    expect(response.statusCode).toBe(401);
+  });
+});

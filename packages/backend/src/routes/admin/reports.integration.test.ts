@@ -175,6 +175,32 @@ describe('GET /api/admin/reports/today-revenue', () => {
     });
     expect(response.json().total).toBe(0);
   });
+
+  it('excludes a different event\'s invoice booked today (D-067)', async () => {
+    const app = await getTestApp();
+    await insertPaidInvoice(1, 10, 19, 'cash', 'paid');
+
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreignRegister = await createTestRegister({ type: 'receipt_register', eventId: otherEvent.rows[0]!.id });
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 99, 'sales_receipt', 'cash', now()) RETURNING id`,
+      [foreignRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', 500, 'paid', now())`,
+      [inv.rows[0]!.id, foreignRegister.id],
+    );
+
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/reports/today-revenue',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().total).toBe(10); // only the active event's own invoice, not the foreign event's 500
+  });
 });
 
 describe('GET /api/admin/reports/cancellations', () => {

@@ -74,6 +74,49 @@ describe('GET /api/admin/exports/invoices/day', () => {
       expect(name).toMatch(/\.pdf$/);
     }
   });
+
+  it('excludes a different event\'s invoice issued on the same calendar day (D-067)', async () => {
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, receipt_token, created_at)
+       VALUES ($1, 1, 'sales_receipt', 'cash', 'tok-own', '2026-08-05 10:00:00')`,
+      [registerId],
+    );
+
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreignRegister = await createTestRegister({ type: 'receipt_register', eventId: otherEvent.rows[0]!.id });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, receipt_token, created_at)
+       VALUES ($1, 2, 'sales_receipt', 'cash', 'tok-foreign', '2026-08-05 11:00:00')`,
+      [foreignRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/invoices/day?date=2026-08-05',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const names = await zipEntryNames(response.rawPayload);
+    expect(names).toHaveLength(1); // only the active event's own invoice
+  });
+
+  it('returns 404 when no event is active', async () => {
+    const previousActiveEventId = config.activeEventId;
+    config.activeEventId = null;
+    try {
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'GET', url: '/api/admin/exports/invoices/day?date=2026-08-05',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(404);
+    } finally {
+      config.activeEventId = previousActiveEventId;
+    }
+  });
 });
 
 describe('GET /api/admin/exports/invoices/event', () => {

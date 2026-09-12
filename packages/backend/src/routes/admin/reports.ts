@@ -221,21 +221,30 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
    * GET /api/admin/reports/today-revenue — total gross revenue booked today
    * (Task #63 dashboard follow-up), across both payment methods. Mirrors the
    * `cash_takings` exclusions in `/cash-balance` (a cancellation receipt or a
-   * cancelled/free item never produced real revenue) but — unlike every
-   * other report here — is not scoped to an event: it's a plain calendar-day
-   * figure, "today" resolved by Postgres itself so it follows whatever
-   * timezone the server is configured with (Task #60).
+   * cancelled/free item never produced real revenue). Scoped to the
+   * currently active event, same as every other report in this file
+   * (D-067: this was the one report left over from before Task #95 that
+   * still treated the day as a plain calendar-day figure with no event
+   * scoping at all — a second event booking on the same calendar day would
+   * have inflated this tile with revenue that isn't the active event's).
+   * "Today" is resolved by Postgres itself so it follows whatever timezone
+   * the server is configured with (Task #60).
    */
   app.get('/today-revenue', async (_req, reply) => {
+    const ev = await loadActiveEvent();
+    if (!ev) return reply.send({ total: 0 });
+
     const result = await query<{ total: string }>(`
       SELECT COALESCE(SUM(oi.price + COALESCE(oi.deposit_price, 0)), 0)::text AS total
         FROM invoice i
         JOIN order_item oi ON oi.invoice_id = i.id
+        JOIN register r ON r.id = i.register_id
        WHERE i.receipt_type = 'sales_receipt'
          AND oi.status = 'paid'
          AND i.created_at >= CURRENT_DATE
          AND i.created_at < CURRENT_DATE + INTERVAL '1 day'
-    `);
+         AND r.event_id = $1
+    `, [ev.id]);
     return reply.send({ total: Number(result.rows[0]!.total) });
   });
 

@@ -81,23 +81,27 @@ function toExportSourceRow(r: ExportSourceQueryRow): ExportSourceRow {
 
 /**
  * Loads invoice + order_item rows in the inclusive-exclusive `[from, to)`
- * calendar window. Only `sales_receipt` invoices contribute — cancellation/
- * training invoices are not part of the standard sales export. Used by the
- * day-scoped export only — a calendar day is independent of event
- * boundaries by design (Task #95).
+ * calendar window, scoped to the given event's registers (D-067: a
+ * calendar day can span two events — e.g. one event's late booking and a
+ * different event's early one on the same server day — so the date window
+ * alone previously let a different event's bookings leak into the day
+ * export). Only `sales_receipt` invoices contribute — cancellation/training
+ * invoices are not part of the standard sales export.
  *
  * @param from - ISO timestamp marking the start of the window (inclusive).
  * @param to   - ISO timestamp marking the end of the window (exclusive).
+ * @param eventId - The event to scope the day to (the currently active one).
  * @returns Raw rows ready to be aggregated by `buildExportRows`.
  */
-async function loadExportSourceByDateRange(from: string, to: string): Promise<ExportSourceRow[]> {
+async function loadExportSourceByDateRange(from: string, to: string, eventId: string): Promise<ExportSourceRow[]> {
   const result = await query<ExportSourceQueryRow>(`
     ${EXPORT_SOURCE_COLUMNS}
      WHERE i.created_at >= $1 AND i.created_at < $2
+       AND r.event_id = $3
        AND i.receipt_type = 'sales_receipt'
        AND oi.status IN ('paid', 'free')
      ORDER BY i.created_at, i.id, oi.created_at
-  `, [from, to]);
+  `, [from, to, eventId]);
   return result.rows.map(toExportSourceRow);
 }
 
@@ -171,21 +175,25 @@ function safeFilename(input: string): string {
 
 /**
  * Loads every invoice's id in the inclusive-exclusive `[from, to)` calendar
- * window, across all receipt types (sales_receipt, cancellation, training)
+ * window, scoped to the given event's registers (D-067 — see
+ * {@link loadExportSourceByDateRange} for why the date window alone isn't
+ * enough), across all receipt types (sales_receipt, cancellation, training)
  * — unlike the Excel sales export, this is meant as a complete archival
- * record of every issued receipt, not a business-reporting view. Used by
- * the day-scoped export only — deliberately ignores event boundaries.
+ * record of every issued receipt, not a business-reporting view.
  *
  * @param from - ISO timestamp marking the start of the window (inclusive).
  * @param to   - ISO timestamp marking the end of the window (exclusive).
+ * @param eventId - The event to scope the day to (the currently active one).
  * @returns Invoice ids, ordered by receipt number.
  */
-async function loadInvoiceIdsByDateRange(from: string, to: string): Promise<string[]> {
+async function loadInvoiceIdsByDateRange(from: string, to: string, eventId: string): Promise<string[]> {
   const result = await query<{ id: string }>(`
-    SELECT id FROM invoice
-     WHERE created_at >= $1 AND created_at < $2
-     ORDER BY receipt_number
-  `, [from, to]);
+    SELECT i.id FROM invoice i
+      JOIN register r ON r.id = i.register_id
+     WHERE i.created_at >= $1 AND i.created_at < $2
+       AND r.event_id = $3
+     ORDER BY i.receipt_number
+  `, [from, to, eventId]);
   return result.rows.map((r) => r.id);
 }
 
@@ -274,15 +282,19 @@ export async function exportsAdminRoute(app: FastifyInstance): Promise<void> {
    * GET /api/admin/exports/excel/day — single-day sales export as an .xlsx file.
    * Query parameters:
    *   - `date` (required) in `YYYY-MM-DD` form, interpreted in the server's local timezone.
-   * Deliberately not scoped to any event — the day range is independent of
-   * event boundaries (Task #95).
+   * Scoped to the currently active event (D-067) — a calendar day can span
+   * two events (e.g. one event's late booking and a different event's early
+   * one on the same server day), so the date window alone previously let a
+   * different event's bookings leak into this export.
    */
   app.get<{ Querystring: { date?: string } }>('/excel/day', async (req, reply) => {
     if (!req.query.date) return reply.status(400).send({ error: 'Datum erforderlich (YYYY-MM-DD)' });
     const range = dayRange(req.query.date);
     if (!range) return reply.status(400).send({ error: 'Ungültiges Datum (erwartet YYYY-MM-DD)' });
+    const ev = await loadActiveEvent();
+    if (!ev) return reply.status(404).send({ error: 'Keine Veranstaltung verfügbar' });
 
-    const source = await loadExportSourceByDateRange(range.from, range.to);
+    const source = await loadExportSourceByDateRange(range.from, range.to, ev.id);
     const rows = buildExportRows(source, await readReceiptPrefix());
 
     const dateLabel = new Date(range.from).toLocaleDateString('de-DE');
@@ -324,15 +336,18 @@ export async function exportsAdminRoute(app: FastifyInstance): Promise<void> {
    * GET /api/admin/exports/invoices/day — one PDF per invoice issued on a
    * single calendar day, packaged as a ZIP. Includes every receipt type
    * (sales_receipt, cancellation, training) — a complete archival record,
-   * not a business-reporting view.
+   * not a business-reporting view. Scoped to the currently active event
+   * (D-067) — see {@link loadExportSourceByDateRange}'s doc comment.
    * Query parameters: `date` (required) in `YYYY-MM-DD` form.
    */
   app.get<{ Querystring: { date?: string } }>('/invoices/day', async (req, reply) => {
     if (!req.query.date) return reply.status(400).send({ error: 'Datum erforderlich (YYYY-MM-DD)' });
     const range = dayRange(req.query.date);
     if (!range) return reply.status(400).send({ error: 'Ungültiges Datum (erwartet YYYY-MM-DD)' });
+    const ev = await loadActiveEvent();
+    if (!ev) return reply.status(404).send({ error: 'Keine Veranstaltung verfügbar' });
 
-    const invoiceIds = await loadInvoiceIdsByDateRange(range.from, range.to);
+    const invoiceIds = await loadInvoiceIdsByDateRange(range.from, range.to, ev.id);
     if (invoiceIds.length === 0) return reply.status(404).send({ error: 'Keine Rechnungen an diesem Tag' });
     const zip = await buildInvoicesZip(invoiceIds);
 
