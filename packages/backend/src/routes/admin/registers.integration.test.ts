@@ -281,3 +281,86 @@ describe('register.is_training (Task #130)', () => {
     expect(response.json().name).toBe('Umbenannt');
   });
 });
+
+describe('GET /api/admin/registers/:id — open since last closing (Task #143, replaces Einlage/Entnahme)', () => {
+  it('reports zero for a register with no invoices at all', async () => {
+    const register = await createTestRegister();
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().open_cash).toBe(0);
+    expect(response.json().open_card).toBe(0);
+  });
+
+  async function insertInvoiceWithItem(
+    registerId: string, receiptNumber: number, paymentMethod: 'cash' | 'card', price: number, dailyClosingId: string | null = null,
+  ): Promise<void> {
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, daily_closing_id)
+       VALUES ($1, $2, 'sales_receipt', $3, $4) RETURNING id`,
+      [registerId, receiptNumber, paymentMethod, dailyClosingId],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', $3, 'paid')`,
+      [inv.rows[0]!.id, registerId, price],
+    );
+  }
+
+  it('sums open (not yet closed) invoices per payment method', async () => {
+    const register = await createTestRegister();
+    await insertInvoiceWithItem(register.id, 1, 'cash', 10);
+    await insertInvoiceWithItem(register.id, 2, 'card', 25);
+    await insertInvoiceWithItem(register.id, 3, 'cash', 5);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().open_cash).toBe(15);
+    expect(response.json().open_card).toBe(25);
+  });
+
+  it('excludes invoices already linked to a daily_closing', async () => {
+    const register = await createTestRegister();
+    const closing = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, false, now()::date, 10, 10, 0, 0, 10, 0, 0, 0) RETURNING id`,
+      [register.id],
+    );
+    await insertInvoiceWithItem(register.id, 1, 'cash', 10, closing.rows[0]!.id); // already closed
+    await insertInvoiceWithItem(register.id, 2, 'cash', 7); // still open
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().open_cash).toBe(7);
+  });
+
+  it('nets a Bonstorno\'s negative price into the open cash total', async () => {
+    const register = await createTestRegister();
+    await insertInvoiceWithItem(register.id, 1, 'cash', 10);
+    const cancellation = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method)
+       VALUES ($1, 2, 'cancellation', 'cash') RETURNING id`,
+      [register.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -4, 'paid')`,
+      [cancellation.rows[0]!.id, register.id],
+    );
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().open_cash).toBe(6); // 10 - 4
+  });
+});

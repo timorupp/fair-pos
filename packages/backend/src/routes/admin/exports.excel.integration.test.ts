@@ -75,7 +75,7 @@ describe('GET /api/admin/exports/excel/event', () => {
     const sheet = wb.worksheets[0]!;
     const articleNames: unknown[] = [];
     for (let row = 4; row <= sheet.rowCount; row++) {
-      const value = sheet.getCell(row, 7).value;
+      const value = sheet.getCell(row, 9).value;
       if (value !== null && value !== undefined) articleNames.push(value);
     }
     expect(articleNames).toEqual(['Wein']);
@@ -109,7 +109,7 @@ describe('GET /api/admin/exports/excel/event', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    expect(sheet.getCell(4, 7).value).toBe('Radler');
+    expect(sheet.getCell(4, 9).value).toBe('Radler');
   });
 
   it('includes a Bonstorno invoice with its negative price (D-068/Task #126 — previously excluded entirely via receipt_type=sales_receipt)', async () => {
@@ -135,8 +135,9 @@ describe('GET /api/admin/exports/excel/event', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    expect(sheet.getCell(4, 7).value).toBe('Bier');
-    expect(sheet.getCell(4, 9).value).toBe(-5); // unit_price column
+    expect(sheet.getCell(4, 9).value).toBe('Bier');
+    expect(sheet.getCell(4, 12).value).toBe(-5); // unit_price column
+    expect(sheet.getCell(4, 2).value).toBe('ja'); // Storno column (Task #138)
   });
 
   it('shows the cancelling admin as Besteller for a Bonstorno row (Task #126 follow-up — was empty before, even though cancelled_by_name was already captured)', async () => {
@@ -162,7 +163,52 @@ describe('GET /api/admin/exports/excel/event', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    expect(sheet.getCell(4, 5).value).toBe('Storno-Admin'); // Besteller column
+    expect(sheet.getCell(4, 7).value).toBe('Storno-Admin'); // Besteller column
+  });
+
+  it('shows the Z-Bon number once an invoice is linked to a daily_closing, blank while not yet closed (Task #142)', async () => {
+    const ownRegister = await createTestRegister({ name: 'EigenZBon', eventId: config.activeEventId });
+    const closing = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 7, false, now()::date, 5, 5, 0, 0, 5, 0, 0, 0) RETURNING id`,
+      [ownRegister.id],
+    );
+    const closedInvoice = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at, daily_closing_id)
+       VALUES ($1, 1, 'sales_receipt', 'cash', now(), $2) RETURNING id`,
+      [ownRegister.id, closing.rows[0]!.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Geschlossen', 'Getränke', 19, 'standard', 5, 'paid', now())`,
+      [closedInvoice.rows[0]!.id, ownRegister.id],
+    );
+    const openInvoice = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 2, 'sales_receipt', 'cash', now()) RETURNING id`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Offen', 'Getränke', 19, 'standard', 5, 'paid', now())`,
+      [openInvoice.rows[0]!.id, ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 3).value).toBe(7);       // Geschlossen — Z-Bon Nr. 7
+    expect(sheet.getCell(5, 3).value).toBeNull();     // Offen — noch kein Abschluss
   });
 
   it('never includes a Bedienungskasse Storno/kostenfrei order_item (Task #126 — never charged, no invoice, already correctly excluded by the invoice join, now verified explicitly)', async () => {
@@ -243,7 +289,7 @@ describe('GET /api/admin/exports/excel/day', () => {
     const sheet = wb.worksheets[0]!;
     const articleNames: unknown[] = [];
     for (let row = 4; row <= sheet.rowCount; row++) {
-      const value = sheet.getCell(row, 7).value;
+      const value = sheet.getCell(row, 9).value;
       if (value !== null && value !== undefined) articleNames.push(value);
     }
     expect(articleNames).toEqual(['Wein']);
@@ -273,8 +319,8 @@ describe('GET /api/admin/exports/excel/day', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    expect(sheet.getCell(4, 7).value).toBe('Bier');
-    expect(sheet.getCell(4, 9).value).toBe(-5);
+    expect(sheet.getCell(4, 9).value).toBe('Bier');
+    expect(sheet.getCell(4, 12).value).toBe(-5);
   });
 
   it('returns 404 when no event is active', async () => {

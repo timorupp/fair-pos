@@ -4,7 +4,8 @@ import { query } from '../db/client.js';
 import type { ReceiptData, ReceiptPosition } from './types.js';
 import { aggregatePositions, type RawOrderItem } from './aggregate.js';
 import { computeTaxBreakdown, computeTotalGross } from './format.js';
-import { loadLogoFor } from '../logo/visibility.js';
+import { isLogoEnabledFor, loadLogoFor, type LogoTarget } from '../logo/visibility.js';
+import { ensureLogoVersion, loadCompanyLogo, loadLogoVersion, type CompanyLogo } from '../logo/logo.js';
 export { buildDemoReceipt } from './demo.js';
 
 /** Settings keys read for company info on the receipt. */
@@ -50,12 +51,21 @@ async function loadReceiptWhere(whereClause: string, params: unknown[]): Promise
     tse_signature: string | null;
     tse_start_time: Date | null;
     tse_end_time: Date | null;
+    company_name: string | null;
+    company_street: string | null;
+    company_postal_code: string | null;
+    company_city: string | null;
+    company_tax_number: string | null;
+    company_vat_id: string | null;
+    logo_version_id: string | null;
   }>(`
     SELECT i.id, i.receipt_number, i.receipt_type, i.payment_method, i.created_at,
            r.name AS register_name, r.is_training AS register_is_training,
            i.tse_transaction_number,
            i.tse_signature_counter, i.tse_signature,
-           i.tse_start_time, i.tse_end_time
+           i.tse_start_time, i.tse_end_time,
+           i.company_name, i.company_street, i.company_postal_code, i.company_city,
+           i.company_tax_number, i.company_vat_id, i.logo_version_id
       FROM invoice i
       JOIN register r ON r.id = i.register_id
      WHERE ${whereClause}
@@ -71,9 +81,31 @@ async function loadReceiptWhere(whereClause: string, params: unknown[]): Promise
   `, [row.id]);
 
   const positions = aggregatePositions(items.rows);
-  const settings = await loadCompanySettings();
-  // Logo is target-specific: sales receipt vs. cancellation have separate flags.
-  const logo = await loadLogoFor(row.receipt_type === 'cancellation' ? 'cancellation' : 'receipt');
+  const logoTarget: LogoTarget = row.receipt_type === 'cancellation' ? 'cancellation' : 'receipt';
+
+  // Task #112 (D-058): prefer the snapshot taken at sale time over the live
+  // settings, so an invoice keeps showing the company data/logo that were
+  // actually current when it was sold, even if an admin changes them later.
+  // `company_name` is only ever null for an invoice created before this fix
+  // shipped (never for an empty-but-configured name, see
+  // snapshotCompanyDataForInvoice) — such pre-migration invoices have no
+  // snapshot to fall back to and keep the previous (live-lookup) behaviour.
+  // `receiptNumberPrefix`/`systemSerial` are out of this fix's scope (neither
+  // realistically changes after initial setup) and always come live.
+  const liveSettings = await loadCompanySettings();
+  const settings: CompanySettings = row.company_name !== null
+    ? {
+        name: row.company_name,
+        addressLines: buildAddressLines(row.company_street, row.company_postal_code, row.company_city),
+        taxNumber: row.company_tax_number ?? '',
+        vatId: row.company_vat_id,
+        receiptNumberPrefix: liveSettings.receiptNumberPrefix,
+        systemSerial: liveSettings.systemSerial,
+      }
+    : liveSettings;
+  const logo: CompanyLogo | null = row.company_name !== null
+    ? (row.logo_version_id !== null ? await loadLogoVersion(row.logo_version_id) : null)
+    : await loadLogoFor(logoTarget);
   const table = await loadTableInfo(row.id);
 
   return assembleReceiptData(row, positions, settings, logo, table);
@@ -115,6 +147,15 @@ interface CompanySettings {
   systemSerial: string;
 }
 
+/** Builds the printed address block from its three parts, omitting empty lines — shared by the live and snapshot paths. */
+function buildAddressLines(street: string | null, postalCode: string | null, city: string | null): string[] {
+  const addressLines: string[] = [];
+  if (street) addressLines.push(street);
+  const cityLine = [postalCode, city].filter(Boolean).join(' ');
+  if (cityLine) addressLines.push(cityLine);
+  return addressLines;
+}
+
 /** Reads the company-related system settings into a typed object, with sensible empty defaults. */
 async function loadCompanySettings(): Promise<CompanySettings> {
   const result = await query<{ key: string; value: string }>(
@@ -122,17 +163,56 @@ async function loadCompanySettings(): Promise<CompanySettings> {
     [COMPANY_KEYS as unknown as string[]],
   );
   const map = new Map(result.rows.map((r) => [r.key, r.value]));
-  const addressLines: string[] = [];
-  const street = map.get('company_street'); if (street) addressLines.push(street);
-  const cityLine = [map.get('company_postal_code'), map.get('company_city')].filter(Boolean).join(' ');
-  if (cityLine) addressLines.push(cityLine);
   return {
     name: map.get('company_name') ?? '',
-    addressLines,
+    addressLines: buildAddressLines(map.get('company_street') ?? null, map.get('company_postal_code') ?? null, map.get('company_city') ?? null),
     taxNumber: map.get('company_tax_number') ?? '',
     vatId: map.get('company_vat_id') ?? null,
     receiptNumberPrefix: map.get('receipt_prefix') ?? 'RE-',
     systemSerial: map.get('system_serial') ?? '(noch nicht initialisiert)',
+  };
+}
+
+/** Company data + logo reference to freeze onto a new `invoice` row at sale time — see {@link snapshotCompanyDataForInvoice}. */
+export interface CompanySnapshot {
+  companyName: string;
+  companyStreet: string;
+  companyPostalCode: string;
+  companyCity: string;
+  companyTaxNumber: string;
+  companyVatId: string | null;
+  logoVersionId: string | null;
+}
+
+/**
+ * Reads the currently-active company data and (if enabled for `target`) the
+ * currently-active logo, so a new invoice can freeze them onto its own row
+ * at the moment of sale (Task #112/D-058) — a later change to the company
+ * settings or the logo must not retroactively alter how an already-sold
+ * receipt renders on PDF/reprint. Call this once per new invoice, before or
+ * alongside its `INSERT`.
+ *
+ * @param target - Which document type this invoice will render as
+ *   (`'cancellation'` vs. `'receipt'`), so the correct logo-visibility flag
+ *   is checked — mirrors the target selection in `loadReceiptWhere()`.
+ * @returns The values to insert alongside the new invoice row.
+ */
+export async function snapshotCompanyDataForInvoice(target: LogoTarget): Promise<CompanySnapshot> {
+  const result = await query<{ key: string; value: string }>(
+    `SELECT key, value FROM system_setting WHERE key = ANY($1)`,
+    [['company_name', 'company_street', 'company_postal_code', 'company_city', 'company_tax_number', 'company_vat_id']],
+  );
+  const map = new Map(result.rows.map((r) => [r.key, r.value]));
+  const logo = (await isLogoEnabledFor(target)) ? await loadCompanyLogo() : null;
+  const logoVersionId = await ensureLogoVersion(logo);
+  return {
+    companyName: map.get('company_name') ?? '',
+    companyStreet: map.get('company_street') ?? '',
+    companyPostalCode: map.get('company_postal_code') ?? '',
+    companyCity: map.get('company_city') ?? '',
+    companyTaxNumber: map.get('company_tax_number') ?? '',
+    companyVatId: map.get('company_vat_id') ?? null,
+    logoVersionId,
   };
 }
 

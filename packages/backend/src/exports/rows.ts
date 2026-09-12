@@ -16,12 +16,18 @@ export interface ExportSourceRow {
   ordering_user_name: string | null;
   register_name: string;
   article_name: string;
+  /** Artikelgruppe (Task #145, 2026-09-12). */
+  article_category_name: string;
   options: string | null;
   price: number | string;
   deposit_price: number | string | null;
   tax_rate: number | string;
   /** VAT rate the deposit portion was taxed at (Task #113) — always the Regelsteuersatz, independent of `tax_rate`. `null` when there's no deposit. */
   deposit_tax_rate: number | string | null;
+  /** The owning invoice's `receipt_type` — `'cancellation'` (Bonstorno) drives the negative quantity and "Storno" flag below (Task #138). */
+  receipt_type: 'sales_receipt' | 'cancellation' | 'training';
+  /** `daily_closing.z_number` of the invoice's Tagesabschluss, or `null` while not yet closed (Task #142, 2026-09-12). */
+  closing_z_number: number | null;
 }
 
 /** One aggregated row in the Excel sheet. */
@@ -33,19 +39,34 @@ export interface ExportRow {
    * sees on the bon.
    */
   receipt_number: string;
+  /** `daily_closing.z_number` of the Tagesabschluss this invoice was swept into, or `null` while not yet closed (Task #142). */
+  closing_z_number: number | null;
   /** ISO timestamp; the workbook builder formats it. */
   created_at: string;
   table_name: string;
   ordering_user_name: string;
   register_name: string;
   article_name: string;
+  /** Artikelgruppe (Task #145). */
+  article_category_name: string;
+  /**
+   * Unit count for this position — negative for a Bonstorno row (Task #138),
+   * so a plain `SUM(quantity)` per article across the whole export already
+   * nets cancellations out, without the reader having to filter by
+   * `is_cancellation` first. `unit_price`/`unit_deposit`/`line_total` are
+   * already negative for a Bonstorno at the source (D-068), so only the
+   * quantity — which has no natural sign of its own — needs this here.
+   */
   quantity: number;
   unit_price: number;
-  unit_deposit: number;
+  /** `null` when this position has no Pfand at all (Task #138) — rendered as a blank cell rather than a misleading "0,00 €". */
+  unit_deposit: number | null;
   tax_rate: number;
   /** VAT rate the deposit was taxed at — always the Regelsteuersatz, independent of `tax_rate`. `null` when there's no deposit. */
   deposit_tax_rate: number | null;
   line_total: number;
+  /** Whether this position stems from a Bonstorno (Task #138) — rendered as the "Storno" column ("ja" / blank). */
+  is_cancellation: boolean;
 }
 
 /**
@@ -81,26 +102,32 @@ export function buildExportRows(items: ExportSourceRow[], receiptPrefix: string 
       String(depositTax),
     ].join('|');
 
+    const isCancellation = item.receipt_type === 'cancellation';
+    const quantityDelta = isCancellation ? -1 : 1;
+
     const existing = index.get(key);
     if (existing) {
-      existing.quantity += 1;
+      existing.quantity += quantityDelta;
       existing.line_total = round2(existing.line_total + unit + deposit);
       continue;
     }
 
     const row: ExportRow = {
       receipt_number: `${receiptPrefix}${String(item.receipt_number).padStart(5, '0')}`,
+      closing_z_number: item.closing_z_number,
       created_at: toIso(item.invoice_created_at),
       table_name: item.table_name ?? '',
       ordering_user_name: item.ordering_user_name ?? '',
       register_name: item.register_name,
       article_name: item.options ? `${item.article_name} (${item.options})` : item.article_name,
-      quantity: 1,
+      article_category_name: item.article_category_name,
+      quantity: quantityDelta,
       unit_price: unit,
-      unit_deposit: deposit,
+      unit_deposit: item.deposit_price === null || item.deposit_price === undefined ? null : deposit,
       tax_rate: tax,
       deposit_tax_rate: depositTax,
       line_total: round2(unit + deposit),
+      is_cancellation: isCancellation,
     };
     out.push(row);
     index.set(key, row);

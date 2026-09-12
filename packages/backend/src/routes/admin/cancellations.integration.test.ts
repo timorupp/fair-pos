@@ -14,7 +14,7 @@ import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import {
   createTestArticle, createTestPrinter, createTestRegister, createTestUser,
-  seedReceiptCounter,
+  seedReceiptCounter, setSystemSetting,
 } from '../../test/fixtures.js';
 import { computeClosingTotals, type ClosingItem, type ClosingInvoice } from '../../closing/totals.js';
 import { config } from '../../config.js';
@@ -97,6 +97,24 @@ describe('POST /api/admin/cancellations', () => {
       `SELECT id FROM order_item WHERE invoice_id = $1`, [body.invoice_id],
     );
     expect(items.rowCount).toBe(3);
+  });
+
+  it('freezes the current company data onto the cancellation invoice too (Task #112/D-058)', async () => {
+    await setSystemSetting('company_name', 'Testverein e.V.');
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/cancellations',
+      headers: { cookie: adminCookie },
+      payload: {
+        register_id: registerId,
+        cancellation_reason_id: cancellationReasonId,
+        items: [{ article_id: articleId, quantity: 1 }],
+      },
+    });
+    const row = await pool.query<{ company_name: string }>(
+      `SELECT company_name FROM invoice WHERE id = $1`, [response.json().invoice_id],
+    );
+    expect(row.rows[0]!.company_name).toBe('Testverein e.V.');
   });
 
   it('stores order_item.price/deposit_price negated — the reversal of the article\'s current master-data price (D-068)', async () => {

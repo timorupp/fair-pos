@@ -77,13 +77,36 @@ describe('findPendingDaysForRegister (integration)', () => {
     expect(pending).toEqual(['2026-06-23']);
   });
 
-  it('skips days that already have a closing', async () => {
+  it('skips a day that already has a closing AND has no more unlinked rows', async () => {
     await insertInvoice('2026-06-21 18:00:00');
-    await insertInvoice('2026-06-22 18:00:00');
+    const linked = await insertInvoice('2026-06-22 18:00:00');
     await insertInvoice('2026-06-23 18:00:00');
     await insertClosing('2026-06-22 23:30:00', 1);
+    await pool.query(`UPDATE invoice SET daily_closing_id = (SELECT id FROM daily_closing WHERE register_id = $1) WHERE id = $2`, [registerId, linked]);
     const pending = await findPendingDaysForRegister(registerId, new Date('2026-06-24T12:00:00'));
     expect(pending).toEqual(['2026-06-21', '2026-06-23']);
+  });
+
+  it('re-opens a day that already has a closing but still has an unlinked invoice (D-075 — e.g. a sale after that day\'s Z-Bon)', async () => {
+    await insertClosing('2026-06-22 20:00:00', 1);
+    await insertClosing('2026-06-23 20:00:00', 2); // keeps day 23 itself out of scope for this test
+    // Nothing locks a register once closed — this invoice arrives after the
+    // Z-Bon above but still dated the same day, and (deliberately, matching
+    // the bug) is never linked to that closing here.
+    await insertInvoice('2026-06-22 23:00:00');
+    const pending = await findPendingDaysForRegister(registerId, new Date('2026-06-24T12:00:00'));
+    expect(pending).toEqual(['2026-06-22']);
+  });
+
+  it('re-opens a day via an unlinked service_order or order_cancellation too, not just invoice (D-075)', async () => {
+    await insertClosing('2026-06-22 20:00:00', 1);
+    await insertClosing('2026-06-23 20:00:00', 2);
+    await pool.query(
+      `INSERT INTO service_order (register_id, created_at) VALUES ($1, '2026-06-22 23:00:00')`,
+      [registerId],
+    );
+    const pending = await findPendingDaysForRegister(registerId, new Date('2026-06-24T12:00:00'));
+    expect(pending).toEqual(['2026-06-22']);
   });
 
   it('includes the closing day in the activity range when only closings exist', async () => {

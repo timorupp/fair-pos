@@ -90,6 +90,30 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
     expect(items.rowCount).toBe(3);
   });
 
+  it('freezes the current company data onto the invoice at checkout time (Task #112/D-058)', async () => {
+    await setSystemSetting('company_name', 'Testverein e.V.');
+    await setSystemSetting('company_street', 'Hauptstr. 1');
+    await setSystemSetting('company_tax_number', '12/345/67890');
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    const invoiceId = response.json().invoice_id;
+    const row = await pool.query<{ company_name: string; company_street: string; company_tax_number: string }>(
+      `SELECT company_name, company_street, company_tax_number FROM invoice WHERE id = $1`, [invoiceId],
+    );
+    expect(row.rows[0]).toEqual({
+      company_name: 'Testverein e.V.', company_street: 'Hauptstr. 1', company_tax_number: '12/345/67890',
+    });
+
+    // Changing the settings afterwards must not retroactively alter the invoice's own snapshot.
+    await setSystemSetting('company_name', 'Anderer Name GmbH');
+    const data = await loadReceiptById(invoiceId);
+    expect(data!.companyName).toBe('Testverein e.V.');
+  });
+
   it('vergibt fortlaufende Belegnummern bei aufeinanderfolgenden Checkouts', async () => {
     const app = await getTestApp();
     const r1 = await app.inject({

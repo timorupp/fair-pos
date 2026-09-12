@@ -47,7 +47,23 @@ export async function findPendingDaysForRegister(
   );
   const closedDays = new Set<string>(closedResult.rows.map((r) => r.day));
 
-  return pendingClosingDays(first, closedDays, today);
+  // D-075: calendar days (by `created_at`) that still have at least one
+  // invoice/service_order/order_cancellation row not yet linked to ANY
+  // closing — re-opens a day already in `closedDays` if a row slipped in
+  // after that day's Z-Bon (nothing locks a register once closed).
+  const unlinkedResult = await query<{ day: string }>(
+    `SELECT DISTINCT to_char(created_at::date, 'YYYY-MM-DD') AS day FROM (
+       SELECT created_at FROM invoice WHERE register_id = $1 AND daily_closing_id IS NULL
+       UNION ALL
+       SELECT created_at FROM service_order WHERE register_id = $1 AND daily_closing_id IS NULL
+       UNION ALL
+       SELECT created_at FROM order_cancellation WHERE register_id = $1 AND daily_closing_id IS NULL
+     ) unlinked`,
+    [registerId],
+  );
+  const daysWithUnlinkedRows = new Set<string>(unlinkedResult.rows.map((r) => r.day));
+
+  return pendingClosingDays(first, closedDays, daysWithUnlinkedRows, today);
 }
 
 /**

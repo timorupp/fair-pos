@@ -94,82 +94,6 @@ describe('GET /api/admin/reports/invoices', () => {
   });
 });
 
-describe('GET /api/admin/reports/cash-balance', () => {
-  it('counts cash receipts but not card receipts toward the balance', async () => {
-    const app = await getTestApp();
-    await insertPaidInvoice(1, 10, 19, 'cash');
-    await insertPaidInvoice(2, 50, 19, 'card');
-    const response = await app.inject({
-      method: 'GET', url: `/api/admin/reports/cash-balance?event_id=${eventId}`,
-      headers: { cookie: adminCookie },
-    });
-    expect(response.statusCode).toBe(200);
-    const row = response.json().registers.find((r: { id: string }) => r.id === registerId);
-    expect(row.cash_takings).toBe(10);
-    expect(row.balance).toBe(10);
-  });
-
-  it('ignores cancelled and free items', async () => {
-    const app = await getTestApp();
-    await insertPaidInvoice(1, 10, 19, 'cash', 'paid');
-    await insertPaidInvoice(2, 100, 19, 'cash', 'cancelled');
-    await insertPaidInvoice(3, 50, 19, 'cash', 'free');
-    const response = await app.inject({
-      method: 'GET', url: `/api/admin/reports/cash-balance?event_id=${eventId}`,
-      headers: { cookie: adminCookie },
-    });
-    const row = response.json().registers.find((r: { id: string }) => r.id === registerId);
-    expect(row.cash_takings).toBe(10);
-  });
-
-  it('a Bonstorno (receipt_type=cancellation) reduces cash_takings via its own negative price (D-068 — the originally reported bug)', async () => {
-    const app = await getTestApp();
-    await insertPaidInvoice(1, 10, 19, 'cash', 'paid');
-    const cancellation = await pool.query<{ id: string }>(
-      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
-       VALUES ($1, 2, 'cancellation', 'cash', now() - interval '1 hour') RETURNING id`,
-      [registerId],
-    );
-    await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
-       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -4, 'paid', now() - interval '1 hour')`,
-      [cancellation.rows[0]!.id, registerId],
-    );
-    const response = await app.inject({
-      method: 'GET', url: `/api/admin/reports/cash-balance?event_id=${eventId}`,
-      headers: { cookie: adminCookie },
-    });
-    const row = response.json().registers.find((r: { id: string }) => r.id === registerId);
-    expect(row.cash_takings).toBe(6); // 10 - 4
-    expect(row.balance).toBe(6);
-  });
-
-  it('includes deposit transactions in the balance', async () => {
-    const app = await getTestApp();
-    const user = await createTestUser({ isAdmin: true });
-    await pool.query(
-      `INSERT INTO cash_transaction (register_id, user_name, type, amount, created_at)
-       VALUES ($1, $2, 'deposit', 100, now() - interval '1 hour')`,
-      [registerId, user.name],
-    );
-    await pool.query(
-      `INSERT INTO cash_transaction (register_id, user_name, type, amount, created_at)
-       VALUES ($1, $2, 'withdrawal', 30, now() - interval '30 minutes')`,
-      [registerId, user.name],
-    );
-    await insertPaidInvoice(1, 20, 19, 'cash');
-    const response = await app.inject({
-      method: 'GET', url: `/api/admin/reports/cash-balance?event_id=${eventId}`,
-      headers: { cookie: adminCookie },
-    });
-    const row = response.json().registers.find((r: { id: string }) => r.id === registerId);
-    expect(row.deposits).toBe(100);
-    expect(row.withdrawals).toBe(30);
-    expect(row.cash_takings).toBe(20);
-    expect(row.balance).toBe(90);
-  });
-});
-
 describe('GET /api/admin/reports/today-revenue', () => {
   it('sums both cash and card takings, ignoring cancelled/free items', async () => {
     const app = await getTestApp();
@@ -330,7 +254,6 @@ describe('Authentication required', () => {
     const app = await getTestApp();
     for (const url of [
       '/api/admin/reports/invoices',
-      '/api/admin/reports/cash-balance',
       '/api/admin/reports/cancellations',
       '/api/admin/reports/open-positions',
       '/api/admin/reports/tse-outages',

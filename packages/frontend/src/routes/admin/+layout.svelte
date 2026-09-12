@@ -177,7 +177,6 @@
           <div class="nav-sub">
             <a href="/admin/reports/open-positions" class:active={isActive('/admin/reports/open-positions')}>Offene Positionen</a>
             <a href="/admin/reports/invoices" class:active={isActive('/admin/reports/invoices')}>Rechnungen</a>
-            <a href="/admin/reports/cash-balance" class:active={isActive('/admin/reports/cash-balance')}>Soll-Kassenstand</a>
             <a href="/admin/reports/cancellations" class:active={isActive('/admin/reports/cancellations')}>Stornos & Rabatte</a>
             <a href="/admin/reports/tse-outages" class:active={isActive('/admin/reports/tse-outages')}>TSE-Ausfall-Log</a>
             <a href="/admin/exports/excel" class:active={isActive('/admin/exports/excel')}>Excel-Export</a>

@@ -35,6 +35,7 @@ import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { nextReceiptNumber } from '../../receipt/sequence.js';
 import { generateReceiptToken } from '../../receipt/numbering.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../../receipt/format-receipt-number.js';
+import { snapshotCompanyDataForInvoice } from '../../receipt/data.js';
 import { signTseTransaction } from '../../tse/signing.js';
 import { buildKassenbelegProcessData, KASSENBELEG_PROCESS_TYPE } from '../../tse/processData.js';
 import { loadTaxRates, percentFor } from '../../tax/rates.js';
@@ -145,6 +146,8 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       }),
     });
     const { signature: tse, warning: tseWarning } = await signTseTransaction(KASSENBELEG_PROCESS_TYPE, kassenbelegSnapshot);
+    // Task #112: see register-session.ts's identical comment.
+    const companySnapshot = await snapshotCompanyDataForInvoice('cancellation');
 
     const result = await withTransaction(async (client) => {
       const receiptNumber = await nextReceiptNumber(client);
@@ -155,13 +158,18 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
            register_id, receipt_number, receipt_type, payment_method,
            cancellation_note, receipt_token,
            tse_transaction_number, tse_start_time, tse_end_time,
-           tse_signature, tse_signature_counter, tse_serial_number
-         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4, $5, $6, $7, $8, $9, $10)
+           tse_signature, tse_signature_counter, tse_serial_number,
+           company_name, company_street, company_postal_code, company_city,
+           company_tax_number, company_vat_id, logo_version_id
+         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          RETURNING id`,
         [
           register_id, receiptNumber, note ?? null, receiptToken,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+          companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
+          companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
+          companySnapshot.logoVersionId,
         ],
       );
       const invoiceId = invoiceResult.rows[0]!.id;

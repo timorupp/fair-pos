@@ -5764,3 +5764,235 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   zuvor einzige offene Punkt (Live-Hardware-Bestätigung) erbracht — Task
   vollständig abgeschlossen.
 
+- [Task] **#112** Firmendaten/Logo auf Rechnungs-PDF und Reprint werden live geladen statt zum Verkaufszeitpunkt eingefroren
+  **Klassifikation: Bug (niedrig-mittel).** Nutzerauftrag 2026-09-02, Fund
+  per Code-Recherche bestätigt (D-058, siehe unten). Priorisiert als
+  Pre-Release (Nutzervorgabe 2026-09-06).
+
+  **Problem:** `receipt/data.ts`s `loadReceiptWhere()` (genutzt von sowohl
+  `GET /:id/pdf` als auch `POST /:id/reprint`) lud Firmenname/-adresse/
+  -steuernummer/USt-IdNr. sowie das Firmenlogo bei jedem Aufruf frisch aus
+  `system_setting`/`company_logo` — kein Snapshot auf `invoice`. Änderte ein
+  Admin später diese Stammdaten, zeigte eine alte Rechnung beim erneuten
+  Ansehen/Reprint die neuen statt der zum Verkaufszeitpunkt gültigen Daten.
+  Die TSE-/fiskalisch relevanten Felder (Beträge, Steueraufschlüsselung,
+  Transaktionsnummer, Signatur, Belegnummer) waren nie betroffen — nur der
+  "Briefkopf".
+
+  **Entscheidung (Nutzer, 2026-09-12):** von den beiden ursprünglich
+  skizzierten Varianten — (a) Snapshot direkt auf `invoice`, oder (b) den
+  beim Verkauf erzeugten `print_job`-Datensatz für Reprints wiederverwenden
+  — fiel die Wahl auf (a), nachdem der Nutzer zu Recht auf das
+  Datenvolumen-Problem eines Logo-Snapshots pro Rechnung hinwies UND
+  bestätigte, dass `print_job`-Zeilen gelöscht werden können (Variante (b)
+  damit nicht zuverlässig genug).
+
+  **Umgesetzt — zweigeteilte Lösung, um das Datenvolumen-Problem zu
+  vermeiden:**
+  - **Textfelder** (Name/Straße/PLZ/Ort/Steuernummer/USt-IdNr.) werden
+    direkt auf `invoice` gespeichert (Migration `0035_invoice_company_
+    snapshot.sql`) — pro Zeile nur wenige Bytes, vernachlässigbar auch bei
+    sehr vielen Rechnungen.
+  - **Logo NICHT pro Rechnung dupliziert:** neue, content-adressierte,
+    append-only Tabelle `logo_version` (`logo/logo.ts`s `ensureLogoVersion()`/
+    `loadLogoVersion()`) — ein SHA-256-Hash über die tatsächlich gerenderten
+    Bytes (PDF-PNG + ESC/POS-Raster + Breite/Höhe/Zoomfaktor) entscheidet, ob
+    eine neue Zeile nötig ist; ein über ein ganzes Event unverändertes Logo
+    erzeugt nur eine einzige `logo_version`-Zeile, auf die alle Rechnungen
+    per `invoice.logo_version_id` (UUID-FK) verweisen — kein Bytes-Duplikat
+    pro Verkauf.
+  - **Snapshot-Erstellung:** `receipt/data.ts`s neue
+    `snapshotCompanyDataForInvoice(target)` liest die aktuell gültigen
+    Firmendaten + (falls für den Zieltyp aktiviert) das aktuelle Logo und
+    wird an allen drei Stellen aufgerufen, an denen eine `invoice`-Zeile
+    entsteht: Bonkasse-Checkout und Bedienungskasse-Tischabrechnung
+    (`register-session.ts`, beide Stellen) sowie Bonstorno
+    (`admin/cancellations.ts`).
+  - **Laden:** `loadReceiptWhere()` bevorzugt jetzt die Snapshot-Spalten,
+    sobald `invoice.company_name IS NOT NULL` (das Signal dafür, dass diese
+    Zeile nach dem Fix erzeugt wurde — nie `NULL` für einen leeren, aber
+    konfigurierten Namen). Für Alt-Rechnungen von vor diesem Fix
+    (`company_name IS NULL`) bleibt das bisherige Live-Lookup-Verhalten
+    unverändert bestehen — es gibt keine Möglichkeit, rückwirkend zu
+    rekonstruieren, was zum damaligen Verkaufszeitpunkt tatsächlich galt.
+
+  **Tests:** `logo/logo.integration.test.ts` (neu) — Dedup-Verhalten von
+  `ensureLogoVersion()` (identischer Inhalt → gleiche Zeile, unterschiedliche
+  Pixel oder Zoomfaktor → neue Zeile). `receipt/data.integration.test.ts` —
+  drei neue Tests: Snapshot wird gegenüber aktuellen `system_setting`-Werten
+  bevorzugt; Alt-Rechnung ohne Snapshot fällt weiterhin auf Live-Werte
+  zurück; Logo wird aus `logo_version` geladen, nicht aus der aktuell
+  konfigurierten `company_logo`. `register-session.integration.test.ts`/
+  `cancellations.integration.test.ts` — je ein neuer End-to-End-Test:
+  Firmendaten werden beim Checkout/Storno tatsächlich auf die neue
+  `invoice`-Zeile eingefroren, eine spätere Einstellungsänderung ändert die
+  bereits ausgestellte Rechnung nicht mehr rückwirkend.
+
+- [Finding] **D-058** (niedrig-mittel, Backend / Rechnungs-PDF) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02) — behoben zusammen mit Task #112, siehe dort für die volle Lösungsbeschreibung
+  Firmendaten (Name/Adresse/Steuernummer/USt-IdNr.) und das Firmenlogo wurden bei **jedem** PDF-Abruf/Reprint einer Rechnung live aus `system_setting`/dem aktuell gespeicherten Logo geladen (`receipt/data.ts`s `loadReceiptWhere()`/`loadCompanySettings()`/`loadLogoFor()`), nicht zum Verkaufszeitpunkt eingefroren — weder `invoice` noch eine andere Tabelle speicherte einen Snapshot. Folge: änderte ein Admin später Firmenname/Adresse/Logo, zeigte die PDF-Ansicht/ein Reprint einer alten Rechnung die neuen statt der zum Verkaufszeitpunkt gültigen Daten — die eigentlich TSE-relevanten Felder blieben davon unberührt, betroffen war nur der "Briefkopf".
+
+- [Task] **#138** Verkaufsstatistik je Artikel/Tag — Excel-Export kennzeichnet Stornos jetzt aggregationsfreundlich
+  **Klassifikation: Feature/Nutzerwunsch, angelegt 2026-09-12.** Priorisiert
+  als Pre-Release (Nutzervorgabe 2026-09-12).
+
+  **Problem:** Der bestehende Excel-Export (`exports/rows.ts`/`workbook.ts`)
+  kennzeichnete Bonstorno-Zeilen nicht als solche (nur am bereits negativen
+  `unit_price`/`line_total` erkennbar) und ließ `quantity` bei einem Storno
+  positiv — eine simple `SUM(quantity)` je Artikel zählte stornierte
+  Einheiten weiterhin positiv mit und verfälschte damit jede
+  Stückzahl-Auswertung, obwohl der Umsatz (`SUM(line_total)`) schon korrekt war.
+
+  **Umgesetzt (Nutzervorgabe, 2026-09-12):**
+  - Neue Spalte **"Storno"**: `"ja"` bei einer Bonstorno-Zeile, sonst
+    **leer** (ausdrücklich kein `"nein"`, damit ein Blick/Autofilter direkt
+    nur die Stornos zeigt).
+  - `quantity` ist bei einer Bonstorno-Zeile jetzt negativ — eine einfache
+    `SUM(quantity)`/`SUM(line_total)` je Artikel ergibt direkt die korrekte
+    Verkaufsstatistik, ohne dass manuell nach Storno gefiltert werden muss.
+    Rein im Export (`ExportRow.quantity`) — `order_item` selbst bleibt
+    unverändert positiv, kollidiert nicht mit D-068s Vorzeichen-Design für
+    die eigentlichen Bon-/TSE-/DSFinV-K-Daten.
+  - **Zusätzlich (Nutzervorgabe):** `Pfandbetrag`/`USt. Pfand` bleiben jetzt
+    leer statt `0,00 €`, wenn eine Position gar keinen Pfand hat
+    (`ExportRow.unit_deposit`/`deposit_tax_rate` auf `null` statt `0`,
+    unterscheidet "kein Pfand" von einem echten Pfandbetrag von 0).
+
+  **Tests:** `exports/rows.test.ts` (neue Fälle: negative Menge + Flag bei
+  Storno, `unit_deposit: null` ohne Pfand vs. echte `0` mit Pfand),
+  `exports/workbook.test.ts` (neue Storno-Spalte, leere Pfand-Zellen),
+  `routes/admin/exports.excel.integration.test.ts` (Spaltenindizes
+  angepasst, neue Storno-Spalten-Prüfung am echten DB-Datensatz).
+
+- [Finding] **D-075** Kassenabschluss-Pending-Logik erkannte nur "existiert ein Z-Bon für den Tag", nicht "sind alle Zeilen dieses Tages tatsächlich verknüpft"
+  **Kontext:** Nutzer fragte bei der Diskussion zu Task #137 (Kassenjournal)
+  konkret nach, ob eine spätere Einlage/Entnahme nach einem Kassenabschluss
+  einen neuen Z-Bon erzwingen würde — dabei fiel eine unabhängig davon schon
+  bestehende Lücke in der bestehenden "ausstehende Tage"-Logik auf
+  (`closing/pending-db.ts`/`closing/pending.ts`), die nichts mit
+  `cash_transaction` zu tun hat.
+
+  **Problem:** `findPendingDaysForRegister()` bestimmte "Tag X ist erledigt"
+  bisher rein darüber, ob **irgendein** `daily_closing`-Eintrag mit
+  `business_date = X` existiert — nicht darüber, ob an diesem Tag
+  tatsächlich **alle** `invoice`/`service_order`/`order_cancellation`-Zeilen
+  bereits verknüpft sind (`daily_closing_id IS NOT NULL`). Da nichts eine
+  Kasse nach einem Abschluss sperrt (Sperrung greift laut
+  `isRegisterUnlocked()` ausschließlich bei **vergangenen, nie
+  abgeschlossenen** Tagen, nie am aktuellen Tag), konnte jederzeit noch am
+  selben Kalendertag eine weitere Buchung entstehen. Diese blieb für die
+  Pending-Prüfung **für immer unsichtbar**, sobald der Tag einmal einen
+  Z-Bon hatte — sie wurde beim nächstbesten (nicht datumsgebundenen)
+  Abschluss trotzdem mit eingesammelt, aber dem **falschen** `business_date`
+  zugeordnet, ohne dass die Sperrlogik das je bemerkt oder verhindert hätte.
+  Betrifft schon heute alle drei existierenden Tabellen, unabhängig von
+  Kassenbewegungen (die aktuell ohnehin keine `daily_closing_id`-Spalte
+  haben).
+
+  **Behoben:** `closing/pending.ts`s `pendingClosingDays()` bekommt einen
+  neuen Parameter `daysWithUnlinkedRows` — ein Tag gilt jetzt als
+  ausstehend, wenn entweder (a) noch kein Abschluss für ihn existiert
+  (bisheriges Verhalten, deckt auch den Nullabschluss-Fall ab) **oder** (b)
+  ein Abschluss existiert, aber mindestens eine Zeile mit `created_at` an
+  diesem Tag noch `daily_closing_id IS NULL` hat. `closing/pending-db.ts`s
+  `findPendingDaysForRegister()` ermittelt (b) über eine zusätzliche
+  `UNION ALL`-Abfrage aller drei Tabellen.
+
+  **Tests:** `closing/pending.test.ts` — vier neue Fälle für
+  `daysWithUnlinkedRows` (öffnet einen bereits geschlossenen Tag wieder;
+  kein zusätzlicher Effekt bei einem ohnehin schon offenen Tag; niemals der
+  heutige Tag, selbst mit Straggler; ein Straggler außerhalb des
+  Wanderungs-Zeitraums wird ignoriert). `closing/pending-db.integration.test.ts`
+  — bestehender Test korrigiert (spiegelte zuvor exakt den Bug wider, ohne
+  ihn zu erkennen), zwei neue Tests: eine nicht verknüpfte `invoice` bzw.
+  `service_order` nach einem bereits erfolgten Abschluss öffnet den Tag
+  wieder.
+
+- [Task] **#142** Excel-Export: neue Spalte "Tagesabschluss" mit der Z-Bon-Nummer
+  **Klassifikation: Nutzerwunsch, angelegt 2026-09-12.**
+
+  Neue Spalte direkt nach "Storno" — trägt `daily_closing.z_number` je
+  Rechnung, leer solange die Rechnung noch keinem Tagesabschluss zugeordnet
+  ist (`daily_closing_id IS NULL`).
+
+  **Umgesetzt:** `routes/admin/exports.ts`s `EXPORT_SOURCE_COLUMNS` joint
+  jetzt `daily_closing` per `LEFT JOIN ... ON dc.id = i.daily_closing_id`
+  und selektiert `dc.z_number`; durchgereicht über `ExportSourceRow`/
+  `ExportRow` (`exports/rows.ts`) bis in die neue `workbook.ts`-Spalte.
+
+  **Tests:** `exports/rows.test.ts` (Passthrough offen/geschlossen),
+  `exports/workbook.test.ts` (Spalte zeigt Z-Nr. bzw. bleibt leer),
+  `routes/admin/exports.excel.integration.test.ts` (neuer End-to-End-Test:
+  eine per echtem `daily_closing`-Datensatz verknüpfte Rechnung zeigt die
+  Z-Nr., eine offene bleibt leer).
+
+- [Task] **#143** Einlage/Entnahme-Funktion vollständig entfernt, ersetzt durch "Offen seit letztem Tagesabschluss"
+  **Klassifikation: Nutzerentscheidung, angelegt 2026-09-12.** Auslöser: die
+  D-075-Diskussion (Pending-Tage-Logik) legte offen, dass Kassenbewegungen
+  strukturell nie an den Kassenabschluss angebunden waren (kein TSE-Bezug,
+  keine Z-Bon-Summe, kein DSFinV-K-Export). Statt das nachträglich
+  compliance-konform auszubauen, hat der Nutzer entschieden, die Funktion
+  ganz zu entfernen.
+
+  **Entfernt:**
+  - `cash_transaction`-Tabelle per neuer Migration
+    (`0036_drop_cash_transaction.sql`, `DROP TABLE` — Nutzerentscheidung,
+    bewusst auch vorhandene Produktivdaten mit fallen gelassen, kein
+    Migrations-Backup).
+  - Backend: `GET`/`POST /api/admin/registers/:id/transactions`
+    (`routes/admin/registers.ts`), `total_deposits`/`total_withdrawals` aus
+    `GET /:id`.
+  - Frontend: Einlage/Entnahme-Bereich (Balance-Karte, Buttons, Modal,
+    Transaktionshistorie-Tabelle) aus `registers/[id]/+page.svelte`;
+    `listTransactions`/`addTransaction` aus `api.ts`; `CashTransaction`-Typ
+    aus `@fairpos/shared`.
+
+  **Neu — "Offen seit letztem Tagesabschluss":** ersetzt die entfernte
+  Balance-Karte an derselben Stelle. Zeigt je Zahlungsart (Bar/Karte) die
+  Summe aller noch nicht einem Z-Bon zugeordneten Rechnungen
+  (`daily_closing_id IS NULL`) für diese Kasse — bewusst **nicht** auf
+  einen Kalendertag beschränkt (Nutzervorgabe: eine gesperrte Kasse macht
+  Tagesgrenzen ohnehin hinfällig, ein Anzeigefehler an der Grenze wäre rein
+  kosmetisch). `registers.ts`s neue `loadOpenSinceLastClosing()` lädt die
+  offenen Rechnungen + Positionen und übergibt sie an das bereits
+  bestehende, getestete `computeClosingTotals()` (`closing/totals.ts`) —
+  dieselbe Aggregation, die auch `closeRegister()` selbst verwendet, damit
+  die Anzeige garantiert mit dem nächsten echten Z-Bon übereinstimmt.
+
+  **Tests:** `routes/admin/registers.integration.test.ts` — neuer
+  Testblock: Null bei keiner Rechnung, Summe je Zahlungsart über mehrere
+  offene Rechnungen, bereits verknüpfte Rechnungen werden ausgeschlossen,
+  ein Bonstorno nettet über sein eigenes negatives Vorzeichen korrekt ein.
+  `admin-routes.integration.test.ts`/`reports.integration.test.ts` — die
+  jetzt gegenstandslosen `cash_transaction`-Tests entfernt.
+
+- [Task] **#144** "Soll-Kassenstand"-Auswertung vollständig entfernt
+  **Klassifikation: Nutzerentscheidung, angelegt 2026-09-12.** Im selben
+  Zug wie Task #143 — die Kennzahl beruhte auf denselben, nie an den
+  Kassenabschluss angebundenen `cash_transaction`-Daten.
+
+  **Entfernt:** `GET /api/admin/reports/cash-balance`
+  (`routes/admin/reports.ts`), die Seite
+  `admin/reports/cash-balance/+page.svelte`, der Navigationseintrag
+  "Soll-Kassenstand" in `admin/+layout.svelte`, `api.ts`s
+  `reports.cashBalance()`.
+
+  **Tests:** `reports.integration.test.ts` — den gesamten
+  `cash-balance`-Testblock sowie den zugehörigen Eintrag in der
+  "Authentication required"-Sammelliste entfernt.
+
+- [Task] **#145** Excel-Export: neue Spalte "Artikelgruppe"
+  **Klassifikation: Nutzerwunsch, angelegt 2026-09-12.**
+
+  Neue Spalte direkt nach "Artikelname" — trägt `order_item.article_category_name`
+  (war bereits vorhanden, aber bisher nicht Teil des Excel-Exports).
+
+  **Umgesetzt:** `routes/admin/exports.ts`s `EXPORT_SOURCE_COLUMNS` selektiert
+  jetzt zusätzlich `oi.article_category_name`, durchgereicht über
+  `ExportSourceRow`/`ExportRow` bis in die neue `workbook.ts`-Spalte. Nicht
+  Teil des Aggregations-Schlüssels (dieselbe `article_name` impliziert
+  immer dieselbe Artikelgruppe).
+
+  **Tests:** `exports/rows.test.ts` (Passthrough), `exports/workbook.test.ts`
+  (Spalten-Header + -Wert), `routes/admin/exports.excel.integration.test.ts`
+  (Spaltenindizes entsprechend verschoben).
+

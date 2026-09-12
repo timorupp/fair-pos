@@ -23,48 +23,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   `docs/TSE-CLI-Referenz.md` Abschnitt 2/3. Der eigentliche Abgleich selbst
   ist Teil dieses Tasks (#47) und steht noch aus, **nicht** bereits erledigt.
 
-- [Task] **#112** Firmendaten/Logo auf Rechnungs-PDF und Reprint werden live geladen statt zum Verkaufszeitpunkt eingefroren
-  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
-  Release erledigen.**
-
-  **Klassifikation: Bug (niedrig-mittel).** Nutzerauftrag 2026-09-02,
-  Fund per Code-Recherche bestätigt — siehe D-058. Von
-  zwei parallelen Audits zum Thema GoBD-Unveränderbarkeit; siehe auch
-  Task #111 für den ersten Fund.
-
-  **Kurzfassung:** `receipt/data.ts`s `loadReceiptWhere()` (genutzt von
-  sowohl `GET /:id/pdf` als auch `POST /:id/reprint` in `admin/
-  invoices.ts`) lädt Firmenname/-adresse/-steuernummer/USt-IdNr. sowie
-  das Firmenlogo bei **jedem** Aufruf frisch aus `system_setting`/dem
-  aktuellen Logo — kein Snapshot auf `invoice` oder anderswo. Ändert ein
-  Admin später diese Stammdaten, zeigt eine alte Rechnung beim erneuten
-  Ansehen/Reprint die **neuen** Daten statt der zum Verkaufszeitpunkt
-  gültigen.
-
-  **Wichtige Einordnung (geringere Dringlichkeit als Task #111):** die
-  eigentlich TSE-/fiskalisch relevanten Felder (Beträge,
-  Steueraufschlüsselung, Transaktionsnummer, Signatur, Belegnummer,
-  Zeitstempel) kommen aus echten Snapshot-Spalten auf `invoice`/
-  `order_item` und sind **nicht** betroffen — nur der "Briefkopf"
-  (Name/Adresse/Logo) driftet. Trotzdem ein GoBD-relevanter
-  Wiedergabetreue-Aspekt: ein Reprint sollte idealerweise exakt wie das
-  Original aussehen.
-
-  **Umsetzungsskizze (grob, nicht final, keine Entscheidung):** entweder
-  (a) einen Firmendaten-/Logo-Snapshot beim Erstellen der Rechnung auf
-  `invoice` persistieren und beim Laden bevorzugt daraus lesen, oder (b)
-  den beim ursprünglichen Verkauf bereits erzeugten `print_job`-Datensatz
-  (mit seinen historisch korrekten `blocks`) für Reprints wiederverwenden
-  statt die Belegblöcke komplett neu zu bauen — Variante (b) deckt sich
-  mit dem in Task #105 eingeführten Block-Modell (`print_job.blocks`
-  existiert dafür bereits) und wäre vermutlich der kleinere Eingriff.
-
-  **Offene Frage:** wie schwer wiegt dieser Fall fachlich wirklich —
-  ändert sich der Firmenname/die Adresse in der Praxis überhaupt jemals
-  bei einem laufenden Verein, oder ist das ein seltenes Ereignis, bei dem
-  ein manueller Hinweis ("Reprint zeigt aktuelle Stammdaten") ausreicht
-  statt eines vollen Snapshot-Umbaus? Nutzerentscheidung vor Umsetzung.
-
 - [Task] **#119** Unterstützung für Kleinunternehmerregelung (§ 19 UStG)
   **Priorisierung (Nutzervorgabe 2026-09-06): nicht mehr für das erste
   Release, aber bald danach angehen — kein Release-Blocker, aber zeitnahe
@@ -141,7 +99,7 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 
   Vor der Umsetzung: Nutzerentscheidung, welcher Ansatz gewünscht ist.
 
-- [Task] **#128** Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
+- [Task] **#128** (niedrige Priorität, Nutzervorgabe 2026-09-12) Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
   **Klassifikation: Sicherheits-/Datenschutz-Frage (noch nicht bewertet,
   mehrere Optionen genannt, keine Entscheidung getroffen).**
   Angelegt 2026-09-09 (Nutzerwunsch).
@@ -163,7 +121,7 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   sinnvoll ist, ob eine `event_id`-Migration auf `print_job` nötig ist.
 
 
-- [Task] **#135** Entscheidung: `cancels_invoice_id` entfernen oder "Fall A – Rechnungsstorno" implementieren
+- [Task] **#135** (niedrige Priorität, Nutzervorgabe 2026-09-12) Entscheidung: `cancels_invoice_id` entfernen oder "Fall A – Rechnungsstorno" implementieren
   **Klassifikation: Design-Entscheidung, angelegt 2026-09-12.** Ursprünglich
   als Vorbedingung für den gravierenden Bonstorno-Aggregationsbug gedacht —
   der ist inzwischen unabhängig davon behoben (siehe D-068 in
@@ -268,57 +226,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   (`transactions.csv`/`datapayment.csv`) oder das rein eine
   FairPOS-interne Komfortfunktion ist, ohne Compliance-Bezug.
 
-- [Task] **#138** Verkaufsstatistik je Artikel/Tag — Excel-Export kennzeichnet Stornos nicht aggregationsfreundlich
-  **Priorisierung (Nutzervorgabe 2026-09-12): Pre-Release — echte
-  Nutzbarkeitslücke, vor dem ersten Release erledigen.**
-
-  **Klassifikation: Feature/Nutzerwunsch, angelegt 2026-09-12.**
-
-  Aktuell schwer möglich: eine Verkaufsstatistik je Artikel und Tag zu
-  erstellen (z. B. "wie viele Bier wurden am Samstag verkauft"). Der
-  bestehende Excel-Export (`exports/rows.ts`/`workbook.ts`,
-  `routes/admin/exports.ts`) enthält zwar die meisten nötigen Rohdaten, hat
-  aber zwei Lücken für diesen Auswertungszweck:
-  - **Keine Storno-Kennzeichnung als eigene Spalte.** Die Zeile einer
-    Bonstorno-Rechnung sieht ansonsten aus wie eine normale Verkaufszeile —
-    nur am (bereits negativen) `unit_price`/`line_total` erkennbar, nicht
-    an einem eigenen Feld wie `receipt_type`/"Storno ja/nein".
-  - **`quantity` bleibt bei einem Storno positiv/unsigned**, während
-    `unit_price`/`line_total` negativ sind (D-068, bewusste Design-
-    Entscheidung: `order_item.price`/`deposit_price` tragen das Vorzeichen,
-    nicht die Menge). Für eine reine Preis-Summe (Umsatz) ist das korrekt
-    und ausreichend — für eine Mengen-Statistik ("wie viele Stück") aber
-    nicht: eine `SUM(quantity)` je Artikel zählt stornierte Einheiten
-    weiterhin positiv mit, verfälscht also die Stückzahl-Auswertung, auch
-    wenn der Umsatz (`SUM(line_total)`) korrekt bleibt.
-
-  **Nutzervorschlag:** negative `quantity` für Stornozeilen, damit eine
-  simple `SUM(quantity)`/`SUM(line_total)` je Artikel direkt eine korrekte
-  Verkaufsstatistik ergibt, ohne dass der Auswertende erst selbst nach
-  Storno filtern/multiplizieren muss.
-
-  **Wichtig, noch zu klären:** eine negative `quantity` NUR im Excel-Export
-  einzuführen (rein abgeleitete Reporting-Ansicht, nicht die fiskalische
-  Aufzeichnung selbst — `order_item.quantity` in der DB bliebe unverändert
-  positiv) wäre vermutlich unproblematisch und würde nicht mit D-068s
-  Design für die eigentlichen Bon-/TSE-/DSFinV-K-Daten kollidieren, die
-  weiterhin ausschließlich über `price`/`deposit_price` signieren. Zwei
-  Ansätze, noch nicht entschieden:
-  1. `quantity` im Export-Zeilenbau (`exports/rows.ts::buildExportRows()`)
-     negieren, wenn die zugehörige Rechnung `receipt_type='cancellation'`
-     ist — löst die Aggregationsfrage direkt, ohne eine neue Spalte.
-  2. Zusätzlich (oder stattdessen) eine eigene Spalte "Storno"/"Typ"
-     ergänzen, die den `receipt_type` sichtbar macht — hilft beim manuellen
-     Filtern/Prüfen, löst die Aggregationsfrage aber nicht von selbst.
-  Beides zusammen (negative Menge UND sichtbare Kennzeichnung) vermutlich
-  am nützlichsten, aber nicht mit dem Nutzer abgestimmt.
-
-  Verwandt: Task #126 (Excel-Export-Verhalten bei Stornos testen,
-  inzwischen abgeschlossen — siehe BACKLOG-DONE.md): Bedienungskasse-
-  Storno/kostenfrei-Positionen (`order_cancellation`) tauchen im
-  Excel-Export mangels Rechnung ohnehin nie auf (bereits verifiziert) —
-  betrifft dieses Task #138 hier also nur die Bonstorno-Zeilen, nicht die
-  Bedienungskasse-Fälle.
 
 ## Findings
 
@@ -333,8 +240,4 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 - [Finding] **D-052** (niedrig, Backend / Tests) — Gefunden 2026-08-31 — Kontext: Während Task #94/#95-Umsetzung (Zwei-Stufen-Admin, Veranstaltung als Hierarchieebene) gefunden
   `settings.receipt-preview.integration.test.ts` — Test `renders identically whether no logo is stored at all, or one is stored but the flag stays off (default)` ist zeitabhängig-flaky, reproduzierbar aber mit jeweils unterschiedlicher Byte-Differenz (einmal 6329 vs. 6328, dann 6327 vs. 6326). Ursache: `receipt/demo.ts`s `buildDemoReceipt(now: Date = new Date())` nutzt beim Aufruf ohne explizites Argument den echten aktuellen Zeitpunkt; die Route ruft sie ohne Override auf, und der Test macht zwei sequentielle `fetchPreview()`-HTTP-Aufrufe, die dadurch minimal unterschiedliche Zeitstempel einbetten — vermutlich wirkt sich das über schriftgrößen-/kerning-abhängige Fließkomma-Koordinaten im PDF-Content-Stream auf die Byte-Länge aus. Kein Zusammenhang mit Task #94/#95 — nur während der Vollständigkeits-Testläufe für Phase 2.3 aufgefallen (Test lief davor offenbar nie zufällig zu einem ungünstigen Zeitpunkt).
   Der Test sollte einen festen `now`-Zeitpunkt injizieren (z. B. Route-Parameter oder Test-Override) statt sich auf `new Date()` zu verlassen — noch nicht umgesetzt, da unabhängig vom aktuellen Task.
-
-- [Finding] **D-058** (niedrig-mittel, Backend / Rechnungs-PDF) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02)
-  Firmendaten (Name/Adresse/Steuernummer/USt-IdNr.) und das Firmenlogo werden bei **jedem** PDF-Abruf/Reprint einer Rechnung live aus `system_setting`/dem aktuell gespeicherten Logo geladen (`receipt/data.ts`s `loadReceiptWhere()`/`loadCompanySettings()`/`loadLogoFor()`), nicht zum Verkaufszeitpunkt eingefroren — weder `invoice` noch eine andere Tabelle speichert einen Snapshot. Sowohl `GET /:id/pdf` als auch `POST /:id/reprint` (`admin/invoices.ts`) rendern die Belegblöcke bei jedem Aufruf neu aus aktuellen Stammdaten, statt den ursprünglich beim Verkauf erzeugten `print_job`-Datensatz wiederzuverwenden. Folge: ändert ein Admin später Firmenname/Adresse/Logo, zeigt die PDF-Ansicht/ein Reprint einer alten Rechnung die **neuen** Daten statt der zum Verkaufszeitpunkt gültigen — die eigentlich TSE-relevanten Felder (Beträge, Steueraufschlüsselung, Transaktionsnummer, Signatur, Belegnummer) bleiben davon unberührt, da sie aus echten Snapshot-Spalten auf `invoice`/`order_item` kommen; betroffen ist nur der "Briefkopf".
-  Siehe Task #112.
 

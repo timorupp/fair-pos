@@ -205,7 +205,7 @@ export async function usersAdminRoute(app: FastifyInstance): Promise<void> {
    * DELETE /api/admin/users/:id — delete a user. Prevents self-deletion.
    *
    * Task #97: historical/fiscal tables (`daily_closing`, `order_item`,
-   * `cash_transaction`, `service_order`, `order_cancellation`) no longer hold
+   * `service_order`, `order_cancellation`) no longer hold
    * a foreign key to `user` — they keep a text name-snapshot instead, so a
    * user can be deleted without losing that history. Only `user_register`
    * (register assignments) and `session` (active logins) still reference the

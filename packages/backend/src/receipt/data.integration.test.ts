@@ -88,4 +88,68 @@ describe('loadReceiptById', () => {
     expect(data!.positions[0]!.unitPrice).toBe(-5);
     expect(data!.totalGross).toBe(-5);
   });
+
+  it('prefers the company-data snapshot on invoice over the current system_setting values (Task #112/D-058)', async () => {
+    const register = await createTestRegister();
+    await pool.query(
+      `INSERT INTO system_setting (key, value) VALUES
+         ('company_name', 'Neuer Vereinsname'), ('company_street', 'Neue Str. 9'),
+         ('company_tax_number', 'NEU-999')`,
+    );
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (
+         register_id, receipt_number, receipt_type, payment_method, receipt_token,
+         company_name, company_street, company_postal_code, company_city,
+         company_tax_number, company_vat_id
+       ) VALUES ($1, 1, 'sales_receipt', 'cash', 'snap-token',
+         'Alter Vereinsname', 'Alte Str. 1', '12345', 'Altstadt', 'ALT-123', 'DE111111111')
+       RETURNING id`,
+      [register.id],
+    );
+    const data = await loadReceiptById(inv.rows[0]!.id);
+    expect(data!.companyName).toBe('Alter Vereinsname');
+    expect(data!.companyAddressLines).toEqual(['Alte Str. 1', '12345 Altstadt']);
+    expect(data!.taxNumber).toBe('ALT-123');
+    expect(data!.vatId).toBe('DE111111111');
+  });
+
+  it('falls back to the current system_setting values for a pre-migration invoice with no snapshot (company_name IS NULL)', async () => {
+    const register = await createTestRegister();
+    await pool.query(
+      `INSERT INTO system_setting (key, value) VALUES ('company_name', 'Aktueller Name')`,
+    );
+    // No company_* columns given — mirrors an invoice row created before Task #112 shipped.
+    const { id } = await insertInvoice(register.id, 'no-snapshot-token');
+    const data = await loadReceiptById(id);
+    expect(data!.companyName).toBe('Aktueller Name');
+  });
+
+  it('renders the logo_version snapshotted on invoice, not the currently-configured company_logo (Task #112)', async () => {
+    const register = await createTestRegister();
+    await pool.query(`INSERT INTO system_setting (key, value) VALUES ('logo_on_receipt', 'true')`);
+    // The CURRENTLY configured logo — deliberately different from the snapshot below.
+    await pool.query(
+      `INSERT INTO company_logo (id, pdf_data, escpos_data, pdf_width, pdf_height)
+       VALUES (1, $1, $2, 10, 10)`,
+      [Buffer.from('current-logo'), Buffer.from('current-logo-escpos')],
+    );
+    const version = await pool.query<{ id: string }>(
+      `INSERT INTO logo_version (content_hash, pdf_data, escpos_data, pdf_width, pdf_height, pdf_width_factor)
+       VALUES ('deadbeef', $1, $2, 20, 20, 1) RETURNING id`,
+      [Buffer.from('snapshotted-logo'), Buffer.from('snapshotted-logo-escpos')],
+    );
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (
+         register_id, receipt_number, receipt_type, payment_method, receipt_token,
+         company_name, company_street, company_postal_code, company_city,
+         company_tax_number, company_vat_id, logo_version_id
+       ) VALUES ($1, 1, 'sales_receipt', 'cash', 'logo-snap-token',
+         'Verein', '', '', '', '', NULL, $2)
+       RETURNING id`,
+      [register.id, version.rows[0]!.id],
+    );
+    const data = await loadReceiptById(inv.rows[0]!.id);
+    expect(data!.logoPng?.toString()).toBe('snapshotted-logo');
+    expect(data!.logoWidth).toBe(20);
+  });
 });

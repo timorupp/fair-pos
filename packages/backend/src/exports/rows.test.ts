@@ -15,6 +15,9 @@ const row = (overrides: Partial<ExportSourceRow> = {}): ExportSourceRow => ({
   deposit_price: null,
   tax_rate: 19,
   deposit_tax_rate: null,
+  receipt_type: 'sales_receipt',
+  closing_z_number: null,
+  article_category_name: 'Getränke',
   ...overrides,
 });
 
@@ -108,6 +111,45 @@ describe('buildExportRows', () => {
     const out = buildExportRows([row({ table_name: null, ordering_user_name: null })]);
     expect(out[0]!.table_name).toBe('');
     expect(out[0]!.ordering_user_name).toBe('');
+  });
+
+  it('leaves unit_deposit null when there is no Pfand at all, instead of 0 (Task #138)', () => {
+    const out = buildExportRows([row({ deposit_price: null })]);
+    expect(out[0]!.unit_deposit).toBeNull();
+  });
+
+  it('keeps a real (non-null) deposit as a number, including a zero-magnitude one', () => {
+    const out = buildExportRows([row({ deposit_price: 0 })]);
+    expect(out[0]!.unit_deposit).toBe(0);
+  });
+
+  it('negates quantity for a Bonstorno row and flags is_cancellation, while unit_price/line_total keep their own already-negative sign (Task #138)', () => {
+    const out = buildExportRows([
+      row({ receipt_type: 'cancellation', price: -5 }),
+      row({ receipt_type: 'cancellation', price: -5 }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.quantity).toBe(-2);
+    expect(out[0]!.line_total).toBe(-10);
+    expect(out[0]!.is_cancellation).toBe(true);
+  });
+
+  it('carries the invoice\'s daily_closing z_number through, or null while not yet closed (Task #142)', () => {
+    const closed = buildExportRows([row({ closing_z_number: 5 })]);
+    expect(closed[0]!.closing_z_number).toBe(5);
+
+    const open = buildExportRows([row({ closing_z_number: null })]);
+    expect(open[0]!.closing_z_number).toBeNull();
+  });
+
+  it('carries the article category through (Task #145)', () => {
+    const out = buildExportRows([row({ article_category_name: 'Speisen' })]);
+    expect(out[0]!.article_category_name).toBe('Speisen');
+  });
+
+  it('does not flag is_cancellation for a normal sale', () => {
+    const out = buildExportRows([row({ receipt_type: 'sales_receipt' })]);
+    expect(out[0]!.is_cancellation).toBe(false);
   });
 
   it('keeps the position order stable: invoice order outer, first-occurrence inner', () => {

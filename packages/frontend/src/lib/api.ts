@@ -4,7 +4,7 @@
  */
 import type {
   User, Article, ArticleCategory, Printer, Register, ProductOption,
-  CancellationReason, Event, CashTransaction, RegisterLayout, RegisterLayoutSlot,
+  CancellationReason, Event, RegisterLayout, RegisterLayoutSlot,
   DiningTable, TaxCategory,
 } from '@fairpos/shared';
 
@@ -264,7 +264,8 @@ export const api = {
       get: (id: string): Promise<Register & {
         printer_name: string | null;
         effective_printer_name: string | null;
-        total_deposits: number; total_withdrawals: number;
+        /** Gross totals still open since the last Z-Bon, per payment method (Task #143) — replaces the removed Einlage/Entnahme balance. */
+        open_cash: number; open_card: number;
         /** Whether this register already has any booking (Task #130) — when true, `is_training` can no longer be toggled. */
         has_bookings: boolean;
       }> =>
@@ -276,10 +277,6 @@ export const api = {
       update: (id: string, data: Partial<Register>): Promise<Register> =>
         request('PUT', `/admin/registers/${id}`, data),
       delete: (id: string): Promise<void> => request('DELETE', `/admin/registers/${id}`),
-      listTransactions: (id: string): Promise<CashTransaction[]> =>
-        request('GET', `/admin/registers/${id}/transactions`),
-      addTransaction: (id: string, data: { type: 'deposit' | 'withdrawal'; amount: number; note?: string }): Promise<CashTransaction> =>
-        request('POST', `/admin/registers/${id}/transactions`, data),
     },
 
     events: {
@@ -649,13 +646,6 @@ export const api = {
           receipt_token: string | null; total_gross: number;
         }[];
       }> => request('GET', '/admin/reports/invoices'),
-
-      /** Single-figure cash balance per register of the active event (Task #95). */
-      cashBalance: (): Promise<{
-        event: { id: string; start: string; end: string } | null;
-        registers: { id: string; name: string; type: string;
-          deposits: number; withdrawals: number; cash_takings: number; balance: number; }[];
-      }> => request('GET', '/admin/reports/cash-balance'),
 
       /** Cancelled and free-of-charge items of the active event (Task #95), with per-user summary. */
       cancellations: (): Promise<{

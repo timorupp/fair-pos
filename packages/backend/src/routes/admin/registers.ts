@@ -2,6 +2,59 @@ import type { FastifyInstance } from 'fastify';
 import { query, isPgErrorCode } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
+import { computeClosingTotals, type ClosingInvoice, type ClosingItem } from '../../closing/totals.js';
+
+/**
+ * Sums, per payment method, everything for a register still awaiting its
+ * next Z-Bon (Task #143) — replaces the removed Einlage/Entnahme balance
+ * card. Deliberately not scoped to a single calendar day: a register with an
+ * outstanding closing is locked for further bookings anyway (see
+ * `isRegisterUnlocked`), so a day-boundary edge case here would only ever be
+ * a cosmetic display quirk, never a compliance concern. Reuses
+ * `computeClosingTotals` (the same aggregation `closeRegister` itself uses)
+ * so this figure is guaranteed to match whatever the next actual Z-Bon would
+ * compute, rather than a second, hand-rolled aggregation that could drift.
+ *
+ * @param registerId - The register to sum open invoices for.
+ * @returns Gross totals still open, split into `cash`/`card`.
+ */
+async function loadOpenSinceLastClosing(registerId: string): Promise<{ cash: number; card: number }> {
+  const invResult = await query<{
+    id: string; payment_method: 'cash' | 'card';
+    receipt_type: 'sales_receipt' | 'cancellation' | 'training';
+  }>(
+    `SELECT id, payment_method, receipt_type FROM invoice
+      WHERE register_id = $1 AND daily_closing_id IS NULL`,
+    [registerId],
+  );
+  if (invResult.rows.length === 0) return { cash: 0, card: 0 };
+
+  const ids = invResult.rows.map((r) => r.id);
+  const itemsResult = await query<{
+    invoice_id: string; status: ClosingItem['status'];
+    tax_category: ClosingItem['tax_category']; price: string; deposit_price: string | null;
+  }>(
+    `SELECT invoice_id, status, tax_category, price::text, deposit_price::text
+       FROM order_item WHERE invoice_id = ANY($1)`,
+    [ids],
+  );
+  const itemsByInvoice = new Map<string, ClosingItem[]>();
+  for (const row of itemsResult.rows) {
+    const list = itemsByInvoice.get(row.invoice_id) ?? [];
+    list.push({
+      status: row.status, tax_category: row.tax_category,
+      price: Number(row.price), deposit_price: row.deposit_price === null ? null : Number(row.deposit_price),
+    });
+    itemsByInvoice.set(row.invoice_id, list);
+  }
+  const invoices: ClosingInvoice[] = invResult.rows.map((inv) => ({
+    id: inv.id, payment_method: inv.payment_method, receipt_type: inv.receipt_type,
+    items: itemsByInvoice.get(inv.id) ?? [],
+  }));
+
+  const totals = computeClosingTotals(invoices);
+  return { cash: totals.total_cash, card: Math.round((totals.total_gross - totals.total_cash) * 100) / 100 };
+}
 
 /**
  * Checks whether a register layout belongs to the currently active event.
@@ -70,8 +123,9 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
 
   /**
    * GET /api/admin/registers/:id — get a single register (of the active
-   * event) with its cash balance. `has_bookings` (Task #130) tells the
-   * frontend whether `is_training` is locked (see `registerHasBookings`).
+   * event) with what's still open since its last Z-Bon. `has_bookings`
+   * (Task #130) tells the frontend whether `is_training` is locked (see
+   * `registerHasBookings`).
    */
   app.get('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -82,25 +136,21 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
       layout_id: string | null; layout_name: string | null;
       is_active: boolean; is_training: boolean;
       created_at: Date;
-      total_deposits: string; total_withdrawals: string;
     }>(`
       SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_active, r.is_training, r.created_at,
              p.name AS printer_name,
              COALESCE(p.name, dp.name) AS effective_printer_name,
-             rl.name AS layout_name,
-             COALESCE(SUM(CASE WHEN ct.type = 'deposit'    THEN ct.amount ELSE 0 END), 0) AS total_deposits,
-             COALESCE(SUM(CASE WHEN ct.type = 'withdrawal' THEN ct.amount ELSE 0 END), 0) AS total_withdrawals
+             rl.name AS layout_name
       FROM register r
       LEFT JOIN printer p ON p.id = r.printer_id
       LEFT JOIN printer dp ON dp.is_default = true
       LEFT JOIN register_layout rl ON rl.id = r.layout_id
-      LEFT JOIN cash_transaction ct ON ct.register_id = r.id
       WHERE r.id = $1 AND r.event_id = $2
-      GROUP BY r.id, p.name, dp.name, rl.name
     `, [id, config.activeEventId]);
     if (result.rows.length === 0) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
     const hasBookings = await registerHasBookings(id);
-    return reply.send({ ...result.rows[0], has_bookings: hasBookings });
+    const open = await loadOpenSinceLastClosing(id);
+    return reply.send({ ...result.rows[0], has_bookings: hasBookings, open_cash: open.cash, open_card: open.card });
   });
 
   /** POST /api/admin/registers — create a register in the active event. */
@@ -214,46 +264,4 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /** GET /api/admin/registers/:id/transactions — list cash transactions for a register of the active event. */
-  app.get('/:id/transactions', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const regCheck = await query('SELECT id FROM register WHERE id = $1 AND event_id = $2', [id, config.activeEventId]);
-    if (regCheck.rows.length === 0) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
-
-    const result = await query(`
-      SELECT ct.id, ct.register_id, ct.user_name,
-             ct.type, ct.amount, ct.note, ct.created_at
-      FROM cash_transaction ct
-      WHERE ct.register_id = $1
-      ORDER BY ct.created_at DESC
-    `, [id]);
-    return reply.send(result.rows);
-  });
-
-  /** POST /api/admin/registers/:id/transactions — record a deposit or withdrawal for a register of the active event. */
-  app.post('/:id/transactions', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const body = req.body as { type?: string; amount?: number; note?: string };
-
-    if (!body.type || body.amount === undefined) {
-      return reply.status(400).send({ error: 'Typ und Betrag erforderlich' });
-    }
-    if (!['deposit', 'withdrawal'].includes(body.type)) {
-      return reply.status(400).send({ error: 'Ungültiger Typ (deposit oder withdrawal)' });
-    }
-    if (body.amount <= 0) {
-      return reply.status(400).send({ error: 'Betrag muss größer als 0 sein' });
-    }
-
-    const regCheck = await query('SELECT id FROM register WHERE id = $1 AND event_id = $2', [id, config.activeEventId]);
-    if (regCheck.rows.length === 0) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
-
-    const result = await query(
-      `INSERT INTO cash_transaction (register_id, user_name, type, amount, note)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, register_id, user_name, type, amount, note, created_at`,
-      [id, req.adminUser.name, body.type, body.amount, body.note ?? null],
-    );
-    return reply.status(201).send(result.rows[0]);
-  });
 }

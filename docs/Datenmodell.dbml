@@ -96,17 +96,6 @@ Table user_register {
   }
 }
 
-// A manual cash deposit or withdrawal on a register (Task #54).
-Table cash_transaction {
-  id          uuid          [pk, default: `gen_random_uuid()`]
-  register_id uuid          [not null]
-  user_name   text          [null, note: 'Text snapshot of the acting user name (Task #97) — not a foreign key, survives user deletion']
-  type        varchar(20)   [not null, note: 'deposit | withdrawal']
-  amount      decimal(10,2) [not null]
-  note        varchar(200)  [null]
-  created_at  timestamptz   [not null, default: `now()`]
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // ARTICLES & CATEGORIES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -509,7 +498,6 @@ Ref: register.layout_id > register_layout.id
 Ref: register.printer_id > printer.id [delete: set null]
 Ref: user_register.user_id > user.id
 Ref: user_register.register_id > register.id
-Ref: cash_transaction.register_id > register.id
 
 // Articles
 Ref: article_category.event_id > event.id

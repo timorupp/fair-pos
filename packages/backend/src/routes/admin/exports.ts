@@ -43,10 +43,13 @@ const EXPORT_SOURCE_COLUMNS = `
     SELECT i.id                   AS invoice_id,
            i.receipt_number::text AS receipt_number,
            i.created_at           AS invoice_created_at,
+           i.receipt_type,
+           dc.z_number            AS closing_z_number,
            t.name                 AS table_name,
            COALESCE(oi.user_name, oi.cancelled_by_name) AS ordering_user_name,
            r.name                 AS register_name,
            oi.article_name,
+           oi.article_category_name,
            oi.options,
            oi.price::text,
            oi.deposit_price::text,
@@ -56,16 +59,21 @@ const EXPORT_SOURCE_COLUMNS = `
       JOIN order_item oi ON oi.invoice_id = i.id
       JOIN register r ON r.id = i.register_id
       LEFT JOIN dining_table t ON t.id = oi.dining_table_id
+      LEFT JOIN daily_closing dc ON dc.id = i.daily_closing_id
 `;
 
 interface ExportSourceQueryRow {
   invoice_id: string;
   receipt_number: string;
   invoice_created_at: Date;
+  receipt_type: 'sales_receipt' | 'cancellation' | 'training';
+  /** `daily_closing.z_number` for the invoice's closing, or `null` while the invoice hasn't been closed yet. */
+  closing_z_number: number | null;
   table_name: string | null;
   ordering_user_name: string | null;
   register_name: string;
   article_name: string;
+  article_category_name: string;
   options: string | null;
   price: string;
   deposit_price: string | null;
@@ -79,10 +87,13 @@ function toExportSourceRow(r: ExportSourceQueryRow): ExportSourceRow {
     invoice_id: r.invoice_id,
     receipt_number: Number(r.receipt_number),
     invoice_created_at: r.invoice_created_at,
+    receipt_type: r.receipt_type,
+    closing_z_number: r.closing_z_number,
     table_name: r.table_name,
     ordering_user_name: r.ordering_user_name,
     register_name: r.register_name,
     article_name: r.article_name,
+    article_category_name: r.article_category_name,
     options: r.options,
     price: r.price,
     deposit_price: r.deposit_price,

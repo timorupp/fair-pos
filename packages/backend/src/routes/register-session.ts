@@ -13,7 +13,7 @@ import { authenticateRegister } from '../middleware/authenticate.js';
 import { generateReceiptToken } from '../receipt/numbering.js';
 import { nextReceiptNumber } from '../receipt/sequence.js';
 import { buildReceiptBlocks } from '../receipt/blocks.js';
-import { loadReceiptByToken } from '../receipt/data.js';
+import { loadReceiptByToken, snapshotCompanyDataForInvoice } from '../receipt/data.js';
 import { enqueuePrintJob } from '../print/enqueue.js';
 import { renderBlocksToEscPos } from '../print/blocks.js';
 import {
@@ -329,6 +329,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         }),
       });
       const { signature: tse, warning: tseWarning } = await signTseTransaction(KASSENBELEG_PROCESS_TYPE, kassenbelegSnapshot);
+      // Task #112: freeze the currently-active company data/logo onto this
+      // invoice — read outside the transaction since it's a pure snapshot of
+      // already-current state, not something the sale itself needs to lock.
+      const companySnapshot = await snapshotCompanyDataForInvoice('receipt');
 
       const result = await withTransaction(async (client) => {
         // Atomic increment of the global receipt counter — row-level lock held
@@ -340,14 +344,19 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           `INSERT INTO invoice (
              register_id, receipt_number, receipt_type, payment_method, receipt_token,
              tse_transaction_number, tse_start_time, tse_end_time,
-             tse_signature, tse_signature_counter, tse_serial_number
+             tse_signature, tse_signature_counter, tse_serial_number,
+             company_name, company_street, company_postal_code, company_city,
+             company_tax_number, company_vat_id, logo_version_id
            )
-           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10)
+           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
            RETURNING id`,
           [
             registerId, receiptNumber, receiptType, receiptToken,
             tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
             tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+            companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
+            companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
+            companySnapshot.logoVersionId,
           ],
         );
         const invoiceId = invoiceResult.rows[0]!.id;
@@ -857,6 +866,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       }),
     });
     const { signature: tse, warning: tseWarning } = await signTseTransaction(KASSENBELEG_PROCESS_TYPE, kassenbelegSnapshot);
+    // Task #112: see the Bonkasse checkout's identical comment above.
+    const companySnapshot = await snapshotCompanyDataForInvoice('receipt');
 
     const result = await withTransaction(async (client) => {
       // Defends against a concurrent change (another checkout/cancel on the
@@ -881,14 +892,19 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         `INSERT INTO invoice (
            register_id, receipt_number, receipt_type, payment_method, receipt_token,
            tse_transaction_number, tse_start_time, tse_end_time,
-           tse_signature, tse_signature_counter, tse_serial_number
+           tse_signature, tse_signature_counter, tse_serial_number,
+           company_name, company_street, company_postal_code, company_city,
+           company_tax_number, company_vat_id, logo_version_id
          )
-         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10)
+         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          RETURNING id`,
         [
           registerId, receiptNumber, receiptType, receiptToken,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+          companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
+          companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
+          companySnapshot.logoVersionId,
         ],
       );
       const invoiceId = inv.rows[0]!.id;

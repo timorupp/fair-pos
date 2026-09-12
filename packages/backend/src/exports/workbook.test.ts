@@ -6,16 +6,20 @@ import type { ExportRow } from './rows.js';
 
 const sampleRows: ExportRow[] = [
   {
-    receipt_number: 'POS-00042',
+    receipt_number: 'POS-00042', closing_z_number: 3,
     created_at: new Date(2026, 5, 24, 18, 30, 0).toISOString(),
     table_name: 'A1', ordering_user_name: 'Anna', register_name: 'Theke',
-    article_name: 'Bier', quantity: 3, unit_price: 4.5, unit_deposit: 2, tax_rate: 7, deposit_tax_rate: 19, line_total: 19.5,
+    article_name: 'Bier', article_category_name: 'Getränke',
+    quantity: 3, unit_price: 4.5, unit_deposit: 2, tax_rate: 7, deposit_tax_rate: 19, line_total: 19.5,
+    is_cancellation: false,
   },
   {
-    receipt_number: 'POS-00042',
+    receipt_number: 'POS-00042', closing_z_number: null,
     created_at: new Date(2026, 5, 24, 18, 30, 0).toISOString(),
     table_name: 'A1', ordering_user_name: 'Anna', register_name: 'Theke',
-    article_name: 'Brezel', quantity: 1, unit_price: 2.5, unit_deposit: 0, tax_rate: 7, deposit_tax_rate: null, line_total: 2.5,
+    article_name: 'Brezel', article_category_name: 'Snacks',
+    quantity: 1, unit_price: 2.5, unit_deposit: null, tax_rate: 7, deposit_tax_rate: null, line_total: 2.5,
+    is_cancellation: false,
   },
 ];
 
@@ -47,10 +51,10 @@ describe('buildExcelWorkbook', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buf as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    const headers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((col) => sheet.getCell(3, col).value);
+    const headers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map((col) => sheet.getCell(3, col).value);
     expect(headers).toEqual([
-      'Belegnummer', 'Datum', 'Uhrzeit', 'Tisch', 'Besteller', 'Kasse',
-      'Artikelname', 'Menge', 'Einzelpreis', 'USt. Artikel', 'Pfandbetrag', 'USt. Pfand', 'Gesamtbetrag',
+      'Belegnummer', 'Storno', 'Tagesabschluss', 'Datum', 'Uhrzeit', 'Tisch', 'Besteller', 'Kasse',
+      'Artikelname', 'Artikelgruppe', 'Menge', 'Einzelpreis', 'USt. Artikel', 'Pfandbetrag', 'USt. Pfand', 'Gesamtbetrag',
     ]);
   });
 
@@ -61,15 +65,49 @@ describe('buildExcelWorkbook', () => {
     const sheet = wb.worksheets[0]!;
     // Row 4 — first data row
     expect(sheet.getCell(4, 1).value).toBe('POS-00042'); // Belegnummer (prefix + padded sequence)
-    expect(sheet.getCell(4, 7).value).toBe('Bier');      // Artikelname
-    expect(sheet.getCell(4, 8).value).toBe(3);           // Menge
-    expect(sheet.getCell(4, 10).value).toBe(7);          // USt. Artikel
-    expect(sheet.getCell(4, 12).value).toBe(19);         // USt. Pfand
-    expect(sheet.getCell(4, 13).value).toBe(19.5);       // Gesamtbetrag
-    // Row 5 — second data row (no deposit — USt. Pfand stays empty)
-    expect(sheet.getCell(5, 7).value).toBe('Brezel');
-    expect(sheet.getCell(5, 8).value).toBe(1);
-    expect(sheet.getCell(5, 12).value).toBeNull();
+    expect(sheet.getCell(4, 9).value).toBe('Bier');      // Artikelname
+    expect(sheet.getCell(4, 10).value).toBe('Getränke'); // Artikelgruppe
+    expect(sheet.getCell(4, 11).value).toBe(3);          // Menge
+    expect(sheet.getCell(4, 13).value).toBe(7);          // USt. Artikel
+    expect(sheet.getCell(4, 14).value).toBe(2);          // Pfandbetrag
+    expect(sheet.getCell(4, 15).value).toBe(19);         // USt. Pfand
+    expect(sheet.getCell(4, 16).value).toBe(19.5);       // Gesamtbetrag
+    // Row 5 — second data row (no deposit — Pfandbetrag/USt. Pfand stay empty, not "0,00 €")
+    expect(sheet.getCell(5, 9).value).toBe('Brezel');
+    expect(sheet.getCell(5, 10).value).toBe('Snacks');
+    expect(sheet.getCell(5, 11).value).toBe(1);
+    expect(sheet.getCell(5, 14).value).toBeNull();
+    expect(sheet.getCell(5, 15).value).toBeNull();
+  });
+
+  it('leaves the Storno column blank for a normal sale and writes "ja" for a Bonstorno row, never "nein" (Task #138)', async () => {
+    const buf = await buildExcelWorkbook({ sheetName: 'X', title: 'T', subtitle: 'S' }, [
+      ...sampleRows,
+      {
+        receipt_number: 'POS-00043', closing_z_number: null,
+        created_at: new Date(2026, 5, 24, 19, 0, 0).toISOString(),
+        table_name: '', ordering_user_name: 'Admin', register_name: 'Theke',
+        article_name: 'Bier', article_category_name: 'Getränke',
+        quantity: -2, unit_price: -4.5, unit_deposit: null, tax_rate: 7,
+        deposit_tax_rate: null, line_total: -9, is_cancellation: true,
+      },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 2).value).toBe(''); // Bier, normal sale
+    expect(sheet.getCell(5, 2).value).toBe(''); // Brezel, normal sale
+    expect(sheet.getCell(6, 2).value).toBe('ja'); // Bonstorno row
+    expect(sheet.getCell(6, 11).value).toBe(-2); // Menge negativ
+  });
+
+  it('shows the Z-Bon number for a closed invoice and leaves the cell blank while not yet closed (Task #142)', async () => {
+    const buf = await buildExcelWorkbook({ sheetName: 'X', title: 'T', subtitle: 'S' }, sampleRows);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 3).value).toBe(3);       // Bier — closing_z_number: 3
+    expect(sheet.getCell(5, 3).value).toBeNull();    // Brezel — not yet closed
   });
 
   it('produces an empty body for zero input rows but still has the header', async () => {

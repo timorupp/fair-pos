@@ -14,14 +14,17 @@ export interface WorkbookMeta {
 }
 
 /** Column definitions shared by all export sheets. Header text matches the German Anforderungen wording. */
-const COLUMNS: { header: string; key: keyof ExportRow | 'date' | 'time'; width: number; numFmt?: string; align?: 'left' | 'right' }[] = [
+const COLUMNS: { header: string; key: keyof ExportRow | 'date' | 'time' | 'storno'; width: number; numFmt?: string; align?: 'left' | 'right' }[] = [
   { header: 'Belegnummer',    key: 'receipt_number',    width: 14, align: 'left' },
+  { header: 'Storno',         key: 'storno',            width: 8,  align: 'left' },
+  { header: 'Tagesabschluss', key: 'closing_z_number',  width: 13, align: 'right' },
   { header: 'Datum',          key: 'date',              width: 12 },
   { header: 'Uhrzeit',        key: 'time',              width: 10 },
   { header: 'Tisch',          key: 'table_name',        width: 10 },
   { header: 'Besteller',      key: 'ordering_user_name', width: 14 },
   { header: 'Kasse',          key: 'register_name',     width: 14 },
   { header: 'Artikelname',    key: 'article_name',      width: 28 },
+  { header: 'Artikelgruppe',  key: 'article_category_name', width: 18 },
   { header: 'Menge',          key: 'quantity',          width: 8,  align: 'right' },
   { header: 'Einzelpreis',    key: 'unit_price',        width: 12, align: 'right', numFmt: '#,##0.00 "€"' },
   { header: 'USt. Artikel',  key: 'tax_rate',          width: 12, align: 'right', numFmt: '0"%"' },
@@ -80,12 +83,19 @@ export async function buildExcelWorkbook(meta: WorkbookMeta, rows: ExportRow[]):
     const timePart = date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     sheet.addRow({
       receipt_number: r.receipt_number,
+      // "ja" for a Bonstorno, blank (not "nein") otherwise (Task #138 —
+      // Nutzervorgabe: keine "nein"-Werte, damit ein Blick in die Spalte
+      // oder ein Autofilter direkt nur die Stornos zeigt).
+      storno: r.is_cancellation ? 'ja' : '',
+      // Blank while the invoice hasn't been swept into a Z-Bon yet (Task #142).
+      closing_z_number: r.closing_z_number,
       date: datePart,
       time: timePart,
       table_name: r.table_name,
       ordering_user_name: r.ordering_user_name,
       register_name: r.register_name,
       article_name: r.article_name,
+      article_category_name: r.article_category_name,
       quantity: r.quantity,
       unit_price: r.unit_price,
       unit_deposit: r.unit_deposit,

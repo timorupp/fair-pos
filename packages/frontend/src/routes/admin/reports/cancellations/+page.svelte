@@ -92,6 +92,10 @@
 
 <div class="page">
   <div class="page-header"><h1>Stornos &amp; kostenfreie Abgaben</h1></div>
+  <p class="info-note">
+    Diese Auswertung bezieht sich nur auf Bestellstornos der Bedienungskassen.
+    Bonstornos werden hier nicht berücksichtigt.
+  </p>
 
   {#if !loading && items.length > 0}
     <div class="filters">
@@ -119,7 +123,7 @@
   {#if loading}
     <p class="muted">Lade…</p>
   {:else if items.length === 0}
-    <p class="muted">Keine Stornos oder kostenfreie Abgaben in diesem Zeitraum.</p>
+    <p class="muted">Keine Stornos von Bedienungsbestellungen oder kostenfreie Abgaben in diesem Zeitraum.</p>
   {:else}
     <section class="summary card">
       <h2>Zusammenfassung je Bedienung</h2>
@@ -171,6 +175,11 @@
 </div>
 
 <style>
+  .info-note {
+    font-size: 0.85rem; color: var(--color-text-muted);
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: var(--radius); padding: 0.6rem 0.9rem; margin: 0 0 1rem 0;
+  }
   .filters { display: flex; gap: 1rem; margin-bottom: 1rem; }
   .filters label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--color-text-muted); }
   .filters select { padding: 0.4rem 0.6rem; min-width: 180px; }

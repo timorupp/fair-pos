@@ -240,15 +240,3 @@ export interface Event {
   /** Whether this is the currently active event. Only present on `GET /admin/events` responses — derived, not a stored column. */
   is_active?: boolean;
 }
-
-/** A manual cash deposit or withdrawal on a register. */
-export interface CashTransaction {
-  id: string;
-  register_id: string;
-  /** Name of the user who booked the transaction, snapshotted at booking time (Task #97) — not a live reference, survives user deletion. */
-  user_name: string | null;
-  type: 'deposit' | 'withdrawal';
-  amount: number;
-  note: string | null;
-  created_at: string;
-}

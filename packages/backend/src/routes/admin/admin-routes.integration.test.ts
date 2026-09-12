@@ -244,29 +244,6 @@ describe('Admin users', () => {
     expect(response.statusCode).toBe(204);
   });
 
-  it('deletes a user who has a cash transaction, keeping the name as a text snapshot (Task #97)', async () => {
-    const app = await getTestApp();
-    const cashier = await createTestUser({ isAdmin: false, name: 'Kassier-Historie' });
-    const register = await createTestRegister();
-    await pool.query(
-      `INSERT INTO cash_transaction (register_id, user_name, type, amount) VALUES ($1, $2, 'deposit', 10)`,
-      [register.id, cashier.name],
-    );
-
-    const response = await app.inject({
-      method: 'DELETE', url: `/api/admin/users/${cashier.id}`,
-      headers: { cookie: adminCookie },
-    });
-    expect(response.statusCode).toBe(204);
-
-    const gone = await pool.query('SELECT id FROM "user" WHERE id = $1', [cashier.id]);
-    expect(gone.rowCount).toBe(0);
-    const transaction = await pool.query<{ user_name: string }>(
-      'SELECT user_name FROM cash_transaction WHERE register_id = $1', [register.id],
-    );
-    expect(transaction.rows[0]!.user_name).toBe('Kassier-Historie');
-  });
-
   it('deletes a user with an active session, clearing it first instead of blocking (Task #97)', async () => {
     const app = await getTestApp();
     const operator = await createTestUser({ isAdmin: false });
