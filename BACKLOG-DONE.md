@@ -5611,4 +5611,38 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Komponente ohne bestehende Test-Infrastruktur für diese Seite) —
   `svelte-check` bleibt clean, manueller Test empfohlen.
 
+- [Finding] **D-073** Systemprotokoll sortierte nach `created_at` — Dev-TSE-Uhr-Rückdatierung ließ neue Einträge dauerhaft in der Mitte statt oben erscheinen
+  **Kontext:** Nutzer meldete live (2026-09-12) im Zuge der D-072-Nachprüfung
+  wiederholt "die Checkbox wird deaktiviert, aber im Systemprotokoll steht
+  kein Eintrag" — eine ausführliche Codeanalyse (zwei Subagent-Durchläufe,
+  DB-Direktabfragen, `journalctl`) fand keinen Pfad, der die Checkbox ohne
+  begleitenden Log-Eintrag deaktiviert. Der tatsächliche Health-Job, das
+  15-Minuten-Retry-Cooldown (Task #109) und das Logging selbst arbeiteten
+  die ganze Zeit korrekt. Ursache: der Nutzer hatte die Systemuhr des Servers
+  manuell zurückgesetzt, weil seine Entwickler-TSE abgelaufen war (etablierte
+  Praxis, siehe `docs/TSE-Integration.md`) — danach geschriebene
+  `system_log`-Zeilen bekamen dadurch ein `created_at`, das *vor* bereits
+  bestehenden Zeilen lag.
+
+  **Eigentlicher Fehler:** `GET /api/admin/logs` (`routes/admin/logs.ts`)
+  sortierte per `ORDER BY created_at DESC` — verlässlich, solange die
+  Systemuhr nur vorwärts läuft, aber nach einem manuellen Rücksetzen landeten
+  neu geschriebene Zeilen chronologisch "in der Vergangenheit" und damit
+  mitten in der (nach `created_at` sortierten) Liste statt oben. `id` ist
+  eine UUID (`gen_random_uuid()`) und gibt keine Einfüge-Reihenfolge her —
+  es gab keine von der Systemuhr unabhängige Sortiergrundlage.
+
+  **Behoben:** Migration `0034_system_log_seq.sql` fügt `system_log` eine
+  reine `BIGSERIAL seq`-Spalte hinzu (mit Index); `routes/admin/logs.ts`
+  sortiert jetzt nach `seq DESC` statt `created_at DESC` — `created_at`
+  bleibt als Anzeige-Zeitstempel unverändert erhalten, ist aber nicht mehr
+  die Sortiergrundlage. Damit entspricht die Anzeige-Reihenfolge immer der
+  tatsächlichen Einfüge-Reihenfolge, unabhängig davon, was die Systemuhr im
+  Moment des Schreibens anzeigt.
+
+  **Tests:** `routes/admin/logs.integration.test.ts` — neuer Test fügt zwei
+  Zeilen ein, wobei die zweite (später eingefügte) Zeile ein `created_at`
+  einen Tag in der Vergangenheit trägt (simuliert die Uhr-Rückdatierung),
+  und prüft, dass sie trotzdem als erste (neueste) zurückgegeben wird.
+
 

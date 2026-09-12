@@ -34,6 +34,13 @@ export async function logsAdminRoute(app: FastifyInstance): Promise<void> {
    * Query params (both optional, combinable):
    *   - `severity` — exact match on `info | warning | error`
    *   - `category` — exact match on the log's source tag (e.g. `tse_health`)
+   *
+   * Sorted by `seq` (D-073, 2026-09-12), not `created_at` — `created_at`
+   * reflects the system clock, which the established practice of backdating
+   * it for an expired dev TSE (docs/TSE-Integration.md) can move backwards,
+   * silently burying freshly-written rows in the middle of the list instead
+   * of at the top. `seq` is a plain `BIGSERIAL`, so it always matches actual
+   * insertion order regardless of what the clock says.
    */
   app.get<{ Querystring: { severity?: LogSeverity; category?: string } }>('/', async (req, reply) => {
     const { severity, category } = req.query;
@@ -55,7 +62,7 @@ export async function logsAdminRoute(app: FastifyInstance): Promise<void> {
       `SELECT id, created_at, severity, category, message
          FROM system_log
          ${where}
-        ORDER BY created_at DESC
+        ORDER BY seq DESC
         LIMIT ${MAX_ROWS}`,
       params,
     );

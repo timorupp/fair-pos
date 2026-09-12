@@ -42,6 +42,24 @@ describe('GET /api/admin/logs', () => {
     expect(body[1].message).toBe('first');
   });
 
+  it('sorts by actual insertion order (seq) even when the system clock moves backwards between inserts (D-073)', async () => {
+    // Simulates the established dev-TSE-backdating practice (see
+    // docs/TSE-Integration.md): the row written *after* a system-clock
+    // reset carries an earlier created_at than the row written before it.
+    await insertLog('info', 'tse_health', 'written before the clock reset');
+    await pool.query(
+      `INSERT INTO system_log (created_at, severity, category, message)
+         VALUES (now() - interval '1 day', $1, $2, $3)`,
+      ['warning', 'tse_health', 'written after the clock reset, but with an earlier created_at'],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/logs', headers: { cookie: adminCookie } });
+    const body = response.json();
+    expect(body[0].message).toBe('written after the clock reset, but with an earlier created_at');
+    expect(body[1].message).toBe('written before the clock reset');
+  });
+
   it('filters by severity', async () => {
     await insertLog('info', 'tse_health', 'a');
     await insertLog('warning', 'tse_health', 'b');
