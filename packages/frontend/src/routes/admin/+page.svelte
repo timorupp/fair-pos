@@ -25,6 +25,18 @@
    */
   let tseHealth: { severity: 'info' | 'warning' | 'error'; message: string; createdAt: string } | null = $state(null);
 
+  /**
+   * Whether automatic TSE time-sync is currently disabled while a TSE is
+   * configured (D-072 follow-up, 2026-09-12) — read live from
+   * `system_setting` on every poll, deliberately NOT derived from
+   * `tseHealth` above. The disabled-checkbox notice in `system_log` is only
+   * ever logged once per episode, so relying on log history alone risks the
+   * tile going back to "unauffällig" the moment any newer, unrelated
+   * `tse_health` row appears — an ongoing "auto-sync is off" state must stay
+   * visible for as long as it's actually true, not just once.
+   */
+  let autoMaintainDisabled = $state(false);
+
   let pendingClosing: {
     total_pending_registers: number; total_pending_days: number;
     registers: { register_id: string; register_name: string; pending_days: string[] }[];
@@ -98,6 +110,11 @@
       const logs = await api.admin.logs.list({ category: 'tse_health' });
       tseHealth = logs[0] ?? null;
     } catch { tseHealth = null; }
+    try {
+      const settings = await api.admin.settings.get();
+      const configured = Boolean(settings['tse_mount_point']) && Boolean(settings['tse_client_id']);
+      autoMaintainDisabled = configured && settings['tse_auto_maintain_enabled'] === 'false';
+    } catch { autoMaintainDisabled = false; }
   }
 
   async function loadPrintJobs() {
@@ -270,9 +287,17 @@
 
     <h2 class="section-heading">System</h2>
     <div class="tiles">
-      <a class="tile" class:warn={tseHealth?.severity === 'warning'} class:error={tseHealth?.severity === 'error'} href="/admin/settings/logs">
+      <a
+        class="tile"
+        class:warn={autoMaintainDisabled || tseHealth?.severity === 'warning'}
+        class:error={tseHealth?.severity === 'error'}
+        href={autoMaintainDisabled ? '/admin/settings/tse' : '/admin/settings/logs'}
+      >
         <h2>TSE-Zustand</h2>
-        {#if tseHealth}
+        {#if autoMaintainDisabled}
+          <p class="tile-value">⚠ Auffällig</p>
+          <p class="tile-detail">Automatische Zeit-Synchronisation ist deaktiviert — TimeAdmin-PIN prüfen und in Einstellungen → TSE wieder aktivieren.</p>
+        {:else if tseHealth}
           <p class="tile-value">
             {#if tseHealth.severity === 'error'}⛔ Fehler{:else if tseHealth.severity === 'warning'}⚠ Auffällig{:else}✓ Gesund{/if}
           </p>

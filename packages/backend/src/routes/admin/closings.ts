@@ -1,8 +1,10 @@
 /**
  * Daily-closing (Z-Bon) endpoints, nested under `/registers/:id/closings`.
  * Each closing assigns a fresh per-register sequential `z_number`,
- * aggregates everything not yet assigned to a previous closing, persists
- * the result, and queues an ESC/POS print job on the register's printer.
+ * aggregates everything not yet assigned to a previous closing, and
+ * persists the result. No print job is enqueued automatically (Task #139,
+ * 2026-09-12) — the Z-Bon is archived as a PDF (`GET /closings/:id/pdf`)
+ * and can be printed on demand via `POST /closings/:id/reprint`.
  *
  * The former system-wide "Alle Kassen abschließen" shortcut
  * (`POST /closings/close-all`) was removed (Nutzerentscheidung 2026-09-06,
@@ -25,11 +27,6 @@ import { renderZBonPdf } from '../../closing/pdf.js';
 import { enqueuePrintJob } from '../../print/enqueue.js';
 import { renderBlocksToEscPos } from '../../print/blocks.js';
 import { resolvePrinterForRegister } from '../../print/resolve-printer.js';
-import { loadLogoFor } from '../../logo/visibility.js';
-import { loadTaxRates } from '../../tax/rates.js';
-
-/** Settings keys read for the Z-Bon header. */
-const COMPANY_SETTING_KEYS = ['company_name', 'system_serial'] as const;
 
 /** Result of one successful closing call. */
 interface CloseResult {
@@ -37,7 +34,6 @@ interface CloseResult {
   register_id: string;
   z_number: number;
   is_zero_closing: boolean;
-  print_job_id: string | null;
 }
 
 /**
@@ -55,22 +51,19 @@ interface CloseResult {
  * @param userName - Name of the administrator performing the closing, stored
  *   as a text snapshot (Task #97) rather than a foreign key.
  * @param date - Optional `YYYY-MM-DD` string scoping the closing to one day.
- * @returns Details about the created closing including the enqueued print job id.
+ * @returns Details about the created closing. No print job is enqueued here —
+ *   printing happens on demand via `POST /closings/:id/reprint`.
  */
 async function closeRegister(registerId: string, userName: string, date?: string): Promise<CloseResult> {
   return withTransaction(async (client) => {
     // Serialise per-register Z-number issuance with an advisory lock based on the register UUID hash.
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [registerId]);
 
-    // Load register metadata. The printer is resolved separately below via the
-    // shared helper so the system-default-printer fallback kicks in when the
-    // register itself has no explicit printer assigned.
-    const regResult = await client.query<{ id: string; name: string; is_training: boolean }>(
-      `SELECT id, name, is_training FROM register WHERE id = $1`,
+    const regResult = await client.query<{ id: string }>(
+      `SELECT id FROM register WHERE id = $1`,
       [registerId],
     );
-    const register = regResult.rows[0];
-    if (!register) throw Object.assign(new Error('Kasse nicht gefunden'), { httpStatus: 404 });
+    if (!regResult.rows[0]) throw Object.assign(new Error('Kasse nicht gefunden'), { httpStatus: 404 });
 
     // Pick the invoice scope: scoped to one day, or every unassigned row of the register.
     // The day-scoped variant uses the server's local timezone via `created_at::date`.
@@ -155,25 +148,23 @@ async function closeRegister(registerId: string, userName: string, date?: string
     const totals = computeClosingTotals(invoices);
 
     // Compute the next Z-number for this register.
-    const seqResult = await client.query<{ max_z: string | null; cnt: string }>(
-      `SELECT MAX(z_number)::text AS max_z, COUNT(*)::text AS cnt
-         FROM daily_closing WHERE register_id = $1`,
+    const seqResult = await client.query<{ max_z: string | null }>(
+      `SELECT MAX(z_number)::text AS max_z FROM daily_closing WHERE register_id = $1`,
       [registerId],
     );
     const nextZ = (Number(seqResult.rows[0]!.max_z) || 0) + 1;
-    const zeroCounter = Number(seqResult.rows[0]!.cnt) + 1; // includes the closing we're about to insert
 
     // business_date carries the calendar day the Z-Bon belongs to. For a
     // catch-up it is the explicit `date` argument; for an in-day closing
     // it falls back to the database `current_date`, set via DEFAULT.
-    const closingInsert = await client.query<{ id: string; business_date: string }>(
+    const closingInsert = await client.query<{ id: string }>(
       `INSERT INTO daily_closing (
          register_id, z_number, created_by_name, is_zero_closing,
          total_gross, total_tax_standard, total_tax_reduced, total_tax_zero,
          total_cash, total_bonstorno, total_free, total_order_cancellations,
          business_date
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::date, current_date))
-       RETURNING id, to_char(business_date, 'YYYY-MM-DD') AS business_date`,
+       RETURNING id`,
       [
         registerId, nextZ, userName, totals.is_zero_closing,
         totals.total_gross, totals.total_tax_standard, totals.total_tax_reduced, totals.total_tax_zero,
@@ -182,7 +173,6 @@ async function closeRegister(registerId: string, userName: string, date?: string
       ],
     );
     const closingId = closingInsert.rows[0]!.id;
-    const businessDate = closingInsert.rows[0]!.business_date;
 
     // Link the aggregated invoices to the new closing.
     if (invoices.length > 0) {
@@ -204,43 +194,11 @@ async function closeRegister(registerId: string, userName: string, date?: string
       );
     }
 
-    // Read company-data settings inside the same transaction so the printed Z-Bon
-    // reflects the values at closing time.
-    const settingsResult = await client.query<{ key: string; value: string }>(
-      `SELECT key, value FROM system_setting WHERE key = ANY($1)`,
-      [COMPANY_SETTING_KEYS as unknown as string[]],
-    );
-    const settings = new Map(settingsResult.rows.map((r) => [r.key, r.value]));
-
-    // Printer = register's own assignment, falling back to the system default.
-    // Resolved via the shared helper so the rule stays identical to receipts
-    // and order slips.
-    const printerId = await resolvePrinterForRegister(registerId);
-    let printJobId: string | null = null;
-    if (printerId) {
-      const logo = await loadLogoFor('z_bon');
-      const taxRates = await loadTaxRates();
-      const blocks = buildZBonBlocks({
-        company_name:  settings.get('company_name')  ?? '',
-        register_name: register.name,
-        system_serial: settings.get('system_serial') ?? '(noch nicht initialisiert)',
-        z_number:      nextZ,
-        created_at:    new Date(),
-        zero_counter:  zeroCounter,
-        vat_rate_standard: taxRates.standard,
-        vat_rate_reduced:  taxRates.reduced,
-        is_training:   register.is_training,
-      }, totals, businessDate, logo);
-      const job = await enqueuePrintJob(printerId, 'daily_closing', renderBlocksToEscPos(blocks), blocks, closingId);
-      printJobId = job.id;
-    }
-
     return {
       closing_id: closingId,
       register_id: registerId,
       z_number: nextZ,
       is_zero_closing: totals.is_zero_closing,
-      print_job_id: printJobId,
     };
   });
 }
@@ -325,7 +283,7 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
    * then closes today too — unless today already has a closing, in which
    * case that step is skipped rather than minting a duplicate Nullabschluss.
    * Returns one entry per produced Z-Bon (closing id, Z-number,
-   * zero-closing flag, print job id).
+   * zero-closing flag). No print job is enqueued.
    */
   app.post<{ Params: { id: string } }>('/registers/:id/closings', async (req, reply) => {
     const { id } = req.params;

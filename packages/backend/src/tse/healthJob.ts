@@ -40,6 +40,14 @@
  * `hasPassedSelfTest` stayed green live on hardware (2026-09-12) while an
  * expired certificate made every real signing attempt fail, so this is a
  * separate signal, not folded into the healthy/unhealthy state machine above.
+ *
+ * D-072 (2026-09-12): the healthy -> unhealthy transition itself (invalid
+ * time / failed self-test) is now always logged the moment it's noticed,
+ * even when the disabled-checkbox or retry-cooldown safeguards above then
+ * suppress the actual maintain attempt — otherwise the dashboard tile
+ * (driven by the newest `tse_health` row) could keep showing a stale
+ * "Gesund" from before the TSE became unhealthy, for as long as those
+ * safeguards stayed silent.
  */
 import { config } from '../config.js';
 import { query } from '../db/client.js';
@@ -106,15 +114,16 @@ export function certificateExpiresTodayOrEarlier(expirationUnixSeconds: number, 
 
 /**
  * Persists `tse_auto_maintain_enabled = false` and mirrors it into `config`
- * (Task #109/#131) — called the moment an automatic `maintainTse()` attempt
- * fails specifically due to a PIN authentication error. Stops the health
- * job from repeating the same failing PIN every minute, which would
- * otherwise permanently block it within 3 attempts (far sooner than the
- * ~104-day `updateTime` frequency limit the cooldown above guards against).
- * An admin must explicitly re-enable this in Einstellungen -> TSE after
- * fixing the PIN.
+ * (Task #109/#131) — called the moment a `maintainTse()` attempt fails
+ * specifically due to a PIN authentication error, whether from the periodic
+ * health job or the manual "Zeit synchronisieren" button (Task #141,
+ * `routes/admin/tse.ts`'s `/maintain` route). Stops the health job from
+ * repeating the same failing PIN every minute, which would otherwise
+ * permanently block it within 3 attempts (far sooner than the ~104-day
+ * `updateTime` frequency limit the cooldown above guards against). An admin
+ * must explicitly re-enable this in Einstellungen -> TSE after fixing the PIN.
  */
-async function disableAutoMaintain(): Promise<void> {
+export async function disableAutoMaintain(): Promise<void> {
   config.tseAutoMaintainEnabled = false;
   await query(
     `INSERT INTO system_setting (key, value) VALUES ('tse_auto_maintain_enabled', 'false')
@@ -173,6 +182,22 @@ export async function tick(): Promise<void> {
   const wasAlreadyUnhealthy = !wasHealthy;
   wasHealthy = false;
 
+  // Log the healthy -> unhealthy transition itself (D-072, 2026-09-12) — the
+  // "TSE nicht erreichbar" branch above already did this on its own
+  // transition, but this branch previously only logged the *outcome* of an
+  // actual maintain attempt (success/failure) or the disabled-checkbox
+  // notice. If neither of those fires this tick (checkbox disabled with its
+  // one-time notice already logged earlier, or the retry cooldown below
+  // skips silently), the dashboard tile — which only shows the newest
+  // `tse_health` log row — kept showing a stale "Gesund" from before this
+  // episode started, potentially indefinitely.
+  if (!wasAlreadyUnhealthy) {
+    await logSystemEvent(
+      'warning', LOG_CATEGORY,
+      'TSE ungesund — Uhrzeit nicht synchron oder Self-Test nicht bestanden.',
+    );
+  }
+
   if (!config.tseAutoMaintainEnabled) {
     if (!loggedAutoMaintainDisabled) {
       await logSystemEvent(
@@ -208,8 +233,22 @@ export async function tick(): Promise<void> {
     await logSystemEvent('info', LOG_CATEGORY, 'Selbsttest erfolgreich');
     wasHealthy = true;
   } catch (e) {
-    await logSystemEvent('warning', LOG_CATEGORY, `Automatischer Self-Test + Zeitsync fehlgeschlagen: ${describeTseError(e)}`);
-    if (isPinAuthError(e)) await disableAutoMaintain();
+    if (isPinAuthError(e)) {
+      await logSystemEvent('warning', LOG_CATEGORY, `Automatischer Self-Test + Zeitsync fehlgeschlagen: ${describeTseError(e)}`);
+      await disableAutoMaintain();
+    } else {
+      // D-072 follow-up (2026-09-12, Nutzerfeedback): the retry-cooldown
+      // itself must stay transparent — the next tick(s) within
+      // MAINTAIN_RETRY_COOLDOWN_MS return silently (see above) to avoid
+      // flooding the log, so this single entry states explicitly when the
+      // next automatic attempt will happen, instead of leaving an admin
+      // guessing whether the job is still working on it or stuck.
+      const retryAt = new Date(Date.now() + MAINTAIN_RETRY_COOLDOWN_MS).toLocaleString('de-DE');
+      await logSystemEvent(
+        'warning', LOG_CATEGORY,
+        `Automatischer Self-Test + Zeitsync fehlgeschlagen: ${describeTseError(e)} — nächster automatischer Versuch nicht vor ${retryAt}.`,
+      );
+    }
   }
 }
 

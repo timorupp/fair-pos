@@ -100,10 +100,14 @@ describe('tick()', () => {
 
     await tick();
 
+    // Task D-072: the healthy -> unhealthy transition itself is now logged
+    // first, ahead of the "no PIN configured" warning.
     const rows = await logRows();
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ severity: 'warning', category: 'tse_health' });
-    expect(rows[0]!.message).toMatch(/TimeAdmin-PIN/);
+    expect(rows[0]!.message).toMatch(/ungesund/);
+    expect(rows[1]).toMatchObject({ severity: 'warning', category: 'tse_health' });
+    expect(rows[1]!.message).toMatch(/TimeAdmin-PIN/);
   });
 
   it('runs maintain and logs INFO on success when a problem is found and a PIN is configured', async () => {
@@ -116,9 +120,24 @@ describe('tick()', () => {
 
     await tick();
 
+    // Task D-072: the healthy -> unhealthy transition warning precedes the
+    // success info from the immediately-following maintain attempt.
     const rows = await logRows();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ severity: 'info', category: 'tse_health' });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ severity: 'warning', category: 'tse_health' });
+    expect(rows[1]).toMatchObject({ severity: 'info', category: 'tse_health' });
+  });
+
+  it('logs the unhealthy transition once, not again on a second consecutive unhealthy tick (D-072)', async () => {
+    config.tseMountPoint = '/mnt/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    process.env['TSE_STUB_STDOUT'] = infoEnvelope(false, true);
+
+    await tick();
+    await tick();
+
+    const rows = await logRows();
+    expect(rows.filter((r) => /ungesund/.test(r.message))).toHaveLength(1);
   });
 
   it('does not retry maintain on every consecutive unhealthy tick (Task #109 cooldown)', async () => {
@@ -142,6 +161,26 @@ describe('tick()', () => {
     const maintainCalls = calls.filter((c) => c.includes(' maintain '));
     expect(maintainCalls).toHaveLength(1);
     delete process.env['TSE_STUB_LOG_FILE'];
+    delete process.env['TSE_STUB_MAINTAIN_FAILS'];
+  });
+
+  // Nutzerfeedback (2026-09-12): the cooldown itself must stay transparent —
+  // it silently skips retries, so the one warning it does log must say when
+  // the next attempt will happen, instead of leaving an admin guessing.
+  it('states when the next automatic attempt will happen after a non-PIN maintain failure', async () => {
+    config.tseMountPoint = '/mnt/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    await pool.query(
+      `INSERT INTO system_setting (key, value) VALUES ('tse_time_admin_pin', '123456')`,
+    );
+    process.env['TSE_STUB_STDOUT'] = infoEnvelope(false, true);
+    process.env['TSE_STUB_MAINTAIN_FAILS'] = '1';
+
+    await tick();
+
+    const rows = await logRows();
+    const failureRow = rows.find((r) => /fehlgeschlagen/.test(r.message));
+    expect(failureRow?.message).toMatch(/nächster automatischer Versuch nicht vor/);
     delete process.env['TSE_STUB_MAINTAIN_FAILS'];
   });
 

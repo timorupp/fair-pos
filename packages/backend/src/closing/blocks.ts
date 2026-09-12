@@ -108,21 +108,18 @@ export function buildZBonBlocks(
   blocks.push({ kind: 'row', left: '  Bar', right: `${formatEuro(totals.total_cash)} EUR` });
   blocks.push({ kind: 'hr' });
 
-  // Three economically distinct cases (D-068, 2026-09-12) — no longer one
-  // combined "Stornos/Kostenfrei" line: Bonstorno is real money paid back
-  // (already included in total_gross/total_cash above, shown here only for
-  // information), Kostenfrei is goods given away without ever being
+  // Three economically distinct cases (D-068, 2026-09-12), grouped under one
+  // heading with a summed "Gesamt" row (Nutzerwunsch 2026-09-12, matches the
+  // "Brutto nach MwSt.-Satz" section's style above): Bonstorno is real money
+  // paid back (already included in total_gross/total_cash above, shown here
+  // only for information), Kostenfrei is goods given away without ever being
   // charged, and stornierte Bestellungen never left the house at all.
-  blocks.push({ kind: 'text', text: 'Stornierte Rechnungen', bold: true });
-  blocks.push({ kind: 'row', left: '  Summe', right: `${formatEuro(totals.total_bonstorno)} EUR` });
-  blocks.push({ kind: 'hr' });
-
-  blocks.push({ kind: 'text', text: 'Kostenfreie Warenabgabe', bold: true });
-  blocks.push({ kind: 'row', left: '  Summe', right: `${formatEuro(totals.total_free)} EUR` });
-  blocks.push({ kind: 'hr' });
-
-  blocks.push({ kind: 'text', text: 'Stornierte Bestellungen', bold: true });
-  blocks.push({ kind: 'row', left: '  Summe', right: `${formatEuro(totals.total_order_cancellations)} EUR` });
+  const totalStorno = totals.total_bonstorno + totals.total_free + totals.total_order_cancellations;
+  blocks.push({ kind: 'text', text: 'Stornos und kostenfreie Abgabe', bold: true });
+  blocks.push({ kind: 'row', left: '  Stornierte Rechnungen', right: `${formatEuro(totals.total_bonstorno)} EUR` });
+  blocks.push({ kind: 'row', left: '  Kostenfreie Warenabgabe', right: `${formatEuro(totals.total_free)} EUR` });
+  blocks.push({ kind: 'row', left: '  Stornierte Bestellungen', right: `${formatEuro(totals.total_order_cancellations)} EUR` });
+  blocks.push({ kind: 'row', left: '  Gesamt', right: `${formatEuro(totalStorno)} EUR`, bold: true });
   blocks.push({ kind: 'hr' });
 
   blocks.push({ kind: 'text', text: `Kassen-Seriennr.: ${ctx.system_serial}` });

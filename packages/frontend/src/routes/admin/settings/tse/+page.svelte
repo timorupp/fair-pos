@@ -84,7 +84,10 @@
   }
 
   /**
-   * Runs self-test + time sync on the TSE — needed once after a fresh setup, since nothing calls this automatically yet.
+   * Runs self-test + time sync on the TSE for the "Zeit synchronisieren"
+   * button — also used to bring up a freshly set-up TSE, ahead of the
+   * periodic health job (`tse/healthJob.ts`) picking up the same work
+   * automatically once a problem is detected.
    * Also clears a stale result from `testTse()`, for the same reason as above.
    */
   async function runMaintain() {
@@ -95,6 +98,10 @@
       maintainSuccess = true;
     } catch (e) {
       maintainError = e instanceof Error ? e.message : 'Fehler';
+      // A PIN-authentication failure disables auto-sync server-side (Task
+      // #141) — reload settings so the checkbox reflects that immediately,
+      // instead of still showing checked until the next page load.
+      await loadSettings();
     } finally { maintaining = false; }
   }
 

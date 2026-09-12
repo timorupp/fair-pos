@@ -5447,4 +5447,168 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   - Alle vier neuen/betroffenen Integrationstests grün, `tsc --noEmit`
     clean.
 
+- [Task] **#139** Automatisches Drucken des Z-Bons entfernen
+  **Klassifikation: Nutzerwunsch, angelegt und abgeschlossen 2026-09-12.**
+  Bisher wurde bei jedem Tagesabschluss (`closeRegister()` in
+  `routes/admin/closings.ts`) unmittelbar ein ESC/POS-Druckjob für den
+  Z-Bon eingereiht, sofern der Kasse (oder dem System als Fallback) ein
+  Drucker zugeordnet war. Nutzerwunsch: kein automatischer Druck mehr —
+  der Z-Bon soll nur archiviert werden (als PDF, bereits vorhanden über
+  `GET /closings/:id/pdf`), Druck bei Bedarf manuell auslösen (bereits
+  vorhandener `POST /closings/:id/reprint`-Endpoint samt "Drucken"-Button
+  in der Kassenverwaltung).
+
+  **Umsetzung:** der komplette Auto-Print-Block in `closeRegister()`
+  entfernt (Settings-Load für Firmendaten, `resolvePrinterForRegister`,
+  `loadLogoFor`/`loadTaxRates`, `buildZBonBlocks`, `enqueuePrintJob`,
+  `renderBlocksToEscPos`) — dadurch wurden `register.name`/
+  `register.is_training` und mehrere Zwischenwerte (`zeroCounter`,
+  `businessDate`, Settings-Map) in dieser Funktion komplett ungenutzt und
+  wurden mitentfernt; `loadLogoFor`/`loadTaxRates`-Imports gestrichen.
+  `CloseResult` (Backend) und die entsprechenden Frontend-Typen
+  (`packages/frontend/src/lib/api.ts`) verlieren das Feld `print_job_id`
+  ersatzlos, statt es dauerhaft `null` zu belassen. Die Kassenverwaltung
+  (`registers/[id]/+page.svelte`) zeigt jetzt einen festen Hinweis ("Der
+  Z-Bon wird nicht automatisch gedruckt, sondern als PDF archiviert …")
+  statt der bisherigen druckerabhängigen Bedingung, und die Erfolgsmeldung
+  nach dem Abschluss nennt keinen Druckjob mehr.
+
+  Der manuelle Reprint-Pfad war bereits vollständig unabhängig vom
+  Auto-Print-Code (`loadClosingById()` lädt Kontext/Logo/Steuersätze
+  eigenständig aus den persistierten Werten) — keine funktionale Änderung
+  an `/reprint` oder `/pdf` nötig.
+
+  **Tests:** `closings.integration.test.ts` — der bisherige Test "enqueues
+  a print job when the register has a printer" ersetzt durch "does not
+  enqueue a print job when closing a register" (prüft `print_job_id`
+  fehlt in der Antwort und keine `print_job`-Zeile entsteht); der Test zur
+  Standarddrucker-Fallback-Logik ("uses the system-default printer when
+  the register has no own printer") umgebaut auf den `/reprint`-Endpoint,
+  da das die einzige verbliebene Z-Bon-Stelle ist, die überhaupt noch
+  einen Drucker auflöst.
+
+- [Task] **#140** Z-Bon: Storno-Arten unter einer Überschrift mit Gesamtsumme zusammenfassen
+  **Klassifikation: Nutzerwunsch (UI/Layout), angelegt und abgeschlossen
+  2026-09-12.** Die drei seit D-068 getrennten Storno-Abschnitte
+  ("Stornierte Rechnungen", "Kostenfreie Warenabgabe", "Stornierte
+  Bestellungen") hatten bisher je eine eigene fette Überschrift und einen
+  eigenen `hr`-Trenner. Nutzerwunsch: nur noch eine gemeinsame Überschrift,
+  darunter die drei Teilsummen als Zeilen, abschließend eine fette
+  "Gesamt"-Zeile — analog zum bereits bestehenden Muster des Abschnitts
+  "Brutto nach MwSt.-Satz" darüber.
+
+  **Umsetzung** (`packages/backend/src/closing/blocks.ts`,
+  `buildZBonBlocks()`): die drei Text+Row+hr-Blöcke durch eine Überschrift
+  "Stornos und kostenfreie Abgabe", drei `row`-Zeilen (jetzt mit dem
+  jeweiligen Storno-Typ als linkem Label statt generischem "Summe") und
+  eine fette "Gesamt"-Zeile (`total_bonstorno + total_free +
+  total_order_cancellations`) ersetzt, gefolgt von einem einzelnen `hr`.
+  Die zugrunde liegenden Werte in `ClosingTotals`/`computeClosingTotals()`
+  (`closing/totals.ts`) bleiben unverändert (D-068s dreiteilige
+  Aggregation war nie das Problem, nur die Druck-Darstellung) — betrifft
+  daher gleichermaßen den ESC/POS-Druck, die PDF-Archivierung und den
+  manuellen Reprint, da alle drei denselben `PrintBlock[]`-Baustein
+  (`print/blocks.ts`) durchlaufen.
+
+  **Tests:** `closing/blocks.test.ts` — der bestehende Test zu den drei
+  Storno-Zeilen umbenannt/erweitert, prüft jetzt zusätzlich die neue
+  Überschrift und die korrekt summierte "Gesamt"-Zeile
+  (-8,00 + 4,00 + 3,00 = -1,00 EUR im Testfixture).
+
+- [Task] **#141** Manueller "Zeit synchronisieren"-Button behandelt eine falsche TimeAdmin-PIN nicht
+  **Klassifikation: Bug, live gefunden und behoben 2026-09-12.** Nutzer hatte
+  versehentlich eine falsche TimeAdmin-PIN über den manuellen "Zeit
+  synchronisieren"-Button (Einstellungen → TSE) ausgelöst und danach
+  berichtet: weder verschwand die Checkbox "Automatische
+  Zeit-Synchronisation", noch sprang das Dashboard auf einen Fehlerzustand —
+  wiederholter Verdacht des Nutzers, der periodische Health-Job
+  (`tse/healthJob.ts`, Task #64) täte grundsätzlich nichts.
+
+  **Tatsächliche Ursache (per Code-Analyse verifiziert, nicht vermutet):**
+  der Health-Job läuft korrekt (Registrierung in `index.ts` bei Boot,
+  60-Sekunden-Takt bestätigt) und behandelt eine falsche PIN dort bereits
+  richtig (Task #109/#131: `disableAutoMaintain()` + `'error'`-Log-Eintrag).
+  Der manuelle Button (`POST /api/admin/tse/maintain`,
+  `routes/admin/tse.ts`) ruft dieselbe `maintainTse()`-Funktion auf, hatte
+  aber einen komplett eigenen, unvollständigen `catch`-Block: nur ein
+  502-Response an den Browser, **kein** `logSystemEvent`-Aufruf, **kein**
+  `disableAutoMaintain()`. Ein über diesen Button ausgelöster PIN-Fehler war
+  dadurch im System komplett unsichtbar — unabhängig davon, ob der
+  Hintergrund-Job (der nur bei einer *aktuell erkannt ungesunden* TSE
+  überhaupt eingreift, siehe D-072) dieselbe falsche PIN je selbst zu
+  Gesicht bekommen hätte.
+
+  **Behoben:** `routes/admin/tse.ts`s `/maintain`-Route loggt jetzt bei
+  jedem Fehlschlag einen `'error'`-Eintrag (Kategorie `tse_health`) und ruft
+  bei einem PIN-Authentifizierungsfehler `disableAutoMaintain()` auf — exakt
+  dasselbe Verhalten wie der Health-Job, jetzt aus `tse/healthJob.ts`
+  exportiert statt modul-privat. Frontend (`settings/tse/+page.svelte`,
+  `runMaintain()`) lädt nach einem Fehlschlag die Einstellungen neu, damit
+  die Checkbox sofort den neuen (ggf. deaktivierten) Zustand zeigt, statt
+  erst nach einem Seiten-Reload.
+
+  **Tests:** `routes/admin/tse.integration.test.ts` — neuer Test simuliert
+  über die Stub-CLI (`TSE_STUB_MAINTAIN_FAILS`/`_ERROR_CODE=4352`) einen
+  PIN-Authentifizierungsfehler am manuellen Endpunkt und prüft: 502-Antwort,
+  `tse_auto_maintain_enabled` wird auf `false` persistiert, zwei
+  `'error'`-Log-Zeilen (eigene Fehlschlag-Meldung + die "deaktiviert"-Meldung
+  aus `disableAutoMaintain()`).
+
+- [Finding] **D-072** TSE Health-Job: Übergang in "ungesund" wurde nicht sofort geloggt; Dashboard-Kachel für deaktivierte Auto-Sync fehlte
+  **Kontext:** direkt im Zuge von Task #141 gefunden (Nutzer fragte
+  berechtigt: "wenn der manuelle Klick nicht geloggt wurde, hätte der
+  automatische Job es doch später erkennen müssen?"), live am 2026-09-12.
+
+  **Zwei getrennte, zusammenhängende Lücken:**
+  1. **`tick()` in `tse/healthJob.ts` loggte den Übergang healthy →
+     unhealthy (ungültige Zeit/fehlgeschlagener Self-Test) nicht selbst** —
+     anders als der symmetrische "TSE nicht erreichbar"-Zweig, der das schon
+     immer tat. Es wurde nur geloggt, wenn danach tatsächlich ein
+     Sync-Versuch stattfand (Erfolg/Fehlschlag) oder die Checkbox bereits
+     deaktiviert war (einmalige Meldung). Blieb ein Versuch durch die
+     Checkbox oder das 15-Minuten-Retry-Cooldown (Task #109,
+     `MAINTAIN_RETRY_COOLDOWN_MS`) unterdrückt, blieb die Dashboard-Kachel
+     (die nur die neueste `tse_health`-Log-Zeile zeigt) bei einem alten
+     "✓ Gesund" stehen, obwohl die TSE aktuell ungesund war — potenziell
+     unbegrenzt lange.
+  2. **Die Dashboard-Kachel selbst war rein log-basiert**, ohne einen
+     eigenen, live geprüften Zustand für "Auto-Sync ist aktuell
+     deaktiviert" — ein einmalig geloggter "deaktiviert"-Eintrag kann von
+     jedem späteren, unabhängigen `tse_health`-Log-Eintrag aus der
+     Kachel-Sicht verdrängt werden, obwohl die Checkbox weiterhin aus ist.
+     Im produktiven Betrieb inakzeptabel (Nutzerfeedback): ein dauerhafter
+     Zustand braucht eine dauerhafte, nicht wegblätterbare Anzeige.
+
+  **Behoben:**
+  - `tick()` loggt jetzt sofort einen `'warning'`-Eintrag beim Übergang in
+    "ungesund" (einmalig pro Episode, wie das bereits bestehende Muster für
+    den "wieder gesund"-Übergang), unabhängig davon, was danach passiert.
+  - Admin-Dashboard (`admin/+page.svelte`) liest jetzt zusätzlich, bei jedem
+    30-Sekunden-Poll, live `tse_auto_maintain_enabled` /
+    `tse_mount_point`/`tse_client_id` über das ohnehin schon triviale
+    `GET /api/admin/settings` (kein teurer Hardware-Zugriff wie
+    `/tse/status`) und zeigt eine eigene, dauerhafte "⚠ Auffällig"-Kachel
+    ("Automatische Zeit-Synchronisation ist deaktiviert …"), solange die
+    Checkbox aus ist und eine TSE konfiguriert ist — unabhängig vom
+    Log-Verlauf, kann also nicht durch neuere Log-Zeilen verdeckt werden.
+  - **Nutzerfeedback zum Cooldown:** ursprünglich vorgeschlagen, das
+    15-Minuten-Cooldown ganz zu entfernen, da die Checkbox doch bereits vor
+    wiederholten Versuchen schütze — richtiggestellt: Checkbox und Cooldown
+    schützen vor unterschiedlichen Dingen (Checkbox: PIN-Fehler; Cooldown:
+    das begrenzte Lifetime-Kontingent von `worm_tse_updateTime`-Aufrufen der
+    TSE bei jedem sonstigen Dauerfehler, siehe D-055). Cooldown bleibt
+    bestehen, wird aber jetzt selbst transparent gemacht: die eine
+    Fehlschlag-Meldung, die ein Versuch vor dem Cooldown erzeugt, nennt
+    jetzt explizit den Zeitpunkt des nächsten automatischen Versuchs
+    ("… nächster automatischer Versuch nicht vor HH:MM:SS"), statt dass ein
+    Admin raten muss, ob der Job noch aktiv ist oder feststeckt.
+
+  **Tests:** `tse/healthJob.integration.test.ts` — zwei bestehende Tests um
+  die neue Übergangs-Log-Zeile ergänzt, ein neuer Test prüft, dass sie bei
+  zwei aufeinanderfolgenden ungesunden Ticks nur einmal geloggt wird, ein
+  weiterer prüft den "nächster Versuch"-Text bei einem Nicht-PIN-Fehlschlag.
+  Kein automatisierter Test für die neue Dashboard-Kachel selbst (Svelte-
+  Komponente ohne bestehende Test-Infrastruktur für diese Seite) —
+  `svelte-check` bleibt clean, manueller Test empfohlen.
+
 

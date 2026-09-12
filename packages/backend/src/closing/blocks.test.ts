@@ -82,14 +82,18 @@ describe('buildZBonBlocks (rendered as ESC/POS)', () => {
     expect(ascii).toContain('235,00 EUR');
   });
 
-  it('shows the three storno/kostenfrei totals as separate lines (D-068)', () => {
+  it('groups the three storno/kostenfrei totals under one heading with a summed Gesamt row (D-068, Task #140)', () => {
     const ascii = buildZBonEscPos(ctx, totals, businessDate, null).toString('ascii');
+    expect(ascii).toContain('Stornos und kostenfreie Abgabe');
     expect(ascii).toContain('Stornierte Rechnungen');
     expect(ascii).toContain('-8,00 EUR');
     expect(ascii).toContain('Kostenfreie Warenabgabe');
     expect(ascii).toContain('4,00 EUR');
     expect(ascii).toContain('Stornierte Bestellungen');
     expect(ascii).toContain('3,00 EUR');
+    // Gesamt = -8.00 + 4.00 + 3.00 = -1.00
+    expect(ascii).toContain('Gesamt');
+    expect(ascii).toContain('-1,00 EUR');
   });
 
   it('flags a zero closing in the header', () => {

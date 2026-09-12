@@ -12,11 +12,11 @@ import {
   dumpProcessDataTse, exportTar, factoryResetTse, finishTransaction, getTseInfo, maintainTse, setupTse,
   startTransaction, unblockPin,
 } from '../../tse/client.js';
-import { certificateExpiresTodayOrEarlier } from '../../tse/healthJob.js';
+import { certificateExpiresTodayOrEarlier, disableAutoMaintain } from '../../tse/healthJob.js';
 import { detectTse, listTseMountCandidates, type TseMountCandidate } from '../../tse/detect.js';
 import { TseError, type TseInfo } from '../../tse/types.js';
 import { KASSENBELEG_PROCESS_TYPE, buildAvBelegabbruchProcessData } from '../../tse/processData.js';
-import { describeTseError } from '../../tse/signing.js';
+import { describeTseError, isPinAuthError } from '../../tse/signing.js';
 import { isValidClientId, isValidPin, isValidPuk } from '../../tse/validation.js';
 import { applyTseSettings } from '../../tse/settings.js';
 import { logSystemEvent } from '../../system/log.js';
@@ -164,6 +164,14 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
    * freshly set-up TSE still needs one successful run before its clock is
    * set — without it, the first real signing attempt fails with a confusing
    * `WORM_ERROR_NO_TIME_SET` (code 4098).
+   *
+   * On failure this now mirrors the health job's own error handling (Task
+   * #141, 2026-09-12) — previously a failed manual attempt only returned a
+   * 502 to the browser, with no `system_log` entry and no effect on
+   * `tse_auto_maintain_enabled`, so a wrong TimeAdmin-PIN entered here left
+   * no visible trace anywhere (dashboard tile stayed green, checkbox stayed
+   * checked) even though the exact same PIN would trip both on the next
+   * automatic health-job tick.
    */
   app.post('/maintain', async (_req, reply) => {
     if (!config.tseMountPoint || !config.tseClientId) {
@@ -181,7 +189,10 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
       await logSystemEvent('info', 'tse_health', 'Manueller Self-Test + Zeitsync erfolgreich (Admin-UI).');
       return reply.send({ ok: true });
     } catch (e) {
-      return reply.status(502).send({ error: describeTseError(e) });
+      const message = describeTseError(e);
+      await logSystemEvent('error', 'tse_health', `Manueller Self-Test + Zeitsync fehlgeschlagen (Admin-UI): ${message}`);
+      if (isPinAuthError(e)) await disableAutoMaintain();
+      return reply.status(502).send({ error: message });
     }
   });
 

@@ -181,16 +181,19 @@ describe('POST /api/admin/registers/:id/closings', () => {
     expect(so.rows[0]!.daily_closing_id).toBe(yesterdayClosing.closing_id);
   });
 
-  it('enqueues a print job when the register has a printer', async () => {
+  // Task #139 (2026-09-12): closing used to eagerly enqueue a print job for
+  // every Z-Bon. The Z-Bon is now only archived (persisted totals, PDF on
+  // demand) — printing is an explicit, separate action via `/reprint`.
+  it('does not enqueue a print job when closing a register', async () => {
     const app = await getTestApp();
     await insertPaidInvoice(`${TODAY} 12:00:00`, 10);
     const response = await app.inject({
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
       headers: { cookie: adminCookie },
     });
-    expect(response.json().closings[0].print_job_id).toBeTruthy();
+    expect(response.json().closings[0].print_job_id).toBeUndefined();
     const jobs = await pool.query(`SELECT * FROM print_job WHERE type = 'daily_closing'`);
-    expect(jobs.rowCount).toBe(1);
+    expect(jobs.rowCount).toBe(0);
   });
 
   // Task #106: a register with unassigned invoices from more than one
@@ -364,9 +367,11 @@ describe('POST /api/admin/registers/:id/close-pending', () => {
     expect(myReg.pending_days).toEqual([]);
   });
 
-  it('uses the system-default printer when the register has no own printer', async () => {
+  // Reprint is now the only Z-Bon code path that resolves a printer (Task
+  // #139) — the fallback-to-system-default behaviour moved here from the
+  // former eager auto-print-on-close test.
+  it('reprint uses the system-default printer when the register has no own printer', async () => {
     const app = await getTestApp();
-    // Create a fresh default printer + a register WITHOUT its own printer.
     const defaultP = await createTestPrinter({ name: 'Default', isDefault: true });
     const regNoPrinter = await createTestRegister({ name: 'NoPrinter', type: 'receipt_register', printerId: null });
     await pool.query(
@@ -374,13 +379,19 @@ describe('POST /api/admin/registers/:id/close-pending', () => {
        VALUES ($1, 99, 'sales_receipt', 'cash', now())`,
       [regNoPrinter.id],
     );
-    const response = await app.inject({
+    const closeResponse = await app.inject({
       method: 'POST', url: `/api/admin/registers/${regNoPrinter.id}/closings`,
       headers: { cookie: adminCookie },
     });
-    expect(response.statusCode).toBe(200);
-    const printJobId = response.json().closings[0].print_job_id;
-    expect(printJobId).not.toBeNull();
+    const closingId = closeResponse.json().closings[0].closing_id;
+
+    const reprintResponse = await app.inject({
+      method: 'POST', url: `/api/admin/closings/${closingId}/reprint`,
+      headers: { cookie: adminCookie },
+    });
+    expect(reprintResponse.statusCode).toBe(200);
+    const printJobId = reprintResponse.json().print_job_id;
+    expect(printJobId).toBeTruthy();
     const job = await pool.query<{ printer_id: string }>(
       `SELECT printer_id FROM print_job WHERE id = $1`, [printJobId],
     );

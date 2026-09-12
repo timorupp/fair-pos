@@ -41,7 +41,7 @@
   let closing = $state(false);
   let closingError = $state('');
   /** One entry per Z-Bon produced by the last "jetzt abschließen" click — usually one, but more than one when the register had unassigned invoices from more than one calendar day (Task #106: one Z-Bon per day, not a single lump closing wrongly dated as today). */
-  let lastClosings: { z_number: number; is_zero_closing: boolean; print_job_id: string | null }[] = $state([]);
+  let lastClosings: { z_number: number; is_zero_closing: boolean }[] = $state([]);
 
   /** Past calendar days that still need a Z-Bon (oldest first). */
   let pendingDays: string[] = $state([]);
@@ -244,16 +244,12 @@
       {#if closedToday}
         <p class="warn small">Heute wurde für diese Kasse bereits ein Abschluss erstellt (Z-Nr. {closedToday.z_number}). Ein erneuter Abschluss vergibt eine neue Z-Nummer.</p>
       {/if}
-      {#if !register?.effective_printer_name}
-        <p class="muted small">Weder dieser Kasse noch dem System ist ein Drucker zugeordnet — der Z-Bon wird nicht gedruckt, sondern nur gespeichert.</p>
-      {:else if !register?.printer_name}
-        <p class="muted small">Diese Kasse hat keinen eigenen Drucker — der Z-Bon wird auf dem Standarddrucker „{register.effective_printer_name}" gedruckt.</p>
-      {/if}
+      <p class="muted small">Der Z-Bon wird nicht automatisch gedruckt, sondern als PDF archiviert — bei Bedarf über „PDF" ansehen oder über „Drucken" manuell ausdrucken.</p>
     </div>
     {#if closingError}<p class="error-text">{closingError}</p>{/if}
     {#if lastClosings.length === 1}
       <p class="success-text small">
-        ✓ Z-Bon Nr. {lastClosings[0]!.z_number} erstellt{lastClosings[0]!.is_zero_closing ? ' (Nullabschluss)' : ''}{lastClosings[0]!.print_job_id ? ' und in Druckwarteschlange gestellt' : ''}.
+        ✓ Z-Bon Nr. {lastClosings[0]!.z_number} erstellt{lastClosings[0]!.is_zero_closing ? ' (Nullabschluss)' : ''}.
       </p>
     {:else if lastClosings.length > 1}
       <p class="success-text small">

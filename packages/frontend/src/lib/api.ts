@@ -471,12 +471,13 @@ export const api = {
     closings: {
       /**
        * Closes the register: one Z-Bon per distinct calendar day it has
-       * unassigned invoices for (Task #106), prints each if a printer is
-       * assigned. Usually a single entry, but more than one when the
-       * register had invoices from more than one still-open day.
+       * unassigned invoices for (Task #106). Usually a single entry, but more
+       * than one when the register had invoices from more than one still-open
+       * day. No print job is enqueued (Task #139) — print via `reprint()` or
+       * archive via `pdfUrl()`.
        */
       closeRegister: (registerId: string): Promise<{
-        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean; print_job_id: string | null }[];
+        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean }[];
       }> => request('POST', `/admin/registers/${registerId}/closings`),
 
       /** Past Z-Bons for the register, newest first. */
@@ -512,9 +513,9 @@ export const api = {
         total_pending_days: number;
       }> => request('GET', '/admin/closings/pending'),
 
-      /** Closes every outstanding past day for one register in chronological order. */
+      /** Closes every outstanding past day for one register in chronological order. No print job is enqueued (Task #139). */
       closePending: (registerId: string): Promise<{
-        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean; print_job_id: string | null }[];
+        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean }[];
         pending_days_remaining: number;
       }> => request('POST', `/admin/registers/${registerId}/close-pending`),
     },

@@ -294,6 +294,50 @@ describe('POST /api/admin/tse/maintain', () => {
     expect(log.rows).toEqual([{ severity: 'info', category: 'tse_health' }]);
   });
 
+  // Task #141 (2026-09-12): a wrong TimeAdmin-PIN entered via the manual
+  // "Zeit synchronisieren" button used to fail silently — 502 to the
+  // browser, but no system_log entry and no effect on
+  // `tse_auto_maintain_enabled`, unlike the periodic health job's own
+  // handling of the exact same error (see healthJob.integration.test.ts).
+  it('logs an error and disables auto-maintain when maintain fails with a PIN authentication error', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: {
+        tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test', tse_time_admin_pin: '000000',
+      },
+    });
+    process.env['TSE_STUB_MAINTAIN_FAILS'] = '1';
+    process.env['TSE_STUB_MAINTAIN_ERROR_CODE'] = '4352'; // WORM_ERROR_AUTHENTICATION_FAILED
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/tse/maintain',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(502);
+
+      expect(config.tseAutoMaintainEnabled).toBe(false);
+      const setting = await pool.query<{ value: string }>(
+        `SELECT value FROM system_setting WHERE key = 'tse_auto_maintain_enabled'`,
+      );
+      expect(setting.rows[0]?.value).toBe('false');
+
+      const log = await pool.query<{ severity: string; category: string; message: string }>(
+        `SELECT severity, category, message FROM system_log ORDER BY created_at`,
+      );
+      // Two separate error rows: the failed-attempt message from this route's
+      // own catch block, and the "disabled" message from `disableAutoMaintain()`.
+      expect(log.rows.some((r) => r.severity === 'error' && r.category === 'tse_health' && /fehlgeschlagen/.test(r.message))).toBe(true);
+      expect(log.rows.some((r) => r.severity === 'error' && r.category === 'tse_health' && /deaktiviert/.test(r.message))).toBe(true);
+    } finally {
+      delete process.env['TSE_STUB_MAINTAIN_FAILS'];
+      delete process.env['TSE_STUB_MAINTAIN_ERROR_CODE'];
+      config.tseAutoMaintainEnabled = true;
+    }
+  });
+
   it('rejects without an admin session', async () => {
     const app = await getTestApp();
     const response = await app.inject({ method: 'POST', url: '/api/admin/tse/maintain' });
