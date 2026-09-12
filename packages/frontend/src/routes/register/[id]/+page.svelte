@@ -391,25 +391,28 @@
      comment in .../order/+page.svelte for the full rationale (same layout pattern here). */
   .line-name {
     font-weight: 600;
+    font-size: 1.05rem;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .line-unit { font-size: 0.8rem; text-align: right; }
+  .line-unit { font-size: 0.85rem; text-align: right; }
   .qty { display: flex; align-items: center; gap: 0.3rem; }
   .qty-btn {
     border-radius: 50%; border: 1px solid var(--color-border);
     background: var(--color-bg); color: var(--color-text); cursor: pointer;
   }
   .qty-btn:hover { background: var(--color-surface-hover); }
-  /* Narrow-phone fix, see .../order/+page.svelte for the full rationale. */
+  /* Narrow-phone fix, see .../order/+page.svelte for the full rationale.
+     Enlarged from 32px/1rem (2026-09-12, Nutzerwunsch) — Nutzer unsicher, ob
+     das bleibt, ggf. wieder zurücknehmen. */
   .order-line .qty-btn {
-    width: 32px !important; height: 32px !important;
-    min-width: 32px !important; min-height: 32px !important;
-    font-size: 1rem !important;
+    width: 38px !important; height: 38px !important;
+    min-width: 38px !important; min-height: 38px !important;
+    font-size: 1.3rem !important;
   }
-  .qty-val { min-width: 1.5em; text-align: center; font-weight: 700; }
+  .qty-val { min-width: 1.5em; text-align: center; font-weight: 700; font-size: 1.1rem; }
 
   .total-row {
     display: flex; align-items: center; gap: 0.75rem;

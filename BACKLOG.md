@@ -211,25 +211,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   leer sind. Bleibt offen, bis ein **neuer** Export nach diesem Fix zeigt,
   dass beide Spalten mit echten Zertifikatsdaten gefüllt sind.
 
-- [Task] **#126** Excel-Export-Verhalten bei Stornos testen
-  **Klassifikation: Test-Aufgabe (Verifikation bestehenden Verhaltens).**
-  Angelegt 2026-09-09 (Nutzerwunsch).
-
-  Zu testen, was der Excel-Export (`routes/admin/exports.ts`, Task #10/#32)
-  jeweils tut bei:
-  - Storno einer ganzen Rechnung
-  - Erstellen einer Bonstornorechnung
-  - Storno durch Bedienung bei der Rechnungstellung, für beide Typen
-    (`Storno` und `kostenfrei`, `order_cancellation.cancellation_reason_id`/
-    `booking_type`)
-
-  Bekannter Ausgangspunkt: D-026 (bereits geklärt, "nichts zu tun") betrifft
-  nur den Ausschluss stornierter Rechnungen aus dem Umsatzexport
-  (`receipt_type='cancellation'`/`status NOT IN ('paid','free')`) — die
-  Bedienungskasse-Fälle über `order_cancellation` wurden dabei noch nicht
-  explizit durchgetestet. Noch nicht bewertet: ob sich dort dasselbe
-  korrekte Netto-Umsatz-Verhalten zeigt oder eine Abweichung auftritt.
-
 - [Task] **#128** Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
   **Klassifikation: Sicherheits-/Datenschutz-Frage (noch nicht bewertet,
   mehrere Optionen genannt, keine Entscheidung getroffen).**
@@ -353,6 +334,55 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   und ob GoBD/DSFinV-K hierfür bereits eine passende Datenquelle liefern
   (`transactions.csv`/`datapayment.csv`) oder das rein eine
   FairPOS-interne Komfortfunktion ist, ohne Compliance-Bezug.
+
+- [Task] **#138** Verkaufsstatistik je Artikel/Tag — Excel-Export kennzeichnet Stornos nicht aggregationsfreundlich
+  **Klassifikation: Feature/Nutzerwunsch, angelegt 2026-09-12.**
+
+  Aktuell schwer möglich: eine Verkaufsstatistik je Artikel und Tag zu
+  erstellen (z. B. "wie viele Bier wurden am Samstag verkauft"). Der
+  bestehende Excel-Export (`exports/rows.ts`/`workbook.ts`,
+  `routes/admin/exports.ts`) enthält zwar die meisten nötigen Rohdaten, hat
+  aber zwei Lücken für diesen Auswertungszweck:
+  - **Keine Storno-Kennzeichnung als eigene Spalte.** Die Zeile einer
+    Bonstorno-Rechnung sieht ansonsten aus wie eine normale Verkaufszeile —
+    nur am (bereits negativen) `unit_price`/`line_total` erkennbar, nicht
+    an einem eigenen Feld wie `receipt_type`/"Storno ja/nein".
+  - **`quantity` bleibt bei einem Storno positiv/unsigned**, während
+    `unit_price`/`line_total` negativ sind (D-068, bewusste Design-
+    Entscheidung: `order_item.price`/`deposit_price` tragen das Vorzeichen,
+    nicht die Menge). Für eine reine Preis-Summe (Umsatz) ist das korrekt
+    und ausreichend — für eine Mengen-Statistik ("wie viele Stück") aber
+    nicht: eine `SUM(quantity)` je Artikel zählt stornierte Einheiten
+    weiterhin positiv mit, verfälscht also die Stückzahl-Auswertung, auch
+    wenn der Umsatz (`SUM(line_total)`) korrekt bleibt.
+
+  **Nutzervorschlag:** negative `quantity` für Stornozeilen, damit eine
+  simple `SUM(quantity)`/`SUM(line_total)` je Artikel direkt eine korrekte
+  Verkaufsstatistik ergibt, ohne dass der Auswertende erst selbst nach
+  Storno filtern/multiplizieren muss.
+
+  **Wichtig, noch zu klären:** eine negative `quantity` NUR im Excel-Export
+  einzuführen (rein abgeleitete Reporting-Ansicht, nicht die fiskalische
+  Aufzeichnung selbst — `order_item.quantity` in der DB bliebe unverändert
+  positiv) wäre vermutlich unproblematisch und würde nicht mit D-068s
+  Design für die eigentlichen Bon-/TSE-/DSFinV-K-Daten kollidieren, die
+  weiterhin ausschließlich über `price`/`deposit_price` signieren. Zwei
+  Ansätze, noch nicht entschieden:
+  1. `quantity` im Export-Zeilenbau (`exports/rows.ts::buildExportRows()`)
+     negieren, wenn die zugehörige Rechnung `receipt_type='cancellation'`
+     ist — löst die Aggregationsfrage direkt, ohne eine neue Spalte.
+  2. Zusätzlich (oder stattdessen) eine eigene Spalte "Storno"/"Typ"
+     ergänzen, die den `receipt_type` sichtbar macht — hilft beim manuellen
+     Filtern/Prüfen, löst die Aggregationsfrage aber nicht von selbst.
+  Beides zusammen (negative Menge UND sichtbare Kennzeichnung) vermutlich
+  am nützlichsten, aber nicht mit dem Nutzer abgestimmt.
+
+  Verwandt: Task #126 (Excel-Export-Verhalten bei Stornos testen,
+  inzwischen abgeschlossen — siehe BACKLOG-DONE.md): Bedienungskasse-
+  Storno/kostenfrei-Positionen (`order_cancellation`) tauchen im
+  Excel-Export mangels Rechnung ohnehin nie auf (bereits verifiziert) —
+  betrifft dieses Task #138 hier also nur die Bonstorno-Zeilen, nicht die
+  Bedienungskasse-Fälle.
 
 ## Findings
 

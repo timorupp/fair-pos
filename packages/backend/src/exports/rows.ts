@@ -6,7 +6,13 @@ export interface ExportSourceRow {
   receipt_number: number;
   invoice_created_at: Date | string;
   table_name: string | null;
-  /** Name of the user who took the order (or `null` when the row has no user, e.g. a register without auth). */
+  /**
+   * Name of the user who took the order, or `null` when the row has no user
+   * (e.g. a register without auth). For a Bonstorno's own `order_item` rows
+   * (no real "orderer"), the query already substitutes the cancelling
+   * admin's name instead (Task #126 follow-up, 2026-09-12) — see
+   * `EXPORT_SOURCE_COLUMNS` in `routes/admin/exports.ts`.
+   */
   ordering_user_name: string | null;
   register_name: string;
   article_name: string;

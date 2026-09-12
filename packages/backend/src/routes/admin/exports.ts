@@ -26,13 +26,25 @@ async function readReceiptPrefix(): Promise<string> {
   return result.rows[0]?.value ?? '';
 }
 
-/** Shared column list/mapping for both loadExportSourceBy* variants below. */
+/**
+ * Shared column list/mapping for both loadExportSourceBy* variants below.
+ *
+ * `ordering_user_name` falls back to `cancelled_by_name` (Task #126
+ * follow-up, 2026-09-12): a Bonstorno's own `order_item` rows
+ * (`routes/admin/cancellations.ts`) never set `user_name` — there is no
+ * "orderer" for a cancellation row, only the admin who performed it,
+ * already captured in `cancelled_by_name`. Without this fallback, the
+ * "Besteller" column simply showed nothing for every Bonstorno line, even
+ * though the admin's name was already sitting right there in the DB, just
+ * under a different column. Ordinary sales/orders always have `user_name`
+ * set and `cancelled_by_name` null, so this never affects them.
+ */
 const EXPORT_SOURCE_COLUMNS = `
     SELECT i.id                   AS invoice_id,
            i.receipt_number::text AS receipt_number,
            i.created_at           AS invoice_created_at,
            t.name                 AS table_name,
-           oi.user_name           AS ordering_user_name,
+           COALESCE(oi.user_name, oi.cancelled_by_name) AS ordering_user_name,
            r.name                 AS register_name,
            oi.article_name,
            oi.options,

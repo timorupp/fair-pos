@@ -139,6 +139,60 @@ describe('GET /api/admin/exports/excel/event', () => {
     expect(sheet.getCell(4, 9).value).toBe(-5); // unit_price column
   });
 
+  it('shows the cancelling admin as Besteller for a Bonstorno row (Task #126 follow-up — was empty before, even though cancelled_by_name was already captured)', async () => {
+    const ownRegister = await createTestRegister({ name: 'EigenBesteller', eventId: config.activeEventId });
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'cancellation', 'cash', now()) RETURNING id`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, cancelled_by_name, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -5, 'paid', 'Storno-Admin', now())`,
+      [inv.rows[0]!.id, ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 5).value).toBe('Storno-Admin'); // Besteller column
+  });
+
+  it('never includes a Bedienungskasse Storno/kostenfrei order_item (Task #126 — never charged, no invoice, already correctly excluded by the invoice join, now verified explicitly)', async () => {
+    const ownRegister = await createTestRegister({ name: 'EigenKostenfrei', eventId: config.activeEventId });
+    await pool.query(
+      `INSERT INTO order_item (register_id, article_name, article_category_name, tax_rate, tax_category, price, status, cancelled_by_name, created_at)
+       VALUES ($1, 'Bier', 'Getränke', 19, 'standard', 5, 'cancelled', 'Theken-Anna', now())`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (register_id, article_name, article_category_name, tax_rate, tax_category, price, status, cancelled_by_name, created_at)
+       VALUES ($1, 'Bier', 'Getränke', 19, 'standard', 5, 'free', 'Theken-Anna', now())`,
+      [ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    // Only the title/subtitle/header rows (rows 1-3) — neither the 'cancelled'
+    // nor the 'free' item ever got an invoice, so no data row (row 4+) exists.
+    expect(sheet.rowCount).toBe(3);
+  });
+
   it('rejects the request without an admin session', async () => {
     const app = await getTestApp();
     const response = await app.inject({ method: 'GET', url: '/api/admin/exports/excel/event' });

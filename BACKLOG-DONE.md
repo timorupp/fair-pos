@@ -5404,3 +5404,47 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   tatsächlichen Vorgangsart passen), war für `AVTraining` schlicht vergessen
   worden.
 
+- [Task] **#126** Excel-Export-Verhalten bei Stornos testen
+  **Klassifikation: Test-Aufgabe (Verifikation bestehenden Verhaltens).**
+  Angelegt 2026-09-09 (Nutzerwunsch). Zu testen: Storno einer ganzen
+  Rechnung, Erstellen einer Bonstornorechnung, Storno durch Bedienung bei
+  der Rechnungstellung (`Storno` und `kostenfrei`, `order_cancellation`).
+
+  **Abgeschlossen 2026-09-12:**
+  - **Bonstornorechnung:** bereits über D-068 (2026-09-12) mitgetestet —
+    `exports.excel.integration.test.ts` hat seitdem einen Test, der einen
+    Bonstorno-Vorgang mit negativem Preis im Excel-Export korrekt zeigt.
+  - **Storno einer ganzen Rechnung (Fall A):** nicht testbar — laut Task
+    #135 wurde dieser Weg nie implementiert (`invoice.cancels_invoice_id`
+    ist totes Feld, kein Storno-Button an einer bestehenden Rechnung
+    existiert). Weiterhin offene Design-Entscheidung, unabhängig von diesem
+    Task.
+  - **Storno durch Bedienung (`order_cancellation`, Storno und
+    kostenfrei):** neuer Test bestätigt explizit, dass solche Positionen
+    im Excel-Export **nie** auftauchen — `order_item.invoice_id` bleibt für
+    sie strukturell `NULL` (nie eine Rechnung entstanden), und
+    `EXPORT_SOURCE_COLUMNS`s `JOIN order_item oi ON oi.invoice_id = i.id`
+    ist ein INNER JOIN, kann solche Zeilen also gar nicht erst erreichen —
+    unabhängig vom (bereits vorhandenen) `oi.status IN ('paid','free')`-
+    Filter. Bisher nur vermutet, jetzt durch einen dedizierten Test
+    bewiesen (`exports.excel.integration.test.ts`, 2 Zeilen mit
+    `status='cancelled'`/`'free'`, keine davon erscheint im Export).
+  - **Nebenbei gefundener und behobener Bug (Nutzerauftrag, direkt bei
+    diesem Aufräumen gemeldet):** die "Besteller"-Spalte im Excel-Export
+    zeigte für eine Bonstorno-Zeile bisher **nichts** — `order_item.
+    user_name` wird für die eigenen `order_item`-Zeilen einer Bonstorno-
+    Rechnung (`routes/admin/cancellations.ts`) nie gesetzt (es gibt keinen
+    "Besteller" für eine Stornobuchung). Der eigentlich schon vorhandene
+    Name des stornierenden Admins (`order_item.cancelled_by_name`, wird
+    dort bereits aus `req.adminUser.name` befüllt) wurde in der Export-Abfrage
+    aber nie gelesen. **Nicht generell fehlend, wie zunächst vermutet** —
+    nur an dieser einen Stelle nicht ausgewertet. Behoben:
+    `EXPORT_SOURCE_COLUMNS` liest jetzt `COALESCE(oi.user_name,
+    oi.cancelled_by_name) AS ordering_user_name` — normale Verkäufe
+    unverändert (immer `user_name` gesetzt, `cancelled_by_name` null),
+    Bonstorno-Zeilen zeigen jetzt den stornierenden Admin als "Besteller".
+    Neuer Test bestätigt das.
+  - Alle vier neuen/betroffenen Integrationstests grün, `tsc --noEmit`
+    clean.
+
+
