@@ -359,7 +359,7 @@
   .order-section { grid-area: order; display: flex; flex-direction: column; gap: 0.75rem; }
   @media (min-width: 768px) {
     .pos-layout {
-      grid-template-columns: 1fr 30%;
+      grid-template-columns: 2fr 1fr;
       grid-template-areas: "grid order";
       align-items: start;
     }
