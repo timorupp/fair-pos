@@ -5645,4 +5645,46 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   einen Tag in der Vergangenheit trägt (simuliert die Uhr-Rückdatierung),
   und prüft, dass sie trotzdem als erste (neueste) zurückgegeben wird.
 
+- [Finding] **D-074** DSFinV-K-Export: `tse.csv` (Stamm_TSE) fehlte komplett bei Abschlüssen ohne Rechnung
+  **Kontext:** Nutzer wollte für Task #120 (TSE-Zertifikatsketten-Spalten)
+  einen frischen Live-Export prüfen — ein echter Export
+  (`dsfinvk_Kasse2_z1.zip`, 2026-09-12) enthielt `transactions_tse.csv` mit
+  echten signierten Zeilen, aber **kein** `tse.csv` — weder als Datei in der
+  ZIP noch im `index.xml`-Manifest. Erste Vermutung (Regression durch die
+  Task #120-Zertifikatsketten-Verdrahtung) per Codeanalyse widerlegt:
+  `extractLeafCertificateChunks()` (`leafCertificate.ts`) ist komplett
+  fehlerresistent (leere Strings statt Exception bei fehlender/ungültiger
+  Kette) und beeinflusst nicht, ob die Datei überhaupt existiert.
+
+  **Tatsächliche, unabhängig davon bereits länger bestehende Ursache**
+  (`exports/dsfinvk/load.ts`, seit dem allerersten Implementierungs-Commit
+  2026-08-05, unberührt von Task #123): `tseSerial` wurde ausschließlich aus
+  der `invoice`-Tabelle ermittelt
+  (`invoicesResult.rows.map(r => r.tse_serial_number).find(...)`). Ein
+  Tagesabschluss, der ausschließlich aus `service_order`/
+  `order_cancellation`-Vorgängen besteht (AVBestellung/AVSonstige, keine
+  einzige Rechnung) — der genau in Kasse2s Export vorlag — hat trotzdem eine
+  eigene `tse_serial_number` pro Zeile (Migration 0005), die aber nirgends
+  abgefragt wurde. `tseSerial` blieb dadurch `null`, `rows.ts:243` baute
+  ein leeres `tse`-Array, und `zip.ts:31` überspringt leere CSV-Tabellen
+  lautlos — keine Fehlermeldung, kein Log-Eintrag. Ergebnis: ein Export mit
+  `transactions_tse.csv`-Zeilen, die auf eine `TSE_ID` verweisen, für die es
+  gar keine Stammdatenzeile in `tse.csv` gibt — ein für eine Prüfung
+  unvollständiger/inkonsistenter Export.
+
+  **Behoben:** `load.ts`s Abfragen für `service_order`
+  (`ordersResult`)/`order_cancellation` (`cancellationsResult`) laden jetzt
+  zusätzlich `tse_serial_number`; die `tseSerial`-Ermittlung durchsucht jetzt
+  alle drei Quellen (`invoicesResult`, `ordersResult`, `cancellationsResult`)
+  statt nur `invoice`.
+
+  **Tests:** `routes/admin/exports.dsfinvk.integration.test.ts` — neuer Test
+  legt einen Abschluss ganz ohne Rechnung an (nur eine signierte
+  `service_order`) und prüft, dass `tse.csv` trotzdem in der ZIP enthalten
+  ist und die korrekte `TSE_SERIAL` trägt.
+
+  **Folge für Task #120:** der ausstehende Live-Hardware-Nachweis der
+  Zertifikatsketten-Spalten war durch diesen Bug bisher gar nicht möglich
+  (die Datei fehlte ja komplett) — ein neuer Export nach diesem Fix ist
+  jetzt die Voraussetzung dafür, nicht nur ein "nice to have".
 

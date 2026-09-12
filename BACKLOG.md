@@ -211,6 +211,15 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   leer sind. Bleibt offen, bis ein **neuer** Export nach diesem Fix zeigt,
   dass beide Spalten mit echten Zertifikatsdaten gefüllt sind.
 
+  **2026-09-12 — Blocker gefunden und behoben (siehe D-074 in
+  BACKLOG-DONE.md):** ein zweiter, unabhängiger Export (`dsfinvk_Kasse2_z1.zip`)
+  enthielt `tse.csv` überhaupt nicht — der Live-Test war dadurch bisher gar
+  nicht möglich. Ursache lag nicht in der Task-#120-Verdrahtung selbst,
+  sondern in `load.ts`s `tseSerial`-Ermittlung (nur `invoice` statt auch
+  `service_order`/`order_cancellation`), jetzt gefixt. Ein neuer Export nach
+  diesem Fix ist die Voraussetzung für den weiterhin ausstehenden
+  Live-Nachweis der Zertifikats-Spalten.
+
 - [Task] **#128** Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
   **Klassifikation: Sicherheits-/Datenschutz-Frage (noch nicht bewertet,
   mehrere Optionen genannt, keine Entscheidung getroffen).**

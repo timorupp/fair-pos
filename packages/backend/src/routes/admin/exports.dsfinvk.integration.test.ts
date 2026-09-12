@@ -286,6 +286,46 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     expect(contentA.some((l) => l.includes(orderB.rows[0]!.id))).toBe(false);
   });
 
+  it('includes tse.csv even when the closing has no invoice at all, only a TSE-signed service_order (D-074)', async () => {
+    // Regression test: found live against a real export where a closing made
+    // up entirely of AVBestellung/AVSonstige Vorgänge (no Beleg) was missing
+    // tse.csv (Stamm_TSE) entirely, even though transactions_tse.csv had real
+    // signed rows referencing TSE_ID=1 — because tseSerial was previously
+    // derived only from the `invoice` table.
+    const register = await createTestRegister({ type: 'service_register' });
+    const waiter = await createTestUser({ name: 'Clara' });
+
+    const closing = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, true, '2026-08-05', 0, 0, 0, 0, 0, 0, 0, 0) RETURNING id`,
+      [register.id],
+    );
+    await pool.query(
+      `INSERT INTO service_order (
+         register_id, user_name, daily_closing_id, created_at,
+         tse_transaction_number, tse_signature_counter, tse_signature, tse_start_time, tse_end_time, tse_serial_number
+       ) VALUES ($1, $2, $3, '2026-08-05 10:00:00', 7, 3, 'aabb', now(), now(), 'TSE-SERIAL-123')`,
+      [register.id, waiter.name, closing.rows[0]!.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/exports/dsfinvk/${closing.rows[0]!.id}`,
+      headers: { cookie: adminCookie },
+    });
+    const names = await zipEntryNames(response.rawPayload);
+    expect(names).toContain('transactions_tse.csv');
+    expect(names).toContain('tse.csv');
+
+    const directory = await unzipper.Open.buffer(response.rawPayload);
+    const tseFile = directory.files.find((f) => f.path === 'tse.csv')!;
+    const content = (await tseFile.buffer()).toString('utf-8');
+    expect(content).toContain('TSE-SERIAL-123');
+  });
+
   it('exports a training register\'s invoice as BON_TYP=AVTraining, still Kassenbeleg-V1, fully documented but excluded from businesscases.csv (Task #130)', async () => {
     const category = await createTestCategory({ name: 'Getränke', taxCategory: 'standard' });
     const article = await createTestArticle({ name: 'Bier', price: 5, categoryId: category.id });

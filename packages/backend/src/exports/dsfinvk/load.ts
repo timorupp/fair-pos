@@ -173,11 +173,11 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   const ordersResult = await query<{
     id: string; created_at: Date; table_name: string | null; user_name: string | null;
     tse_transaction_number: string | null; tse_signature_counter: string | null; tse_signature: string | null;
-    tse_start_time: Date | null; tse_end_time: Date | null;
+    tse_start_time: Date | null; tse_end_time: Date | null; tse_serial_number: string | null;
   }>(
     `SELECT so.id, so.created_at, t.name AS table_name, so.user_name,
             so.tse_transaction_number::text, so.tse_signature_counter::text, so.tse_signature,
-            so.tse_start_time, so.tse_end_time
+            so.tse_start_time, so.tse_end_time, so.tse_serial_number
        FROM service_order so
        LEFT JOIN dining_table t ON t.id = so.dining_table_id
       WHERE so.daily_closing_id = $1`,
@@ -216,12 +216,12 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     id: string; created_at: Date; cancelled_by_name: string | null;
     cancellation_reason_name: string;
     tse_transaction_number: string | null; tse_signature_counter: string | null; tse_signature: string | null;
-    tse_start_time: Date | null; tse_end_time: Date | null;
+    tse_start_time: Date | null; tse_end_time: Date | null; tse_serial_number: string | null;
   }>(
     `SELECT oc.id, oc.created_at, oc.cancelled_by_name,
             oc.cancellation_reason_name,
             oc.tse_transaction_number::text, oc.tse_signature_counter::text, oc.tse_signature,
-            oc.tse_start_time, oc.tse_end_time
+            oc.tse_start_time, oc.tse_end_time, oc.tse_serial_number
        FROM order_cancellation oc
       WHERE oc.daily_closing_id = $1`,
     [closingId],
@@ -269,7 +269,15 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   }
   const taxRates = await loadTaxRates();
 
-  const tseSerial = [...invoicesResult.rows].map((r) => r.tse_serial_number).find((s) => s !== null) ?? null;
+  // D-074 (2026-09-12): must also check service_order/order_cancellation,
+  // not just invoice — a closing made up entirely of AVBestellung/AVSonstige
+  // Vorgänge (no Beleg at all) still gets those signed by the TSE and has its
+  // own tse_serial_number per row, but previously only `invoice` was checked
+  // here, so tse.csv (Stamm_TSE) was silently omitted from the whole export
+  // even though transactions_tse.csv referenced a TSE_ID with no matching
+  // master row — found live against a real export missing tse.csv entirely.
+  const tseSerial = [...invoicesResult.rows, ...ordersResult.rows, ...cancellationsResult.rows]
+    .map((r) => r.tse_serial_number).find((s) => s !== null) ?? null;
   // Best-effort — getTseCertificateInfo() never throws, returns null when the
   // TSE is unconfigured/unreachable (see rows.ts, which leaves the tse.csv
   // fields empty in that case rather than failing the whole export).
