@@ -5996,3 +5996,47 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   (Spalten-Header + -Wert), `routes/admin/exports.excel.integration.test.ts`
   (Spaltenindizes entsprechend verschoben).
 
+- [Task] **#146** "Ausstehende Tagesabschlüsse"-Banner zählte veranstaltungsübergreifend; Dashboard-Kachel "Tagesumsatz" verlinkte auf entfernte Seite
+  **Kontext:** Nutzer meldete live (2026-09-12), dass das Banner offene
+  Tagesabschlüsse zeigt, aber keine einzelne Kasse in der Übersicht als
+  offen erscheint — Verdacht auf Veranstaltungsübergreifen. Gleichzeitig
+  meldete der Nutzer, die "Tagesumsatz"-Kachel im Dashboard verlinke auf
+  eine nicht mehr existierende Seite und zeige einen unerwarteten Wert.
+
+  **Bug 1 (bestätigt, veranstaltungsübergreifend):** `GET /api/admin/
+  closings/pending` (`routes/admin/closings.ts`) lud Kassen bisher per
+  `SELECT id, name FROM register` — **ohne** `event_id`-Einschränkung,
+  anders als praktisch jeder andere Admin-Endpoint in dieser Codebase
+  (`GET /api/admin/registers` filtert korrekt nach `config.activeEventId`).
+  Eine Kasse aus einer vergangenen/inaktiven Veranstaltung mit noch
+  unverknüpften Zeilen konnte damit das globale Banner/die
+  Dashboard-Kachel aufblähen, obwohl sie in der Kassen-Liste/-Detailseite
+  (beide korrekt event-gescoped) nie auftaucht und nie erreichbar war —
+  ein Admin hatte keine Möglichkeit, die vom Banner gemeldete Kasse
+  überhaupt zu finden. Vorbestehender Bug, unabhängig von D-075 — die
+  D-075-Korrektur (empfindlicher gegenüber unverknüpften Zeilen) hat ihn
+  nur erstmals sichtbar gemacht.
+
+  **Behoben:** `SELECT id, name FROM register WHERE event_id = $1 ORDER BY
+  name` mit `config.activeEventId`, exakt wie `routes/admin/registers.ts`.
+
+  **Bug 2 (bestätigt, Regression aus Task #144):** Die "Tagesumsatz"-Kachel
+  (`admin/+page.svelte`) verlinkte noch auf `/admin/reports/cash-balance`,
+  das im selben Sitzungsblock mit Task #144 entfernt wurde. Auf "Kassen"
+  (`/admin/registers`) umgebogen (Nutzervorgabe).
+
+  **Wert der Kachel selbst:** die zugrundeliegende Abfrage
+  (`GET /admin/reports/today-revenue`) entsprach bereits exakt der
+  Nutzererwartung (alle Kassen außer Training, Stornos via D-068-Vorzeichen
+  genettet, aktive Veranstaltung, `CURRENT_DATE`) — kein Code-Bug gefunden;
+  vermutlich Folge der für den Dev-TSE-Test zurückgesetzten Systemuhr
+  (dieselbe Ursache-Klasse wie D-073), nicht weiter verfolgt.
+
+  **Nebenbefund, separat als Finding festgehalten:** siehe D-076
+  (Zeitzonen-Inkonsistenz zwischen Postgres- und Node-Zeitzone bei der
+  Tage-Bucketing-Logik).
+
+  **Tests:** `routes/admin/closings.integration.test.ts` — neuer Test:
+  eine Kasse einer anderen, inaktiven Veranstaltung mit offener Rechnung
+  taucht nicht mehr in `/closings/pending` auf.
+

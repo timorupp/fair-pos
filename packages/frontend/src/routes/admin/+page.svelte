@@ -272,7 +272,7 @@
         {/if}
       </a>
 
-      <a class="tile" href="/admin/reports/cash-balance">
+      <a class="tile" href="/admin/registers">
         <h2>Tagesumsatz</h2>
         <p class="tile-value">{fmtEuro(todayRevenue)}</p>
         <p class="tile-detail">Alle heute gebuchten Einnahmen</p>

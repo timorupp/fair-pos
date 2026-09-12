@@ -324,6 +324,32 @@ describe('GET /api/admin/closings/pending', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().total_pending_days).toBe(0);
   });
+
+  it('excludes a register of a different, inactive event from the summary (Task #146 — previously counted across all events)', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now() - interval '60 days', now() - interval '50 days') RETURNING id`,
+    );
+    const foreignRegister = await createTestRegister({ eventId: otherEvent.rows[0]!.id });
+    const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
+    const yyyy = yesterday.getFullYear();
+    const mm = String(yesterday.getMonth() + 1).padStart(2, '0');
+    const dd = String(yesterday.getDate()).padStart(2, '0');
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'sales_receipt', 'cash', $2)`,
+      [foreignRegister.id, `${yyyy}-${mm}-${dd} 18:00:00`],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/closings/pending',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.registers.some((r: { register_id: string }) => r.register_id === foreignRegister.id)).toBe(false);
+    expect(body.total_pending_days).toBe(0); // only the active event's (unused) register exists
+  });
 });
 
 describe('POST /api/admin/registers/:id/close-pending', () => {

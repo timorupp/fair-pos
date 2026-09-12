@@ -16,6 +16,7 @@
 import type { FastifyInstance } from 'fastify';
 import { query, withTransaction } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
+import { config } from '../../config.js';
 import {
   computeClosingTotals, type ClosingInvoice, type ClosingItem,
 } from '../../closing/totals.js';
@@ -342,14 +343,24 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * GET /api/admin/closings/pending — pending-Z-Bon summary for every register.
+   * GET /api/admin/closings/pending — pending-Z-Bon summary for every
+   * register of the currently active event (Task #146, 2026-09-12 — this
+   * route previously queried every register across every event, so a
+   * register left over from a past/inactive event could inflate the global
+   * banner while being structurally unreachable through the rest of the
+   * admin UI, which is always scoped to `config.activeEventId` — the
+   * register list/detail pages could never show or resolve it, so an admin
+   * had no way to find or address what the banner was warning about).
    *
    * For each register, returns the list of past calendar days (oldest first) that
    * still need a Z-Bon. Used to drive the global admin banner, the overview badges,
    * and the per-register catch-up list.
    */
   app.get('/closings/pending', async (_req, reply) => {
-    const regs = await query<{ id: string; name: string }>(`SELECT id, name FROM register ORDER BY name`);
+    const regs = await query<{ id: string; name: string }>(
+      `SELECT id, name FROM register WHERE event_id = $1 ORDER BY name`,
+      [config.activeEventId],
+    );
     const today = new Date();
     const result = [];
     for (const r of regs.rows) {
