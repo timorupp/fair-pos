@@ -26,6 +26,7 @@ export function buildDemoReceipt(now: Date = new Date()): ReceiptData {
     registerName: 'Theke',
     paymentMethod: 'cash',
     isCancellation: false,
+    isTraining: false,
     tableName: null,
     firstOrderTime: null,
     logoPng: null,

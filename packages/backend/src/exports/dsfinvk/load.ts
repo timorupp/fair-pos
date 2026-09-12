@@ -71,10 +71,11 @@ function toTseSignature(row: {
  */
 export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSource | null> {
   const closingResult = await query<{
-    id: string; register_id: string; register_name: string; z_number: string;
-    created_at: Date; business_date: string;
+    id: string; register_id: string; register_name: string; register_is_training: boolean;
+    z_number: string; created_at: Date; business_date: string;
   }>(
-    `SELECT c.id, c.register_id, r.name AS register_name, c.z_number::text,
+    `SELECT c.id, c.register_id, r.name AS register_name, r.is_training AS register_is_training,
+            c.z_number::text,
             c.created_at, to_char(c.business_date, 'YYYY-MM-DD') AS business_date
        FROM daily_closing c
        JOIN register r ON r.id = c.register_id
@@ -83,6 +84,16 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   );
   const closing = closingResult.rows[0];
   if (!closing) return null;
+
+  // Task #130: every invoice/service_order/order_cancellation row that ever
+  // gets `daily_closing_id` set to THIS closing's id was, by construction,
+  // scoped to this same closing's `register_id` at that moment
+  // (`closeRegister()` in routes/admin/closings.ts always filters
+  // `WHERE register_id = $1` before assigning `daily_closing_id`) — so every
+  // Vorgang loaded below belongs to this one register, and a single flag
+  // read once here correctly classifies all of them as `AVTraining` (instead
+  // of a separate register join per query).
+  const isTrainingRegister = closing.register_is_training;
 
   const settingsResult = await query<{ key: string; value: string }>(
     `SELECT key, value FROM system_setting WHERE key = ANY($1)`,
@@ -141,7 +152,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     const context = invoiceContextById.get(inv.id);
     return {
       id: inv.id,
-      bonTyp: 'Beleg',
+      bonTyp: isTrainingRegister ? 'AVTraining' : 'Beleg',
       bonName: null,
       receiptNumber: Number(inv.receipt_number),
       createdAt: inv.created_at,
@@ -187,7 +198,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   }
   const orderVorgaenge: SourceVorgang[] = ordersResult.rows.map((so) => ({
     id: so.id,
-    bonTyp: 'AVBestellung',
+    bonTyp: isTrainingRegister ? 'AVTraining' : 'AVBestellung',
     bonName: null,
     receiptNumber: null,
     createdAt: so.created_at,
@@ -230,7 +241,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   }
   const cancellationVorgaenge: SourceVorgang[] = cancellationsResult.rows.map((oc) => ({
     id: oc.id,
-    bonTyp: 'AVSonstige',
+    bonTyp: isTrainingRegister ? 'AVTraining' : 'AVSonstige',
     bonName: oc.cancellation_reason_name,
     receiptNumber: null,
     createdAt: oc.created_at,

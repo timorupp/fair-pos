@@ -11,6 +11,7 @@ import { query } from '../../db/client.js';
 import {
   dumpProcessDataTse, exportTar, factoryResetTse, getTseInfo, maintainTse, setupTse, unblockPin,
 } from '../../tse/client.js';
+import { certificateExpiresTodayOrEarlier } from '../../tse/healthJob.js';
 import { detectTse, listTseMountCandidates, type TseMountCandidate } from '../../tse/detect.js';
 import { TseError, type TseInfo } from '../../tse/types.js';
 import { describeTseError } from '../../tse/signing.js';
@@ -40,6 +41,19 @@ interface TseStatusResponse {
   configured: boolean;
   /** Present when `configured` is true and the live `info` call succeeded. */
   info?: TseInfo;
+  /**
+   * Present alongside `info` (Task #132 follow-up, 2026-09-12) — whether
+   * `info.certificateExpirationDate` is today or earlier, evaluated against
+   * **server time**, not the browser's. Computed here rather than in the
+   * frontend: a dev-TSE server can deliberately run with its system clock
+   * set back (dev TSEs are only valid ~3 months, backdating the clock is
+   * normal practice) — an admin's own browser would then show the "correct"
+   * real-world date and disagree with the server's own health-check
+   * (`tse/healthJob.ts`, which necessarily uses server time), which is
+   * confusing and wrong: FairPOS must treat server time as the single
+   * authoritative "now" everywhere, never the viewing browser's clock.
+   */
+  certificateExpiresTodayOrEarlier?: boolean;
   /** Present when `configured` is true but the live `info` call failed (wrong path, PUK/PIN, unreachable hardware, ...). */
   error?: string;
 }
@@ -78,7 +92,10 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
     }
     try {
       const info = await getTseInfo();
-      const response: TseStatusResponse = { configured: true, info };
+      const response: TseStatusResponse = {
+        configured: true, info,
+        certificateExpiresTodayOrEarlier: certificateExpiresTodayOrEarlier(info.certificateExpirationDate),
+      };
       return reply.send(response);
     } catch (e) {
       const response: TseStatusResponse = {

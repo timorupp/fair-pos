@@ -273,4 +273,62 @@ describe('buildDsfinvkExport', () => {
     const schluessel = out['lines_vat.csv'].map((r) => r.UST_SCHLUESSEL);
     expect(schluessel).toEqual([1, 2, 5]);
   });
+
+  describe('AVTraining (Task #130)', () => {
+    it('signs AVTraining as Kassenbeleg-V1, same as Beleg (AEAO zu §146a Nr. 2.2.3.5/2.2.3.6 — no dedicated TSE processType needed)', () => {
+      const v = beleg({ bonTyp: 'AVTraining' });
+      const out = buildDsfinvkExport(baseSource([v]));
+      expect(out['transactions.csv'][0]).toMatchObject({ BON_TYP: 'AVTraining' });
+      expect(out['transactions_tse.csv'][0]!.TSE_TA_VORGANGSART).toBe('Kassenbeleg-V1');
+    });
+
+    it('still emits full transactions.csv/lines.csv/lines_vat.csv/transactions_vat.csv rows for a training Vorgang', () => {
+      const v = beleg({
+        bonTyp: 'AVTraining',
+        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+      });
+      const out = buildDsfinvkExport(baseSource([v]));
+      expect(out['transactions.csv']).toHaveLength(1);
+      expect(out['transactions.csv'][0]).toMatchObject({ UMS_BRUTTO: '7.00' });
+      expect(out['lines.csv']).toHaveLength(2); // article + Pfand
+      expect(out['lines_vat.csv']).toHaveLength(2);
+      expect(out['transactions_vat.csv']).toHaveLength(1);
+    });
+
+    it('excludes a training Vorgang\'s article AND deposit amounts from businesscases.csv (Z_GV_TYP) — the single most important correctness detail (D-130)', () => {
+      const trainingV = beleg({
+        id: 'v-training',
+        bonTyp: 'AVTraining',
+        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+      });
+      const realV = beleg({
+        id: 'v-real',
+        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 3, depositPriceEuros: null, depositTaxRate: null }],
+      });
+      const out = buildDsfinvkExport(baseSource([trainingV, realV]));
+      // Only the real Vorgang's 3.00 € Umsatz reaches the Z_GV_TYP aggregate —
+      // the training Vorgang's 5.00 €/2.00 € (Umsatz/Pfand) never appear here.
+      const umsatz = out['businesscases.csv'].find((b) => b.GV_TYP === 'Umsatz');
+      expect(umsatz).toMatchObject({ Z_UMS_BRUTTO: '3.00000' });
+      expect(out['businesscases.csv'].some((b) => b.GV_TYP === 'Pfand')).toBe(false);
+    });
+
+    it('excludes a training Vorgang\'s payment from payment.csv/cash_per_currency.csv (Z_-level aggregates) while still documenting it in datapayment.csv', () => {
+      const trainingV = beleg({ id: 'v-training', bonTyp: 'AVTraining', paymentMethod: 'cash' });
+      const realV = beleg({ id: 'v-real', paymentMethod: 'cash', items: [{ ...beleg().items[0]!, priceEuros: 3 }] });
+      const out = buildDsfinvkExport(baseSource([trainingV, realV]));
+      expect(out['datapayment.csv']).toHaveLength(2); // both Vorgänge documented per-Vorgang
+      expect(out['payment.csv']).toEqual([
+        expect.objectContaining({ ZAHLART_TYP: 'Bar', Z_ZAHLART_BETRAG: '3.00' }), // only the real one
+      ]);
+      expect(out['cash_per_currency.csv'][0]).toMatchObject({ ZAHLART_BETRAG_WAEH: '3.00' });
+    });
+
+    it('does not require the training Vorgang to be a Beleg — AVBestellung/AVSonstige also carry AVTraining once the register is flagged', () => {
+      const order: SourceVorgang = { ...beleg(), id: 'so-1', bonTyp: 'AVTraining', receiptNumber: null, paymentMethod: null };
+      const out = buildDsfinvkExport(baseSource([order]));
+      expect(out['transactions.csv'][0]).toMatchObject({ BON_TYP: 'AVTraining' });
+      expect(out['transactions_tse.csv'][0]!.TSE_TA_VORGANGSART).toBe('Kassenbeleg-V1');
+    });
+  });
 });

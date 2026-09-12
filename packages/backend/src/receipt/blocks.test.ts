@@ -108,4 +108,29 @@ describe('buildReceiptBlocks', () => {
       expect(standardRow.left).toBe('MwSt 19 % A');
     });
   });
+
+  describe('Trainingskasse marker (Task #130)', () => {
+    it('prints "T R A I N I N G" right after the logo/before the company name, and again as the very last line', async () => {
+      const blocks = await buildReceiptBlocks({ ...base, isTraining: true });
+      const markers = blocks
+        .map((b, i) => ({ i, b }))
+        .filter(({ b }) => b.kind === 'text' && b.text === 'T R A I N I N G');
+      expect(markers).toHaveLength(2);
+      const companyNameIndex = blocks.findIndex((b) => b.kind === 'text' && b.text === base.companyName);
+      expect(markers[0]!.i).toBeLessThan(companyNameIndex);
+      expect(markers[1]!.i).toBe(blocks.length - 1);
+    });
+
+    it('omits the training marker entirely for a normal (non-training) receipt', async () => {
+      const text = allText(await buildReceiptBlocks(base));
+      expect(text).not.toContain('T R A I N I N G');
+    });
+
+    it('shows both STORNOBELEG and the training marker for a training-register Bonstorno', async () => {
+      const blocks = await buildReceiptBlocks({ ...base, isCancellation: true, isTraining: true });
+      const text = allText(blocks);
+      expect(text).toContain('STORNOBELEG');
+      expect(text).toContain('T R A I N I N G');
+    });
+  });
 });

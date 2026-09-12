@@ -82,6 +82,7 @@ Table register {
   printer_id  uuid         [null, note: 'receipt_register only: assigned receipt printer']
   layout_id   uuid         [null, note: 'Explicit register_layout override; null falls back to the default layout of the active event for this register type']
   is_active   boolean      [not null, default: true, note: 'false = archived: hidden from the operator login/register picker, still visible in history/exports (Task #55)']
+  is_training boolean      [not null, default: false, note: 'Task #130 — training register: bookings still TSE-signed/fully documented, but excluded from Kassenabschluss totals and exported as DSFinV-K BON_TYP=AVTraining. Locked (app-level) once the register has any invoice/service_order/order_cancellation row.']
   created_at  timestamptz  [not null, default: `now()`]
 }
 

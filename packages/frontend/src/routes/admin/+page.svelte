@@ -40,7 +40,7 @@
 
   /** The currently active event (Task #95), or `null` if none is active. */
   let activeEvent: ActiveEvent | null = $state(null);
-  /** Whether the current (browser-local) time falls outside the active event's start/end window. */
+  /** Whether the current (server) time falls outside the active event's start/end window. */
   let eventTimeWarning = $state(false);
 
   /** Shutdown (Task #99) — moved here from Einstellungen → System so it's reachable from the dashboard's top-right corner. */
@@ -129,10 +129,26 @@
     } catch { openPositionsTotal = 0; }
   }
 
+  /**
+   * Whether the active event's own configured start/end window is being
+   * checked against *server* time, never the browser's — this drives a real
+   * operational warning (not a clock-drift display), so it must agree with
+   * how the server itself would judge "is this event currently active".
+   * Approximates the server's current instant from the last known
+   * `driftSeconds` (from `loadStatus()`, which runs in the same refresh
+   * batch) rather than a fresh request — clock *rate* is fine to trust even
+   * when a clock's *offset* is wrong, so `Date.now()` corrected by the
+   * cached offset stays accurate between refreshes. Falls back to the raw
+   * browser clock only if no drift measurement has ever succeeded yet.
+   */
+  function serverNowMs(): number {
+    return driftSeconds === null ? Date.now() : Date.now() - driftSeconds * 1000;
+  }
+
   async function loadActiveEvent() {
     try {
       activeEvent = (await api.admin.system.getActiveEvent()).event;
-      const now = Date.now();
+      const now = serverNowMs();
       eventTimeWarning = activeEvent !== null
         && (now < new Date(activeEvent.startTime).getTime() || now > new Date(activeEvent.endTime).getTime());
     } catch {

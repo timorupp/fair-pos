@@ -62,6 +62,25 @@ async function userHasRegister(userId: string, registerId: string): Promise<bool
 }
 
 /**
+ * Resolves the `invoice.receipt_type` a new checkout on this register must
+ * use (Task #130) — `'training'` for a training register, `'sales_receipt'`
+ * otherwise. Training invoices still go through the exact same checkout path
+ * (TSE signing, `nextReceiptNumber()` sequence, printing) as a normal sale —
+ * only this one column differs, which is what drives their exclusion from
+ * closing totals (`closing/totals.ts`) and their `AVTraining` DSFinV-K
+ * classification (`exports/dsfinvk/load.ts`).
+ *
+ * @param registerId - The register the checkout is happening on.
+ * @returns `'training'` or `'sales_receipt'`.
+ */
+async function receiptTypeForRegister(registerId: string): Promise<'training' | 'sales_receipt'> {
+  const result = await query<{ is_training: boolean }>(
+    `SELECT is_training FROM register WHERE id = $1`, [registerId],
+  );
+  return result.rows[0]?.is_training ? 'training' : 'sales_receipt';
+}
+
+/**
  * Returns a `{ status, body }` pair describing the "register locked" 409 response
  * when the register has outstanding Z-Bons. Returns `null` when the register is OK.
  *
@@ -105,9 +124,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
   app.get('/me', async (req, reply) => {
     const result = await query<{
       id: string; name: string; type: RegisterType;
-      printer_id: string | null; layout_id: string | null;
+      printer_id: string | null; layout_id: string | null; is_training: boolean;
     }>(`
-      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id
+      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_training
         FROM register r
         JOIN user_register ur ON ur.register_id = r.id
        WHERE ur.user_id = $1 AND r.is_active = true AND r.event_id = $2
@@ -144,9 +163,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
     const regResult = await query<{
       id: string; name: string; type: RegisterType;
-      printer_id: string | null; layout_id: string | null;
+      printer_id: string | null; layout_id: string | null; is_training: boolean;
     }>(
-      `SELECT id, name, type, printer_id, layout_id FROM register WHERE id = $1 AND is_active = true AND event_id = $2`,
+      `SELECT id, name, type, printer_id, layout_id, is_training FROM register WHERE id = $1 AND is_active = true AND event_id = $2`,
       [id, config.activeEventId],
     );
     const register = regResult.rows[0];
@@ -238,6 +257,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       const locked = await lockedResponse(registerId);
       if (locked) return reply.status(locked.status).send(locked.body);
 
+      // Task #130: a training register's checkout invoice carries
+      // receipt_type='training' instead of 'sales_receipt' — everything else
+      // about the checkout (TSE signing, receipt numbering, printing) is unchanged.
+      const receiptType = await receiptTypeForRegister(registerId);
+
       // At the Bonkasse, self-pickup slips go to the register's own printer
       // (fallback: system default). The per-article printer is intentionally
       // NOT used here — that's a Bedienungskasse-only rule. See
@@ -312,10 +336,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
              tse_transaction_number, tse_start_time, tse_end_time,
              tse_signature, tse_signature_counter, tse_serial_number
            )
-           VALUES ($1, $2, 'sales_receipt', 'cash', $3, $4, $5, $6, $7, $8, $9)
+           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10)
            RETURNING id`,
           [
-            registerId, receiptNumber, receiptToken,
+            registerId, receiptNumber, receiptType, receiptToken,
             tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
             tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
           ],
@@ -782,6 +806,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       if (locked) return reply.status(locked.status).send(locked.body);
     }
 
+    // Task #130: a training register's checkout invoice carries
+    // receipt_type='training' instead of 'sales_receipt'.
+    const receiptType = await receiptTypeForRegister(registerId);
+
     const quantitiesMap = new Map<string, number>();
     for (const q of quantities) {
       if (!q.group_key || typeof q.count !== 'number' || !Number.isInteger(q.count) || q.count < 0) {
@@ -847,10 +875,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number
          )
-         VALUES ($1, $2, 'sales_receipt', 'cash', $3, $4, $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
         [
-          registerId, receiptNumber, receiptToken,
+          registerId, receiptNumber, receiptType, receiptToken,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
         ],

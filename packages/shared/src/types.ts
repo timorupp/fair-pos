@@ -59,6 +59,14 @@ export interface Register {
   printer_id: string | null;
   /** Archived registers disappear from the operator login/register picker but stay in history/exports. */
   is_active: boolean;
+  /**
+   * Task #130: a training register produces TSE-signed, fully documented
+   * bookings that are excluded from Kassenabschluss totals and exported as
+   * DSFinV-K `BON_TYP=AVTraining`. Locked (cannot be toggled either
+   * direction) once the register has any booking — see
+   * `routes/admin/registers.ts`.
+   */
+  is_training: boolean;
   created_at: string;
 }
 

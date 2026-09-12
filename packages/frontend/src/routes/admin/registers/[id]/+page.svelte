@@ -51,36 +51,43 @@
   let id = $derived(($page.params['id'] ?? '') as string);
 
   /**
-   * Most recent closing whose `created_at` falls on the current local calendar day,
-   * used by the UI to warn the operator about a duplicate Z-Bon issuance.
-   * `null` when no closing exists for today.
+   * The server's current calendar day (`YYYY-MM-DD`, server timezone) — used
+   * for {@link closedToday} instead of the browser's own clock/timezone
+   * (never authoritative for anything operationally relevant; a dev-TSE
+   * server may run with its system clock deliberately set back, and an
+   * admin's browser could disagree in any case — see D-025's identical
+   * rationale on the Excel-export page). `null` until loaded.
    */
-  let closedToday = $derived((() => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const start = today.getTime();
-    const end = start + 24 * 60 * 60 * 1000;
-    return closings.find((c) => {
-      const t = new Date(c.created_at).getTime();
-      return t >= start && t < end;
-    }) ?? null;
-  })());
+  let serverTodayIso: string | null = $state(null);
+
+  /**
+   * Most recent closing whose `business_date` (already computed server-side
+   * in the server's own timezone) equals {@link serverTodayIso}, used by the
+   * UI to warn the operator about a duplicate Z-Bon issuance. `null` when no
+   * closing exists for today, or while `serverTodayIso` hasn't loaded yet.
+   */
+  let closedToday = $derived(
+    serverTodayIso === null ? null : closings.find((c) => c.business_date === serverTodayIso) ?? null,
+  );
 
   onMount(load);
 
-  /** Loads register details, cash transactions, past closings AND the pending-day list in parallel. */
+  /** Loads register details, cash transactions, past closings, the pending-day list, AND the server's current date, all in parallel. */
   async function load() {
     loading = true;
     try {
-      const [reg, txs, cls, pend] = await Promise.all([
+      const [reg, txs, cls, pend, sys] = await Promise.all([
         api.admin.registers.get(id),
         api.admin.registers.listTransactions(id),
         api.admin.closings.listForRegister(id),
         api.admin.closings.pending(),
+        api.admin.system.status(),
       ]);
       register = reg;
       transactions = txs;
       closings = cls.closings;
       pendingDays = pend.registers.find((r) => r.register_id === id)?.pending_days ?? [];
+      serverTodayIso = new Intl.DateTimeFormat('en-CA', { timeZone: sys.timezone }).format(new Date(sys.server_time));
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally { loading = false; }

@@ -18,6 +18,7 @@ const ctx: ClosingContext = {
   zero_counter: 5,
   vat_rate_standard: 19,
   vat_rate_reduced: 7,
+  is_training: false,
 };
 
 const totals: ClosingTotals = {
@@ -117,5 +118,17 @@ describe('buildZBonBlocks (rendered as ESC/POS)', () => {
     const buf = buildZBonEscPos(ctx, totals, businessDate, null);
     // ESC @ + ESC t 19 — printer reset followed by CP858 select.
     expect(buf.subarray(0, 5).equals(Buffer.from([0x1b, 0x40, 0x1b, 0x74, 0x13]))).toBe(true);
+  });
+
+  describe('Trainingskasse marker (Task #130)', () => {
+    it('prints a prominent TRAININGSKASSE marker when the register is a training register', () => {
+      const ascii = buildZBonEscPos({ ...ctx, is_training: true }, totals, businessDate, null).toString('ascii');
+      expect(ascii).toContain('TRAININGSKASSE');
+    });
+
+    it('omits the marker for a normal register', () => {
+      const ascii = buildZBonEscPos(ctx, totals, businessDate, null).toString('ascii');
+      expect(ascii).not.toContain('TRAININGSKASSE');
+    });
   });
 });

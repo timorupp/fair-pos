@@ -1,6 +1,7 @@
 /** Integration tests for DELETE /api/admin/registers/:id — see Task #54. */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import { createTestRegister, createTestUser } from '../../test/fixtures.js';
@@ -154,5 +155,129 @@ describe('register scoped to the active event (Task #95)', () => {
       payload: { layout_id: foreignLayout.rows[0]!.id },
     });
     expect(updateResponse.statusCode).toBe(400);
+  });
+});
+
+describe('register.is_training (Task #130)', () => {
+  it('creates a register non-training by default, has_bookings false', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/registers',
+      headers: { cookie: adminCookie },
+      payload: { name: 'K1', type: 'receipt_register' },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().is_training).toBe(false);
+
+    const getResponse = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${response.json().id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(getResponse.json().has_bookings).toBe(false);
+  });
+
+  it('toggles is_training freely while the register has no bookings', async () => {
+    const register = await createTestRegister();
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: true },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().is_training).toBe(true);
+
+    const back = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: false },
+    });
+    expect(back.statusCode).toBe(200);
+    expect(back.json().is_training).toBe(false);
+  });
+
+  it('rejects toggling is_training once the register has a booking (invoice)', async () => {
+    const register = await createTestRegister({ isTraining: true });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method)
+       VALUES ($1, 1, 'training', 'cash')`,
+      [register.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: false },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatch(/Trainingsmodus/);
+
+    const stillTraining = await pool.query<{ is_training: boolean }>(
+      'SELECT is_training FROM register WHERE id = $1', [register.id],
+    );
+    expect(stillTraining.rows[0]?.is_training).toBe(true);
+  });
+
+  it('rejects toggling is_training once the register has a booking (service_order)', async () => {
+    const register = await createTestRegister({ type: 'service_register' });
+    await pool.query(
+      `INSERT INTO service_order (register_id) VALUES ($1)`,
+      [register.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: true },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects toggling is_training once the register has a booking (order_cancellation)', async () => {
+    const register = await createTestRegister();
+    const reason = await pool.query<{ id: string }>(
+      `INSERT INTO cancellation_reason (name, booking_type, event_id) VALUES ('Testgrund', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
+    );
+    await pool.query(
+      `INSERT INTO order_cancellation (register_id, cancellation_reason_id, cancellation_reason_name)
+       VALUES ($1, $2, 'Testgrund')`,
+      [register.id, reason.rows[0]!.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: true },
+    });
+    expect(response.statusCode).toBe(400);
+
+    const detail = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(detail.json().has_bookings).toBe(true);
+  });
+
+  it('does not reject re-sending the current, unchanged is_training value even once the register has a booking (no-op resave precedent)', async () => {
+    const register = await createTestRegister({ isTraining: true });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method)
+       VALUES ($1, 1, 'training', 'cash')`,
+      [register.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: true, name: 'Umbenannt' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().is_training).toBe(true);
+    expect(response.json().name).toBe('Umbenannt');
   });
 });

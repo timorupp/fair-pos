@@ -285,4 +285,121 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     expect(contentB.some((l) => l.includes(orderA.rows[0]!.id))).toBe(false);
     expect(contentA.some((l) => l.includes(orderB.rows[0]!.id))).toBe(false);
   });
+
+  it('exports a training register\'s invoice as BON_TYP=AVTraining, still Kassenbeleg-V1, fully documented but excluded from businesscases.csv (Task #130)', async () => {
+    const category = await createTestCategory({ name: 'Getränke', taxCategory: 'standard' });
+    const article = await createTestArticle({ name: 'Bier', price: 5, categoryId: category.id });
+    const register = await createTestRegister({ type: 'receipt_register', isTraining: true });
+
+    const closing = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, true, '2026-08-05', 0, 0, 0, 0, 0, 0, 0, 0)
+       RETURNING id`,
+      [register.id],
+    );
+    const closingId = closing.rows[0]!.id;
+
+    const invoice = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, daily_closing_id)
+       VALUES ($1, 42, 'training', 'cash', $2)
+       RETURNING id`,
+      [register.id, closingId],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, $3, 'Bier', 'Getränke', 19, 'standard', 5, 'paid')`,
+      [invoice.rows[0]!.id, register.id, article.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/exports/dsfinvk/${closingId}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const directory = await unzipper.Open.buffer(response.rawPayload);
+    const names = directory.files.map((f) => f.path);
+    const readCsv = async (name: string) => (await directory.files.find((f) => f.path === name)!.buffer()).toString('utf-8');
+
+    const transactions = await readCsv('transactions.csv');
+    expect(transactions).toContain('AVTraining');
+    expect(transactions).toContain('5.00');
+
+    const transactionsTse = await readCsv('transactions_tse.csv');
+    expect(transactionsTse).toContain('Kassenbeleg-V1');
+
+    const lines = await readCsv('lines.csv');
+    expect(lines.trim().split('\r\n')).toHaveLength(2); // header + 1 article line — fully documented
+
+    const datapayment = await readCsv('datapayment.csv');
+    expect(datapayment.trim().split('\r\n')).toHaveLength(2); // header + 1 — still fully documented per-Vorgang
+
+    // A closing consisting entirely of training bookings ends up with ZERO
+    // rows in businesscases.csv/payment.csv — `buildDsfinvkZip` omits a CSV
+    // file entirely once its row array is empty, so their correct absence
+    // from the ZIP (not a header-only file) is itself the proof no training
+    // amount leaked into the delivered aggregates.
+    expect(names).not.toContain('businesscases.csv');
+    expect(names).not.toContain('payment.csv');
+
+    // cash_per_currency.csv always emits exactly one row (even 0.00) — its
+    // amount must still be 0.00, not the training invoice's 5.00.
+    const cashPerCurrency = await readCsv('cash_per_currency.csv');
+    expect(cashPerCurrency).toContain('0.00');
+    expect(cashPerCurrency).not.toContain('5.00');
+  });
+
+  it('exports a Bonstorno on a training register as BON_TYP=AVTraining (not Beleg), while still negated/isBonstorno-classified per D-068/D-069 (Task #130)', async () => {
+    const category = await createTestCategory({ name: 'Getränke', taxCategory: 'standard' });
+    const article = await createTestArticle({ name: 'Bier', price: 5, categoryId: category.id });
+    const register = await createTestRegister({ type: 'receipt_register', isTraining: true });
+
+    const closing = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, true, '2026-08-05', 0, 0, 0, 0, 0, 0, 0, 0)
+       RETURNING id`,
+      [register.id],
+    );
+    const closingId = closing.rows[0]!.id;
+
+    const invoice = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, daily_closing_id)
+       VALUES ($1, 42, 'cancellation', 'cash', $2)
+       RETURNING id`,
+      [register.id, closingId],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, $3, 'Bier', 'Getränke', 19, 'standard', -5, 'paid')`,
+      [invoice.rows[0]!.id, register.id, article.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/exports/dsfinvk/${closingId}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const directory = await unzipper.Open.buffer(response.rawPayload);
+    const names = directory.files.map((f) => f.path);
+    const transactionsFile = directory.files.find((f) => f.path === 'transactions.csv')!;
+    const content = (await transactionsFile.buffer()).toString('utf-8');
+    expect(content).toContain('AVTraining');
+    expect(content).not.toContain(';Beleg;'); // BON_TYP column must not read "Beleg" for this row
+    expect(content).toContain('-5.00');
+
+    // Same reasoning as the previous test: an entirely-training closing has
+    // no businesscases.csv rows at all, so `buildDsfinvkZip` omits the file
+    // — including the Bonstorno's negated amount, which never reaches the
+    // Z_GV_TYP aggregate either.
+    expect(names).not.toContain('businesscases.csv');
+  });
 });

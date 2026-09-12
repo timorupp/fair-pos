@@ -31,14 +31,14 @@ const COMPANY_SETTING_KEYS = ['company_name', 'system_serial'] as const;
  */
 export async function loadClosingById(id: string): Promise<StoredClosing | null> {
   const result = await query<{
-    id: string; register_id: string; register_name: string;
+    id: string; register_id: string; register_name: string; register_is_training: boolean;
     z_number: string; created_at: Date; business_date: string;
     is_zero_closing: boolean;
     total_gross: string; total_tax_standard: string; total_tax_reduced: string;
     total_tax_zero: string; total_cash: string;
     total_bonstorno: string; total_free: string; total_order_cancellations: string;
   }>(
-    `SELECT c.id, c.register_id, r.name AS register_name,
+    `SELECT c.id, c.register_id, r.name AS register_name, r.is_training AS register_is_training,
             c.z_number::text, c.created_at,
             to_char(c.business_date, 'YYYY-MM-DD') AS business_date,
             c.is_zero_closing,
@@ -78,6 +78,7 @@ export async function loadClosingById(id: string): Promise<StoredClosing | null>
     zero_counter:  zeroCounter,
     vat_rate_standard: taxRates.standard,
     vat_rate_reduced:  taxRates.reduced,
+    is_training:   row.register_is_training,
   };
   const totals: ClosingTotals = {
     total_gross:         Number(row.total_gross),

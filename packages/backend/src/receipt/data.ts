@@ -44,7 +44,7 @@ async function loadReceiptWhere(whereClause: string, params: unknown[]): Promise
   const inv = await query<{
     id: string; receipt_number: number; receipt_type: 'sales_receipt' | 'cancellation' | 'training';
     payment_method: 'cash' | 'card'; created_at: Date;
-    register_name: string;
+    register_name: string; register_is_training: boolean;
     tse_transaction_number: string | null;     // BIGINT comes back as string from pg
     tse_signature_counter: string | null;
     tse_signature: string | null;
@@ -52,7 +52,7 @@ async function loadReceiptWhere(whereClause: string, params: unknown[]): Promise
     tse_end_time: Date | null;
   }>(`
     SELECT i.id, i.receipt_number, i.receipt_type, i.payment_method, i.created_at,
-           r.name AS register_name,
+           r.name AS register_name, r.is_training AS register_is_training,
            i.tse_transaction_number,
            i.tse_signature_counter, i.tse_signature,
            i.tse_start_time, i.tse_end_time
@@ -141,6 +141,7 @@ function assembleReceiptData(
   row: {
     receipt_number: number; receipt_type: 'sales_receipt' | 'cancellation' | 'training';
     payment_method: 'cash' | 'card'; created_at: Date; register_name: string;
+    register_is_training: boolean;
     tse_transaction_number: string | null;
     tse_signature_counter: string | null; tse_signature: string | null;
     tse_start_time: Date | null; tse_end_time: Date | null;
@@ -170,6 +171,7 @@ function assembleReceiptData(
     registerName: row.register_name,
     paymentMethod: row.payment_method,
     isCancellation,
+    isTraining: row.register_is_training,
     tableName: table?.name ?? null,
     firstOrderTime: table?.firstOrderTime ?? null,
     logoPng:         logo?.pdfPng ?? null,

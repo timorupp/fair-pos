@@ -27,6 +27,14 @@ export interface ClosingContext {
   vat_rate_standard: number;
   /** Ermäßigter Steuersatz in percent (`vat_rate_reduced` setting), for the tax-breakdown row label (Task #110 — was hardcoded "7 %"). */
   vat_rate_reduced: number;
+  /**
+   * True when this Z-Bon belongs to a training register (`register.is_training`,
+   * Task #130) — the printed Z-Bon gets a prominent "TRAININGSKASSE" marker.
+   * Its totals are naturally all zero (`closing/totals.ts` excludes every
+   * `receipt_type='training'` invoice), so no computation changes, only the
+   * visual marker below.
+   */
+  is_training: boolean;
 }
 
 /** Formats a euro amount as German `1.234,56`. Local copy, matches the pre-migration renderers' own wording (` EUR`, not `€` — kept as-is, not unified with the receipt's `€` symbol; that's a separate wording choice, not part of Task #105's scope). */
@@ -71,6 +79,10 @@ export function buildZBonBlocks(
 
   blocks.push({ kind: 'text', text: 'Z-BON', align: 'center', bold: true, size: 'xlarge' });
   blocks.push({ kind: 'blank' });
+  if (ctx.is_training) {
+    blocks.push({ kind: 'text', text: 'TRAININGSKASSE', align: 'center', bold: true, size: 'xlarge' });
+    blocks.push({ kind: 'blank' });
+  }
   blocks.push({ kind: 'text', text: ctx.company_name, align: 'center', bold: true });
   blocks.push({ kind: 'text', text: `Kasse: ${ctx.register_name}`, align: 'center' });
   blocks.push({ kind: 'text', text: formatGermanDateTime(ctx.created_at), align: 'center' });

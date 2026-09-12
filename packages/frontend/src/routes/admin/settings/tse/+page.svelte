@@ -157,22 +157,6 @@
     return `${Math.floor(seconds / (365 * 86400))} Jahr(e)`;
   }
 
-  /**
-   * Whether a TSE certificate has already expired, or will expire before
-   * the end of today (Task #132) — compared at calendar-day granularity,
-   * matching `tse/healthJob.ts`'s `certificateExpiresTodayOrEarlier()` on
-   * the backend (kept as a small, independent duplicate rather than a
-   * shared-package helper — this one-off comparison isn't worth a new
-   * runtime export from `@fairpos/shared`, which today only holds types).
-   */
-  function certificateExpiresTodayOrEarlier(expirationUnixSeconds: number): boolean {
-    const expiry = new Date(expirationUnixSeconds * 1000);
-    const now = new Date();
-    const expiryDay = Date.UTC(expiry.getFullYear(), expiry.getMonth(), expiry.getDate());
-    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-    return expiryDay <= today;
-  }
-
   function copyTseResult() {
     if (!tseResult) return;
     copyToClipboard(JSON.stringify(tseResult, null, 2));
@@ -537,9 +521,9 @@
         <dt>Laufende Transaktionen</dt><dd>{tseResult.info.startedTransactions} / {tseResult.info.maxStartedTransactions}</dd>
         <dt>Verbleibende Signaturen</dt><dd>{tseResult.info.remainingSignatures.toLocaleString('de-DE')} / {tseResult.info.maxSignatures.toLocaleString('de-DE')}</dd>
         <dt>Zertifikat gültig bis</dt>
-        <dd class:error-text={certificateExpiresTodayOrEarlier(tseResult.info.certificateExpirationDate)}>
+        <dd class:error-text={tseResult.certificateExpiresTodayOrEarlier}>
           {new Date(tseResult.info.certificateExpirationDate * 1000).toLocaleString('de-DE')}
-          {#if certificateExpiresTodayOrEarlier(tseResult.info.certificateExpirationDate)}
+          {#if tseResult.certificateExpiresTodayOrEarlier}
             — abgelaufen oder läuft heute ab! Zertifikatsverlängerung/TSE-Austausch veranlassen.
           {/if}
         </dd>

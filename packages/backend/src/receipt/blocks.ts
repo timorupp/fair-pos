@@ -38,6 +38,13 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
     });
   }
 
+  // Task #130: printed independently of (and, for a training-register
+  // Bonstorno, alongside) the STORNOBELEG marker below — both can coexist.
+  if (d.isTraining) {
+    blocks.push({ kind: 'text', text: 'T R A I N I N G', align: 'center', bold: true, size: 'xlarge' });
+    blocks.push({ kind: 'blank' });
+  }
+
   if (d.isCancellation) {
     blocks.push({ kind: 'text', text: 'STORNOBELEG', align: 'center', bold: true, size: 'xlarge' });
     blocks.push({ kind: 'blank' });
@@ -139,6 +146,12 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
 
   blocks.push({ kind: 'blank' });
   blocks.push({ kind: 'text', text: 'Danke für Ihren Einkauf!', align: 'center' });
+
+  // Task #130: repeated as the very last line so the marker survives even if
+  // the top-of-receipt one is cut off (thermal paper feed/tear).
+  if (d.isTraining) {
+    blocks.push({ kind: 'text', text: 'T R A I N I N G', align: 'center', bold: true, size: 'xlarge' });
+  }
 
   return blocks;
 }

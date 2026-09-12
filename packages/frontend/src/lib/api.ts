@@ -44,6 +44,8 @@ export interface TseInfo {
 export interface TseStatus {
   configured: boolean;
   info?: TseInfo;
+  /** Whether the certificate expires today or earlier — computed server-side against server time (Task #132 follow-up), never in the browser. */
+  certificateExpiresTodayOrEarlier?: boolean;
   error?: string;
 }
 
@@ -253,9 +255,13 @@ export const api = {
         printer_name: string | null;
         effective_printer_name: string | null;
         total_deposits: number; total_withdrawals: number;
+        /** Whether this register already has any booking (Task #130) — when true, `is_training` can no longer be toggled. */
+        has_bookings: boolean;
       }> =>
         request('GET', `/admin/registers/${id}`),
-      create: (data: { name: string; type: string; printer_id?: string | null; is_active?: boolean }): Promise<Register> =>
+      create: (data: {
+        name: string; type: string; printer_id?: string | null; is_active?: boolean; is_training?: boolean;
+      }): Promise<Register> =>
         request('POST', '/admin/registers', data),
       update: (id: string, data: Partial<Register>): Promise<Register> =>
         request('PUT', `/admin/registers/${id}`, data),
@@ -702,13 +708,20 @@ export const api = {
         id: string; name: string;
         type: 'receipt_register' | 'service_register';
         printer_id: string | null; layout_id: string | null;
+        /** Task #130 — training register, banner-worthy in the register picker. */
+        is_training: boolean;
         locked: boolean; pending_days: string[];
       }[];
     }> => request('GET', '/register-session/me'),
 
     /** Full operating context for one register: register, resolved layout, active articles, lock state. */
     register: (id: string): Promise<{
-      register: { id: string; name: string; type: 'receipt_register' | 'service_register'; printer_id: string | null; layout_id: string | null };
+      register: {
+        id: string; name: string; type: 'receipt_register' | 'service_register';
+        printer_id: string | null; layout_id: string | null;
+        /** Task #130 — drives the persistent training banner in the register UIs. */
+        is_training: boolean;
+      };
       layout: { id: string; name: string; grid_cols: number; grid_rows: number; slots: { article_id: string; grid_row: number; grid_col: number; color: string; label: string | null }[] } | null;
       articles: (Article & { category_name: string; tax_rate: string })[];
       locked: boolean;

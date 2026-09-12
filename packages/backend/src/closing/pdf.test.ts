@@ -13,6 +13,7 @@ const ctx: ClosingContext = {
   zero_counter: 5,
   vat_rate_standard: 19,
   vat_rate_reduced: 7,
+  is_training: false,
 };
 
 const totals: ClosingTotals = {

@@ -63,7 +63,7 @@ export async function createTestPrinter(overrides: {
  * Inserts a `register` row.
  *
  * @param overrides - Optional overrides for `name`, `type`, `printerId`, `layoutId`, `isActive`,
- *   `eventId` (Task #95 — defaults to `config.activeEventId`).
+ *   `isTraining` (Task #130), `eventId` (Task #95 — defaults to `config.activeEventId`).
  * @returns The new register id.
  */
 export async function createTestRegister(overrides: {
@@ -72,18 +72,20 @@ export async function createTestRegister(overrides: {
   printerId?: string | null;
   layoutId?: string | null;
   isActive?: boolean;
+  isTraining?: boolean;
   eventId?: string | null;
 } = {}): Promise<{ id: string; name: string }> {
   const name = overrides.name ?? `register-${Math.random().toString(36).slice(2, 8)}`;
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO register (name, type, printer_id, layout_id, is_active, event_id)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    `INSERT INTO register (name, type, printer_id, layout_id, is_active, is_training, event_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
     [
       name,
       overrides.type ?? 'receipt_register',
       overrides.printerId ?? null,
       overrides.layoutId ?? null,
       overrides.isActive ?? true,
+      overrides.isTraining ?? false,
       overrides.eventId ?? config.activeEventId,
     ],
   );

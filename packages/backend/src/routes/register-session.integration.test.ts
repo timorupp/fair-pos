@@ -752,6 +752,73 @@ describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSon
   });
 });
 
+describe('Trainingsmodus (Task #130)', () => {
+  it('Bonkasse checkout on a training register sets receipt_type=training', async () => {
+    await pool.query('UPDATE register SET is_training = true WHERE id = $1', [registerId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    const invoice = await pool.query<{ receipt_type: string }>(
+      'SELECT receipt_type FROM invoice WHERE id = $1', [response.json().invoice_id],
+    );
+    expect(invoice.rows[0]?.receipt_type).toBe('training');
+  });
+
+  it('Bonkasse checkout on a normal register still sets receipt_type=sales_receipt', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    const invoice = await pool.query<{ receipt_type: string }>(
+      'SELECT receipt_type FROM invoice WHERE id = $1', [response.json().invoice_id],
+    );
+    expect(invoice.rows[0]?.receipt_type).toBe('sales_receipt');
+  });
+
+  it('Bedienungskasse split-checkout on a training register also sets receipt_type=training', async () => {
+    await pool.query('UPDATE register SET is_training = true WHERE id = $1', [serviceRegisterId]);
+    const app = await getTestApp();
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
+    const table = await pool.query<{ id: string }>(
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('T1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
+    );
+    const tableId = table.rows[0]!.id;
+    const order = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(order.statusCode).toBe(200);
+
+    const openItems = await app.inject({
+      method: 'GET', url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/open-items`,
+      headers: { cookie: userCookie },
+    });
+    const groupKey = openItems.json().groups[0].group_key;
+
+    const checkout = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { quantities: [{ group_key: groupKey, count: 1 }] },
+    });
+    expect(checkout.statusCode).toBe(200);
+    const invoice = await pool.query<{ receipt_type: string }>(
+      'SELECT receipt_type FROM invoice WHERE id = $1', [checkout.json().invoice_id],
+    );
+    expect(invoice.rows[0]?.receipt_type).toBe('training');
+  });
+});
+
 describe('Register-Sperre durch ausstehende Tagesabschlüsse', () => {
   it('blocks Bonkasse checkout with 409 when a past calendar day needs a Z-Bon', async () => {
     const app = await getTestApp();

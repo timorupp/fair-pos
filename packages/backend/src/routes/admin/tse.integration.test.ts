@@ -110,6 +110,28 @@ describe('TSE connection settings + status', () => {
     expect(body.error).toBeTruthy();
   });
 
+  it('computes certificateExpiresTodayOrEarlier against server time, not the browser (Task #132 follow-up)', async () => {
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    config.tseMountPoint = '/mnt/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    const expiredSecondsAgo = Math.floor(Date.now() / 1000) - 24 * 3600;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true, result: { hasPassedSelfTest: true, hasValidTime: true, certificateExpirationDate: expiredSecondsAgo },
+    });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/status',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.configured).toBe(true);
+    expect(body.certificateExpiresTodayOrEarlier).toBe(true);
+    delete process.env['TSE_STUB_STDOUT'];
+    config.tseCliPath = null;
+  });
+
   it('GET /candidates lists removable mount points via the real lsblk binary without throwing', async () => {
     const app = await getTestApp();
     const response = await app.inject({

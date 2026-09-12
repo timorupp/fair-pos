@@ -7,7 +7,7 @@
   import { api } from '$lib/api';
   import type { Article } from '@fairpos/shared';
   import { adjustQuantity, computeOrderTotal, num, setQuantity, type OrderLine } from '$lib/order';
-  import { currentRegisterName } from '$lib/stores/page-title';
+  import { currentRegisterName, currentRegisterIsTraining } from '$lib/stores/page-title';
   import { longpress } from '$lib/longpress';
   import Modal from '$lib/components/Modal.svelte';
 
@@ -58,6 +58,7 @@
       const ctx = await api.registerSession.register(registerId);
       registerName = ctx.register.name;
       currentRegisterName.set(registerName);
+      currentRegisterIsTraining.set(ctx.register.is_training);
       registerType = ctx.register.type;
       locked = ctx.locked;
       pendingDays = ctx.pending_days;

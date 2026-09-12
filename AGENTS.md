@@ -37,6 +37,7 @@ kollidieren können (z.B. manche CDDL/EPL-Varianten), und bei jeglicher
 - `docs/TSE-CLI-Referenz.md` — vollständige Befehlsreferenz für `tseCli` zum direkten Kommandozeilen-Aufruf (Setup, Diagnose, Entwickler-TSE-Reset, Rohdaten-Löschung)
 - `docs/Rechtliche-Anforderungen.md` / `docs/Organisatorische-Anleitung.md` — KassenSichV-/GoBD-Vorgaben und Betriebsabläufe
 - `docs/Manueller-Testplan.md` — Checkliste für den manuellen Regressionstest (UI, TSE-Ausfallverhalten, DSFinV-K-Export)
+- `docs/Veranstaltungscheckliste.md` — operative Checkliste pro Veranstaltung (vor/während/nach einem Fair), abzugrenzen von den jährlichen/einmaligen Checklisten in `docs/Organisatorische-Anleitung.md`
 
 **Projekt-Metadateien** (Repo-Root, nicht unter `docs/`):
 - `BACKLOG.md` — maßgebliche, versionierte Liste offener Tasks (Nutzerwünsche/

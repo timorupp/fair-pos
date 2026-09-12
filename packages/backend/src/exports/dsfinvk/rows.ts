@@ -16,9 +16,19 @@ import {
 import { extractLeafCertificateChunks } from './leafCertificate.js';
 import type { TaxCategory } from '@fairpos/shared';
 
-/** Maps a DSFinV-K `BON_TYP` to the literal TSE `processType` FairPOS actually signed it with — these are two distinct vocabularies (see tse/processData.ts), and Anhang E defines `TSE_TA_VORGANGSART` as the latter. */
+/**
+ * Maps a DSFinV-K `BON_TYP` to the literal TSE `processType` FairPOS actually
+ * signed it with — these are two distinct vocabularies (see
+ * tse/processData.ts), and Anhang E defines `TSE_TA_VORGANGSART` as the latter.
+ *
+ * `AVTraining` (Task #130) maps to the same `Kassenbeleg-V1` as `Beleg` —
+ * researched and confirmed against AEAO zu §146a Nr. 2.2.3.5/2.2.3.6 and
+ * DSFinV-K 2.4 Anhang I: a training booking needs no dedicated TSE-hardware
+ * processType, `AVTraining` is purely an export-level `BON_TYP` classification.
+ */
 function tseProcessTypeFor(bonTyp: SourceVorgang['bonTyp']): string {
   if (bonTyp === 'Beleg') return KASSENBELEG_PROCESS_TYPE;
+  if (bonTyp === 'AVTraining') return KASSENBELEG_PROCESS_TYPE;
   if (bonTyp === 'AVBestellung') return BESTELLUNG_PROCESS_TYPE;
   return SONSTIGER_VORGANG_PROCESS_TYPE;
 }
@@ -54,8 +64,14 @@ export interface SourceLineItem {
 export interface SourceVorgang {
   /** Stable, globally unique ID — becomes BON_ID (invoice/service_order/order_cancellation primary key). */
   id: string;
-  /** DSFinV-K BON_TYP, see Rechtliche-Anforderungen.md Abschnitt 6.2. */
-  bonTyp: 'Beleg' | 'AVBestellung' | 'AVSonstige';
+  /**
+   * DSFinV-K BON_TYP, see Rechtliche-Anforderungen.md Abschnitt 6.2.
+   * `AVTraining` (Task #130) is derived from the owning register's
+   * `is_training` flag, not from `receipt_type` alone — a Bonstorno on a
+   * training register is `AVTraining`, not `AVSonstige`/`Beleg`. See
+   * `exports/dsfinvk/load.ts`.
+   */
+  bonTyp: 'Beleg' | 'AVBestellung' | 'AVSonstige' | 'AVTraining';
   /** Required by the spec when bonTyp is AVSonstige; optional otherwise. */
   bonName: string | null;
   /** The printed receipt number — only invoices have one; null for AVBestellung/AVSonstige. */
@@ -307,7 +323,14 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
         POS_UST: euro5(articleBrutto - articleNetto),
       });
       addToVatBucket(vatBuckets, key, articleBrutto, articleNetto);
-      addToBusinesscase(businesscaseTotals, 'Umsatz', key, articleBrutto, articleNetto);
+      // Task #130: a training Vorgang still gets full lines.csv/lines_vat.csv/
+      // transactions_vat.csv documentation (above) — only the Z_GV_TYP
+      // (Kassenabschluss revenue total) contribution is suppressed, so a
+      // training booking can never leak into the delivered export's revenue
+      // totals.
+      if (v.bonTyp !== 'AVTraining') {
+        addToBusinesscase(businesscaseTotals, 'Umsatz', key, articleBrutto, articleNetto);
+      }
 
       // Separate Pfand / PfandRueckzahlung line, if this position carries a
       // deposit — always taxed at `standard` (Task #113: Pfand unterliegt
@@ -345,7 +368,10 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
           POS_UST: euro5(depositBrutto - depositNetto),
         });
         addToVatBucket(vatBuckets, depositKey, depositBrutto, depositNetto);
-        addToBusinesscase(businesscaseTotals, gvTyp, depositKey, depositBrutto, depositNetto);
+        // Task #130 — same exclusion as the article line above.
+        if (v.bonTyp !== 'AVTraining') {
+          addToBusinesscase(businesscaseTotals, gvTyp, depositKey, depositBrutto, depositNetto);
+        }
       }
     }
     for (const [key, sums] of vatBuckets) {
@@ -356,6 +382,13 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     }
 
     // Payment — only "Beleg" Vorgänge (invoices) carry an actual payment.
+    // `datapayment.csv` (Bonkopf_Zahlarten, per-Vorgang documentation) always
+    // gets its row, same as transactions.csv/lines.csv — but `paymentTotals`
+    // feeds the Z_Zahlart aggregate (payment.csv / cash_per_currency.csv),
+    // the same kind of Kassenabschluss-level revenue total as businesscases.csv
+    // (Z_GV_TYP) above, so a training Vorgang's amount is excluded from it too
+    // (Task #130) — otherwise it would silently reappear in the delivered
+    // export's aggregated cash/card totals despite being excluded from Z_GV_TYP.
     if (v.paymentMethod) {
       const zahlartTyp: 'Bar' | 'Unbar' = v.paymentMethod === 'cash' ? 'Bar' : 'Unbar';
       const amount = umsBrutto;
@@ -363,7 +396,9 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
         ...schluessel, BON_ID: v.id, ZAHLART_TYP: zahlartTyp, ZAHLART_NAME: zahlartTyp,
         ZAHLWAEH_CODE: '', ZAHLWAEH_BETRAG: '', BASISWAEH_BETRAG: euro(amount),
       });
-      paymentTotals.set(zahlartTyp, (paymentTotals.get(zahlartTyp) ?? 0) + amount);
+      if (v.bonTyp !== 'AVTraining') {
+        paymentTotals.set(zahlartTyp, (paymentTotals.get(zahlartTyp) ?? 0) + amount);
+      }
     }
 
     if (v.tse) {
@@ -377,7 +412,14 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     } else {
       transactionsTse.push({
         ...schluessel, BON_ID: v.id, TSE_ID: 1, TSE_TANR: '',
-        TSE_TA_START: '', TSE_TA_ENDE: '', TSE_TA_VORGANGSART: v.bonTyp === 'Beleg' ? 'Kassenbeleg-V1' : v.bonTyp,
+        // Same mapping as the signed branch above (`tseProcessTypeFor`) —
+        // previously duplicated ad hoc here as `v.bonTyp === 'Beleg' ?
+        // 'Kassenbeleg-V1' : v.bonTyp`, which silently printed the raw
+        // BON_TYP string for AVBestellung/AVTraining instead of the correct
+        // TSE vocabulary (e.g. 'AVBestellung' instead of 'Bestellung-V1').
+        // Fixed as part of Task #130 since it directly affects AVTraining's
+        // TSE_TA_VORGANGSART in the no-signature fallback case.
+        TSE_TA_START: '', TSE_TA_ENDE: '', TSE_TA_VORGANGSART: tseProcessTypeFor(v.bonTyp),
         TSE_TA_SIGZ: '', TSE_TA_SIG: '',
         TSE_TA_FEHLER: 'Kein TSE-Signatur vorhanden — siehe docs/TSE-Integration.md "TSE-Ausfall".',
         TSE_VORGANGSDATEN: '',

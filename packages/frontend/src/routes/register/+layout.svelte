@@ -8,7 +8,7 @@
   import { page } from '$app/stores';
   import { api } from '$lib/api';
   import { registerUser } from '$lib/stores/user';
-  import { currentRegisterName } from '$lib/stores/page-title';
+  import { currentRegisterName, currentRegisterIsTraining } from '$lib/stores/page-title';
   interface Props {
     children?: import('svelte').Snippet;
   }
@@ -52,6 +52,14 @@
     {/if}
   </header>
 
+  {#if !checking && $currentRegisterIsTraining}
+    <!-- Task #130: persistent, unmissable — coexists with normal operation
+         (unlike the full-screen "locked" state), so an operator can never
+         lose track of working on a training register while navigating the
+         Bonkasse/Bedienungskasse sub-pages. -->
+    <div class="training-banner">T R A I N I N G — diese Kasse bucht nicht real, keine echte Zahlung</div>
+  {/if}
+
   {#if checking}
     <p class="muted center">Prüfe Sitzung…</p>
   {:else}
@@ -75,6 +83,19 @@
     display: flex; align-items: center; justify-content: center;
   }
   .center { text-align: center; padding: 4rem; }
+
+  /* Task #130 — deliberately louder than the amber Z-Bon-pending banner
+     elsewhere: a training register must never be confusable with a locked
+     real register, so a distinct color (red) is used. */
+  .training-banner {
+    background: #dc262622;
+    border-bottom: 1px solid #dc262688;
+    color: #dc2626;
+    text-align: center;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 0.5rem 1rem;
+  }
 
   /*
    * Base colors for .btn-primary/.btn-ghost — duplicated from

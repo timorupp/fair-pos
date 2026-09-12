@@ -7,7 +7,7 @@
   import { api } from '$lib/api';
   import type { Article } from '@fairpos/shared';
   import { num } from '$lib/order';
-  import { currentRegisterName } from '$lib/stores/page-title';
+  import { currentRegisterName, currentRegisterIsTraining } from '$lib/stores/page-title';
   import Modal from '$lib/components/Modal.svelte';
   import { longpress } from '$lib/longpress';
 
@@ -86,6 +86,7 @@
     try {
       const ctx = await api.registerSession.register(registerId);
       currentRegisterName.set(ctx.register.name);
+      currentRegisterIsTraining.set(ctx.register.is_training);
       if (ctx.layout) {
         hasLayout = true;
         gridCols = ctx.layout.grid_cols;

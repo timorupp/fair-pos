@@ -60,6 +60,15 @@ export interface ReceiptData {
   isCancellation: boolean;
 
   /**
+   * True when this invoice belongs to a training register (`register.is_training`,
+   * Task #130). The renderers print a `T R A I N I N G` marker (right after the
+   * logo and again as the very last line) so the document can never be mistaken
+   * for a real receipt. Independent of {@link isCancellation} — a training-register
+   * Bonstorno shows both markers.
+   */
+  isTraining: boolean;
+
+  /**
    * Name of the dining table this receipt's items were ordered at, or `null`
    * for a Bonkasse walk-up sale (no table involved). Printed together with
    * {@link firstOrderTime} — DSFinV-K Tz. 2.7.2 requires the start time of

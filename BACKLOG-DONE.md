@@ -5095,3 +5095,199 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   kleiner Task nachreichbar. Siehe weiterhin Task #133 (aktiver
   Signaturtest) als robusterer, direkterer Ansatz für Signierprobleme
   allgemein — Teil desselben TSE-Task-Konzepts, als nächste Phase geplant.
+
+- [Task] **#130** Echter Trainingsmodus (DSFinV-K `AVTraining`) implementieren
+  **Klassifikation: Feature.** Angelegt 2026-09-10 (Nutzerwunsch) als
+  Diskussionsstand ohne finale Design-Entscheidung — siehe die
+  Originalanforderungen (offizielle DSFinV-K-2.4-Spezifikation, bzst.de,
+  Abschnitt 4.2.6 "Trainingsbuchungen" + Anhang B "AVTraining"): Training
+  muss weiterhin über die TSE laufen (kein "daran vorbei"), muss aktiv
+  angesteuert werden, muss vollständig dokumentiert/gekennzeichnet sein
+  (`BON_TYP=AVTraining`), darf den Kassenabschluss nicht beeinflussen, und
+  darf keine echte Zahlung entgegennehmen (simulierte Zahlart erlaubt).
+
+  **Umgesetzt 2026-09-12**, nach dem vom Nutzer bereits im Detail
+  freigegebenen Konzept (Kassen-Flag statt Session-/Event-Toggel):
+
+  **Kernentscheidung recherchiert und bestätigt:** `AVTraining` braucht
+  **keinen eigenen TSE-`processType`** — verifiziert gegen AEAO zu §146a
+  Nr. 2.2.3.5/2.2.3.6 und DSFinV-K 2.4 Anhang I. Eine Trainingsbuchung wird
+  weiterhin ganz normal mit `Kassenbeleg-V1` signiert (`tse/processData.ts`
+  unverändert, kein Eingriff in `native/tse-cli`); `AVTraining` ist rein
+  eine Export-Klassifikation in `exports/dsfinvk/rows.ts`/`load.ts`. Das war
+  die im Task als "wichtigste technische Unbekannte" offen gelassene Frage.
+
+  **Wichtigste Korrektheits-Detail — Z_GV_TYP-Ausschluss:** `rows.ts`s
+  `businesscaseTotals`-Map (feeds `businesscases.csv`/Z_GV_TYP) hatte
+  vorher keinerlei Filter auf `bonTyp` — jeder Vorgang floss unbedingt ein.
+  Die beiden `addToBusinesscase(...)`-Aufrufe (Artikel- und Pfandzeile)
+  werden jetzt für `bonTyp==='AVTraining'` übersprungen, während
+  `transactions.csv`/`lines.csv`/`lines_vat.csv`/`transactions_vat.csv`
+  weiterhin die volle Dokumentation bekommen (Vorgabe der Spezifikation:
+  Trainingsbuchungen müssen protokolliert bleiben, dürfen nur nicht in die
+  Summen einfließen). **Zusätzlich, über die ursprüngliche Analyse hinaus
+  bei der Umsetzung gefunden und mitbehoben:** dieselbe Aggregat-vs.-
+  Dokumentation-Unterscheidung gilt genauso für `payment.csv`/Z_Zahlart und
+  `cash_per_currency.csv` (beides `Z_`-Kassenabschluss-Aggregate wie
+  `businesscases.csv`, siehe Abschnitt 6.1) — `paymentTotals` schließt
+  `AVTraining` jetzt ebenfalls aus, während `datapayment.csv` (Bonkopf-
+  Zahlarten, pro-Vorgang) unverändert jede Zahlung dokumentiert. Ohne diesen
+  zusätzlichen Fix wäre ein Trainingsumsatz zwar aus Z_GV_TYP verschwunden,
+  aber unbemerkt weiterhin in den Zahlarten-Summen des Exports aufgetaucht.
+
+  **`bonTyp`-Herleitung — vom Register, nicht vom einzelnen Vorgang:** Ein
+  Bonstorno (`receipt_type='cancellation'`) auf einer Trainingskasse muss
+  ebenfalls als `AVTraining` exportiert werden, nicht als `Beleg`/
+  `AVSonstige`. `load.ts` liest `register.is_training` deshalb **einmal pro
+  Kassenabschluss** (nicht per-Zeilen-Join) — verifiziert, dass das
+  korrekt ist: `daily_closing_id` wird für `invoice`/`service_order`/
+  `order_cancellation` ausschließlich von `closeRegister()`
+  (`routes/admin/closings.ts`) gesetzt, und zwar immer scoped auf
+  `WHERE register_id = $1` — jeder Vorgang in einem `daily_closing` gehört
+  also zwangsläufig zum selben Register wie der Abschluss selbst. `isBonstorno`
+  bleibt unabhängig weiter aus `receipt_type==='cancellation'` abgeleitet
+  (D-069-Pfand-Klassifikation) — ein Trainings-Bonstorno ist gleichzeitig
+  `bonTyp: 'AVTraining'` und `isBonstorno: true`.
+
+  **Nebenbei gefundener und mitbehobener Bug (kein separates Finding, direkt
+  im Rahmen dieses Tasks entdeckt):** `rows.ts`s No-TSE-Fallback für
+  `transactions_tse.csv` (`TSE_TA_FEHLER`-Zweig) leitete `TSE_TA_VORGANGSART`
+  bisher ad hoc über `bonTyp === 'Beleg' ? 'Kassenbeleg-V1' : bonTyp` her —
+  für `AVBestellung` stand dort fälschlich der rohe `BON_TYP`-String
+  `"AVBestellung"` statt `"Bestellung-V1"`, abweichend von der signierten
+  Variante direkt darüber (`tseProcessTypeFor(v.bonTyp)`). Direkt relevant
+  für `AVTraining` (hätte sonst `"AVTraining"` statt `"Kassenbeleg-V1"`
+  gezeigt, sobald eine Trainingsbuchung ohne TSE-Signatur landet) — beide
+  Zweige rufen jetzt einheitlich `tseProcessTypeFor()` auf.
+
+  **Alle Änderungen im Einzelnen:**
+  - **DB/Migration:** `db/migrations/0033_register_is_training.sql` —
+    `register.is_training BOOLEAN NOT NULL DEFAULT false`.
+  - **Admin-API** (`routes/admin/registers.ts`): neue Helper-Funktion
+    `registerHasBookings()` (EXISTS-Check über `invoice`/`service_order`/
+    `order_cancellation`, gleiche drei Tabellen wie beim bestehenden
+    `DELETE`-409). `GET /`/`GET /:id`/`POST /`/`PUT /:id` führen
+    `is_training` mit; `GET /:id` liefert zusätzlich `has_bookings`. `PUT
+    /:id` lehnt eine tatsächliche *Änderung* von `is_training` mit 400 ab,
+    sobald die Kasse Buchungen hat — ein erneutes Senden des unveränderten
+    Werts wird nicht abgelehnt (gleiches Präzedenzmuster wie das
+    PIN-Resave in `routes/admin/users.ts`).
+  - **Checkout** (`routes/register-session.ts`): neue Helper-Funktion
+    `receiptTypeForRegister()`; beide `INSERT INTO invoice`-Stellen
+    (Bonkasse-Checkout und Bedienungskasse-Split-Checkout) setzen
+    `receipt_type='training'` statt `'sales_receipt'`, wenn die Kasse als
+    Trainingskasse markiert ist — sonst unverändert (gleiche
+    TSE-Signierung, gleiche `nextReceiptNumber()`-Sequenz wie jede andere
+    Buchung, exakt wie im Konzept vorgesehen). `GET /me` und
+    `GET /registers/:id` liefern `is_training` für das Frontend mit.
+  - **DSFinV-K-Export:** `exports/dsfinvk/rows.ts` (`SourceVorgang.bonTyp`
+    um `'AVTraining'` erweitert, `tseProcessTypeFor()`-Branch, Z_GV_TYP-/
+    Z_Zahlart-Ausschluss, No-TSE-Fallback-Fix — alle Details oben) und
+    `exports/dsfinvk/load.ts` (`isTrainingRegister`-Flag einmal pro Closing
+    gelesen, auf alle drei Vorgangstypen angewendet).
+  - **Belegdruck** (`receipt/types.ts`/`data.ts`/`demo.ts`/`blocks.ts`):
+    `ReceiptData.isTraining`, geladen über einen Join auf
+    `register.is_training` (analog zu `isCancellation`). Zwei
+    `T R A I N I N G`-Blöcke (Formatierung wie `STORNOBELEG`) — direkt nach
+    dem Logo/vor dem Firmennamen, und als letzte Zeile nach "Danke für
+    Ihren Einkauf!" — beide unabhängig von `isCancellation`, ein
+    Trainings-Bonstorno zeigt folglich beide Marker gleichzeitig.
+  - **Z-Bon** (`closing/blocks.ts`/`load.ts`, `routes/admin/closings.ts`):
+    `ClosingContext.is_training`; `buildZBonBlocks()` druckt ein
+    prominentes "TRAININGSKASSE" direkt unter dem Z-BON-Kopf. Keine Änderung
+    an der Summenberechnung — `closing/totals.ts`s bereits vorbereitete
+    `if (inv.receipt_type === 'training') continue;`-Zeile (aus einer
+    früheren Vorarbeit) sorgt bereits dafür, dass eine Trainingskasse
+    (deren Buchungen jetzt tatsächlich alle `receipt_type='training'`
+    tragen) einen reinen Nullabschluss produziert.
+  - **Frontend:** `admin/registers/+page.svelte` — "Trainingskasse"-Checkbox
+    im Anlegen-/Bearbeiten-Formular, per `has_bookings` gesperrt (mit
+    Tooltip/Hinweistext) sobald die Kasse Buchungen hat; kleines
+    "Training"-Badge in der Kassen-Liste. `lib/stores/page-title.ts` — neuer
+    Store `currentRegisterIsTraining`, geschrieben von denselben drei
+    Unterseiten, die bereits `currentRegisterName` schreiben
+    (`register/[id]/+page.svelte`, `.../floor-plan/+page.svelte`,
+    `.../tables/[tableId]/order/+page.svelte`). `register/+layout.svelte`
+    rendert daraus einen durchgehenden, nicht wegklickbaren roten Banner
+    (koexistiert mit normalem Betrieb, anders als der Vollbild-Sperrzustand)
+    — sichtbar auf jeder Unterseite der Bon-/Bedienungskasse. `api.ts`/
+    `@fairpos/shared` `Register`-Typ um `is_training` erweitert.
+  - **Dokumentation:** `docs/Datenmodell.dbml` (`register.is_training`),
+    `docs/Rechtliche-Anforderungen.md` Abschnitt 6.2 (AVTraining-Zeile von
+    "vorgesehen, falls genutzt" auf "umgesetzt" mit den obigen
+    Kernentscheidungen aktualisiert).
+
+  **Neue Tests:** Unit — `exports/dsfinvk/rows.test.ts` (neue Describe
+  "AVTraining (Task #130)": Kassenbeleg-V1-Signierung, volle
+  Dokumentation in transactions/lines/lines_vat/transactions_vat, Ausschluss
+  aus businesscases.csv UND payment.csv/cash_per_currency.csv, AVBestellung/
+  AVSonstige-Quellen werden ebenfalls zu AVTraining), `receipt/blocks.test.ts`
+  (beide `T R A I N I N G`-Marker, Koexistenz mit STORNOBELEG),
+  `closing/blocks.test.ts` (TRAININGSKASSE-Marker). Integration —
+  `routes/admin/registers.integration.test.ts` (freies Umschalten ohne
+  Buchungen, Sperre bei Buchung über alle drei referenzierenden Tabellen,
+  unverändertes Resave wird nicht abgelehnt), `routes/register-session.
+  integration.test.ts` (Bonkasse- und Bedienungskasse-Checkout setzen
+  `receipt_type='training'` auf einer Trainingskasse, `sales_receipt` sonst
+  unverändert), `routes/admin/exports.dsfinvk.integration.test.ts`
+  (Trainingskassen-Rechnung End-to-End: BON_TYP=AVTraining, TSE_TA_
+  VORGANGSART weiterhin Kassenbeleg-V1, vollständig in transactions.csv/
+  lines.csv/datapayment.csv, aber nicht in businesscases.csv/payment.csv;
+  Trainingskassen-Bonstorno exportiert als AVTraining statt Beleg, negierter
+  Betrag bleibt erhalten). Volle Unit-Suite, die genannten
+  Integrationstests, sowie `tsc --noEmit` (Backend) und `svelte-check`
+  (Frontend) grün.
+
+- [Task] **#134** Neues Dokument "Veranstaltungscheckliste" (docs/)
+  **Klassifikation: Doku, angelegt 2026-09-12 (Nutzerwunsch).**
+
+  **Umgesetzt 2026-09-12:** `docs/Veranstaltungscheckliste.md` neu
+  angelegt — vier Abschnitte (Vor der Veranstaltung / Jeden
+  Veranstaltungstag vor Beginn / Jeden Veranstaltungstag nach Abschluss /
+  Nach der Veranstaltung), `- [ ]`-Checkbox-Syntax wie
+  `docs/Manueller-Testplan.md`. Inhalt basiert auf der vom Nutzer
+  vorgegebenen Gliederung/den vorgegebenen Punkten, ergänzt um konkrete
+  FairPOS-Menüpfade (per Grep gegen `routes/admin/+layout.svelte` und die
+  einzelnen Seiten verifiziert, nicht geraten) — u. a. Verweise auf
+  Task #132 (TSE-Ablaufdatum-Prüfung, "TSE testen"-Dialog), die
+  Dashboard-Kacheln (TSE-Zustand, Druckwarteschlange, Ausstehende
+  Tagesabschlüsse, Offene Rechnungen, Uhrzeit-Abweichung-Banner), die
+  Einlage/Entnahme-Funktion der Kassen-Detailseite, und einen kurzen,
+  optionalen Hinweis auf Trainingskassen (Task #130).
+
+  **Recherche zu den drei offenen `TODO`-Markern + der Backup-Frage,
+  ausschließlich gegen offizielle Behördenquellen (gesetze-im-internet.de,
+  siehe AGENTS.md "Compliance-Prüfungen gegen offizielle Standards" —
+  bundesfinanzministerium.de war für die AEAO-/GoBD-Volltexte wie schon
+  in `docs/Rechtliche-Anforderungen.md` Abschnitt 5 dokumentiert wegen
+  Bot-Schutz nicht abrufbar):**
+  1. **Vor der Veranstaltung:** Nutzer-Entwurf sprach von "30 Tage nach
+     Inbetriebnahme" für die TSE-Meldung — der tatsächliche Gesetzestext
+     (§ 146a Abs. 4 AO, gesetze-im-internet.de) nennt **"einen Monat"**,
+     nicht 30 Tage; korrigiert und mit
+     `docs/Organisatorische-Anleitung.md` Abschnitt 1 verlinkt statt neu
+     hergeleitet. Kein weiterer eigenständiger gesetzlicher
+     Vorab-Prüfpunkt gefunden (§ 146a AO und § 5 KassenSichV im
+     Volltext geprüft — keine gesonderte "vor Inbetriebnahme"-Klausel
+     über die ohnehin durchgehend geltende TSE-Zertifizierungspflicht
+     hinaus); explizit als offene Wissenslücke vermerkt (AEAO-Volltext
+     nicht abrufbar).
+  2. **Vor jedem Veranstaltungstag:** keine eigenständige tagesbezogene
+     Rechtspflicht gefunden — § 146 Abs. 1 AO/GoBD verlangen tägliche
+     **Erfassung** und Tagesabschluss, keine bestimmte Vorab-Prüfroutine;
+     im Dokument als solches klargestellt statt eine Pflicht zu erfinden.
+  3. **Nach jedem Veranstaltungstag (Datenarchivierung/-sicherung):**
+     § 147 Abs. 2 Nr. 2 AO verlangt jederzeitige Verfügbarkeit/
+     Lesbarkeit während der 10-Jahres-Frist, aber **keine explizite
+     Frequenzvorgabe** für die Sicherung selbst (weder in § 146/§ 147 AO
+     noch in DSFinV-K v2.4 gefunden). Tägliche Sicherung bleibt
+     dringend empfohlene betriebliche Vorsichtsmaßnahme (bereits in
+     `docs/Organisatorische-Anleitung.md` Abschnitt 3 so beschrieben),
+     aber ohne nachgewiesene eigene Tages-Rechtspflicht — als solches
+     benannt statt stillschweigend als Pflicht behauptet.
+  4. **Nach der Veranstaltung ("Datensicherung?"):** dieselbe Pflicht/
+     Empfehlung wie Punkt 3, nur am Veranstaltungsende angewendet — kein
+     zusätzlicher veranstaltungsende-spezifischer Fund.
+
+  **Housekeeping:** `AGENTS.md`s "Kerndokumente"-Liste um eine Zeile für
+  `docs/Veranstaltungscheckliste.md` ergänzt.

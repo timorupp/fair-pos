@@ -25,6 +25,7 @@ function baseData(overrides: Partial<ReceiptData> = {}): ReceiptData {
     registerName: 'Theke',
     paymentMethod: 'cash',
     isCancellation: false,
+    isTraining: false,
     tableName: null,
     firstOrderTime: null,
     logoPng: null,

@@ -65,8 +65,8 @@ async function closeRegister(registerId: string, userName: string, date?: string
     // Load register metadata. The printer is resolved separately below via the
     // shared helper so the system-default-printer fallback kicks in when the
     // register itself has no explicit printer assigned.
-    const regResult = await client.query<{ id: string; name: string }>(
-      `SELECT id, name FROM register WHERE id = $1`,
+    const regResult = await client.query<{ id: string; name: string; is_training: boolean }>(
+      `SELECT id, name, is_training FROM register WHERE id = $1`,
       [registerId],
     );
     const register = regResult.rows[0];
@@ -229,6 +229,7 @@ async function closeRegister(registerId: string, userName: string, date?: string
         zero_counter:  zeroCounter,
         vat_rate_standard: taxRates.standard,
         vat_rate_reduced:  taxRates.reduced,
+        is_training:   register.is_training,
       }, totals, businessDate, logo);
       const job = await enqueuePrintJob(printerId, 'daily_closing', renderBlocksToEscPos(blocks), blocks, closingId);
       printJobId = job.id;
