@@ -49,6 +49,16 @@ export interface TseStatus {
   error?: string;
 }
 
+/** Result of a real test signature against the TSE (Task #133) — see `tse.testSignature()`. */
+export interface TseTestSignatureResult {
+  transactionNumber: number;
+  signatureCounter: number;
+  signature: string;
+  serialNumber: string;
+  startTime: string;
+  endTime: string;
+}
+
 /** One currently-mounted removable filesystem — a candidate TSE mount point. */
 export interface TseMountCandidate {
   mountPoint: string;
@@ -408,6 +418,16 @@ export const api = {
         request('POST', '/admin/tse/detect'),
       /** Manually runs self-test + time sync (Task #58/#64) — needed once after a fresh TSE setup, since nothing calls this automatically yet. */
       maintain: (): Promise<{ ok: true }> => request('POST', '/admin/tse/maintain'),
+      /**
+       * Runs one real `start`/`finish` signature cycle against the TSE
+       * (Task #133) — unlike `status()`, this directly confirms the TSE can
+       * still actually sign right now, catching failures `status()`'s
+       * passive `info` read alone would miss (Task #132: self-test/time-sync
+       * can both read "healthy" while a real signature still fails). Creates
+       * no invoice/order — by construction never appears in any export or
+       * Kassenabschluss. Throws with the real TSE error detail on failure.
+       */
+      testSignature: (): Promise<TseTestSignatureResult> => request('POST', '/admin/tse/test-signature'),
       /**
        * Raw TR-03153 TAR archive of everything currently stored on the TSE
        * (Task #103) — always a full export, no date-range filter (the TSE's

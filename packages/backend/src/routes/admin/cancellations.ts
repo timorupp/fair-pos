@@ -93,11 +93,12 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       return reply.status(400).send({ error: 'Stornogrund ist deaktiviert' });
     }
 
-    const regResult = await query(
-      `SELECT id FROM register WHERE id = $1 AND event_id = $2`,
+    const regResult = await query<{ is_training: boolean }>(
+      `SELECT is_training FROM register WHERE id = $1 AND event_id = $2`,
       [register_id, config.activeEventId],
     );
     if (regResult.rows.length === 0) return reply.status(400).send({ error: 'Kasse nicht gefunden' });
+    const isTrainingRegister = regResult.rows[0]!.is_training;
 
     // Articles fetched once, up front — reused for the TSE snapshot and the order_item inserts.
     const articleIds = [...new Set(items.map((i) => i.article_id))];
@@ -129,6 +130,10 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
     // amounts it's given, the same ones stored on `order_item` below.
     const kassenbelegSnapshot = buildKassenbelegProcessData({
       paymentMethod: 'cash',
+      // Task #130: a Bonstorno on a training register must also be signed
+      // (and later exported) as AVTraining, not Beleg — same derivation as
+      // the checkout paths in register-session.ts.
+      vorgangstyp: isTrainingRegister ? 'AVTraining' : 'Beleg',
       positions: items.map((it) => {
         const article = articleById.get(it.article_id)!;
         return {

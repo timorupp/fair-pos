@@ -132,6 +132,88 @@ describe('TSE connection settings + status', () => {
     config.tseCliPath = null;
   });
 
+  describe('POST /test-signature (Task #133)', () => {
+    it('returns 400 when the TSE is not configured', async () => {
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/tse/test-signature',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('runs a real start/finish cycle and returns the signature detail on success', async () => {
+      config.tseCliPath = TSE_CLI_STUB_PATH;
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+        ok: true,
+        result: { transactionNumber: 42, signatureCounter: 7, logTime: 1735689600, signature: 'aabbcc', serialNumber: 'ddeeff' },
+      });
+
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/tse/test-signature',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        transactionNumber: 42, signatureCounter: 7, signature: 'aabbcc', serialNumber: 'ddeeff',
+      });
+      delete process.env['TSE_STUB_STDOUT'];
+      config.tseCliPath = null;
+    });
+
+    it('uses AVBelegabbruch content for finish, so the test never creates a persisted Vorgang', async () => {
+      config.tseCliPath = TSE_CLI_STUB_PATH;
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-test-signature-calls.log';
+      const fs = await import('node:fs');
+      fs.writeFileSync('/tmp/tsecli-test-signature-calls.log', '');
+      process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+        ok: true,
+        result: { transactionNumber: 1, signatureCounter: 1, logTime: 1735689600, signature: 'aa', serialNumber: 'bb' },
+      });
+
+      const app = await getTestApp();
+      await app.inject({
+        method: 'POST', url: '/api/admin/tse/test-signature',
+        headers: { cookie: adminCookie },
+      });
+
+      const calls = fs.readFileSync('/tmp/tsecli-test-signature-calls.log', 'utf8').trim().split('\n').filter(Boolean);
+      const finishCall = calls.find((c) => c.includes(' finish '))!;
+      const processDataB64 = finishCall.trim().split(' ').pop()!;
+      const processData = Buffer.from(processDataB64, 'base64').toString('utf-8');
+      expect(processData).toMatch(/^AVBelegabbruch/);
+
+      delete process.env['TSE_STUB_STDOUT'];
+      delete process.env['TSE_STUB_LOG_FILE'];
+      config.tseCliPath = null;
+    });
+
+    it('returns 502 with the real TSE error detail on failure', async () => {
+      config.tseCliPath = TSE_CLI_STUB_PATH;
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      process.env['TSE_STUB_EXIT_CODE'] = '1';
+      process.env['TSE_STUB_STDOUT'] = JSON.stringify({ ok: false, error: { code: 4098, message: 'no valid time set' } });
+
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/tse/test-signature',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(502);
+      expect(response.json().error).toMatch(/4098/);
+
+      delete process.env['TSE_STUB_STDOUT'];
+      delete process.env['TSE_STUB_EXIT_CODE'];
+      config.tseCliPath = null;
+    });
+  });
+
   it('GET /candidates lists removable mount points via the real lsblk binary without throwing', async () => {
     const app = await getTestApp();
     const response = await app.inject({

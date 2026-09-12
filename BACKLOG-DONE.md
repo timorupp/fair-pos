@@ -5112,10 +5112,14 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   **Kernentscheidung recherchiert und bestätigt:** `AVTraining` braucht
   **keinen eigenen TSE-`processType`** — verifiziert gegen AEAO zu §146a
   Nr. 2.2.3.5/2.2.3.6 und DSFinV-K 2.4 Anhang I. Eine Trainingsbuchung wird
-  weiterhin ganz normal mit `Kassenbeleg-V1` signiert (`tse/processData.ts`
-  unverändert, kein Eingriff in `native/tse-cli`); `AVTraining` ist rein
-  eine Export-Klassifikation in `exports/dsfinvk/rows.ts`/`load.ts`. Das war
-  die im Task als "wichtigste technische Unbekannte" offen gelassene Frage.
+  weiterhin ganz normal mit dem TSE-`processType` `Kassenbeleg-V1` signiert,
+  kein Eingriff in `native/tse-cli` nötig — das war die im Task als
+  "wichtigste technische Unbekannte" offen gelassene Frage.
+  **Nachträglich korrigiert (D-071, siehe eigener Eintrag unten):** die
+  ursprüngliche Umsetzung beließ es fälschlich rein bei einer
+  Export-Klassifikation in `exports/dsfinvk/rows.ts`/`load.ts` — das im
+  `processData` selbst eingebettete `<Vorgangstyp>`-Feld (`tse/
+  processData.ts`) blieb unverändert `Beleg`, auch für Trainingsbuchungen.
 
   **Wichtigste Korrektheits-Detail — Z_GV_TYP-Ausschluss:** `rows.ts`s
   `businesscaseTotals`-Map (feeds `businesscases.csv`/Z_GV_TYP) hatte
@@ -5238,6 +5242,50 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Integrationstests, sowie `tsc --noEmit` (Backend) und `svelte-check`
   (Frontend) grün.
 
+- [Finding] **D-071** (hoch, Backend / TSE-Signierung) — Gefunden 2026-09-12 — Kontext: Nutzer prüfte den Process-Data-Dump-Inhalt einer Trainingskasse live nach der Umsetzung von Task #130
+  Nutzer meldete: der Process-Data-Dump (`tseCli dumpProcessData`, TSE-Tools)
+  zeigte für Buchungen auf einer als Trainingskasse markierten Kasse weiterhin
+  `Beleg^...` statt `AVTraining^...` — obwohl der DSFinV-K-Export dieselben
+  Buchungen bereits korrekt als `BON_TYP=AVTraining` auswies.
+  **Root Cause:** `tse/processData.ts`s `buildKassenbelegProcessData()` hat
+  das `<Vorgangstyp>`-Feld (Anhang I: `<Vorgangstyp>^<Brutto-Steuerumsätze>^
+  <Zahlungen>`, das eigentliche, TSE-signierte, fälschungssichere Inhaltsfeld)
+  fest auf `'Beleg'` verdrahtet — unabhängig von `register.is_training`. Die
+  Task-#130-Umsetzung hatte `AVTraining` ausschließlich als
+  Export-Klassifikation (`exports/dsfinvk/rows.ts`/`load.ts`) behandelt und
+  dabei übersehen, dass dieselbe Information auch in den tatsächlich an die
+  TSE übergebenen, signierten Rohdaten korrekt stehen muss — sonst
+  widerspricht der signierte TSE-Datenbestand dem später erzeugten Export:
+  ein Betriebsprüfer, der den rohen Process-Data-Dump gegen den
+  DSFinV-K-Export abgleicht, hätte einen "Beleg" (echter Umsatz) gefunden,
+  wo der Export "AVTraining" (kein Umsatz) behauptet.
+  **Behoben 2026-09-12:** `KassenbelegSnapshot` bekommt ein neues Pflichtfeld
+  `vorgangstyp: 'Beleg' | 'AVTraining'`; `buildKassenbelegProcessData()`
+  verwendet es statt der festen Zeichenkette. Alle vier Aufrufstellen liefern
+  jetzt den korrekten Wert, abgeleitet aus derselben Quelle wie die
+  Export-Klassifikation (`register.is_training`, nicht aus `receipt_type`
+  allein): `routes/register-session.ts` (beide Checkout-Stellen, über das
+  bereits vorhandene `receiptType`), `routes/admin/cancellations.ts` (neu:
+  `register.is_training` mitgeladen — ein Bonstorno auf einer Trainingskasse
+  signiert jetzt ebenfalls `AVTraining`, konsistent mit dessen
+  `bonTyp`-Export), `receipt/qr.ts` (über das bereits vorhandene
+  `ReceiptData.isTraining` — der QR-Code muss exakt dieselben Rohdaten
+  reproduzieren, die tatsächlich signiert wurden, sonst verifiziert er
+  nicht mehr gegen die echte Signatur). Der TSE-`processType` selbst bleibt
+  unverändert `Kassenbeleg-V1` (bestätigt durch die ursprüngliche
+  #130-Recherche) — nur das eingebettete `<Vorgangstyp>`-Textfeld ändert
+  sich.
+  **Tests:** `tse/processData.test.ts` (neuer Fall: `vorgangstyp: 'AVTraining'`
+  erzeugt `AVTraining^...` statt `Beleg^...`; die 8 bestehenden Fälle
+  explizit auf `vorgangstyp: 'Beleg'` umgestellt, kein stiller Default).
+  Neuer Integrationstest `routes/register-session.integration.test.ts`
+  (liest die tatsächlich an die Stub-TSE gesendeten `finish`-Rohdaten einer
+  Trainingskassen-Buchung und prüft `AVTraining^` als Präfix — genau der
+  Aspekt, den die ursprüngliche Task-#130-Testabdeckung nicht abgedeckt
+  hatte, da sie nur `invoice.receipt_type` prüfte, nie den tatsächlich
+  signierten Rohinhalt). Volle Unit-Suite (390/390) und die betroffenen
+  Integrationstests grün, `tsc --noEmit` clean.
+
 - [Task] **#134** Neues Dokument "Veranstaltungscheckliste" (docs/)
   **Klassifikation: Doku, angelegt 2026-09-12 (Nutzerwunsch).**
 
@@ -5291,3 +5339,68 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
 
   **Housekeeping:** `AGENTS.md`s "Kerndokumente"-Liste um eine Zeile für
   `docs/Veranstaltungscheckliste.md` ergänzt.
+
+- [Task] **#133** "Signatur testen" — echten Testvorgang gegen die TSE in den TSE-Tools anbieten
+  **Klassifikation: Feature.** Angelegt 2026-09-12 (Nutzerwunsch), direkt
+  motiviert durch Task #132: Self-Test und Zeitsync allein erkennen nicht
+  jedes Signierproblem (#132 — beide waren grün, während das Zertifikat
+  bereits abgelaufen war und echte Signaturen fehlschlugen).
+
+  **Nutzerfrage gelöst — welcher "gefahrlose" Vorgangstyp:** Von den zwei
+  ursprünglich zur Debatte stehenden Kandidaten (`AVBelegabbruch`-Muster
+  wiederverwenden vs. an Task #130/`AVTraining` koppeln) erwies sich
+  `AVBelegabbruch` nach Code-Recherche als eindeutig überlegen, sobald man
+  seine tatsächliche Mechanik nachvollzieht: `tse/signing.ts` nutzt dieses
+  Muster bereits, um eine gestrandete Transaktion (start erfolgreich, finish
+  fehlgeschlagen) folgenlos abzuschließen — ein reiner `start('',
+  Buffer.alloc(0))` gefolgt von `finish(transactionNumber, Kassenbeleg-V1,
+  buildAvBelegabbruchProcessData())`, mit `0.00`-Beträgen, **ohne jemals eine
+  `invoice`/`service_order`/`order_cancellation`-Zeile anzulegen**. Damit war
+  die im Task offen gelassene Frage ("wird das zuverlässig aus DSFinV-K-
+  Export/Kassenabschluss ausgeschlossen?") nicht mehr nur "vermutlich",
+  sondern **beweisbar**: `exports/dsfinvk/load.ts` liest ausschließlich aus
+  genau diesen drei Tabellen — ein Vorgang, der dort nie eine Zeile erzeugt,
+  kann strukturell nie in einem Export oder Kassenabschluss auftauchen.
+  Die Alternative (Kopplung an Task #130/Trainingskasse) hätte zusätzlich
+  eine Kassen-Auswahl in den TSE-Tools gebraucht (systemweite Einstellungs-
+  seite, keine Kassen-spezifische Ansicht) — mit `AVBelegabbruch` entfällt
+  das komplett.
+
+  **Umgesetzt 2026-09-12:**
+  - Neue Route `POST /api/admin/tse/test-signature` (`routes/admin/tse.ts`):
+    führt genau den obigen `start`/`finish`-Zyklus aus und gibt bei Erfolg
+    Transaktionsnummer, Signaturzähler, Signatur, Seriennummer sowie Start-/
+    Endzeit zurück — genug Detail, damit ein Admin visuell bestätigen kann,
+    dass die TSE gerade wirklich neu signiert hat (veränderter Zähler), nicht
+    nur, dass `info` grüne Felder zeigt. Bewusst **nicht** über `tse/
+    signing.ts`s `signTseTransaction()` (die nie wirft und nur die
+    generische, kundenseitige `TSE_UNAVAILABLE_WARNING` liefert) — als
+    Admin-Diagnosewerkzeug wird stattdessen die echte `describeTseError()`-
+    Detailmeldung inkl. SDK-Fehlercode durchgereicht (502 bei Fehlschlag,
+    400 wenn die TSE nicht konfiguriert ist). Erfolgreiche Läufe werden
+    unter der Kategorie `tse_health` protokolliert, wie schon "Zeit
+    synchronisieren".
+  - Frontend (`settings/tse/+page.svelte`): neuer Button "Signatur testen"
+    neben "TSE testen", eigener Dialog mit denselben `.kv`/`.pubkey`-Stilen
+    wie der bestehende "TSE testen"-Dialog. Bewusst weiterhin eine rein
+    manuelle Admin-Aktion (kein automatischer/periodischer Aufruf) — ein
+    Testvorgang verbraucht trotzdem einen Platz im begrenzten
+    Transaktionszähler der TSE.
+  - Neue Typen `TseTestSignatureResult`/`TseTestSignatureResponse` in
+    `lib/api.ts`/`routes/admin/tse.ts`.
+
+  **Tests:** 4 neue Integrationstests in `tse.integration.test.ts`
+  (400 ohne Konfiguration; erfolgreicher Lauf inkl. Rückgabewerten; Nachweis
+  per Stub-CLI-Log, dass `finish` tatsächlich mit `AVBelegabbruch`-Inhalt
+  aufgerufen wird — nicht nur behauptet; 502 mit durchgereichtem SDK-
+  Fehlercode). Volle Unit-Suite und die betroffene Integrationsdatei (36/36)
+  grün, `tsc --noEmit`/`svelte-check` clean.
+
+  **Nebenbefund während der Umsetzung, separat behoben:** siehe D-071 — beim
+  Live-Test der Trainingskasse (Task #130) fiel auf, dass deren
+  Process-Data-Dump weiterhin `Beleg^...` statt `AVTraining^...` zeigte;
+  derselbe `tse/processData.ts`-Code, der hier für `AVBelegabbruch` genau
+  richtig gemacht wurde (eingebettetes `<Vorgangstyp>`-Feld muss zur
+  tatsächlichen Vorgangsart passen), war für `AVTraining` schlicht vergessen
+  worden.
+

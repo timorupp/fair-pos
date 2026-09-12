@@ -39,6 +39,12 @@ function hexToBase64(hex: string): string {
 export async function buildQrPayload(data: ReceiptData): Promise<string> {
   const processData = buildKassenbelegProcessData({
     paymentMethod: data.paymentMethod,
+    // Task #130: must reproduce the exact processData that was actually
+    // signed — a training-register receipt was signed with vorgangstyp
+    // 'AVTraining', so the QR code's own reconstruction must match, or its
+    // embedded process-data hash would no longer verify against the real
+    // TSE signature.
+    vorgangstyp: data.isTraining ? 'AVTraining' : 'Beleg',
     positions: data.positions.map((p) => ({
       quantity: p.quantity,
       unitPriceEuros: p.unitPrice,

@@ -768,6 +768,36 @@ describe('Trainingsmodus (Task #130)', () => {
     expect(invoice.rows[0]?.receipt_type).toBe('training');
   });
 
+  it('signs a training-register checkout with vorgangstyp=AVTraining in the actual TSE processData (found live via Process-Data-Dump: this used to always say Beleg)', async () => {
+    await pool.query('UPDATE register SET is_training = true WHERE id = $1', [registerId]);
+    config.tseMountPoint = '/tmp/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-training-signature-calls.log';
+    const fs = await import('node:fs');
+    fs.writeFileSync('/tmp/tsecli-training-signature-calls.log', '');
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: { transactionNumber: 1, signatureCounter: 1, logTime: 1735689600, signature: 'aa', serialNumber: 'bb' },
+    });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const calls = fs.readFileSync('/tmp/tsecli-training-signature-calls.log', 'utf8').trim().split('\n').filter(Boolean);
+    const finishCall = calls.find((c) => c.includes(' finish '))!;
+    const processDataB64 = finishCall.trim().split(' ').pop()!;
+    const processData = Buffer.from(processDataB64, 'base64').toString('utf-8');
+    expect(processData).toMatch(/^AVTraining\^/);
+
+    delete process.env['TSE_STUB_LOG_FILE'];
+  });
+
   it('Bonkasse checkout on a normal register still sets receipt_type=sales_receipt', async () => {
     const app = await getTestApp();
     const response = await app.inject({

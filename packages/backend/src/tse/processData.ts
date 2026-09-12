@@ -77,19 +77,39 @@ export interface KassenbelegPosition {
 export interface KassenbelegSnapshot {
   paymentMethod: 'cash' | 'card';
   positions: KassenbelegPosition[];
+  /**
+   * The embedded `<Vorgangstyp>` value (Task #130, 2026-09-12) — `'Beleg'`
+   * for a normal sale/Bonstorno, `'AVTraining'` when the booking happened on
+   * a register flagged `is_training`. This is the TSE-signed, tamper-proof
+   * record of what kind of booking this was — it must agree with the
+   * `BON_TYP` FairPOS later exports for the same Vorgang
+   * (`exports/dsfinvk/load.ts`/`rows.ts`), or an auditor comparing the raw
+   * TSE process-data log against the DSFinV-K export would find a mismatch
+   * (found live 2026-09-12 via the "Process-Data-Dump" tool: every
+   * Trainingskasse booking was still signed as plain `Beleg`, even though
+   * the DSFinV-K export already correctly classified it as `AVTraining` —
+   * the two must be derived from the exact same `register.is_training`
+   * flag, not just the export layer). Note this is still `Kassenbeleg-V1`
+   * at the TSE-hardware `processType` level either way (Task #130's own
+   * research: AEAO zu §146a Nr. 2.2.3.5/2.2.3.6 knows no fourth Vorgangsart)
+   * — only this embedded string, inside the signed processData, changes.
+   */
+  vorgangstyp: 'Beleg' | 'AVTraining';
 }
 
 /**
  * Serialises a Kassenbeleg-V1 snapshot into the exact
  * `<Vorgangstyp>^<Brutto-Steuerumsätze>^<Zahlungen>` wire format Anhang I
- * mandates for the `finishTransaction` call. `<Vorgangstyp>` is always
- * `Beleg`: FairPOS never uses `AVBelegstorno` once a TSE is in use — a
- * cancellation is its own `Beleg` with reversed-sign amounts instead (see
+ * mandates for the `finishTransaction` call. `<Vorgangstyp>` is `snapshot.
+ * vorgangstyp` — `'Beleg'` for every normal sale and Bonstorno (FairPOS
+ * never uses `AVBelegstorno` once a TSE is in use — a cancellation is its
+ * own `Beleg` with reversed-sign amounts instead, see
  * docs/Rechtliche-Anforderungen.md Abschnitt 6.2 for the verbatim citation
- * on why `AVBelegstorno` cannot be used with a TSE). This function itself
- * is sign-agnostic (D-068) — see `KassenbelegPosition`'s doc comment.
+ * on why `AVBelegstorno` cannot be used with a TSE), `'AVTraining'` for a
+ * training-register booking (Task #130). This function itself is
+ * sign-agnostic (D-068) — see `KassenbelegPosition`'s doc comment.
  *
- * @param snapshot - The sale's positions and payment method.
+ * @param snapshot - The sale's positions, payment method, and Vorgangstyp.
  * @returns UTF-8-encoded processData bytes.
  */
 export function buildKassenbelegProcessData(snapshot: KassenbelegSnapshot): Buffer {
@@ -118,7 +138,7 @@ export function buildKassenbelegProcessData(snapshot: KassenbelegSnapshot): Buff
     ? ''
     : `${formatAmount(totalBrutto)}:${snapshot.paymentMethod === 'cash' ? 'Bar' : 'Unbar'}`;
 
-  return Buffer.from(`Beleg^${formatBruttoSteuerumsaetze(totals)}^${zahlungen}`, 'utf-8');
+  return Buffer.from(`${snapshot.vorgangstyp}^${formatBruttoSteuerumsaetze(totals)}^${zahlungen}`, 'utf-8');
 }
 
 /** The fixed processData Anhang I's own worked example uses to close out a dangling transaction (start succeeded, finish never did) — see docs/TSE-Integration.md Abschnitt 8.1, rule 6. */

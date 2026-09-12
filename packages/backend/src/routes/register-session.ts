@@ -312,6 +312,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // ("TSE-Ausfall", AEAO zu § 146a Nr. 1.14.3) für die vollständige Begründung.
       const kassenbelegSnapshot = buildKassenbelegProcessData({
         paymentMethod: 'cash',
+        // Task #130: the embedded Vorgangstyp must agree with this same
+        // register's is_training flag, exactly like the DSFinV-K export's
+        // own BON_TYP derivation (`exports/dsfinvk/load.ts`) — otherwise the
+        // TSE-signed processData and the export would classify the same
+        // booking differently.
+        vorgangstyp: receiptType === 'training' ? 'AVTraining' : 'Beleg',
         positions: positions.map((p) => {
           const article = articleById.get(p.article_id)!;
           return {
@@ -838,6 +844,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
     const kassenbelegSnapshot = buildKassenbelegProcessData({
       paymentMethod: 'cash',
+      // Task #130: see the Bonkasse checkout's identical comment above.
+      vorgangstyp: receiptType === 'training' ? 'AVTraining' : 'Beleg',
       positions: ids.map((id) => {
         const item = pickedById.get(id)!;
         return {

@@ -9,11 +9,13 @@ import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 import { query } from '../../db/client.js';
 import {
-  dumpProcessDataTse, exportTar, factoryResetTse, getTseInfo, maintainTse, setupTse, unblockPin,
+  dumpProcessDataTse, exportTar, factoryResetTse, finishTransaction, getTseInfo, maintainTse, setupTse,
+  startTransaction, unblockPin,
 } from '../../tse/client.js';
 import { certificateExpiresTodayOrEarlier } from '../../tse/healthJob.js';
 import { detectTse, listTseMountCandidates, type TseMountCandidate } from '../../tse/detect.js';
 import { TseError, type TseInfo } from '../../tse/types.js';
+import { KASSENBELEG_PROCESS_TYPE, buildAvBelegabbruchProcessData } from '../../tse/processData.js';
 import { describeTseError } from '../../tse/signing.js';
 import { isValidClientId, isValidPin, isValidPuk } from '../../tse/validation.js';
 import { applyTseSettings } from '../../tse/settings.js';
@@ -56,6 +58,23 @@ interface TseStatusResponse {
   certificateExpiresTodayOrEarlier?: boolean;
   /** Present when `configured` is true but the live `info` call failed (wrong path, PUK/PIN, unreachable hardware, ...). */
   error?: string;
+}
+
+/**
+ * Shape returned by `POST /api/admin/tse/test-signature` on success
+ * (Task #133) — the full detail of the real, newly-signed transaction, so an
+ * admin can visually confirm the TSE genuinely signed something new (a
+ * changed `signatureCounter`/`transactionNumber` versus the last known
+ * value), not just that the `info` command returned green fields.
+ */
+interface TseTestSignatureResponse {
+  transactionNumber: number;
+  signatureCounter: number;
+  /** Hex-encoded, as returned by the TSE — not decoded/verified here, this is a raw diagnostic dump for the admin. */
+  signature: string;
+  serialNumber: string;
+  startTime: string;
+  endTime: string;
 }
 
 /** Shape returned by `GET /api/admin/tse/candidates`. */
@@ -161,6 +180,68 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
       await maintainTse(timeAdminPin);
       await logSystemEvent('info', 'tse_health', 'Manueller Self-Test + Zeitsync erfolgreich (Admin-UI).');
       return reply.send({ ok: true });
+    } catch (e) {
+      return reply.status(502).send({ error: describeTseError(e) });
+    }
+  });
+
+  /**
+   * POST /api/admin/tse/test-signature — Task #133: runs one real, complete
+   * `start`/`finish` cycle against the TSE, for the "Signatur testen" button
+   * in the Settings UI. Unlike `GET /status` (which only reads the passive
+   * `info` snapshot — `hasPassedSelfTest`/`hasValidTime` can both stay green
+   * while a real signature still fails, see Task #132's expired-certificate
+   * finding), this is the only way to directly confirm the TSE can actually
+   * still produce a signature right now, regardless of the underlying cause
+   * of a failure.
+   *
+   * Deliberately reuses the exact `AVBelegabbruch` processData Anhang I's
+   * own worked example gives for a Kassenbeleg-V1 transaction that must be
+   * closed out without any real content (`tse/signing.ts` already uses this
+   * identical pattern to clean up a stranded transaction after a failed
+   * `finish`) — `start` gets empty processType/processData per Anhang I,
+   * `finish` gets `Kassenbeleg-V1` + zero-amount `AVBelegabbruch` content.
+   * This creates **no** `invoice`/`service_order`/`order_cancellation` row
+   * at all, so — unlike the two candidates discussed for Task #133 — it is
+   * *by construction*, not just by convention, impossible for this test
+   * transaction to ever appear in a DSFinV-K export or a Kassenabschluss:
+   * both are built exclusively from those three tables (see
+   * `exports/dsfinvk/load.ts`), which this route never touches.
+   *
+   * Deliberately NOT wrapped in `tse/signing.ts`'s `signTseTransaction()` —
+   * that helper never throws and only ever reports its own generic,
+   * customer-facing `TSE_UNAVAILABLE_WARNING`; here, as an admin diagnostic
+   * tool, the real `describeTseError()` detail (including the numeric SDK
+   * code) is exactly what's needed instead.
+   *
+   * Manual, admin-triggered action only (like every other TSE-Tools
+   * button) — never called automatically/periodically, since it consumes a
+   * real slot in the TSE's limited transaction counter.
+   */
+  app.post('/test-signature', async (_req, reply) => {
+    if (!config.tseMountPoint || !config.tseClientId) {
+      return reply.status(400).send({ error: 'TSE ist nicht konfiguriert.' });
+    }
+    try {
+      // Anhang I: "Für alle Vorgangstypen gilt, dass processType und
+      // processData für die StartTransaction-Operation immer leer sind."
+      const start = await startTransaction('', Buffer.alloc(0));
+      const finish = await finishTransaction(
+        start.transactionNumber, KASSENBELEG_PROCESS_TYPE, buildAvBelegabbruchProcessData(),
+      );
+      await logSystemEvent(
+        'info', 'tse_health',
+        `Manueller Signaturtest erfolgreich (Admin-UI) — Transaktion ${finish.transactionNumber}, Signaturzähler ${finish.signatureCounter}.`,
+      );
+      const response: TseTestSignatureResponse = {
+        transactionNumber: finish.transactionNumber,
+        signatureCounter: finish.signatureCounter,
+        signature: finish.signature,
+        serialNumber: finish.serialNumber,
+        startTime: new Date(start.logTime * 1000).toISOString(),
+        endTime: new Date(finish.logTime * 1000).toISOString(),
+      };
+      return reply.send(response);
     } catch (e) {
       return reply.status(502).send({ error: describeTseError(e) });
     }

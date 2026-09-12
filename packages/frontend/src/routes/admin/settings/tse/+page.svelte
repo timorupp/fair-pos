@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, type TseStatus, type TseMountCandidate } from '$lib/api';
+  import { api, type TseStatus, type TseMountCandidate, type TseTestSignatureResult } from '$lib/api';
   import { copyToClipboard } from '$lib/clipboard';
   import { saveBlob } from '$lib/download';
   import Modal from '$lib/components/Modal.svelte';
@@ -191,6 +191,32 @@
   function openMaintain(): void {
     maintainError = ''; maintainSuccess = false;
     maintainOpen = true;
+  }
+
+  // ── TSE-Tools — Signatur testen (Task #133) ─────────────────────────────────
+  let testSignatureOpen = $state(false);
+  let testSignatureBusy = $state(false);
+  let testSignatureError = $state('');
+  let testSignatureResult: TseTestSignatureResult | null = $state(null);
+
+  function openTestSignature(): void {
+    testSignatureError = ''; testSignatureResult = null;
+    testSignatureOpen = true;
+  }
+
+  /**
+   * Runs a real start/finish signature cycle (Task #133) — unlike "TSE
+   * testen" (which only reads the passive `info` snapshot), this directly
+   * confirms the TSE can still actually sign right now. Creates no
+   * invoice/order, so it never shows up in any export or Kassenabschluss.
+   */
+  async function runTestSignature(): Promise<void> {
+    testSignatureBusy = true; testSignatureError = ''; testSignatureResult = null;
+    try {
+      testSignatureResult = await api.admin.tse.testSignature();
+    } catch (e) {
+      testSignatureError = e instanceof Error ? e.message : 'Fehler';
+    } finally { testSignatureBusy = false; }
   }
 
   // ── TSE-Tools — TSE initialisieren (Task #131) ──────────────────────────────
@@ -488,6 +514,7 @@
     </p>
     <div class="tool-grid">
       <button class="btn-ghost" onclick={openTest}>TSE testen</button>
+      <button class="btn-ghost" onclick={openTestSignature}>Signatur testen</button>
       <button class="btn-ghost" onclick={openMaintain}>Zeit synchronisieren</button>
       <button class="btn-ghost" onclick={openSetup}>TSE initialisieren</button>
       <button class="btn-ghost" onclick={() => openUnblock('admin')}>Admin-PIN entsperren</button>
@@ -586,6 +613,35 @@
   </button>
   {#if maintainError}<p class="error-text">{maintainError}</p>{/if}
   {#if maintainSuccess}<p class="success-text">Self-Test + Zeitsync erfolgreich.</p>{/if}
+</Modal>
+
+<!-- Signatur testen (Task #133) — echter start/finish-Zyklus gegen die TSE,
+     erzeugt keine Rechnung/Bestellung, taucht daher nie in einem Export oder
+     Kassenabschluss auf. -->
+<Modal bind:open={testSignatureOpen} title="Signatur testen" maxWidth="640px">
+  <p class="hint">
+    Führt einen echten Signaturvorgang gegen die TSE aus (Start + Ende,
+    ohne Inhalt) — deckt Signierprobleme zuverlässig auf, die "TSE testen"
+    allein nicht immer erkennt (z. B. ein bereits abgelaufenes Zertifikat,
+    während Self-Test/Zeitsync noch grün bleiben). Erzeugt keine Rechnung
+    oder Bestellung — verbraucht aber einen Platz im begrenzten
+    Transaktionszähler der TSE, daher nicht automatisch/periodisch nutzen.
+  </p>
+  <button class="btn-ghost" onclick={runTestSignature} disabled={testSignatureBusy}>
+    {testSignatureBusy ? 'Teste…' : 'Jetzt testen'}
+  </button>
+  {#if testSignatureError}<p class="error-text">{testSignatureError}</p>{/if}
+  {#if testSignatureResult}
+    <p class="success-text">Signatur erfolgreich erzeugt.</p>
+    <dl class="kv">
+      <dt>Transaktionsnummer</dt><dd>{testSignatureResult.transactionNumber}</dd>
+      <dt>Signaturzähler</dt><dd>{testSignatureResult.signatureCounter}</dd>
+      <dt>Seriennummer</dt><dd><code>{testSignatureResult.serialNumber}</code></dd>
+      <dt>Start</dt><dd>{new Date(testSignatureResult.startTime).toLocaleString('de-DE')}</dd>
+      <dt>Ende</dt><dd>{new Date(testSignatureResult.endTime).toLocaleString('de-DE')}</dd>
+      <dt>Signatur</dt><dd><code class="pubkey">{testSignatureResult.signature}</code></dd>
+    </dl>
+  {/if}
 </Modal>
 
 <!-- TSE initialisieren (Task #131) ───────────────────────────────────────────── -->

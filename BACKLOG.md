@@ -251,45 +251,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Noch nicht bewertet: welche der genannten Optionen (oder Kombination)
   sinnvoll ist, ob eine `event_id`-Migration auf `print_job` nötig ist.
 
-- [Task] **#133** "Signatur testen" — echten Testvorgang gegen die TSE in den TSE-Tools anbieten
-  **Klassifikation: Feature, noch nicht bewertet.** Angelegt 2026-09-12
-  (Nutzerwunsch), direkt motiviert durch Task #132: Self-Test und
-  Zeitsync allein erkennen nicht jedes Signierproblem (siehe #132 —
-  Self-Test + Zeitsync waren grün, während das Zertifikat bereits
-  abgelaufen war und echte Signaturen fehlschlugen). Ein echter
-  Test-Vorgang (`start`/`finish` gegen die TSE) würde das direkt und
-  zuverlässig aufdecken, unabhängig von der genauen Ursache.
-
-  **Nutzerfrage, noch offen:** Gibt es einen Vorgangstyp, den man dafür
-  "gefahrlos" verwenden kann — ohne reale Umsätze/den Kassenabschluss/
-  DSFinV-K-Exporte zu verfälschen? FairPOS kennt aktuell nur drei feste
-  TSE-`processType`-Werte (`tse/processData.ts`): `Kassenbeleg-V1`,
-  `Bestellung-V1`, `SonstigerVorgang` — keiner davon ist als "nur ein
-  Test, zählt nicht als Umsatz" gedacht. Zwei Kandidaten, beide noch
-  nicht bewertet/entschieden:
-  1. **`AVBelegabbruch`-Muster wiederverwenden:** FairPOS kennt bereits
-     den Fall, dass eine gestartete Transaktion sofort per Zweit-`finish`
-     als abgebrochen geschlossen wird (bisher nur für den Fall eines
-     mitten im Vorgang unterbrochenen Verbindungsabbruchs, siehe
-     `docs/Manueller-Testplan.md` Abschnitt 9). Noch zu klären: wird ein
-     `AVBelegabbruch`-Vorgang von der DSFinV-K-Exportlogik und den
-     Kassenabschluss-Summen zuverlässig ausgeschlossen (wie ein
-     abgebrochener/nicht abgeschlossener Vorgang), oder taucht er dort
-     trotzdem als (Null-)Vorgang auf?
-  2. **An Task #130 (Trainingsmodus/`AVTraining`) koppeln:** genau dafür
-     sieht die DSFinV-K-Spezifikation `AVTraining` vor — "echte TSE-Signatur,
-     aber explizit aus Umsatz-/Kassenabschluss-Totals ausgeschlossen".
-     Setzt aber voraus, dass Task #130 erst implementiert ist.
-
-  **Weitere offene Punkte:**
-  - Ein Testvorgang verbraucht trotzdem einen Slot im begrenzten
-    Transaktionszähler/Speicher der TSE — sollte wie die anderen
-    TSE-Tools eine bewusste, manuelle Admin-Aktion bleiben, nicht
-    automatisch/periodisch laufen (anders als der zyklische
-    Health-Check aus Task #132, der nur passiv den Info-Status liest).
-  - Wo in der TSE-Tools-Liste einordnen (vermutlich neben "TSE testen"),
-    und wie das Ergebnis darstellen (Erfolg/Fehler + evtl. TAN/Signatur
-    zur Kontrolle, ähnlich dem bestehenden "TSE testen"-Dialog).
 
 - [Task] **#135** Entscheidung: `cancels_invoice_id` entfernen oder "Fall A – Rechnungsstorno" implementieren
   **Klassifikation: Design-Entscheidung, angelegt 2026-09-12.** Ursprünglich
