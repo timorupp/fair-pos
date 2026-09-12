@@ -332,7 +332,7 @@
 <style>
   .register-shell { flex: 1; display: flex; flex-direction: column; padding: 1rem; gap: 1rem; max-width: 100%; }
   .register-header { display: flex; align-items: center; gap: 1rem; }
-  .register-header h1 { font-size: 1.1rem; font-weight: 700; margin: 0; }
+  .register-header h1 { font-size: 1.15rem; font-weight: 700; margin: 0; }
   .lock-screen {
     max-width: 540px; margin: 3rem auto; text-align: center;
     background: #f59e0b22; border: 1px solid #f59e0b88; border-radius: var(--radius);
@@ -376,7 +376,7 @@
     background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: var(--radius); padding: 1rem; display: flex; flex-direction: column;
   }
-  .empty { color: var(--color-text-muted); font-size: 0.9rem; padding: 0.5rem 0; }
+  .empty { color: var(--color-text-muted); font-size: 0.95rem; padding: 0.5rem 0; }
   .order-list { list-style: none; padding: 0; margin: 0; }
   .order-line {
     display: grid;
@@ -391,13 +391,13 @@
      comment in .../order/+page.svelte for the full rationale (same layout pattern here). */
   .line-name {
     font-weight: 600;
-    font-size: 1.05rem;
+    font-size: 1.1rem;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .line-unit { font-size: 0.85rem; text-align: right; }
+  .line-unit { font-size: 0.9rem; text-align: right; }
   .qty { display: flex; align-items: center; gap: 0.3rem; }
   .qty-btn {
     border-radius: 50%; border: 1px solid var(--color-border);
@@ -412,15 +412,15 @@
     min-width: 38px !important; min-height: 38px !important;
     font-size: 1.3rem !important;
   }
-  .qty-val { min-width: 1.5em; text-align: center; font-weight: 700; font-size: 1.1rem; }
+  .qty-val { min-width: 1.5em; text-align: center; font-weight: 700; font-size: 1.15rem; }
 
   .total-row {
     display: flex; align-items: center; gap: 0.75rem;
     padding-top: 0.6rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border);
   }
-  .total-value { font-size: 1.25rem; font-weight: 700; flex: 1; }
+  .total-value { font-size: 1.3rem; font-weight: 700; flex: 1; }
   .total-value.negative { color: var(--color-danger); }
-  .checkout-btn { padding: 0.6rem 1.5rem; font-size: 1rem; }
+  .checkout-btn { padding: 0.6rem 1.5rem; font-size: 1.05rem; }
 
   /* Hold-to-confirm (see $lib/longpress) — guards against a stray tap
      triggering the checkout. The fill sweeps left-to-right while held;
@@ -442,7 +442,7 @@
     gap: 0.5rem;
   }
   .grid-btn {
-    border: none; border-radius: var(--radius); color: white; font-weight: 700; font-size: 1rem;
+    border: none; border-radius: var(--radius); color: white; font-weight: 700; font-size: 1.1rem;
     padding: 0.5rem; cursor: pointer; min-height: 70px;
     transition: filter 0.05s, transform 0.05s;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
