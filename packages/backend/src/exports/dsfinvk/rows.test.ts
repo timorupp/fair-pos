@@ -80,8 +80,8 @@ describe('buildDsfinvkExport', () => {
     });
     const out = buildDsfinvkExport(baseSource([v]));
     expect(out['lines.csv']).toHaveLength(2);
-    expect(out['lines.csv'][0]).toMatchObject({ GV_TYP: 'Umsatz', STK_BR: '5.00', POS_ZEILE: '1' });
-    expect(out['lines.csv'][1]).toMatchObject({ GV_TYP: 'Pfand', STK_BR: '2.00', POS_ZEILE: '2' });
+    expect(out['lines.csv'][0]).toMatchObject({ GV_TYP: 'Umsatz', STK_BR: '5.00000', POS_ZEILE: '1' });
+    expect(out['lines.csv'][1]).toMatchObject({ GV_TYP: 'Pfand', STK_BR: '2.00000', POS_ZEILE: '2' });
   });
 
   it('uses PfandRueckzahlung for a negative deposit (Leergutrückgabe)', () => {
@@ -90,7 +90,7 @@ describe('buildDsfinvkExport', () => {
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
-    expect(pfandLine).toMatchObject({ GV_TYP: 'PfandRueckzahlung', STK_BR: '2.00' });
+    expect(pfandLine).toMatchObject({ GV_TYP: 'PfandRueckzahlung', STK_BR: '2.00000' });
   });
 
   it('taxes the Pfand line at UST_SCHLUESSEL 1 (Regelsteuersatz) even when the article itself is reduced-rate (Task #113)', () => {
@@ -104,6 +104,27 @@ describe('buildDsfinvkExport', () => {
     expect(pfandVat!.UST_SCHLUESSEL).toBe(1);   // standard, independent of the article
   });
 
+  it('avoids a rounding mismatch between summed per-line and aggregate net/tax amounts by using 5 decimal places (D-065)', () => {
+    // 3× 1.99 € gross at 19% USt: at 2 decimal places, POS_NETTO/POS_UST
+    // would round to 1.67/0.32 per line (summing to 5.01/0.96 by hand),
+    // while BON_NETTO/BON_UST — summed internally at full precision, then
+    // rounded once — would print 5.02/0.95, a genuine 1-cent mismatch an
+    // auditor re-summing the printed lines would hit. At 5 decimals both
+    // paths agree exactly.
+    const item = { articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard' as const, priceEuros: 1.99, depositPriceEuros: null, depositTaxRate: null };
+    const v = beleg({ items: [item, item, item] });
+    const out = buildDsfinvkExport(baseSource([v]));
+
+    expect(out['lines_vat.csv'].map((r) => r.POS_NETTO)).toEqual(['1.67227', '1.67227', '1.67227']);
+    expect(out['lines_vat.csv'].map((r) => r.POS_UST)).toEqual(['0.31773', '0.31773', '0.31773']);
+    expect(out['transactions_vat.csv'][0]).toMatchObject({ BON_NETTO: '5.01681', BON_UST: '0.95319' });
+
+    const lineNettoSum = out['lines_vat.csv'].reduce((s, r) => s + Number(r.POS_NETTO), 0);
+    const lineUstSum = out['lines_vat.csv'].reduce((s, r) => s + Number(r.POS_UST), 0);
+    expect(lineNettoSum).toBeCloseTo(Number(out['transactions_vat.csv'][0]!.BON_NETTO), 5);
+    expect(lineUstSum).toBeCloseTo(Number(out['transactions_vat.csv'][0]!.BON_UST), 5);
+  });
+
   it('reflects a Bonstorno\'s already-negative priceEuros (D-068) without any storno-flag-based flip', () => {
     // Bonstorno rows arrive here with a negative priceEuros already baked in
     // (routes/admin/cancellations.ts negates at creation time) — this
@@ -113,8 +134,8 @@ describe('buildDsfinvkExport', () => {
     });
     const out = buildDsfinvkExport(baseSource([v]));
     expect(out['transactions.csv'][0]!.UMS_BRUTTO).toBe('-5.00');
-    expect(out['lines.csv'][0]!.STK_BR).toBe('5.00'); // STK_BR is the unsigned base price
-    expect(out['lines_vat.csv'][0]!.POS_BRUTTO).toBe('-5.00');
+    expect(out['lines.csv'][0]!.STK_BR).toBe('5.00000'); // STK_BR is the unsigned base price
+    expect(out['lines_vat.csv'][0]!.POS_BRUTTO).toBe('-5.00000');
   });
 
   it('keeps GV_TYP=Pfand for a Bonstorno reversing a normal (deposit-charging) article, even though the stored amount is now negative (D-069)', () => {
@@ -124,9 +145,9 @@ describe('buildDsfinvkExport', () => {
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
-    expect(pfandLine).toMatchObject({ GV_TYP: 'Pfand', STK_BR: '2.00' });
+    expect(pfandLine).toMatchObject({ GV_TYP: 'Pfand', STK_BR: '2.00000' });
     const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === pfandLine!.POS_ZEILE);
-    expect(pfandVat!.POS_BRUTTO).toBe('-2.00'); // the real amount stays negative — only the label is "undone"
+    expect(pfandVat!.POS_BRUTTO).toBe('-2.00000'); // the real amount stays negative — only the label is "undone"
   });
 
   it('keeps GV_TYP=PfandRueckzahlung for a Bonstorno reversing a Leergutrückgabe article, even though the stored amount is now positive (D-069)', () => {
@@ -136,9 +157,9 @@ describe('buildDsfinvkExport', () => {
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
-    expect(pfandLine).toMatchObject({ GV_TYP: 'PfandRueckzahlung', STK_BR: '2.00' });
+    expect(pfandLine).toMatchObject({ GV_TYP: 'PfandRueckzahlung', STK_BR: '2.00000' });
     const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === pfandLine!.POS_ZEILE);
-    expect(pfandVat!.POS_BRUTTO).toBe('2.00'); // the real amount stays positive — only the label is "undone"
+    expect(pfandVat!.POS_BRUTTO).toBe('2.00000'); // the real amount stays positive — only the label is "undone"
   });
 
   it('does not emit a datapayment.csv row for AVBestellung/AVSonstige (no payment yet)', () => {

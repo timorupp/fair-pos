@@ -100,7 +100,7 @@
               <td class="num">{fmt(c.total_gross)} €</td>
               <td class="actions">
                 <a class="btn-ghost" href={api.admin.closings.dsfinvkUrl(c.id)} rel="noopener">ZIP herunterladen</a>
-                {#if c.is_zero_closing}<span class="muted small">Null</span>{/if}
+                {#if c.is_zero_closing}<span class="muted small">Nullabschluss</span>{/if}
               </td>
             </tr>
           {/each}

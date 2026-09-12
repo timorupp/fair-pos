@@ -127,9 +127,25 @@ function ustSchluessel(category: TaxCategory): number {
   return 5; // zero / steuerfrei
 }
 
-/** Formats a euro amount with exactly two decimal places, dot as separator, no thousands separator (per Anhang I formatting rules, also applied to CSV amounts here for consistency). */
+/** Formats a euro amount with exactly two decimal places, dot as separator, no thousands separator (per Anhang I formatting rules, also applied to CSV amounts here for consistency). Used for fields the official field catalog (Anhang E) itself declares with 2 decimals (`UMS_BRUTTO`, `*_BETRAG`/`*_ZAHLUNGEN` payment fields) — see `euro5()` for the net/tax fields declared with 5. */
 function euro(amount: number): string {
   return amount.toFixed(2);
+}
+
+/**
+ * Formats a euro amount with five decimal places (D-065, 2026-09-12) — for
+ * exactly the net/tax fields the official DSFinV-K field catalog (Anhang E)
+ * declares with 5 decimals (`Z_UMS_BRUTTO/_NETTO`, `Z_UST`,
+ * `BON_BRUTTO/_NETTO/_UST`, `POS_BRUTTO/_NETTO/_UST`, `STK_BR` — see
+ * `index-xml.ts`'s `NUMERIC_COLUMNS`, which already declared `Accuracy=5`
+ * for these before this fix). Rounding each line to only 2 decimals before
+ * summing can produce a printed aggregate that doesn't match the sum of the
+ * printed line items (a genuine, auditor-visible off-by-a-cent
+ * discrepancy) — the underlying division/summation here was always
+ * full-precision; this only changes how many of those digits get printed.
+ */
+function euro5(amount: number): string {
+  return amount.toFixed(5);
 }
 
 /** Hex string (as returned by the TSE client) to base64, for TSE_TA_SIG. */
@@ -283,12 +299,12 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
         GUTSCHEIN_NR: '', ARTIKELTEXT: it.articleName, POS_TERMINAL_ID: source.tseClientId ?? '',
         GV_TYP: 'Umsatz', GV_NAME: '', INHAUS: '1', P_STORNO: '0', AGENTUR_ID: 0,
         ART_NR: it.articleId ?? '', GTIN: '', WARENGR_ID: it.categoryName, WARENGR: it.categoryName,
-        MENGE: '1.000', FAKTOR: '1.000', EINHEIT: 'Stück', STK_BR: euro(Math.abs(it.priceEuros)),
+        MENGE: '1.000', FAKTOR: '1.000', EINHEIT: 'Stück', STK_BR: euro5(Math.abs(it.priceEuros)),
       });
       linesVat.push({
         ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
-        UST_SCHLUESSEL: key, POS_BRUTTO: euro(articleBrutto), POS_NETTO: euro(articleNetto),
-        POS_UST: euro(articleBrutto - articleNetto),
+        UST_SCHLUESSEL: key, POS_BRUTTO: euro5(articleBrutto), POS_NETTO: euro5(articleNetto),
+        POS_UST: euro5(articleBrutto - articleNetto),
       });
       addToVatBucket(vatBuckets, key, articleBrutto, articleNetto);
       addToBusinesscase(businesscaseTotals, 'Umsatz', key, articleBrutto, articleNetto);
@@ -321,12 +337,12 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
           GUTSCHEIN_NR: '', ARTIKELTEXT: 'Pfand', POS_TERMINAL_ID: source.tseClientId ?? '',
           GV_TYP: gvTyp, GV_NAME: '', INHAUS: '1', P_STORNO: '0', AGENTUR_ID: 0,
           ART_NR: it.articleId ?? '', GTIN: '', WARENGR_ID: it.categoryName, WARENGR: it.categoryName,
-          MENGE: '1.000', FAKTOR: '1.000', EINHEIT: 'Stück', STK_BR: euro(Math.abs(it.depositPriceEuros)),
+          MENGE: '1.000', FAKTOR: '1.000', EINHEIT: 'Stück', STK_BR: euro5(Math.abs(it.depositPriceEuros)),
         });
         linesVat.push({
           ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
-          UST_SCHLUESSEL: depositKey, POS_BRUTTO: euro(depositBrutto), POS_NETTO: euro(depositNetto),
-          POS_UST: euro(depositBrutto - depositNetto),
+          UST_SCHLUESSEL: depositKey, POS_BRUTTO: euro5(depositBrutto), POS_NETTO: euro5(depositNetto),
+          POS_UST: euro5(depositBrutto - depositNetto),
         });
         addToVatBucket(vatBuckets, depositKey, depositBrutto, depositNetto);
         addToBusinesscase(businesscaseTotals, gvTyp, depositKey, depositBrutto, depositNetto);
@@ -335,7 +351,7 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     for (const [key, sums] of vatBuckets) {
       transactionsVat.push({
         ...schluessel, BON_ID: v.id, UST_SCHLUESSEL: key,
-        BON_BRUTTO: euro(sums.brutto), BON_NETTO: euro(sums.netto), BON_UST: euro(sums.brutto - sums.netto),
+        BON_BRUTTO: euro5(sums.brutto), BON_NETTO: euro5(sums.netto), BON_UST: euro5(sums.brutto - sums.netto),
       });
     }
 
@@ -371,7 +387,7 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
 
   const businesscases: BusinesscaseRow[] = [...businesscaseTotals.values()].map((b) => ({
     ...schluessel, GV_TYP: b.gvTyp, GV_NAME: b.gvName, AGENTUR_ID: 0, UST_SCHLUESSEL: b.ustSchluessel,
-    Z_UMS_BRUTTO: euro(b.brutto), Z_UMS_NETTO: euro(b.netto), Z_UST: euro(b.brutto - b.netto),
+    Z_UMS_BRUTTO: euro5(b.brutto), Z_UMS_NETTO: euro5(b.netto), Z_UST: euro5(b.brutto - b.netto),
   }));
 
   const payment: PaymentRow[] = [...paymentTotals.entries()].map(([typ, amount]) => ({

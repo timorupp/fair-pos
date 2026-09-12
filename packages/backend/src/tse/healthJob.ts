@@ -34,6 +34,12 @@
  *   re-enable it manually after fixing the PIN.
  * - {@link MAINTAIN_RETRY_COOLDOWN_MS} throttles repeated attempts while the
  *   TSE stays unhealthy for any other reason.
+ *
+ * Task #132: each tick also independently checks
+ * {@link certificateExpiresTodayOrEarlier} — `hasValidTime`/
+ * `hasPassedSelfTest` stayed green live on hardware (2026-09-12) while an
+ * expired certificate made every real signing attempt fail, so this is a
+ * separate signal, not folded into the healthy/unhealthy state machine above.
  */
 import { config } from '../config.js';
 import { query } from '../db/client.js';
@@ -58,6 +64,9 @@ export const MAINTAIN_RETRY_COOLDOWN_MS = 15 * 60_000;
 /** Whether the most recent tick found the TSE healthy — tracked so we only log/act on changes, not every tick. */
 let wasHealthy = true;
 
+/** Whether we've already logged the certificate-expiry warning for the current expiry episode — logged once, not every tick (Task #132). */
+let certExpiryWarned = false;
+
 /** Timestamp (`Date.now()`) of the last automatic `maintainTse()` attempt, or `null` since the last healthy tick — drives {@link MAINTAIN_RETRY_COOLDOWN_MS}. */
 let lastMaintainAttemptAt: number | null = null;
 
@@ -69,6 +78,30 @@ export function resetTseHealthState(): void {
   wasHealthy = true;
   lastMaintainAttemptAt = null;
   loggedAutoMaintainDisabled = false;
+  certExpiryWarned = false;
+}
+
+/**
+ * Whether a TSE certificate has already expired, or will expire before the
+ * end of today (Task #132) — found live 2026-09-12: Self-Test/Zeitsync
+ * stayed green while an expired certificate made real signing fail, because
+ * neither checks `certificateExpirationDate` at all. Compared at calendar-
+ * day granularity (server-local date), not exact-instant: the raw value is
+ * a full Unix timestamp with a time-of-day component (`WormDLL.h`:
+ * "the timestamp after which the certificate ... will be invalid"), so an
+ * exact-instant check would only warn after that precise moment passes —
+ * this instead warns from the start of the expiry day, giving same-day
+ * lead time before the actual cutoff.
+ *
+ * @param expirationUnixSeconds - `TseInfo.certificateExpirationDate`.
+ * @param now - Injectable for tests; defaults to the real current time.
+ * @returns `true` if the certificate's expiry date is today or earlier.
+ */
+export function certificateExpiresTodayOrEarlier(expirationUnixSeconds: number, now: Date = new Date()): boolean {
+  const expiry = new Date(expirationUnixSeconds * 1000);
+  const expiryDay = Date.UTC(expiry.getFullYear(), expiry.getMonth(), expiry.getDate());
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return expiryDay <= today;
 }
 
 /**
@@ -110,6 +143,21 @@ export async function tick(): Promise<void> {
       wasHealthy = false;
     }
     return;
+  }
+
+  // Independent of hasValidTime/hasPassedSelfTest below (Task #132) — both
+  // can stay green while an expired certificate makes real signing fail.
+  if (certificateExpiresTodayOrEarlier(info.certificateExpirationDate)) {
+    if (!certExpiryWarned) {
+      const expiry = new Date(info.certificateExpirationDate * 1000).toLocaleString('de-DE');
+      await logSystemEvent(
+        'warning', LOG_CATEGORY,
+        `TSE-Zertifikat läuft heute ab oder ist bereits abgelaufen (gültig bis ${expiry}) — Signaturen können jederzeit fehlschlagen, auch wenn Self-Test/Zeitsync weiterhin bestehen. Zertifikatsverlängerung/TSE-Austausch veranlassen.`,
+      );
+      certExpiryWarned = true;
+    }
+  } else {
+    certExpiryWarned = false;
   }
 
   if (info.hasValidTime && info.hasPassedSelfTest) {

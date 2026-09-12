@@ -145,6 +145,36 @@ describe('tick()', () => {
     delete process.env['TSE_STUB_MAINTAIN_FAILS'];
   });
 
+  it('warns once when the certificate has already expired, even while self-test/time-sync are healthy (Task #132)', async () => {
+    config.tseMountPoint = '/mnt/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    const expiredSecondsAgo = Math.floor(Date.now() / 1000) - 24 * 3600;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true, result: { hasPassedSelfTest: true, hasValidTime: true, certificateExpirationDate: expiredSecondsAgo },
+    });
+
+    await tick();
+    await tick(); // second tick must not repeat the warning
+
+    const rows = await logRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ severity: 'warning', category: 'tse_health' });
+    expect(rows[0]!.message).toMatch(/Zertifikat/);
+  });
+
+  it('does not warn about the certificate when it is still valid', async () => {
+    config.tseMountPoint = '/mnt/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    const oneYearFromNow = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true, result: { hasPassedSelfTest: true, hasValidTime: true, certificateExpirationDate: oneYearFromNow },
+    });
+
+    await tick();
+
+    expect(await logRows()).toEqual([]);
+  });
+
   it('disables auto-maintain and stops retrying once maintain fails with a PIN authentication error', async () => {
     config.tseMountPoint = '/mnt/fake-tse';
     config.tseClientId = 'FairPOS-Test';

@@ -254,10 +254,12 @@
 
     <h2 class="section-heading">System</h2>
     <div class="tiles">
-      <a class="tile" class:warn={tseHealth?.severity === 'warning'} href="/admin/settings/logs">
+      <a class="tile" class:warn={tseHealth?.severity === 'warning'} class:error={tseHealth?.severity === 'error'} href="/admin/settings/logs">
         <h2>TSE-Zustand</h2>
         {#if tseHealth}
-          <p class="tile-value">{tseHealth.severity === 'warning' ? '⚠ Auffällig' : '✓ Gesund'}</p>
+          <p class="tile-value">
+            {#if tseHealth.severity === 'error'}⛔ Fehler{:else if tseHealth.severity === 'warning'}⚠ Auffällig{:else}✓ Gesund{/if}
+          </p>
           <p class="tile-detail">{tseHealth.message}</p>
         {:else}
           <p class="tile-value muted">Kein Status verfügbar</p>
@@ -338,6 +340,7 @@
   }
   .tile:hover { border-color: var(--color-primary); }
   .tile.warn { border-color: #f59e0b88; background: #f59e0b11; }
+  .tile.error { border-color: #dc262688; background: #dc262611; }
 
   .tile h2 {
     font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;

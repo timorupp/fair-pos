@@ -143,11 +143,11 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
 
     const linesFile = directory.files.find((f) => f.path === 'lines.csv')!;
     const linesContent = (await linesFile.buffer()).toString('utf-8');
-    expect(linesContent).toContain('5.00'); // STK_BR is the unsigned base price, see rows.test.ts
+    expect(linesContent).toContain('5.00000'); // STK_BR is the unsigned base price, 5 decimals (D-065), see rows.test.ts
 
     const linesVatFile = directory.files.find((f) => f.path === 'lines_vat.csv')!;
     const linesVatContent = (await linesVatFile.buffer()).toString('utf-8');
-    expect(linesVatContent).toContain('-5.00'); // POS_BRUTTO carries the real (negative) sign
+    expect(linesVatContent).toContain('-5.00000'); // POS_BRUTTO carries the real (negative) sign, 5 decimals (D-065)
   });
 
   it('emits exactly one Bonkopf row per invoice even when its order_items were placed by different staff (Bedienungskasse, multiple order rounds)', async () => {

@@ -148,7 +148,7 @@ Quelle: [Neufassung des Anwendungserlasses zu § 146a AO, 30.06.2023](https://ww
 
 Rechtsgrundlage: **§ 146 Abs. 1 AO**, **GoBD**, **§ 239 Abs. 2 HGB**
 
-Ein **täglicher Kassenabschluss** ist rechtlich zwingend. Pflichtangaben auf dem Z-Bon:
+Ein **täglicher Kassenabschluss** ist rechtlich zwingend. **"Z-Bon"/"Tagesabschluss" ist dabei reiner Branchenjargon** — der Begriff kommt weder in der KassenSichV noch in der DSFinV-K-2.4-Spezifikation vor (verifiziert 2026-09-12 durch Volltextprüfung der offiziellen KassenSichV auf gesetze-im-internet.de). Die folgende Liste ist entsprechend **keine wörtliche Zitat-Checkliste aus einer einzelnen Norm, sondern eine Synthese** aus den allgemeinen Grundsätzen (§ 146 Abs. 1 AO: "täglich festzuhalten"; § 239 Abs. 2 HGB: "vollständig, richtig, zeitgerecht und geordnet") und den konkret in DSFinV-K für das Kassenabschlussmodul vorgeschriebenen Feldern (`Z_ERSTELLUNG`, `Z_NR`, Steuersatz-Summen, Zahlarten-Summen):
 
 | Angabe |
 |---|
@@ -161,6 +161,12 @@ Ein **täglicher Kassenabschluss** ist rechtlich zwingend. Pflichtangaben auf de
 | Nullstellungszähler |
 
 **Nicht zulässig:** manuelle Nachbearbeitung, periodische statt tägliche Abrechnung, lückenhafte Z-Bon-Nummerierung.
+
+**Offene Frage zu "Nullstellungszähler" (2026-09-12):** Bei der obigen Verifikation ließ sich dieser Begriff in der DSFinV-K-2.4-Spezifikation nicht finden — möglicherweise ein Relikt aus der Vor-TSE-Ära (INSIKA/ältere Registrierkassen-Anforderungen). Die aktuelle Rechtsgrundlage dieses konkreten Punktes ist noch nicht abschließend verifiziert und sollte bei Gelegenheit nachgeprüft werden, bevor er als zwingende Pflichtangabe kommuniziert wird.
+
+**Warengruppen-/Artikel-Aufschlüsselung ist freiwillig, nicht vorgeschrieben (verifiziert 2026-09-12):** DSFinV-K 2.4 §4 ("Gliederungsebenen für Kassenabschluss-Summen") lässt für den Kassenabschluss ausdrücklich nur genau vier Aggregationsebenen zu: `BON_TYP → BON_NAME → GV_TYP → GV_NAME`. Eine Aufschlüsselung nach Warengruppe oder einzelnem Artikel — wie sie manche kommerzielle Kassensysteme zusätzlich anzeigen — kommt in dieser Liste nicht vor; `WARENGR_ID`/`WARENGR`-Felder existieren nur im separaten Einzelaufzeichnungsmodul (`Bonpos`), nicht im Kassenabschluss selbst. FairPOS' Z-Bon (nur Steuersatz-Ebene) entspricht damit bereits dem gesetzlichen Minimum; eine feinere Aufschlüsselung wäre eine rein freiwillige Zusatzfunktion.
+
+**Keine Pflicht zum physischen Ausdruck (verifiziert 2026-09-12):** Es gibt keine eigenständige gesetzliche Pflicht, den Tagesabschluss auf Papier auszudrucken. § 146a Abs. 2 AO (Belegausgabepflicht) betrifft ausdrücklich nur den Einzelbeleg pro Vorgang ("in unmittelbarem zeitlichem Zusammenhang mit dem Geschäftsvorfall"), nicht den Tagesabschluss. Die AEAO zu § 146a AO (Neufassung 30.06.2023) stellt in Nr. 2.5.7 klar, dass die Belegpflicht "unabhängig davon [gilt], ob der Beleg in Papierform oder elektronisch bereitgestellt wird". § 147 Abs. 2 AO und § 146 Abs. 5 AO erlauben Aufbewahrung "auf Datenträgern" ausdrücklich, sofern die Wiedergabe inhaltlich übereinstimmt und während der Aufbewahrungsfrist verfügbar/lesbar/maschinell auswertbar bleibt. Die DSFinV-K-Spezifikation selbst formuliert für die Kassenabschluss-Daten, dass sie "digital zu speichern sind" — sie geht also selbst von einem elektronischen, nicht papierbasierten Ursprungsdokument aus. **Fazit: die von FairPOS ohnehin erzeugte, GoBD-konform archivierte PDF-Fassung erfüllt die rechtlichen Anforderungen; ein zusätzlicher Papierausdruck ist eine rein betriebliche Entscheidung, keine Rechtspflicht.** (Eine vollständige Prüfung des GoBD-BMF-Schreibens im Fließtext war wegen Bot-Schutzes auf der BMF-Webseite nicht möglich — die spezifischeren, hier zitierten Normen aus AO und DSFinV-K sind für diese Frage aber eindeutig.)
 
 Das DSFinV-K-Kassenabschlussmodul ist das elektronische Äquivalent des Z-Bons (`businesscases.csv`, `payment.csv`, `cash_per_currency.csv`).
 

@@ -230,23 +230,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   explizit durchgetestet. Noch nicht bewertet: ob sich dort dasselbe
   korrekte Netto-Umsatz-Verhalten zeigt oder eine Abweichung auftritt.
 
-- [Task] **#127** Tests für nachträgliche Datenänderungen (Artikelname, Artikelpreis, USt-Satz etc.)
-  **Klassifikation: Test-Aufgabe / ggf. Datenintegritäts-Prüfung.**
-  Angelegt 2026-09-09 (Nutzerwunsch).
-
-  Zu klären: was passiert mit bereits verkauften/historischen Belegen
-  (Rechnungen, Z-Bons, Exporte), wenn Stammdaten (Artikelname, -preis,
-  USt-Satz) nachträglich geändert werden — bleiben vergangene Belege
-  unverändert (Snapshot auf `order_item` zum Verkaufszeitpunkt), oder
-  zeigen rückwirkend angezeigte/exportierte Werte die **neuen** Stammdaten?
-  Ähnliche Problemklasse wie Task #112 (Firmendaten/Logo werden live statt
-  eingefroren geladen) — hier aber für Artikeldaten/Steuersätze, noch nicht
-  systematisch getestet.
-
-  Noch nicht bewertet: welche Felder tatsächlich als Snapshot auf
-  `order_item`/`invoice` vorliegen vs. welche live aus `article`/
-  `tax_rate`-Tabellen nachgeladen werden.
-
 - [Task] **#128** Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
   **Klassifikation: Sicherheits-/Datenschutz-Frage (noch nicht bewertet,
   mehrere Optionen genannt, keine Entscheidung getroffen).**
@@ -358,60 +341,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   (`order`/`checkout`-Seiten) — für den Trainingsmodus eher als
   durchgehend sichtbarer Banner statt einmaligem Alert gedacht, analog zu
   einem persistenten Status-Hinweis.
-
-- [Task] **#132** TSE-Zertifikatsablauf prüfen und warnen (Self-Test + Zeitsync bleiben grün, obwohl Signieren nicht mehr geht)
-  **Klassifikation: Bug/Feature, live gefunden (2026-09-12).** Nutzer
-  berichtet: TSE zeigte weiterhin bestandenen Self-Test und synchronisierte
-  Zeit, Transaktionssignaturen schlugen aber fehl — Ursache war ein
-  abgelaufenes TSE-Zertifikat. `worm_info_certificateExpirationDate`
-  (`WormDLL.h`) wird weder vom manuellen "TSE testen" noch vom
-  zyklischen Hintergrund-Health-Check (`tse/healthJob.ts`, prüft aktuell
-  nur `hasValidTime`/`hasPassedSelfTest`) ausgewertet — beide bleiben
-  also "grün", bis der erste echte Signierversuch fehlschlägt.
-
-  **Wichtiger Fund zur Uhrzeit:** `WormDLL.h`-Doku zu
-  `worm_info_certificateExpirationDate`: *"This is the timestamp (as
-  seconds since Unix Epoch) after which the certificate... will be
-  invalid."* — der Wert ist ein **voller Unix-Timestamp mit Uhrzeit**,
-  keine reine Kalenderdatum-Angabe. Erklärt den beobachteten Effekt
-  (TSE wurde am Ablauftag gegen ca. 15 Uhr ungültig, nicht erst um
-  Mitternacht): das exakte Ablaufmoment hat eine Uhrzeit, FairPOS zeigt
-  aktuell aber nirgends mehr als das Datum — `+page.svelte`s "TSE
-  testen"-Dialog rendert `certificateExpirationDate` bisher nur über
-  `toLocaleDateString('de-DE')`, die Uhrzeit wird verworfen.
-
-  **Anforderungen (Nutzer):**
-  1. Im manuellen "TSE testen"-Dialog (Einstellungen → TSE → TSE-Tools):
-     das Feld "Zertifikat gültig bis" rot mit Warnung darstellen, wenn
-     das Ablaufdatum heute oder in der Vergangenheit liegt.
-  2. Im zyklischen Hintergrund-Self-Test (`tse/healthJob.ts`s `tick()`):
-     dieselbe Prüfung ergänzen — bei Ablaufdatum heute oder in der
-     Vergangenheit eine Warnung ins `system_log` schreiben **und** auf
-     dem Dashboard sichtbar machen.
-  3. Die Uhrzeit-Frage oben klären: entweder die Uhrzeit mit anzeigen
-     (Datum **und** Uhrzeit statt nur Datum, überall wo der Wert
-     gerendert wird) oder bewusst dokumentieren, warum nur das Datum
-     gezeigt wird — aktuell ist es unbeabsichtigt inkonsistent
-     (Rohwert hat Uhrzeit, Anzeige nicht).
-
-  **Umsetzungshinweis (noch nicht bewertet, nur beobachtet):** Das
-  Admin-Dashboard (`admin/+page.svelte`) zeigt bereits eine
-  "TSE-Status"-Kachel, die den jeweils letzten `tse_health`-Log-Eintrag
-  anzeigt (`⚠ Auffällig` nur bei `severity: 'warning'`, sonst immer
-  `✓ Gesund` — auch bei `'error'`, das die Kachel aktuell nicht
-  gesondert behandelt). Ein neuer `tse_health`-Log-Eintrag mit
-  `severity: 'warning'` aus Punkt 2 würde dort vermutlich automatisch
-  erscheinen, ohne dass die Dashboard-Kachel selbst geändert werden
-  muss — nicht abschließend geprüft, nur als Ansatzpunkt notiert.
-
-  **Offene Frage:** Nutzer nennt als Schwelle explizit "heute oder in
-  der Vergangenheit" (spätestmöglicher Zeitpunkt) für beide Prüfungen —
-  noch zu klären, ob zusätzlich eine frühzeitigere Vorwarnung (z. B.
-  30/60 Tage vor Ablauf) sinnvoll wäre, um genug Vorlauf für eine
-  Zertifikatsverlängerung/TSE-Austausch zu haben, oder ob das bewusst
-  nicht gewünscht ist. Siehe auch Task #133 (aktiver Signaturtest) als
-  robusterer, direkterer Ansatz, der dieses und andere
-  Signierprobleme gleichermaßen abdecken würde.
 
 - [Task] **#133** "Signatur testen" — echten Testvorgang gegen die TSE in den TSE-Tools anbieten
   **Klassifikation: Feature, noch nicht bewertet.** Angelegt 2026-09-12
@@ -562,6 +491,35 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Bonstorno-Bugfixes (Aggregation in `closing/totals.ts`, `/cash-balance`,
   Excel-Export) — daher zuerst hier klären, dann den Bugfix angehen.
 
+- [Task] **#137** Kassenjournal — kombinierte, chronologische Übersicht aus Einlagen/Entnahmen und Bareinnahmen
+  **Klassifikation: Feature/Nutzerwunsch, angelegt 2026-09-12.**
+
+  Aktuell gibt es zwei getrennte, jeweils unvollständige Ansichten:
+  - `GET /:id/transactions` (`routes/admin/registers.ts`) listet Einlagen/
+    Entnahmen (`cash_transaction`) einzeln auf, aber nur pro Kasse, ohne
+    Bezug zu den tatsächlichen Bareinnahmen aus Rechnungen.
+  - `/cash-balance` (`routes/admin/reports.ts`, Admin-Seite
+    `reports/cash-balance`) zeigt den **Soll-Kassenstand** nur als
+    aggregierte Summen (Einlagen gesamt, Bareinnahmen gesamt, Entnahmen
+    gesamt) — keine Einzelpositionen, keine zeitliche Abfolge.
+
+  Es fehlt eine **kombinierte, chronologische Ansicht** ("Kassenjournal"),
+  die Einlagen, Entnahmen und einzelne Bareinnahmen aus Bezahlvorgängen
+  (Rechnungen mit `payment_method = 'cash'`) in einer gemeinsamen,
+  zeitlich sortierten Liste zeigt — z. B. je Kasse oder je Tagesabschluss,
+  mit laufendem Saldo.
+
+  **Nutzerwunsch:** ggf. auch mit Excel-Export vorsehen (analog zu den
+  bestehenden Excel-Exports in `routes/admin/exports.ts`).
+
+  **Noch nicht bewertet:** Datenquelle für die Bareinnahmen-Zeilen (eine
+  Zeile pro Rechnung, oder aggregiert je Zeiteinheit?), Scope der Ansicht
+  (pro Kasse, pro Tagesabschluss, oder frei wählbarer Zeitraum), ob dafür
+  ein neuer Endpoint nötig ist oder `/cash-balance` erweitert werden kann,
+  und ob GoBD/DSFinV-K hierfür bereits eine passende Datenquelle liefern
+  (`transactions.csv`/`datapayment.csv`) oder das rein eine
+  FairPOS-interne Komfortfunktion ist, ohne Compliance-Bezug.
+
 ## Findings
 
 - [Finding] **D-033** (mittel, Backend / Excel-Export) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
@@ -579,16 +537,4 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 - [Finding] **D-058** (niedrig-mittel, Backend / Rechnungs-PDF) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02)
   Firmendaten (Name/Adresse/Steuernummer/USt-IdNr.) und das Firmenlogo werden bei **jedem** PDF-Abruf/Reprint einer Rechnung live aus `system_setting`/dem aktuell gespeicherten Logo geladen (`receipt/data.ts`s `loadReceiptWhere()`/`loadCompanySettings()`/`loadLogoFor()`), nicht zum Verkaufszeitpunkt eingefroren — weder `invoice` noch eine andere Tabelle speichert einen Snapshot. Sowohl `GET /:id/pdf` als auch `POST /:id/reprint` (`admin/invoices.ts`) rendern die Belegblöcke bei jedem Aufruf neu aus aktuellen Stammdaten, statt den ursprünglich beim Verkauf erzeugten `print_job`-Datensatz wiederzuverwenden. Folge: ändert ein Admin später Firmenname/Adresse/Logo, zeigt die PDF-Ansicht/ein Reprint einer alten Rechnung die **neuen** Daten statt der zum Verkaufszeitpunkt gültigen — die eigentlich TSE-relevanten Felder (Beträge, Steueraufschlüsselung, Transaktionsnummer, Signatur, Belegnummer) bleiben davon unberührt, da sie aus echten Snapshot-Spalten auf `invoice`/`order_item` kommen; betroffen ist nur der "Briefkopf".
   Siehe Task #112.
-
-- [Finding] **D-063** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 (`index.xml` gegen die offizielle DTD verifiziert) gefunden
-  Das jetzt korrekte `index.xml` (`exports/dsfinvk/index-xml.ts`) deklariert keine `ForeignKey`/`VariablePrimaryKey`-Beziehungen zwischen den Tabellen (z. B. `transactions.csv.BON_ID` ↔ `lines.csv.BON_ID`/`transactions_vat.csv.BON_ID`/`datapayment.csv.BON_ID`/`transactions_tse.csv.BON_ID`), obwohl die DTD (`gdpdu-01-09-2004.dtd`) das vorsieht und die offizielle Referenz-`index.xml` (bzst.de) es durchgängig nutzt. Fachlich unschädlich (jede Tabelle bleibt für sich korrekt lesbar), aber ein Prüfungstool könnte die Tabellen ohne diese Angabe nicht automatisch verknüpfen (JOIN von Hand nötig statt automatisch).
-  Kein Handlungsbedarf jetzt — nice-to-have für spätere Verbesserung, kein Compliance-Blocker.
-
-- [Finding] **D-064** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 gefunden
-  `index.xml`s `VariableColumn`-Elemente lassen `Description` (Klartext-Erläuterung je Feld) und `MaxLength` (Performance-Hinweis für `VariableLength`-Tabellen) bewusst weg — beide sind laut DTD optional, ihr Fehlen macht das Dokument nicht ungültig (per `xmllint --valid` gegen die echte, offizielle DTD bestätigt), aber `Description` würde einem Prüfer die Feldbedeutung direkt in der `index.xml` zeigen statt im separaten Anhang-E-Dokument nachschlagen zu müssen.
-  Kein Handlungsbedarf jetzt — nice-to-have für spätere Verbesserung, kein Compliance-Blocker.
-
-- [Finding] **D-065** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 gefunden
-  Die offizielle DSFinV-K-2.4-Spezifikation (Anhang E) nennt für mehrere Geldbetrags-Felder 5 Nachkommastellen (`Z_UMS_BRUTTO`/`Z_UMS_NETTO`/`Z_UST`, `BON_BRUTTO`/`BON_NETTO`/`BON_UST`, `POS_BRUTTO`/`POS_NETTO`/`POS_UST`, `STK_BR`), FairPOS rundet diese Werte aber durchgängig auf 2 Nachkommastellen (`rows.ts`, `toFixed(2)`). Das jetzt korrekte `index.xml` deklariert trotzdem die spec-gemäße `Accuracy` (5) für diese Felder — laut DTD unproblematisch, da eine höhere deklarierte Accuracy als die tatsächlichen Nachkommastellen der Daten explizit erlaubt ist (nur der umgekehrte Fall ist "undefined behaviour"). Nicht bewertet: ob die Steueraufschlüsselung selbst (nicht nur die CSV-Darstellung) von 5-stelliger statt 2-stelliger Rundungsgenauigkeit profitieren würde (z. B. um Rundungsdifferenzen bei einer Betriebsprüfungs-Nachrechnung zu vermeiden) — das wäre eine Änderung an der eigentlichen Berechnung, nicht nur am Export, und dafür bräuchte es eine eigene Bewertung.
-  Kein Handlungsbedarf jetzt — reine Beobachtung, kein bekannter Fehler.
 

@@ -4996,3 +4996,102 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Untersuchung ergab: kein echter Hänger, sondern ein aktiver, aber unnötig teurer nativer Kompilierlauf. `npm ci` (ohne `--omit=dev`, notwendig weil `npm run build` echte Build-Werkzeuge aus `devDependencies` — `typescript`, `vite`, `@sveltejs/kit` — braucht) installiert auch `testcontainers` (`packages/backend/package.json`, nur für Integrationstests). Dessen Kette `dockerode` → `docker-modem` → `ssh2` zieht `ssh2`s optionale native Crypto-Beschleunigung sowie `cpu-features` mit — beide werden bei **jedem** `npm ci`-Lauf per `node-gyp` komplett neu aus C-Quellcode gebaut (kein Zwischenstand wird über `npm ci`-Läufe hinweg wiederverwendet, da `npm ci` `node_modules` jedes Mal vollständig neu aufbaut), obwohl beide im Produktivbetrieb nie verwendet werden — `ssh2` fällt ohne den nativen Build klaglos auf reines JavaScript zurück (eigenes `install.js` fängt einen Fehlschlag bereits ab und bricht nicht ab). Auf schwächerer Server-Hardware (bestätigt per `top`: 7 GB RAM, Load ~2,7, mehrere `python3`/`gyp`-Prozesse mit 90%+ CPU) macht das 20-30+ Minuten pro Update aus, bei jedem einzelnen Lauf.
   **Verifiziert vor dem Fix:** Kein `pre`-/`postinstall`-Skript im eigenen Code (`package.json` in Root/shared/backend/frontend). Über `package-lock.json`s `hasInstallScript`-Flag geprüft, welche Pakete überhaupt ein Install-Skript mitbringen: `cpu-features`, `ssh2` (beide nur über `testcontainers`/`dockerode`, nie im Produktivcode referenziert), `protobufjs` (ebenfalls nur über `dockerode`/`@grpc/proto-loader` in der testcontainers-Kette — Skript-Inhalt gelesen: reiner Versionsschema-Warnhinweis, folgenlos überspringbar), `fsevents` (macOS-only, auf Linux ohnehin nie installiert), `esbuild` (echte Build-Abhängigkeit von `vite` — Skript-Inhalt gelesen: verlinkt nur lokal die bereits per `optionalDependencies` heruntergeladene plattformspezifische Binary, kein Netzwerkzugriff, muss also erhalten bleiben).
   **Fix 2026-09-12:** `npm ci --ignore-scripts` (überspringt alle Install-Skripte, auch die harmlosen) gefolgt von einem gezielten `npm rebuild esbuild` (holt nur das für den Frontend-Build tatsächlich benötigte Skript nach) — in `scripts/install/03-build.sh` (Erstinstallation) und `scripts/install/update.sh` (Update-Ablauf) sowie den entsprechenden manuellen Befehlen in `docs/Installationsanleitung.md` (Abschnitt 6 "Bauen" und Abschnitt 12 "Update", manuelle Alternative zu `update.sh`). Lokal verifiziert: `npm ci --ignore-scripts --prefer-offline` (541 Pakete) dauert 2m23s statt der zuvor beobachteten 25-45+ Minuten; `npm rebuild esbuild` danach funktioniert (`require('esbuild').version` liefert `0.28.2`); `ssh2`/`cpu-features` bauen dabei nachweislich keine native Binary mehr (`build/*.node` fehlt in beiden Paketen).
+  **Live auf dem Produktivserver bestätigt (2026-09-12):** Nutzer berichtet nach Commit/Pull des Fixes einen `update.sh`-Lauf von unter einer Minute — zuvor 45+ Minuten für denselben Schritt auf derselben Hardware.
+
+- [Finding] **D-065** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 gefunden
+  Die offizielle DSFinV-K-2.4-Spezifikation (Anhang E) nennt für mehrere Geldbetrags-Felder 5 Nachkommastellen (`Z_UMS_BRUTTO`/`Z_UMS_NETTO`/`Z_UST`, `BON_BRUTTO`/`BON_NETTO`/`BON_UST`, `POS_BRUTTO`/`POS_NETTO`/`POS_UST`, `STK_BR`), FairPOS rundete diese Werte aber durchgängig auf 2 Nachkommastellen (`rows.ts`, `toFixed(2)`). `index.xml` deklarierte trotzdem schon vorher korrekt `Accuracy=5` für diese Felder — laut DTD unproblematisch (eine höhere deklarierte als tatsächliche Genauigkeit ist explizit erlaubt), aber ungenutzt.
+  **Konkret bewertet (2026-09-12), auf Nutzeranfrage:** Ja, die 2-Dezimalstellen-Rundung verursachte einen echten, auditor-sichtbaren Rundungsfehler. Ursache: `articleNetto = articleBrutto / (1 + taxRate/100)` wird intern mit voller Fließkomma-Genauigkeit berechnet und aufsummiert, aber jede Zeile (`POS_NETTO`/`POS_UST`) UND jedes Aggregat (`BON_NETTO`/`BON_UST`, `Z_UMS_NETTO`/`Z_UST`) wird unabhängig voneinander separat gerundet — kein Zusammenhang zur Berechnungs-*Reihenfolge*, reines Formatierungsproblem. Beispiel (3× 1,99 € brutto, 19% USt): bei 2 Nachkommastellen ergeben die von Hand aufsummierten Einzelzeilen 5,01 €/0,96 € USt, während das gedruckte Aggregat (aus der ungerundeten Summe, einmal gerundet) 5,02 €/0,95 € zeigt — ein echter 1-Cent-Widerspruch bei einem gewöhnlichen 3-Positionen-Bon. Bei 5 Nachkommastellen verschwindet das (beide Pfade ergeben exakt 5,01681/0,95319).
+  **Umgesetzt 2026-09-12:** Neue Funktion `euro5()` (`toFixed(5)`) neben der bestehenden `euro()` (`toFixed(2)`) in `exports/dsfinvk/rows.ts` — angewendet auf genau die 10 Felder mit spec-gemäßer `Accuracy=5` (`STK_BR`, `POS_BRUTTO`/`POS_NETTO`/`POS_UST` je Artikel- und Pfandzeile, `BON_BRUTTO`/`BON_NETTO`/`BON_UST`, `Z_UMS_BRUTTO`/`Z_UMS_NETTO`/`Z_UST`). Alle 2-Dezimalstellen-Felder (`UMS_BRUTTO`, `BASISWAEH_BETRAG`, `Z_ZAHLART_BETRAG`, `ZAHLART_BETRAG_WAEH`, `Z_SE_ZAHLUNGEN`, `Z_SE_BARZAHLUNGEN`) bleiben unverändert bei `euro()`. Keine Änderung an der eigentlichen Berechnung (war schon ungerundet) und an `closing/totals.ts`/dem Z-Bon-PDF (rein Brutto-Cent-basiert, keine Netto/USt-Division, daher nicht betroffen). Neuer Regressionstest in `rows.test.ts` (3×1,99€-Beispiel, verifiziert exakte Übereinstimmung von Zeilensumme und Aggregat bei 5 Nachkommastellen); bestehende `STK_BR`/`POS_BRUTTO`-Erwartungswerte in `rows.test.ts` und `exports.dsfinvk.integration.test.ts` auf 5-stelliges Format aktualisiert. Unit-Tests grün, `tsc --noEmit` clean.
+
+- [Finding] **D-063** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 (`index.xml` gegen die offizielle DTD verifiziert) gefunden
+  Das jetzt korrekte `index.xml` (`exports/dsfinvk/index-xml.ts`) deklariert keine `ForeignKey`/`VariablePrimaryKey`-Beziehungen zwischen den Tabellen (z. B. `transactions.csv.BON_ID` ↔ `lines.csv.BON_ID`/`transactions_vat.csv.BON_ID`/`datapayment.csv.BON_ID`/`transactions_tse.csv.BON_ID`), obwohl die DTD (`gdpdu-01-09-2004.dtd`) das vorsieht und die offizielle Referenz-`index.xml` (bzst.de) es durchgängig nutzt. Fachlich unschädlich (jede Tabelle bleibt für sich korrekt lesbar), aber ein Prüfungstool könnte die Tabellen ohne diese Angabe nicht automatisch verknüpfen (JOIN von Hand nötig statt automatisch).
+  Kein Handlungsbedarf jetzt — nice-to-have für spätere Verbesserung, kein Compliance-Blocker.
+  **Korrektur des ursprünglichen Findings (2026-09-12):** Die obige Behauptung "die offizielle Referenz-`index.xml` (bzst.de) nutzt es durchgängig" war **sachlich falsch**. Bei der Umsetzung erneut direkt gegen die Referenzdatei geprüft (`grep` auf `ForeignKey`/`PrimaryKey` in der aus `dsfinvk_2_4.zip`, bzst.de, extrahierten `02_index.xml/index.xml`, ~1639 Zeilen/20 Tabellen): **null** Treffer. Die DTD (`gdpdu-01-09-2004.dtd`, seit Version 1.5, 2004-09-01) unterstützt `ForeignKey`/`PrimaryKey` zwar, aber BZSt's eigene Referenz macht davon an keiner einzigen Stelle Gebrauch.
+  **Umgesetzt 2026-09-12:** Da die Einstufung als bloßes "Nachziehen der Referenz" damit entfällt, wurde dies als bewusste, freiwillige, DTD-konforme Erweiterung umgesetzt (nicht als Anpassung an die Referenz) — kostet nichts, macht die `BON_ID`-Verknüpfung aber für Prüftools, die den DTD-Mechanismus auswerten, maschinenlesbar. `exports/dsfinvk/index-xml.ts`: `transactions.csv`s (Bonkopf) `BON_ID` wird jetzt als `VariablePrimaryKey` statt `VariableColumn` ausgegeben (per DTD `VariablePrimaryKey+, VariableColumn*` an den Anfang der Tabelle vorgezogen, unabhängig von der tatsächlichen Feldreihenfolge im Row-Objekt). `lines.csv`, `transactions_vat.csv`, `datapayment.csv`, `transactions_tse.csv` und `allocation_groups.csv` — die fünf Tabellen, die tatsächlich ein `BON_ID`-Feld gegen `transactions.csv`/Bonkopf führen (per `types.ts`/`rows.ts` einzeln verifiziert) — bekommen je ein `<ForeignKey><Name>BON_ID</Name><References>Bonkopf</References></ForeignKey>` ans Ende ihres `VariableLength`-Inhalts (per DTD-Grammatik zwingend nach allen `VariableColumn`/`VariablePrimaryKey`-Elementen). `lines_vat.csv` bekommt bewusst **keinen** Eintrag, obwohl es ebenfalls ein `BON_ID`-Feld führt: sein natürlicher Schlüssel ist zusammengesetzt (`BON_ID`+`POS_ZEILE`) und referenziert `Bonpos` (lines.csv), nicht `Bonkopf` direkt — außerhalb des Umfangs dieser einfachen, gleichnamigen Verknüpfung. Neue Unit-Tests in `index-xml.test.ts` (VariablePrimaryKey-Reihenfolge, ForeignKey-Platzierung, kein ForeignKey auf `transactions.csv` selbst). Zusätzlich manuell gegen die echte DTD validiert (siehe D-064-Eintrag unten für Details zum Validierungsverfahren) — eine vollständige, alle 15 Dateien abdeckende `index.xml` wurde generiert und bestand die Validierung.
+
+- [Finding] **D-064** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 gefunden
+  `index.xml`s `VariableColumn`-Elemente lassen `Description` (Klartext-Erläuterung je Feld) und `MaxLength` (Performance-Hinweis für `VariableLength`-Tabellen) bewusst weg — beide sind laut DTD optional, ihr Fehlen macht das Dokument nicht ungültig (per `xmllint --valid` gegen die echte, offizielle DTD bestätigt), aber `Description` würde einem Prüfer die Feldbedeutung direkt in der `index.xml` zeigen statt im separaten Anhang-E-Dokument nachschlagen zu müssen.
+  Kein Handlungsbedarf jetzt — nice-to-have für spätere Verbesserung, kein Compliance-Blocker.
+  **Umgesetzt 2026-09-12:** `exports/dsfinvk/index-xml.ts` bekommt eine neue `COLUMN_DESCRIPTIONS`-Lookup-Tabelle (Spaltenname → `{ description, maxLength? }`), deren Werte **wörtlich** aus der offiziellen Referenz-`index.xml` (bzst.de, `dsfinvk_2_4.zip`, `02_index.xml/index.xml`) übernommen wurden — jede von FairPOS verwendete Spalte wurde einzeln per `<Name>SPALTE</Name>` in der Referenz nachgeschlagen (automatisiert per Python/`xml.etree`, `Table`-Kontext berücksichtigt), keine selbst formulierten Texte (siehe AGENTS.md "Compliance-Prüfungen gegen offizielle Standards"). Für zwei Spalten (`UST_SCHLUESSEL`, `TSE_ID`) verwendet die Referenz je nach Tabelle unterschiedliche Formulierungen — dafür eine kleine `COLUMN_DESCRIPTION_OVERRIDES`-Map (Datei→Spalte→Text) zusätzlich zur Flat-Map. `MaxLength` wird nur für `AlphaNumeric`-Spalten gesetzt (bei `Numeric` laut DTD verboten), Werte ebenfalls wörtlich aus der Referenz. Jede `Table` bekommt zusätzlich eine `<Description>` direkt nach `<Name>` — Wert ist der eigene Dateiname (`cashpointclosing.csv` etc.), exakt die Konvention, die die Referenz selbst durchgängig verwendet (per Beispiel gegengeprüft: `<URL>cashpointclosing.csv</URL><Name>Stamm_Abschluss</Name><Description>cashpointclosing.csv</Description>`). Reihenfolge der neuen Elemente (`Name, Description?, (Numeric | (AlphaNumeric, MaxLength?) | Date)` auf Spaltenebene; `URL, Name?, Description?, ...` auf Tabellenebene) folgt exakt der DTD-Grammatik. Erweiterte Unit-Tests in `index-xml.test.ts` (Table-Description, Spalten-Description, MaxLength nur bei AlphaNumeric). Da im Projekt kein `xmllint` verfügbar war, zusätzlich manuell mit Python/`lxml` gegen die echte, unveränderte `gdpdu-01-09-2004.dtd` geprüft: eine vollständige, alle 15 CSV-Dateien abdeckende `index.xml` wurde aus dem echten Code generiert und validiert fehlerfrei (nach einem lokalen, nur für die Prüfung selbst nötigen Workaround für eine vorbestehende, nicht-deterministische `Media`-Content-Model-Regel in der DTD selbst — betrifft auch die unveränderte offizielle Referenzdatei identisch, also kein durch diese Änderung eingeführtes Problem). Unit-Tests (375/375) grün, `tsc --noEmit` clean.
+
+- [Task] **#127** Tests für nachträgliche Datenänderungen (Artikelname, Artikelpreis, USt-Satz etc.)
+  **Klassifikation: Test-Aufgabe / ggf. Datenintegritäts-Prüfung.**
+  Angelegt 2026-09-09 (Nutzerwunsch).
+
+  Zu klären war: was passiert mit bereits verkauften/historischen Belegen
+  (Rechnungen, Z-Bons, Exporte), wenn Stammdaten (Artikelname, -preis,
+  USt-Satz) nachträglich geändert werden — bleiben vergangene Belege
+  unverändert (Snapshot auf `order_item` zum Verkaufszeitpunkt), oder
+  zeigen rückwirkend angezeigte/exportierte Werte die **neuen** Stammdaten?
+  Ähnliche Problemklasse wie Task #112 (Firmendaten/Logo werden live statt
+  eingefroren geladen) — hier aber für Artikeldaten/Steuersätze.
+
+  **Abgeschlossen 2026-09-12 (Nutzerwunsch):** als konkreter Prüfpunkt in
+  `docs/Manueller-Testplan.md` Abschnitt 3 ("Admin: Stammdaten") verankert,
+  direkt bei der Artikel-Checkliste — Artikel verkaufen, danach
+  Name/Preis/USt-Satz ändern, dann verifizieren, dass Rechnungs-PDF/Reprint,
+  die Z-Bon-Summen des betroffenen Tagesabschlusses und der
+  DSFinV-K-Export (`lines.csv`/`lines_vat.csv`) für den historischen
+  Vorgang unverändert bleiben. Die eigentliche Durchführung (welche Felder
+  tatsächlich Snapshot vs. live sind) passiert damit im Rahmen des
+  bestehenden Task #47 (voller manueller Regressionstest), nicht als
+  eigenständige Code-Prüfung jetzt — dieser Task war rein organisatorischer
+  Natur (fehlender Prüfpunkt in der Checkliste), kein bestätigter Bug.
+
+- [Task] **#132** TSE-Zertifikatsablauf prüfen und warnen (Self-Test + Zeitsync bleiben grün, obwohl Signieren nicht mehr geht)
+  **Klassifikation: Bug/Feature, live gefunden (2026-09-12).** Nutzer
+  berichtet: TSE zeigte weiterhin bestandenen Self-Test und synchronisierte
+  Zeit, Transaktionssignaturen schlugen aber fehl — Ursache war ein
+  abgelaufenes TSE-Zertifikat. `worm_info_certificateExpirationDate`
+  (`WormDLL.h`) wurde weder vom manuellen "TSE testen" noch vom
+  zyklischen Hintergrund-Health-Check (`tse/healthJob.ts`, prüfte bisher
+  nur `hasValidTime`/`hasPassedSelfTest`) ausgewertet — beide blieben
+  also "grün", bis der erste echte Signierversuch fehlschlug.
+
+  **Wichtiger Fund zur Uhrzeit:** `WormDLL.h`-Doku zu
+  `worm_info_certificateExpirationDate`: *"This is the timestamp (as
+  seconds since Unix Epoch) after which the certificate... will be
+  invalid."* — der Wert ist ein **voller Unix-Timestamp mit Uhrzeit**,
+  keine reine Kalenderdatum-Angabe (erklärt den beobachteten Effekt: die
+  TSE wurde am Ablauftag gegen ca. 15 Uhr ungültig, nicht erst um
+  Mitternacht).
+
+  **Umgesetzt 2026-09-12 (Phase 1 eines gemeinsamen TSE-Task-Konzepts,
+  siehe Chat):**
+  - Neue, reine Funktion `certificateExpiresTodayOrEarlier()` in
+    `tse/healthJob.ts` — vergleicht auf Kalendertag-Ebene (nicht exakter
+    Zeitpunkt), sodass die Warnung bereits ab Beginn des Ablauftags
+    erscheint statt erst nach dem exakten Ablaufmoment. Server-lokale
+    Zeitzone (`Date.getFullYear/Month/Date`), 4 neue Unit-Tests
+    (`healthJob.test.ts`).
+  - `tick()` prüft das jetzt bei **jedem** Tick, unabhängig vom
+    Self-Test/Zeitsync-Zweig (genau das Problem: beide können grün
+    bleiben, während das Zertifikat abgelaufen ist) — schreibt einmalig
+    (nicht bei jedem Tick) eine `warning`-Zeile ins `system_log`, mit
+    Datum **und** Uhrzeit im Text. 2 neue Integrationstests
+    (`healthJob.integration.test.ts`): einmalige Warnung bei bereits
+    abgelaufenem Zertifikat, keine Warnung bei gültigem Zertifikat.
+  - Manueller "TSE testen"-Dialog (`settings/tse/+page.svelte`): Feld
+    "Zertifikat gültig bis" zeigt jetzt Datum **und** Uhrzeit
+    (`toLocaleString` statt `toLocaleDateString`) und wird rot
+    (`.error-text`, bereits global in `admin/+layout.svelte` definiert)
+    mit Warntext dargestellt, wenn `certificateExpiresTodayOrEarlier()`
+    zutrifft — löst damit auch die "Uhrzeit-Frage" (Punkt 3): Uhrzeit wird
+    jetzt überall mit angezeigt, wo der Rohwert gerendert wird (einzige
+    Stelle im Frontend, verifiziert per `grep`).
+  - **Nebenbefund direkt mitbehoben:** Die Dashboard-Kachel
+    "TSE-Zustand" (`admin/+page.svelte`) behandelte `severity: 'error'`
+    bisher identisch zu "gesund" (zeigte weiterhin "✓ Gesund") — jetzt
+    eigene Darstellung ("⛔ Fehler", neue `.tile.error`-Rot-Variante neben
+    dem bestehenden `.tile.warn`).
+  - Alle drei explizit geforderten Punkte damit erledigt. `tsc --noEmit`
+    (Backend + Frontend/`svelte-check`, 455 Dateien) clean, volle
+    Unit-Suite 379/379, `healthJob.integration.test.ts` 10/10 grün.
+
+  **Bewusst nicht umgesetzt, weiterhin offen:** die im Task selbst gestellte
+  Frage nach einer frühzeitigeren Vorwarnung (30/60 Tage vor Ablauf,
+  zusätzlich zum "heute oder in der Vergangenheit"-Schwellwert) — reine
+  Produktentscheidung, kein technisches Hindernis. Bei Bedarf als eigener,
+  kleiner Task nachreichbar. Siehe weiterhin Task #133 (aktiver
+  Signaturtest) als robusterer, direkterer Ansatz für Signierprobleme
+  allgemein — Teil desselben TSE-Task-Konzepts, als nächste Phase geplant.

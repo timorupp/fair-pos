@@ -84,6 +84,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] **Artikelgruppen:** anlegen, Steuersatz ändern, löschen (nur wenn keine Artikel mehr zugeordnet)
 - [ ] **Artikel:** anlegen mit Preis/Pfand/Belegtext, Produktoptionen hinzufügen, Drucker zuordnen, deaktivieren/aktivieren
   - [ ] Löschen eines bereits verkauften Artikels zeigt klare Fehlermeldung („wurde bereits verkauft… über die 'Aktiv'-Checkbox deaktivieren") statt „Internal Server Error" (Task #84)
+  - [ ] **Nachträgliche Datenänderung (Task #127):** Artikel verkaufen (Beleg/Bon abschließen), danach am selben Artikel Name, Preis **und** USt-Satz ändern. Prüfen, dass die **historische** Buchung überall unverändert bleibt (Snapshot zum Verkaufszeitpunkt), nicht rückwirkend die neuen Stammdaten zeigt: Rechnungs-PDF/Reprint (Name, Preis, Steuersatz), Z-Bon-Summen des betroffenen Tagesabschlusses (Steuertöpfe unverändert), DSFinV-K-Export (`ARTIKELTEXT`/`UST_SCHLUESSEL`/`POS_BRUTTO` in `lines.csv`/`lines_vat.csv` für den alten Vorgang). Verwandter, bereits bekannter Fall: Task #112 (Firmendaten/Logo).
 - [ ] **Drucker:** anlegen (IP/Port), Standarddrucker setzen (genau einer aktiv), Testdruck auslösen
   - [ ] Löschen eines noch zugeordneten Druckers zeigt klare Fehlermeldung statt Absturz (Task #57)
   - [ ] Drucker ohne Zuordnung erfolgreich löschen (Task #96)
