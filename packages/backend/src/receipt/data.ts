@@ -151,17 +151,13 @@ function assembleReceiptData(
   table: { name: string; firstOrderTime: Date } | null,
 ): ReceiptData {
   const isCancellation = row.receipt_type === 'cancellation';
-  // For cancellation invoices, flip the sign on every amount the renderer
-  // will print. The DB stores positive numbers (the aggregation layer derives
-  // the sign from `receipt_type`); making it visually negative here ensures
-  // the printed/PDF document cannot be mistaken for a normal sales receipt.
-  const sign = isCancellation ? -1 : 1;
-  const displayPositions: ReceiptPosition[] = positions.map((p) => ({
-    ...p,
-    unitPrice: p.unitPrice * sign,
-    unitDeposit: p.unitDeposit === null ? null : p.unitDeposit * sign,
-    lineGross: p.lineGross * sign,
-  }));
+  // `positions` already carry their own sign (D-068, 2026-09-12) — a
+  // Bonstorno's `order_item.price`/`deposit_price` are stored negative from
+  // the moment they're created (`routes/admin/cancellations.ts`), so the
+  // printed/PDF receipt naturally shows negative amounts without any
+  // transformation here. `isCancellation` is kept only for labelling
+  // ("Stornobeleg" vs. "Beleg", see `receipt/blocks.ts`), not for sign.
+  const displayPositions: ReceiptPosition[] = positions;
 
   return {
     companyName: settings.name,

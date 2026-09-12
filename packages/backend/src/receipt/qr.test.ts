@@ -81,8 +81,12 @@ describe('buildQrPayload', () => {
     expect(parts[10]).toBe(Buffer.from('aabb', 'hex').toString('base64'));
   });
 
-  it('negates the processData amounts for a cancellation receipt', async () => {
-    const parts = (await buildQrPayload(baseData({ isCancellation: true }))).split(';');
+  it('reflects a cancellation receipt\'s already-negative position amounts unchanged (D-068 — positions carry their own sign, no isCancellation-based flip here)', async () => {
+    const parts = (await buildQrPayload(baseData({
+      isCancellation: true,
+      positions: [position({ unitPrice: -5, lineGross: -5 })],
+      totalGross: -5,
+    }))).split(';');
     expect(parts[3]).toBe('Beleg^-5.00_0.00_0.00_0.00_0.00^-5.00:Bar');
   });
 });

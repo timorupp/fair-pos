@@ -35,14 +35,16 @@ export async function loadClosingById(id: string): Promise<StoredClosing | null>
     z_number: string; created_at: Date; business_date: string;
     is_zero_closing: boolean;
     total_gross: string; total_tax_standard: string; total_tax_reduced: string;
-    total_tax_zero: string; total_cash: string; total_cancellations: string;
+    total_tax_zero: string; total_cash: string;
+    total_bonstorno: string; total_free: string; total_order_cancellations: string;
   }>(
     `SELECT c.id, c.register_id, r.name AS register_name,
             c.z_number::text, c.created_at,
             to_char(c.business_date, 'YYYY-MM-DD') AS business_date,
             c.is_zero_closing,
             c.total_gross::text, c.total_tax_standard::text, c.total_tax_reduced::text,
-            c.total_tax_zero::text, c.total_cash::text, c.total_cancellations::text
+            c.total_tax_zero::text, c.total_cash::text,
+            c.total_bonstorno::text, c.total_free::text, c.total_order_cancellations::text
        FROM daily_closing c
        JOIN register r ON r.id = c.register_id
       WHERE c.id = $1`,
@@ -83,7 +85,9 @@ export async function loadClosingById(id: string): Promise<StoredClosing | null>
     total_tax_reduced:   Number(row.total_tax_reduced),
     total_tax_zero:      Number(row.total_tax_zero),
     total_cash:          Number(row.total_cash),
-    total_cancellations: Number(row.total_cancellations),
+    total_bonstorno:            Number(row.total_bonstorno),
+    total_free:                 Number(row.total_free),
+    total_order_cancellations:  Number(row.total_order_cancellations),
     is_zero_closing:     row.is_zero_closing,
   };
 

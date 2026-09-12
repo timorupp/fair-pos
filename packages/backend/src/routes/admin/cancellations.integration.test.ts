@@ -99,7 +99,29 @@ describe('POST /api/admin/cancellations', () => {
     expect(items.rowCount).toBe(3);
   });
 
-  it('reduces total_cash via the cancellation receipt_type', async () => {
+  it('stores order_item.price/deposit_price negated — the reversal of the article\'s current master-data price (D-068)', async () => {
+    const article = await createTestArticle({ name: 'Cola', price: 3, depositPrice: 0.5, taxCategory: 'standard' });
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/cancellations',
+      headers: { cookie: adminCookie },
+      payload: {
+        register_id: registerId,
+        cancellation_reason_id: cancellationReasonId,
+        items: [{ article_id: article.id, quantity: 1 }],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    const item = await pool.query<{ price: string; deposit_price: string; status: string }>(
+      `SELECT price::text, deposit_price::text, status FROM order_item WHERE invoice_id = $1`,
+      [response.json().invoice_id],
+    );
+    expect(Number(item.rows[0]!.price)).toBe(-3);
+    expect(Number(item.rows[0]!.deposit_price)).toBe(-0.5);
+    expect(item.rows[0]!.status).toBe('paid');
+  });
+
+  it('reduces total_cash AND total_gross via the item\'s own negative price, with total_bonstorno reporting the same share (D-068 — no receipt_type-based flip needed in the aggregator anymore)', async () => {
     // Seed one sale of 10 EUR, then cancel 4 EUR worth → cash should land at 6.
     await pool.query(
       `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method)
@@ -144,6 +166,8 @@ describe('POST /api/admin/cancellations', () => {
     }
     const totals = computeClosingTotals(invs.rows.map((i) => ({ ...i, items: itemsByInvoice.get(i.id) ?? [] })));
     expect(totals.total_cash).toBe(6);
+    expect(totals.total_gross).toBe(6);
+    expect(totals.total_bonstorno).toBe(-4);
   });
 
   it('rejects a reason whose booking_type is not cancellation', async () => {

@@ -122,6 +122,28 @@ describe('GET /api/admin/reports/cash-balance', () => {
     expect(row.cash_takings).toBe(10);
   });
 
+  it('a Bonstorno (receipt_type=cancellation) reduces cash_takings via its own negative price (D-068 — the originally reported bug)', async () => {
+    const app = await getTestApp();
+    await insertPaidInvoice(1, 10, 19, 'cash', 'paid');
+    const cancellation = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 2, 'cancellation', 'cash', now() - interval '1 hour') RETURNING id`,
+      [registerId],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -4, 'paid', now() - interval '1 hour')`,
+      [cancellation.rows[0]!.id, registerId],
+    );
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/reports/cash-balance?event_id=${eventId}`,
+      headers: { cookie: adminCookie },
+    });
+    const row = response.json().registers.find((r: { id: string }) => r.id === registerId);
+    expect(row.cash_takings).toBe(6); // 10 - 4
+    expect(row.balance).toBe(6);
+  });
+
   it('includes deposit transactions in the balance', async () => {
     const app = await getTestApp();
     const user = await createTestUser({ isAdmin: true });

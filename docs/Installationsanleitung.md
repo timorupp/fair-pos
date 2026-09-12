@@ -189,7 +189,8 @@ werden, sondern gehört ausschließlich in die `.env` auf diesem Server.
 ## 6. Bauen
 
 ```bash
-npm ci
+npm ci --ignore-scripts
+npm rebuild esbuild   # einzige Ausnahme: esbuild braucht sein install-Skript für den Frontend-Build
 npm run build   # baut packages/shared, packages/backend, packages/frontend in der richtigen Reihenfolge
 
 # Frontend-SPA in das Verzeichnis kopieren, aus dem Fastify sie ausliefert:
@@ -501,7 +502,8 @@ falls das Skript einmal nicht zur Hand ist:
 ```bash
 cd /opt/fairpos
 git pull
-npm ci --prefer-offline
+npm ci --ignore-scripts --prefer-offline
+npm rebuild esbuild   # einzige Ausnahme: esbuild braucht sein install-Skript für den Frontend-Build
 npm run build
 packages/backend/native/tse-cli/build.sh
 rm -rf packages/backend/public && mkdir -p packages/backend/public

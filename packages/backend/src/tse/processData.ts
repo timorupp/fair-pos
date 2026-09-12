@@ -53,7 +53,17 @@ export const BESTELLUNG_PROCESS_TYPE = 'Bestellung-V1';
 /** The literal TSE `processType` for anything that's neither a receipt nor an order (here: cancelling/free-of-charge an open, unpaid position). */
 export const SONSTIGER_VORGANG_PROCESS_TYPE = 'SonstigerVorgang';
 
-/** One sold article-unit (or several units aggregated on one line) as it contributes to the signed Kassenbeleg-V1 totals. */
+/**
+ * One sold article-unit (or several units aggregated on one line) as it
+ * contributes to the signed Kassenbeleg-V1 totals.
+ *
+ * Both amounts already carry whatever sign they should contribute with
+ * (D-068, 2026-09-12) — a Bonstorno reversal passes already-negated
+ * amounts; a normal sale passes its plain positive price. This function
+ * does not know or care which one it is, it only sums what it's given —
+ * see `routes/admin/cancellations.ts`'s module doc comment for the full
+ * reasoning and why no `receiptType`/sign flag lives here anymore.
+ */
 export interface KassenbelegPosition {
   quantity: number;
   unitPriceEuros: number;
@@ -66,8 +76,6 @@ export interface KassenbelegPosition {
 /** Everything about a completed sale (or Bonstorno) that gets signed as `Kassenbeleg-V1`. */
 export interface KassenbelegSnapshot {
   paymentMethod: 'cash' | 'card';
-  /** Mirrors `invoice.receipt_type`. Determines the sign of every amount below — see Anhang I's "Warenrücknahme" example. */
-  receiptType: 'sales_receipt' | 'cancellation';
   positions: KassenbelegPosition[];
 }
 
@@ -78,25 +86,25 @@ export interface KassenbelegSnapshot {
  * `Beleg`: FairPOS never uses `AVBelegstorno` once a TSE is in use — a
  * cancellation is its own `Beleg` with reversed-sign amounts instead (see
  * docs/Rechtliche-Anforderungen.md Abschnitt 6.2 for the verbatim citation
- * on why `AVBelegstorno` cannot be used with a TSE).
+ * on why `AVBelegstorno` cannot be used with a TSE). This function itself
+ * is sign-agnostic (D-068) — see `KassenbelegPosition`'s doc comment.
  *
  * @param snapshot - The sale's positions and payment method.
  * @returns UTF-8-encoded processData bytes.
  */
 export function buildKassenbelegProcessData(snapshot: KassenbelegSnapshot): Buffer {
-  const sign = snapshot.receiptType === 'cancellation' ? -1 : 1;
   const totals: TaxSlotTotals = { allgemein: 0, ermaessigt: 0, steuerfrei: 0 };
   let totalBrutto = 0;
   for (const pos of snapshot.positions) {
     // Article and deposit are bucketed separately — the deposit always goes
     // to `allgemein` (Regelsteuersatz) regardless of the article's own
     // category (Task #113), so the two must never be summed before bucketing.
-    const articleBrutto = sign * pos.quantity * pos.unitPriceEuros;
+    const articleBrutto = pos.quantity * pos.unitPriceEuros;
     totals[taxSlot(pos.taxCategory)] += articleBrutto;
     totalBrutto += articleBrutto;
 
     if (pos.depositPriceEuros) {
-      const depositBrutto = sign * pos.quantity * pos.depositPriceEuros;
+      const depositBrutto = pos.quantity * pos.depositPriceEuros;
       totals.allgemein += depositBrutto;
       totalBrutto += depositBrutto;
     }

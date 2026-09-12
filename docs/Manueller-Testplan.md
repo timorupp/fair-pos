@@ -166,6 +166,7 @@ Detailseite abgeschlossen.
 - [ ] Falscher Stornogrund (`free_of_charge`) wird abgelehnt (400)
 - [ ] Leere Positionsliste wird abgelehnt
 - [ ] **TSE-Warnung:** wie bei anderen Kassenbeleg-V1-Vorgängen — Storno wird trotzdem angelegt, Warnung sichtbar
+- [ ] **Z-Bon (D-068, 2026-09-12):** nach dem nächsten Tagesabschluss erscheint der Bonstorno-Betrag als eigene Zeile "Stornierte Rechnungen" (nicht mehr in einer gemeinsamen "Stornos/Kostenfrei"-Zeile) und reduziert `total_gross`/die Steueraufschlüsselung korrekt mit — vorher wurde er dort komplett unsichtbar
 
 ---
 

@@ -429,6 +429,56 @@ Vollständig neu geschrieben und per `xmllint --valid` gegen die echte
 offizielle DTD verifiziert (validiert exakt wie die Behörden-eigene
 Referenz-`index.xml`). Details: BACKLOG-DONE.md Task #122.
 
+**Bonstorno-Vorzeichen neu konzipiert (D-068, 2026-09-12):** Nutzer meldete,
+dass Bonstorno-Buchungen weder im Soll-Kassenstand noch auf dem Z-Bon
+erschienen. Ursache: `order_item.price`/`deposit_price` waren bei einer
+Bonstorno bisher immer **positiv** gespeichert, das Vorzeichen lebte
+ausschließlich in `invoice.receipt_type='cancellation'` — jede
+Aggregationsstelle musste das eigenständig abfragen und umdrehen. Bei der
+Fehlersuche fanden sich **vier unabhängige, jeweils separat implementierte**
+Vorzeichen-Umkehrungen (`closing/totals.ts`, `tse/processData.ts`,
+`exports/dsfinvk/rows.ts`, `receipt/data.ts`) — zwei davon korrekt, zwei
+fehlend/vergessen (Soll-Kassenstand, Steuertöpfe/Kostenfrei-Zeile), was
+genau das gemeldete Symptom erklärte.
+
+**Bewusst revidierte Designentscheidung (Nutzervorgabe 2026-09-12):**
+`order_item.price`/`deposit_price` werden bei einer Bonstorno jetzt direkt
+**negiert** gespeichert (die Umkehrung des aktuellen Artikel-Stammpreises,
+unabhängig von dessen eigenem Vorzeichen) — jede Aggregation ist seitdem ein
+einfaches `SUM()`, keine `receipt_type`-Fallunterscheidung mehr nötig. Deckt
+sich mit Anhang I's eigenem "Warenrücknahme"-Beispiel (S. 115): eine Storno
+bleibt im selben Umsatz-Topf, nur mit umgekehrtem Vorzeichen aufsummiert —
+keine eigene Kategorie. **Wichtige Nebenbedingung (Nutzerhinweis):** Das
+Vorzeichen darf **niemals** zur Erkennung "ist das ein Storno" verwendet
+werden — ein Artikel mit `deposit_price < 0` (Leergutrückgabe) ist bereits
+unabhängig von jeder Storno-Buchung negativ; Klassifikation läuft immer über
+`receipt_type`/`status`, nie über das Vorzeichen selbst.
+
+Zusätzlich wurden die bisherige `total_cancellations`-Sammelzeile in drei
+fachlich unterschiedliche Fälle aufgeteilt (Nutzervorgabe): "Stornierte
+Rechnungen" (Bonstorno, tatsächlich zurückgezahltes Geld), "Kostenfreie
+Warenabgabe" (Ware ging raus, wurde nie berechnet) und "Stornierte
+Bestellungen" (Ware ging nie raus, wurde folglich nie berechnet). Für die
+elektronische Kassenabschluss-Datei (`businesscases.csv`/Z_GV_TYP) verlangt
+die Spezifikation dafür **keine** gesonderte Kategorie — Anhang C's
+vollständige `GV_TYP`-Werteliste (Abschnitt 6.3) kennt keinen eigenen
+Storno-Wert; ein Bonstorno bleibt dort `GV_TYP=Umsatz`, negativ. Die
+Drei-Zeilen-Aufteilung ist daher eine freiwillige, zusätzliche Transparenz
+auf dem **gedruckten** Z-Bon, keine Compliance-Pflicht — §146 AO/GoBD/§239
+HGB verlangen nur allgemein, dass Stornobuchungen/Retouren irgendwie
+dokumentiert sind (Abschnitt 5), ohne eine bestimmte Zeilenzahl
+vorzuschreiben.
+
+**Geklärt (D-069, 2026-09-12):** Die `GV_TYP`-Einstufung `Pfand`/
+`PfandRueckzahlung` einer Bonstorno-Pfandzeile richtet sich nach dem
+*ursprünglichen* Charakter des Artikels (Pfand-erhebend vs. -rückzahlend),
+nicht nach dem *resultierenden* Vorzeichen nach der Umkehrung — analog zur
+Warenrücknahme: Kategorie bleibt gleich, nur das Vorzeichen dreht.
+`exports/dsfinvk/rows.ts` rekonstruiert dafür das ursprüngliche Vorzeichen
+anhand des (bereits vorhandenen) `invoice.receipt_type='cancellation'`-Flags,
+ausschließlich für diese Einstufungsentscheidung — der tatsächliche Betrag
+bleibt unverändert der echte, gebuchte Wert. Details: BACKLOG-DONE.md D-069.
+
 ---
 
 ## 7. Unveränderlichkeit der Daten

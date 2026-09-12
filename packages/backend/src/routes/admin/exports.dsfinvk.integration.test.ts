@@ -56,8 +56,9 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     const closing = await pool.query<{ id: string }>(
       `INSERT INTO daily_closing (
          register_id, z_number, is_zero_closing, business_date,
-         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash, total_cancellations
-       ) VALUES ($1, 1, false, '2026-08-05', 5, 5, 0, 0, 5, 0)
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, false, '2026-08-05', 5, 5, 0, 0, 5, 0, 0, 0)
        RETURNING id`,
       [register.id],
     );
@@ -99,6 +100,56 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     expect(content).toContain('5.00');
   });
 
+  it('emits a negative UMS_BRUTTO for a Bonstorno invoice via its already-negative order_item.price (D-068 — no isStornoBeleg flag needed anymore)', async () => {
+    const category = await createTestCategory({ name: 'Getränke', taxCategory: 'standard' });
+    const article = await createTestArticle({ name: 'Bier', price: 5, categoryId: category.id });
+    const register = await createTestRegister({ type: 'receipt_register' });
+
+    const closing = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, false, '2026-08-05', -5, -5, 0, 0, -5, -5, 0, 0)
+       RETURNING id`,
+      [register.id],
+    );
+    const closingId = closing.rows[0]!.id;
+
+    const invoice = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (
+         register_id, receipt_number, receipt_type, payment_method, daily_closing_id
+       ) VALUES ($1, 42, 'cancellation', 'cash', $2)
+       RETURNING id`,
+      [register.id, closingId],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, $3, 'Bier', 'Getränke', 19, 'standard', -5, 'paid')`,
+      [invoice.rows[0]!.id, register.id, article.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/exports/dsfinvk/${closingId}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const directory = await unzipper.Open.buffer(response.rawPayload);
+    const transactionsFile = directory.files.find((f) => f.path === 'transactions.csv')!;
+    const content = (await transactionsFile.buffer()).toString('utf-8');
+    expect(content).toContain('-5.00');
+
+    const linesFile = directory.files.find((f) => f.path === 'lines.csv')!;
+    const linesContent = (await linesFile.buffer()).toString('utf-8');
+    expect(linesContent).toContain('5.00'); // STK_BR is the unsigned base price, see rows.test.ts
+
+    const linesVatFile = directory.files.find((f) => f.path === 'lines_vat.csv')!;
+    const linesVatContent = (await linesVatFile.buffer()).toString('utf-8');
+    expect(linesVatContent).toContain('-5.00'); // POS_BRUTTO carries the real (negative) sign
+  });
+
   it('emits exactly one Bonkopf row per invoice even when its order_items were placed by different staff (Bedienungskasse, multiple order rounds)', async () => {
     // Regression test: a Bedienungskasse invoice can combine order_items from
     // several order rounds placed by different servers before one of them
@@ -114,8 +165,9 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     const closing = await pool.query<{ id: string }>(
       `INSERT INTO daily_closing (
          register_id, z_number, is_zero_closing, business_date,
-         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash, total_cancellations
-       ) VALUES ($1, 1, false, '2026-08-05', 10, 10, 0, 0, 10, 0)
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, false, '2026-08-05', 10, 10, 0, 0, 10, 0, 0, 0)
        RETURNING id`,
       [register.id],
     );
@@ -178,15 +230,17 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     const closingA = await pool.query<{ id: string }>(
       `INSERT INTO daily_closing (
          register_id, z_number, is_zero_closing, business_date,
-         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash, total_cancellations
-       ) VALUES ($1, 1, true, '2026-08-05', 0, 0, 0, 0, 0, 0) RETURNING id`,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, true, '2026-08-05', 0, 0, 0, 0, 0, 0, 0, 0) RETURNING id`,
       [register.id],
     );
     const closingB = await pool.query<{ id: string }>(
       `INSERT INTO daily_closing (
          register_id, z_number, is_zero_closing, business_date,
-         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash, total_cancellations
-       ) VALUES ($1, 2, true, '2026-08-05', 0, 0, 0, 0, 0, 0) RETURNING id`,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 2, true, '2026-08-05', 0, 0, 0, 0, 0, 0, 0, 0) RETURNING id`,
       [register.id],
     );
 

@@ -112,6 +112,33 @@ describe('GET /api/admin/exports/excel/event', () => {
     expect(sheet.getCell(4, 7).value).toBe('Radler');
   });
 
+  it('includes a Bonstorno invoice with its negative price (D-068/Task #126 — previously excluded entirely via receipt_type=sales_receipt)', async () => {
+    const ownRegister = await createTestRegister({ name: 'Eigen', eventId: config.activeEventId });
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'cancellation', 'cash', now()) RETURNING id`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -5, 'paid', now())`,
+      [inv.rows[0]!.id, ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 7).value).toBe('Bier');
+    expect(sheet.getCell(4, 9).value).toBe(-5); // unit_price column
+  });
+
   it('rejects the request without an admin session', async () => {
     const app = await getTestApp();
     const response = await app.inject({ method: 'GET', url: '/api/admin/exports/excel/event' });
@@ -166,6 +193,34 @@ describe('GET /api/admin/exports/excel/day', () => {
       if (value !== null && value !== undefined) articleNames.push(value);
     }
     expect(articleNames).toEqual(['Wein']);
+  });
+
+  it('includes a Bonstorno invoice with its negative price (D-068/Task #126)', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const ownRegister = await createTestRegister({ name: 'Eigen', eventId: config.activeEventId });
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'cancellation', 'cash', now()) RETURNING id`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -5, 'paid', now())`,
+      [inv.rows[0]!.id, ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/exports/excel/day?date=${today}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 7).value).toBe('Bier');
+    expect(sheet.getCell(4, 9).value).toBe(-5);
   });
 
   it('returns 404 when no event is active', async () => {

@@ -288,7 +288,6 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // ("TSE-Ausfall", AEAO zu § 146a Nr. 1.14.3) für die vollständige Begründung.
       const kassenbelegSnapshot = buildKassenbelegProcessData({
         paymentMethod: 'cash',
-        receiptType: 'sales_receipt',
         positions: positions.map((p) => {
           const article = articleById.get(p.article_id)!;
           return {
@@ -811,7 +810,6 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
     const kassenbelegSnapshot = buildKassenbelegProcessData({
       paymentMethod: 'cash',
-      receiptType: 'sales_receipt',
       positions: ids.map((id) => {
         const item = pickedById.get(id)!;
         return {

@@ -21,7 +21,9 @@ const totals: ClosingTotals = {
   total_tax_reduced: 50.00,
   total_tax_zero: 0,
   total_cash: 235.00,
-  total_cancellations: 15.00,
+  total_bonstorno: -8.00,
+  total_free: 4.00,
+  total_order_cancellations: 3.00,
   is_zero_closing: false,
 };
 

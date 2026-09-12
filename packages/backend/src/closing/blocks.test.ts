@@ -26,7 +26,9 @@ const totals: ClosingTotals = {
   total_tax_reduced: 50.00,
   total_tax_zero: 0,
   total_cash: 235.00,
-  total_cancellations: 15.00,
+  total_bonstorno: -8.00,
+  total_free: 4.00,
+  total_order_cancellations: 3.00,
   is_zero_closing: false,
 };
 
@@ -79,16 +81,20 @@ describe('buildZBonBlocks (rendered as ESC/POS)', () => {
     expect(ascii).toContain('235,00 EUR');
   });
 
-  it('shows cancellation total under "Stornos"', () => {
+  it('shows the three storno/kostenfrei totals as separate lines (D-068)', () => {
     const ascii = buildZBonEscPos(ctx, totals, businessDate, null).toString('ascii');
-    expect(ascii).toContain('Stornos');
-    expect(ascii).toContain('15,00 EUR');
+    expect(ascii).toContain('Stornierte Rechnungen');
+    expect(ascii).toContain('-8,00 EUR');
+    expect(ascii).toContain('Kostenfreie Warenabgabe');
+    expect(ascii).toContain('4,00 EUR');
+    expect(ascii).toContain('Stornierte Bestellungen');
+    expect(ascii).toContain('3,00 EUR');
   });
 
   it('flags a zero closing in the header', () => {
     const zeroTotals: ClosingTotals = {
       total_gross: 0, total_tax_standard: 0, total_tax_reduced: 0, total_tax_zero: 0,
-      total_cash: 0, total_cancellations: 0, is_zero_closing: true,
+      total_cash: 0, total_bonstorno: 0, total_free: 0, total_order_cancellations: 0, is_zero_closing: true,
     };
     const ascii = buildZBonEscPos(ctx, zeroTotals, businessDate, null).toString('ascii');
     expect(ascii).toContain('Nullabschluss');

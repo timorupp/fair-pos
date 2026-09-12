@@ -20,10 +20,13 @@ function hexToBase64(hex: string): string {
  * <log-time-format>;<signatur>;<public-key>`.
  *
  * `<processData>` is recomputed from the receipt's own line items rather
- * than persisted separately — deterministic given the same
- * positions/payment method/`isCancellation` flag that were actually signed
- * (see tse/processData.ts), so there is no second copy that could drift from
- * what's on the TSE.
+ * than persisted separately — deterministic given the same positions/
+ * payment method that were actually signed (see tse/processData.ts), so
+ * there is no second copy that could drift from what's on the TSE.
+ * `data.positions` already carries whatever sign each amount should
+ * contribute with (D-068) — a Bonstorno's `unitPrice`/`unitDeposit` are
+ * already negative from the DB, so no sign flip happens here or in
+ * `buildKassenbelegProcessData` itself.
  *
  * @param data - Full receipt data. TSE fields are `null` when the sale
  *   wasn't signed (TSE unconfigured or an outage — see
@@ -36,7 +39,6 @@ function hexToBase64(hex: string): string {
 export async function buildQrPayload(data: ReceiptData): Promise<string> {
   const processData = buildKassenbelegProcessData({
     paymentMethod: data.paymentMethod,
-    receiptType: data.isCancellation ? 'cancellation' : 'sales_receipt',
     positions: data.positions.map((p) => ({
       quantity: p.quantity,
       unitPriceEuros: p.unitPrice,

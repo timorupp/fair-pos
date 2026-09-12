@@ -20,7 +20,8 @@
     id: string; z_number: number;
     created_at: string; business_date: string;
     is_zero_closing: boolean;
-    total_gross: number; total_cash: number; total_cancellations: number;
+    total_gross: number; total_cash: number;
+    total_bonstorno: number; total_free: number; total_order_cancellations: number;
     created_by_name: string;
   };
 
@@ -264,7 +265,9 @@
             <th>Benutzer</th>
             <th class="num">Brutto</th>
             <th class="num">Bar</th>
-            <th class="num">Stornos</th>
+            <th class="num">Storno-Rechn.</th>
+            <th class="num">Kostenfrei</th>
+            <th class="num">Best.-Storno</th>
             <th class="center">Nullabschluss</th>
             <th></th>
           </tr>
@@ -278,7 +281,9 @@
               <td>{c.created_by_name}</td>
               <td class="num">{fmt(c.total_gross)} €</td>
               <td class="num">{fmt(c.total_cash)} €</td>
-              <td class="num">{fmt(c.total_cancellations)} €</td>
+              <td class="num">{fmt(c.total_bonstorno)} €</td>
+              <td class="num">{fmt(c.total_free)} €</td>
+              <td class="num">{fmt(c.total_order_cancellations)} €</td>
               <td class="center">{c.is_zero_closing ? 'X' : ''}</td>
               <td class="actions">
                 <a class="btn-ghost" href={api.admin.closings.pdfUrl(c.id)} target="_blank" rel="noopener">PDF</a>

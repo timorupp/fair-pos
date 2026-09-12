@@ -69,4 +69,23 @@ describe('loadReceiptById', () => {
   it('returns null for an id that does not exist', async () => {
     expect(await loadReceiptById('00000000-0000-0000-0000-000000000000')).toBeNull();
   });
+
+  it('passes a Bonstorno\'s already-negative order_item.price through unchanged (D-068 — no isCancellation-based sign flip here anymore)', async () => {
+    const register = await createTestRegister();
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, receipt_token)
+       VALUES ($1, 1, 'cancellation', 'cash', 'storno-token') RETURNING id`,
+      [register.id],
+    );
+    const invoiceId = inv.rows[0]!.id;
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -5, 'paid')`,
+      [invoiceId, register.id],
+    );
+    const data = await loadReceiptById(invoiceId);
+    expect(data!.isCancellation).toBe(true);
+    expect(data!.positions[0]!.unitPrice).toBe(-5);
+    expect(data!.totalGross).toBe(-5);
+  });
 });

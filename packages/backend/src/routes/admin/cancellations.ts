@@ -4,8 +4,25 @@
  * Lets the administrator create a stand-alone cancellation invoice — not
  * referencing one specific original receipt, but recording that a certain
  * number of article-units have been returned at a given Bonkasse. The new
- * invoice carries `receipt_type='cancellation'`; aggregation in
- * `computeClosingTotals` automatically reduces the day's cash balance.
+ * invoice carries `receipt_type='cancellation'`.
+ *
+ * **Sign convention (D-068, revised 2026-09-12):** every stored
+ * `order_item.price`/`deposit_price` for this invoice is the **negative**
+ * of the article's current master-data price — the reversal of whatever
+ * would normally happen, regardless of that price's own sign (an article
+ * representing a `PfandRueckzahlung`/deposit-return already has a negative
+ * master price; negating it again correctly yields a positive "money
+ * reclaimed" line). This is a deliberate change from the previous design,
+ * where every stored amount was positive and every consumer (closing
+ * totals, cash-balance, Excel/DSFinV-K export, the QR code, the printed
+ * receipt itself) had to independently branch on `receipt_type`/
+ * `isCancellation` to flip the sign — found to have already been forgotten
+ * in three separate places and duplicated (with the *same* logic
+ * re-implemented, not shared) in three more. See BACKLOG-DONE.md D-068 for
+ * the full list. Downstream code must therefore plainly sum `price`/
+ * `deposit_price` — never branch on `receipt_type` to negate a value again,
+ * and never infer "this is a Bonstorno row" from the sign alone (a
+ * `PfandRueckzahlung` article's negative deposit is unrelated to Bonstorno).
  *
  * The cash-register UIs themselves don't allow negative quantities; the
  * resulting "anti-receipt" therefore only exists through this admin path.
@@ -107,16 +124,17 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
     // Bonstorno is signed as Kassenbeleg-V1 (receipt_type='cancellation'), like
     // any other completed receipt — see docs/Anforderungen.md → "Zu signierende
     // Vorgänge in FairPOS". Never blocks the cancellation — docs/TSE-Integration.md
-    // → "TSE-Ausfall".
+    // → "TSE-Ausfall". Amounts are negated here (D-068) — `buildKassenbelegProcessData`
+    // no longer flips any sign itself, it signs exactly the (already-reversed)
+    // amounts it's given, the same ones stored on `order_item` below.
     const kassenbelegSnapshot = buildKassenbelegProcessData({
       paymentMethod: 'cash',
-      receiptType: 'cancellation',
       positions: items.map((it) => {
         const article = articleById.get(it.article_id)!;
         return {
           quantity: it.quantity,
-          unitPriceEuros: Number(article.price),
-          depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
+          unitPriceEuros: -Number(article.price),
+          depositPriceEuros: article.deposit_price === null ? null : -Number(article.deposit_price),
           taxCategory: article.tax_category,
         };
       }),
@@ -144,14 +162,18 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       const invoiceId = invoiceResult.rows[0]!.id;
 
       // One row per cancelled unit, mirroring the sales-receipt convention.
-      // status='paid' is intentional — the invoice's `receipt_type='cancellation'`
-      // is what gives the rows their negative effect in `computeClosingTotals`.
+      // status='paid' is intentional — it's what makes the row count toward
+      // total_gross/total_cash in `computeClosingTotals`, exactly like a
+      // normal sale. price/deposit_price are negated (D-068, see the module
+      // doc comment above) — the reversal of the article's current
+      // master-data price, regardless of that price's own sign.
       for (const it of items) {
         const article = articleById.get(it.article_id)!;
         const displayName = article.name;
         const articleTaxRate = percentFor(article.tax_category, taxRates);
-        const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
-        const depositTaxRate = depositRaw !== 0 ? taxRates.standard : null;
+        const negatedPrice = -Number(article.price);
+        const negatedDeposit = article.deposit_price === null ? null : -Number(article.deposit_price);
+        const depositTaxRate = negatedDeposit !== null && negatedDeposit !== 0 ? taxRates.standard : null;
         for (let i = 0; i < it.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (
@@ -162,7 +184,7 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
             [
               invoiceId, register_id, article.id,
               displayName, article.category_name,
-              articleTaxRate, article.tax_category, article.price, article.deposit_price, depositTaxRate,
+              articleTaxRate, article.tax_category, negatedPrice, negatedDeposit, depositTaxRate,
               cancellation_reason_id, reason.name, req.adminUser.name,
             ],
           );

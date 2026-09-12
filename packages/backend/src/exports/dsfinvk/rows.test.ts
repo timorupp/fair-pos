@@ -36,7 +36,7 @@ function beleg(overrides: Partial<SourceVorgang> = {}): SourceVorgang {
     bonName: null,
     receiptNumber: 42,
     createdAt: new Date('2026-08-05T18:00:00.000Z'),
-    isStornoBeleg: false,
+    isBonstorno: false,
     diningTableName: null,
     operatorUserId: 'u-1',
     operatorUserName: 'Anna',
@@ -104,12 +104,41 @@ describe('buildDsfinvkExport', () => {
     expect(pfandVat!.UST_SCHLUESSEL).toBe(1);   // standard, independent of the article
   });
 
-  it('negates amounts for a Bonstorno (isStornoBeleg)', () => {
-    const v = beleg({ isStornoBeleg: true });
+  it('reflects a Bonstorno\'s already-negative priceEuros (D-068) without any storno-flag-based flip', () => {
+    // Bonstorno rows arrive here with a negative priceEuros already baked in
+    // (routes/admin/cancellations.ts negates at creation time) — this
+    // function must not flip it a second time.
+    const v = beleg({
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: -5, depositPriceEuros: null, depositTaxRate: null }],
+    });
     const out = buildDsfinvkExport(baseSource([v]));
     expect(out['transactions.csv'][0]!.UMS_BRUTTO).toBe('-5.00');
     expect(out['lines.csv'][0]!.STK_BR).toBe('5.00'); // STK_BR is the unsigned base price
     expect(out['lines_vat.csv'][0]!.POS_BRUTTO).toBe('-5.00');
+  });
+
+  it('keeps GV_TYP=Pfand for a Bonstorno reversing a normal (deposit-charging) article, even though the stored amount is now negative (D-069)', () => {
+    const v = beleg({
+      isBonstorno: true,
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: -5, depositPriceEuros: -2, depositTaxRate: 19 }],
+    });
+    const out = buildDsfinvkExport(baseSource([v]));
+    const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
+    expect(pfandLine).toMatchObject({ GV_TYP: 'Pfand', STK_BR: '2.00' });
+    const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === pfandLine!.POS_ZEILE);
+    expect(pfandVat!.POS_BRUTTO).toBe('-2.00'); // the real amount stays negative — only the label is "undone"
+  });
+
+  it('keeps GV_TYP=PfandRueckzahlung for a Bonstorno reversing a Leergutrückgabe article, even though the stored amount is now positive (D-069)', () => {
+    const v = beleg({
+      isBonstorno: true,
+      items: [{ articleId: 'art-2', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 0, depositPriceEuros: 2, depositTaxRate: 19 }],
+    });
+    const out = buildDsfinvkExport(baseSource([v]));
+    const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
+    expect(pfandLine).toMatchObject({ GV_TYP: 'PfandRueckzahlung', STK_BR: '2.00' });
+    const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === pfandLine!.POS_ZEILE);
+    expect(pfandVat!.POS_BRUTTO).toBe('2.00'); // the real amount stays positive — only the label is "undone"
   });
 
   it('does not emit a datapayment.csv row for AVBestellung/AVSonstige (no payment yet)', () => {

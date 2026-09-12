@@ -170,14 +170,14 @@ async function closeRegister(registerId: string, userName: string, date?: string
       `INSERT INTO daily_closing (
          register_id, z_number, created_by_name, is_zero_closing,
          total_gross, total_tax_standard, total_tax_reduced, total_tax_zero,
-         total_cash, total_cancellations,
+         total_cash, total_bonstorno, total_free, total_order_cancellations,
          business_date
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::date, current_date))
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::date, current_date))
        RETURNING id, to_char(business_date, 'YYYY-MM-DD') AS business_date`,
       [
         registerId, nextZ, userName, totals.is_zero_closing,
         totals.total_gross, totals.total_tax_standard, totals.total_tax_reduced, totals.total_tax_zero,
-        totals.total_cash, totals.total_cancellations,
+        totals.total_cash, totals.total_bonstorno, totals.total_free, totals.total_order_cancellations,
         date ?? null,
       ],
     );
@@ -350,13 +350,15 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
       id: string; z_number: string;
       created_at: Date; business_date: string;
       is_zero_closing: boolean;
-      total_gross: string; total_cash: string; total_cancellations: string;
+      total_gross: string; total_cash: string;
+      total_bonstorno: string; total_free: string; total_order_cancellations: string;
       created_by_name: string | null;
     }>(
       `SELECT c.id, c.z_number::text,
               c.created_at, to_char(c.business_date, 'YYYY-MM-DD') AS business_date,
               c.is_zero_closing,
-              c.total_gross::text, c.total_cash::text, c.total_cancellations::text,
+              c.total_gross::text, c.total_cash::text,
+              c.total_bonstorno::text, c.total_free::text, c.total_order_cancellations::text,
               c.created_by_name
          FROM daily_closing c
         WHERE c.register_id = $1
@@ -372,7 +374,9 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
         is_zero_closing: r.is_zero_closing,
         total_gross: Number(r.total_gross),
         total_cash: Number(r.total_cash),
-        total_cancellations: Number(r.total_cancellations),
+        total_bonstorno: Number(r.total_bonstorno),
+        total_free: Number(r.total_free),
+        total_order_cancellations: Number(r.total_order_cancellations),
         created_by_name: r.created_by_name ?? '(unbekannt)',
       })),
     });

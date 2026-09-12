@@ -57,8 +57,8 @@ async function insertClosing(createdAt: string, zNumber: number): Promise<void> 
     `INSERT INTO daily_closing (
        register_id, z_number, created_at, business_date, created_by_name, is_zero_closing,
        total_gross, total_tax_standard, total_tax_reduced, total_tax_zero,
-       total_cash, total_cancellations
-     ) VALUES ($1, $2, $3::timestamptz, $4::date, $5, true, 0, 0, 0, 0, 0, 0)`,
+       total_cash, total_bonstorno, total_free, total_order_cancellations
+     ) VALUES ($1, $2, $3::timestamptz, $4::date, $5, true, 0, 0, 0, 0, 0, 0, 0, 0)`,
     [registerId, zNumber, createdAt, createdAt.split(' ')[0], 'admin'],
   );
 }

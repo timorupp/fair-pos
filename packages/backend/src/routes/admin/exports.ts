@@ -85,8 +85,11 @@ function toExportSourceRow(r: ExportSourceQueryRow): ExportSourceRow {
  * calendar day can span two events — e.g. one event's late booking and a
  * different event's early one on the same server day — so the date window
  * alone previously let a different event's bookings leak into the day
- * export). Only `sales_receipt` invoices contribute — cancellation/training
- * invoices are not part of the standard sales export.
+ * export). `sales_receipt` and `cancellation` (Bonstorno) invoices both
+ * contribute — a Bonstorno row's own negative price/deposit_price (D-068)
+ * nets it out correctly with no special-casing needed here (previously
+ * excluded entirely via `receipt_type = 'sales_receipt'`, which was never
+ * verified — see Task #126). `training` stays excluded (Task #130).
  *
  * @param from - ISO timestamp marking the start of the window (inclusive).
  * @param to   - ISO timestamp marking the end of the window (exclusive).
@@ -98,7 +101,7 @@ async function loadExportSourceByDateRange(from: string, to: string, eventId: st
     ${EXPORT_SOURCE_COLUMNS}
      WHERE i.created_at >= $1 AND i.created_at < $2
        AND r.event_id = $3
-       AND i.receipt_type = 'sales_receipt'
+       AND i.receipt_type != 'training'
        AND oi.status IN ('paid', 'free')
      ORDER BY i.created_at, i.id, oi.created_at
   `, [from, to, eventId]);
@@ -111,9 +114,10 @@ async function loadExportSourceByDateRange(from: string, to: string, eventId: st
  * `start_time`/`end_time`, which are informational display fields only and
  * may not cover every invoice actually booked under this event (e.g.
  * anything created after the auto-created "Altbestand" event's `end_time`,
- * which is frozen at migration time, not a real boundary). Only
- * `sales_receipt` invoices contribute — cancellation/training invoices are
- * not part of the standard sales export.
+ * which is frozen at migration time, not a real boundary). `sales_receipt`
+ * and `cancellation` (Bonstorno) invoices both contribute — see
+ * `loadExportSourceByDateRange`'s doc comment for the D-068 reasoning.
+ * `training` stays excluded (Task #130).
  *
  * @param eventId - The event to export.
  * @returns Raw rows ready to be aggregated by `buildExportRows`.
@@ -122,7 +126,7 @@ async function loadExportSourceByEvent(eventId: string): Promise<ExportSourceRow
   const result = await query<ExportSourceQueryRow>(`
     ${EXPORT_SOURCE_COLUMNS}
      WHERE r.event_id = $1
-       AND i.receipt_type = 'sales_receipt'
+       AND i.receipt_type != 'training'
        AND oi.status IN ('paid', 'free')
      ORDER BY i.created_at, i.id, oi.created_at
   `, [eventId]);

@@ -189,15 +189,19 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
            GROUP BY register_id
         ) w ON w.register_id = r.id
         LEFT JOIN (
-          -- Cash takings exclude cancellation receipts (they would otherwise inflate
-          -- the balance) AND cancelled/free items (they did not produce cash either:
-          -- free-of-charge items are issued on a 0 € invoice per KassenSichV, and
-          -- cancelled items never reached the cash drawer at all).
+          -- Cash takings: a Bonstorno invoice (receipt_type='cancellation')
+          -- reduces this naturally via its own negative price/deposit_price
+          -- (D-068, 2026-09-12) — no longer excluded, just summed like any
+          -- other paid row. Only 'training' stays excluded (Task #130 — no
+          -- effect on the Kassenabschluss). Cancelled/free items are already
+          -- excluded via status = 'paid': free-of-charge items are issued
+          -- on a 0 EUR invoice per KassenSichV, and cancelled items never
+          -- reached the cash drawer at all.
           SELECT i.register_id, SUM(oi.price + COALESCE(oi.deposit_price, 0)) AS total
             FROM invoice i
             JOIN order_item oi ON oi.invoice_id = i.id
            WHERE i.payment_method = 'cash'
-             AND i.receipt_type = 'sales_receipt'
+             AND i.receipt_type != 'training'
              AND oi.status = 'paid'
            GROUP BY i.register_id
         ) c ON c.register_id = r.id
@@ -219,9 +223,12 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
 
   /**
    * GET /api/admin/reports/today-revenue — total gross revenue booked today
-   * (Task #63 dashboard follow-up), across both payment methods. Mirrors the
-   * `cash_takings` exclusions in `/cash-balance` (a cancellation receipt or a
-   * cancelled/free item never produced real revenue). Scoped to the
+   * (Task #63 dashboard follow-up), across both payment methods. Mirrors
+   * `/cash-balance`'s `cash_takings` filter: a Bonstorno invoice
+   * (`receipt_type='cancellation'`) reduces this naturally via its own
+   * negative price (D-068) rather than being excluded; `training` stays
+   * excluded (Task #130); cancelled/free items are excluded via
+   * `status = 'paid'` (they never produced real revenue). Scoped to the
    * currently active event, same as every other report in this file
    * (D-067: this was the one report left over from before Task #95 that
    * still treated the day as a plain calendar-day figure with no event
@@ -239,7 +246,7 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
         FROM invoice i
         JOIN order_item oi ON oi.invoice_id = i.id
         JOIN register r ON r.id = i.register_id
-       WHERE i.receipt_type = 'sales_receipt'
+       WHERE i.receipt_type != 'training'
          AND oi.status = 'paid'
          AND i.created_at >= CURRENT_DATE
          AND i.created_at < CURRENT_DATE + INTERVAL '1 day'

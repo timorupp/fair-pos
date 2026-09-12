@@ -69,7 +69,22 @@ echo "==> npm ci (als $SERVICE_USER)"
 # latenzreichen Veranstaltungs-Internetverbindung (z. B. mobiler Hotspot)
 # macht das den Unterschied zwischen Sekunden und mehreren Minuten pro
 # Update, wenn sich package-lock.json ohnehin nicht geändert hat.
-run_as_service_user "npm ci --prefer-offline"
+#
+# --ignore-scripts (D-070, 2026-09-12): `testcontainers` (nur für
+# Integrationstests, packages/backend/package.json devDependencies) zieht
+# über dockerode/docker-modem das Paket `ssh2` und dessen native
+# Crypto-Beschleunigung (`cpu-features`) mit — beide bauen bei jedem
+# `npm ci` per node-gyp aus C-Quellcode neu, was auf schwächerer
+# Server-Hardware 20-30+ Minuten dauern kann, obwohl sie im
+# Produktivbetrieb nie verwendet werden (ssh2 fällt ohnehin auf reines
+# JavaScript zurück, falls der native Build fehlschlägt oder fehlt).
+# `--ignore-scripts` überspringt diesen Build (und den harmlosen
+# Versions-Hinweis von `protobufjs`, ebenfalls nur aus der
+# testcontainers-Kette) — einzige Ausnahme ist `esbuild` (für den
+# Frontend-Build nötig), dessen install-Skript direkt danach gezielt
+# nachgeholt wird.
+run_as_service_user "npm ci --ignore-scripts --prefer-offline"
+run_as_service_user "npm rebuild esbuild"
 
 echo "==> Build (als $SERVICE_USER)"
 run_as_service_user "npm run build"

@@ -489,6 +489,79 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   neuen Dateinamen ergänzt werden soll (bisherige Konvention: alle
   `docs/`-Dokumente werden dort mit einer Zeile aufgeführt).
 
+- [Task] **#135** Entscheidung: `cancels_invoice_id` entfernen oder "Fall A – Rechnungsstorno" implementieren
+  **Klassifikation: Design-Entscheidung, angelegt 2026-09-12.** Ursprünglich
+  als Vorbedingung für den gravierenden Bonstorno-Aggregationsbug gedacht —
+  der ist inzwischen unabhängig davon behoben (siehe D-068 in
+  `BACKLOG-DONE.md`, 2026-09-12: negative Vorzeichen direkt in
+  `order_item.price`/`deposit_price`, dreiteilige Z-Bon-Aufschlüsselung).
+  Diese Entscheidung bleibt trotzdem offen und sinnvoll zu klären.
+
+- [Task] **#136** (niedrige Priorität) Preisänderung während laufender Bestellung an der Bonkasse — UI zeigt alten Preis, Rechnung nutzt neuen
+  **Klassifikation: Nutzerwunsch/Konsistenz-Bug, angelegt 2026-09-12.**
+  Wird ein Artikelpreis geändert, während an der Bonkasse parallel bereits
+  eine Bestellung mit diesem Artikel erfasst wird, zeigt die UI weiterhin
+  den alten Preis, aber die beim Kassieren erzeugte Rechnung wird schon mit
+  dem neuen Preis gebucht — inkonsistent für den Bedienenden (sieht einen
+  anderen Betrag als der, der tatsächlich abgerechnet wird).
+
+  Nutzerwunsch ausdrücklich: erst Lösungswege sondieren, **ohne allzu viel
+  technischen Aufwand** — kein Auftrag, das sofort umzusetzen.
+
+  Mögliche Ansatzpunkte, noch nicht bewertet:
+  - Artikelpreis beim Laden/Hinzufügen zur Bestellung auf dem Client
+    festschreiben (Snapshot im Frontend-State) statt bei jedem Rendern neu
+    vom Server abzufragen — aber: woher kommt der "alte" Preis in der UI
+    aktuell überhaupt (Polling-Intervall? einmaliger Ladevorgang beim
+    Öffnen der Bonkasse)? Muss zuerst nachvollzogen werden.
+  - Server könnte den zum Zeitpunkt des Hinzufügens gültigen Preis dem
+    Frontend zusammen mit der Bestellposition zurückgeben, statt dass das
+    Frontend den Artikelpreis separat/veraltet vorhält.
+  - Live-Update der Bonkasse bei Preisänderung (z. B. via bestehendem
+    Polling-Mechanismus) — würde das Problem eher verschärfen als lösen,
+    wenn mitten in einer Bestellung der angezeigte Preis "unter der Hand"
+    wechselt; ggf. bewusst NICHT live aktualisieren, sondern nur beim
+    nächsten Öffnen/Hinzufügen.
+
+  Verwandte Problemklasse: Task #127 (nachträgliche Datenänderungen an
+  bereits abgeschlossenen Belegen) — dort geht es um historische
+  Snapshots, hier um eine laufende, noch nicht abgeschlossene Bestellung.
+
+  **Hintergrund (aus der Storno-Konzept-Recherche):** `docs/Anforderungen.md`
+  beschrieb ursprünglich zwei getrennte Admin-Storno-Wege:
+  - **Fall A — Rechnungsstorno:** ein Storno-Button direkt an einer
+    bestehenden Rechnung (z. B. in der Auswertung "Erstellte Rechnungen"),
+    mit klarem Bezug zum stornierten Original über `invoice.cancels_invoice_id`.
+  - **Fall B — Bonstorno:** der tatsächlich implementierte, kassenübergreifende
+    Weg (`routes/admin/cancellations.ts`, `POST /api/admin/cancellations`) —
+    erzeugt eine neue, eigenständige Rechnung (`receipt_type = 'cancellation'`),
+    bewusst **ohne** Bezug zu einer einzelnen Ursprungsrechnung.
+
+  Nur Fall B wurde je gebaut. Die Spalte `invoice.cancels_invoice_id` existiert
+  weiterhin im Schema (`docs/Datenmodell.dbml`), wird aber **nirgends mehr im
+  Code gelesen oder gesetzt** — seit D-068 auch die (zuvor einzige Lesestelle)
+  `exports/dsfinvk/load.ts`s `isStornoBeleg`-Erkennung entfernt, da das
+  Vorzeichen jetzt direkt in `price`/`deposit_price` lebt. Kein Storno-Button
+  existiert in `routes/admin/invoices.ts`. Damit ist die Spalte inzwischen
+  ein vollständig totes Feld — Option 1 unten wäre also ein reiner
+  Aufräumschritt ohne jeden Code-Bezug mehr, der entfernt werden müsste.
+
+  **Zu entscheiden:**
+  1. **Option 1 — `cancels_invoice_id` entfernen:** Fall A endgültig verwerfen,
+     Spalte als totes Feld aus Schema/Export-Logik streichen, Bonstorno
+     (Fall B) bleibt der einzige Weg. Einfachste Option, verliert aber die
+     Möglichkeit einer präzisen 1:1-Zuordnung Storno↔Original.
+  2. **Option 2 — Fall A tatsächlich implementieren:** Storno-Button an
+     einer bestehenden Rechnung ergänzen, der `cancels_invoice_id` korrekt
+     setzt. Aufwändiger, aber ggf. sauberer für Auswertungen/Nachvollzug
+     (z. B. exakte Zuordnung, welche Rechnung durch welche Storno-Buchung
+     rückgängig gemacht wurde) und relevant für die Gestaltung des
+     Bonstorno-Aggregations-Fixes (siehe Hintergrund oben).
+
+  **Wichtig:** Diese Entscheidung beeinflusst das Design des eigentlichen
+  Bonstorno-Bugfixes (Aggregation in `closing/totals.ts`, `/cash-balance`,
+  Excel-Export) — daher zuerst hier klären, dann den Bugfix angehen.
+
 ## Findings
 
 - [Finding] **D-033** (mittel, Backend / Excel-Export) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
@@ -518,3 +591,4 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 - [Finding] **D-065** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 gefunden
   Die offizielle DSFinV-K-2.4-Spezifikation (Anhang E) nennt für mehrere Geldbetrags-Felder 5 Nachkommastellen (`Z_UMS_BRUTTO`/`Z_UMS_NETTO`/`Z_UST`, `BON_BRUTTO`/`BON_NETTO`/`BON_UST`, `POS_BRUTTO`/`POS_NETTO`/`POS_UST`, `STK_BR`), FairPOS rundet diese Werte aber durchgängig auf 2 Nachkommastellen (`rows.ts`, `toFixed(2)`). Das jetzt korrekte `index.xml` deklariert trotzdem die spec-gemäße `Accuracy` (5) für diese Felder — laut DTD unproblematisch, da eine höhere deklarierte Accuracy als die tatsächlichen Nachkommastellen der Daten explizit erlaubt ist (nur der umgekehrte Fall ist "undefined behaviour"). Nicht bewertet: ob die Steueraufschlüsselung selbst (nicht nur die CSV-Darstellung) von 5-stelliger statt 2-stelliger Rundungsgenauigkeit profitieren würde (z. B. um Rundungsdifferenzen bei einer Betriebsprüfungs-Nachrechnung zu vermeiden) — das wäre eine Änderung an der eigentlichen Berechnung, nicht nur am Export, und dafür bräuchte es eine eigene Bewertung.
   Kein Handlungsbedarf jetzt — reine Beobachtung, kein bekannter Fehler.
+

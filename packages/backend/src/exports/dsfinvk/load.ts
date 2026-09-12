@@ -99,11 +99,11 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   // resolved below from exactly one representative order_item per invoice.
   const invoicesResult = await query<{
     id: string; receipt_number: string; receipt_type: 'sales_receipt' | 'cancellation' | 'training';
-    created_at: Date; payment_method: 'cash' | 'card'; cancels_invoice_id: string | null;
+    created_at: Date; payment_method: 'cash' | 'card';
     tse_transaction_number: string | null; tse_signature_counter: string | null; tse_signature: string | null;
     tse_start_time: Date | null; tse_end_time: Date | null; tse_serial_number: string | null;
   }>(
-    `SELECT id, receipt_number::text, receipt_type, created_at, payment_method, cancels_invoice_id,
+    `SELECT id, receipt_number::text, receipt_type, created_at, payment_method,
             tse_transaction_number::text, tse_signature_counter::text, tse_signature,
             tse_start_time, tse_end_time, tse_serial_number
        FROM invoice
@@ -145,7 +145,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
       bonName: null,
       receiptNumber: Number(inv.receipt_number),
       createdAt: inv.created_at,
-      isStornoBeleg: inv.receipt_type === 'cancellation' || inv.cancels_invoice_id !== null,
+      isBonstorno: inv.receipt_type === 'cancellation',
       diningTableName: context?.table_name ?? null,
       // No stable operator id survives Task #97 (user rows are deletable, the
       // name is a text snapshot) — left null rather than reusing the name as
@@ -191,7 +191,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     bonName: null,
     receiptNumber: null,
     createdAt: so.created_at,
-    isStornoBeleg: false,
+    isBonstorno: false,
     diningTableName: so.table_name,
     operatorUserId: null, // no stable id survives Task #97, see invoice mapping above
     operatorUserName: so.user_name,
@@ -234,7 +234,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     bonName: oc.cancellation_reason_name,
     receiptNumber: null,
     createdAt: oc.created_at,
-    isStornoBeleg: false,
+    isBonstorno: false,
     diningTableName: null,
     operatorUserId: null, // no stable id survives Task #97, see invoice mapping above
     operatorUserName: oc.cancelled_by_name,

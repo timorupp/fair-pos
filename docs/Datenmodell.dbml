@@ -271,7 +271,9 @@ Table daily_closing {
   total_tax_reduced     decimal(12,2) [not null, note: '7% tax portion']
   total_tax_zero        decimal(12,2) [not null, note: '0% (tax-exempt) portion']
   total_cash            decimal(12,2) [not null]
-  total_cancellations   decimal(12,2) [not null]
+  total_bonstorno       decimal(12,2) [not null, note: 'D-068 (2026-09-12) — informational: how much of total_gross/total_cash came from Bonstorno (receipt_type=cancellation) invoices, "Stornierte Rechnungen". Not a separate additive total. Replaces the old single total_cancellations column together with the two below (migration 0032)']
+  total_free            decimal(12,2) [not null, note: '"Kostenfreie Warenabgabe" — status=free items, goods given away, never charged. Not part of total_gross']
+  total_order_cancellations decimal(12,2) [not null, note: '"Stornierte Bestellungen" — status=cancelled items, goods never left, never charged. Not part of total_gross']
   tse_transaction_number bigint       [null]
   tse_signature         text          [null]
   tse_signature_counter bigint        [null]
@@ -316,8 +318,8 @@ Table order_item {
   article_category_name varchar(100) [not null]
   tax_rate             decimal(5,2)  [not null, note: 'Percent, snapshotted at order time']
   tax_category         varchar(10)   [not null, note: 'zero | reduced | standard — snapshot of the category alongside tax_rate (Task #110), so exports/totals can branch on the fixed category instead of a guessed percentage']
-  price                decimal(10,2) [not null, note: 'Original price — preserved even for free items']
-  deposit_price        decimal(10,2) [null]
+  price                decimal(10,2) [not null, note: 'Original price — preserved even for free items. NEGATED for a Bonstorno invoice row (receipt_type=cancellation, D-068, 2026-09-12) — the reversal of the articles current master-data price, regardless of that prices own sign. Classification is always via receipt_type/status, never inferred from this sign — a PfandRueckzahlung article already has a negative deposit_price independent of any cancellation']
+  deposit_price        decimal(10,2) [null, note: 'Positive = deposit charged, negative = deposit refunded (Leergutrückgabe) — for a normal sale. NEGATED again for a Bonstorno row, same rule as price above']
   deposit_tax_rate     decimal(5,2)  [null, note: 'Task #113 — Pfand is always taxed at the Regelsteuersatz in effect at sale time, independent of the articles own tax_rate/tax_category. Set only when deposit_price is set']
 
   // Selected options as comma-separated snapshot; surcharge already included in price

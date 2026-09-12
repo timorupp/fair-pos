@@ -42,6 +42,7 @@ export interface SourceLineItem {
   taxRate: number;
   /** VAT category `taxRate` belongs to (Task #110) — used for `UST_SCHLUESSEL` instead of re-guessing it from the raw percentage. */
   taxCategory: TaxCategory;
+  /** Already signed (D-068) — a Bonstorno's rows are negative from `order_item.price` itself; do not flip based on `bonTyp`/any storno flag here. */
   priceEuros: number;
   /** Positive = Pfand aufgeschlagen, negative = Leergutrückgabe, null/0 = kein Pfand. */
   depositPriceEuros: number | null;
@@ -60,8 +61,21 @@ export interface SourceVorgang {
   /** The printed receipt number — only invoices have one; null for AVBestellung/AVSonstige. */
   receiptNumber: number | null;
   createdAt: Date;
-  /** True for a Bonstorno / reversed-sign cancellation invoice (BON_STORNO flag) — NOT the same as bonTyp. */
-  isStornoBeleg: boolean;
+  /**
+   * True for a Bonstorno invoice (`invoice.receipt_type='cancellation'`),
+   * false otherwise (always false for AVBestellung/AVSonstige, which are
+   * service_order/order_cancellation rows, never invoices).
+   *
+   * D-069, 2026-09-12 — **used for exactly one purpose**: recovering the
+   * article's original Pfand/PfandRueckzahlung classification for
+   * `GV_TYP`, which a Bonstorno's negated `depositPriceEuros` (D-068)
+   * would otherwise flip to the wrong bucket. **Must never be used to
+   * flip a monetary amount** — every amount arriving in `items` is already
+   * correctly signed at the source (D-068); re-introducing a
+   * receipt-type-based sign flip here is exactly the bug class D-068
+   * eliminated.
+   */
+  isBonstorno: boolean;
   diningTableName: string | null;
   operatorUserId: string | null;
   operatorUserName: string | null;
@@ -226,8 +240,10 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     // the TSE's own timestamps are reported separately in transactions_tse.csv.
     const start = v.createdAt;
     const end = v.createdAt;
+    // Already signed (D-068) — a Bonstorno's items carry their own negative
+    // priceEuros/depositPriceEuros from the source, so this sum needs no
+    // storno-flag-based flip on top.
     const umsBrutto = v.items.reduce((s, it) => s + it.priceEuros + (it.depositPriceEuros ?? 0), 0);
-    const signedUmsBrutto = v.isStornoBeleg ? -umsBrutto : umsBrutto;
 
     transactions.push({
       ...schluessel,
@@ -241,7 +257,7 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
       BON_ENDE: isoWithMillis(end),
       BEDIENER_ID: v.operatorUserId ?? '',
       BEDIENER_NAME: v.operatorUserName ?? '',
-      UMS_BRUTTO: euro(signedUmsBrutto),
+      UMS_BRUTTO: euro(umsBrutto),
       KUNDE_NAME: '', KUNDE_ID: '', KUNDE_TYP: '', KUNDE_STRASSE: '',
       KUNDE_PLZ: '', KUNDE_ORT: '', KUNDE_LAND: '', KUNDE_USTID: '',
       BON_NOTIZ: '',
@@ -256,11 +272,11 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     let posZeile = 0;
     for (const it of v.items) {
       const key = ustSchluessel(it.taxCategory);
-      const sign = v.isStornoBeleg ? -1 : 1;
 
-      // Article line (GV_TYP = Umsatz).
+      // Article line (GV_TYP = Umsatz). it.priceEuros is already signed
+      // (D-068) — no storno-flag-based flip needed.
       posZeile += 1;
-      const articleBrutto = sign * it.priceEuros;
+      const articleBrutto = it.priceEuros;
       const articleNetto = articleBrutto / (1 + it.taxRate / 100);
       lines.push({
         ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
@@ -284,9 +300,22 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
         posZeile += 1;
         const depositKey = ustSchluessel('standard');
         const depositRate = it.depositTaxRate ?? 0;
-        const depositBrutto = sign * it.depositPriceEuros;
+        const depositBrutto = it.depositPriceEuros;
         const depositNetto = depositBrutto / (1 + depositRate / 100);
-        const gvTyp = it.depositPriceEuros > 0 ? 'Pfand' : 'PfandRueckzahlung';
+        // GV_TYP classifies by the article's ORIGINAL Pfand/PfandRueckzahlung
+        // nature (D-069, 2026-09-12) — a fixed property of the article
+        // itself (a "Bier" article always charges a deposit, a dedicated
+        // "Leergut" article always refunds one), not of the sign the
+        // Bonstorno reversal happens to leave behind. For a Bonstorno,
+        // `depositPriceEuros` is already negated (D-068) relative to the
+        // article's master price at booking time — undo exactly that one
+        // negation here, for classification only, to recover what the
+        // article originally was. The actual amount used below
+        // (`depositBrutto`/`STK_BR`) is untouched by this — only the label.
+        // Mirrors Anhang I's own "Warenrücknahme" example (S. 115): a
+        // storno stays in its original bucket, just with reversed sign.
+        const originalSign = v.isBonstorno ? -it.depositPriceEuros : it.depositPriceEuros;
+        const gvTyp = originalSign > 0 ? 'Pfand' : 'PfandRueckzahlung';
         lines.push({
           ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
           GUTSCHEIN_NR: '', ARTIKELTEXT: 'Pfand', POS_TERMINAL_ID: source.tseClientId ?? '',
@@ -313,7 +342,7 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     // Payment — only "Beleg" Vorgänge (invoices) carry an actual payment.
     if (v.paymentMethod) {
       const zahlartTyp: 'Bar' | 'Unbar' = v.paymentMethod === 'cash' ? 'Bar' : 'Unbar';
-      const amount = signedUmsBrutto;
+      const amount = umsBrutto;
       datapayment.push({
         ...schluessel, BON_ID: v.id, ZAHLART_TYP: zahlartTyp, ZAHLART_NAME: zahlartTyp,
         ZAHLWAEH_CODE: '', ZAHLWAEH_BETRAG: '', BASISWAEH_BETRAG: euro(amount),
