@@ -234,7 +234,7 @@ laut Inhaltsverzeichnis (S. 6)** — FairPOS-Relevanz markiert:
 | `slaves.csv` (Stamm_Terminals) | Terminals einer Master-Kasse | nicht benötigt — FairPOS hat keine Master-Slave-Kassen |
 | `pa.csv` (Stamm_Agenturen) | Agenturgeschäfte (Fremdverkauf) | nicht benötigt |
 | `vat.csv` (Stamm_USt) | Steuersätze mit Schlüssel (UST_SCHLUESSEL) | ✅ siehe Schlüsselschema unten |
-| `tse.csv` (Stamm_TSE) | TSE-Seriennummer, Zertifikat, Signaturalgorithmus, Zeitformat, Public Key | ✅ alle Felder verdrahtet (`TSE_ZERTIFIKAT_I/II` seit Task #120, 2026-09-08); Live-Hardware-Bestätigung für die Zertifikatsfelder noch ausstehend, siehe Abschnitt 6.7 |
+| `tse.csv` (Stamm_TSE) | TSE-Seriennummer, Zertifikat, Signaturalgorithmus, Zeitformat, Public Key | ✅ alle Felder verdrahtet und an echter Hardware bestätigt (Task #120, abgeschlossen 2026-09-12), siehe Abschnitt 6.7 |
 
 **Kassenabschlussmodul** (S. 80–83)
 
@@ -405,17 +405,18 @@ Leaf-Zertifikat, nicht die volle Kette samt Ausstellern) enthalten,
 Base64-kodiert und in zwei 1.000-Zeichen-Blöcke aufgeteilt.
 `exports/dsfinvk/leafCertificate.ts` extrahiert das erste Zertifikat aus der
 per `worm_getLogMessageCertificate` gelesenen PEM-Kette und splittet es
-entsprechend; `rows.ts` verdrahtet das in `tse.csv`. **Noch offen:** ein
-Live-Hardware-Test, dass `TSE_ZERTIFIKAT_I/II` an einer echten TSE
-tatsächlich mit echten Zertifikatsdaten befüllt werden (ein vom Nutzer
-bereitgestellter echter Export bestätigt nur, dass das `info`-Kommando
-insgesamt fehlerfrei läuft, siehe `docs/TSE-Integration.md` Abschnitt 11 —
-dieser Export wurde vor der Verdrahtung erzeugt, die Spalten sind darin
-folglich noch leer). `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind
-seit der processData-Formatkorrektur (Abschnitt 6.5) befüllt und an echter
+entsprechend; `rows.ts` verdrahtet das in `tse.csv`. **Live-Hardware-Test
+bestanden (2026-09-12):** ein nach Behebung von D-074 (siehe
+BACKLOG-DONE.md — `tse.csv` fehlte zuvor komplett bei Abschlüssen ohne
+Rechnung) erzeugter echter Export liefert `TSE_ZERTIFIKAT_I` mit genau
+1.000 Zeichen und `TSE_ZERTIFIKAT_II` mit dem Rest; beide Base64-dekodiert
+und aneinandergehängt ergeben ein gültiges, mit `openssl x509 -inform DER`
+parsebares X.509-Zertifikat (`subject CN` = `TSE_SERIAL`, `issuer` =
+TSE-Test-CA Swissbit). `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind
+seit der processData-Formatkorrektur (Abschnitt 6.5) ebenfalls an echter
 Hardware bestätigt — diese drei sind auch die für die QR-Code-Prüfung
 relevanten, die Zertifikatskette betrifft nur `tse.csv`s Vollständigkeit,
-nicht die Prüfbarkeit.
+nicht die Prüfbarkeit. Task #120 damit vollständig abgeschlossen.
 
 **CSV-/index.xml-Format gegen die GoBD-Anlage verifiziert (Task #122,
 2026-09-08):** Die BMF-Anlage "Ergänzende Informationen zur

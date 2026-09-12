@@ -141,85 +141,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 
   Vor der Umsetzung: Nutzerentscheidung, welcher Ansatz gewünscht ist.
 
-- [Task] **#120** TSE-Zertifikatskette für `tse.csv` (`TSE_ZERTIFIKAT_I/II`)
-  **Klassifikation: Feature/Doku-Lücke (klein, nicht blockierend).**
-  Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 und
-  `docs/TSE-Integration.md` Abschnitt 11 dokumentiert, ohne eigenen Task —
-  hier nachgezogen (2026-09-06).
-
-  **Problem:** `tse.csv`s Felder `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II`
-  bleiben im DSFinV-K-Export leer. `native/tse-cli` liest die volle
-  Zertifikatskette (`worm_getLogMessageCertificate`) noch nicht aus — dafür
-  wird laut SDK die CTSS-Schnittstelle benötigt, die der CLI-Wrapper bisher
-  nicht anspricht. `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind
-  bereits befüllt (Task #46) — genau die drei für die QR-Code-Prüfung
-  relevanten Felder; die Zertifikatskette betrifft nur `tse.csv`s
-  Vollständigkeit, nicht die Prüfbarkeit der einzelnen Belege.
-
-  **Weitgehend umgesetzt 2026-09-06 — Analyse und Auslesen fertig, ein
-  Rest bewusst offengelassen:**
-  - **Aufwandsanalyse (`WormDLL.h` geprüft):** `worm_getLogMessageCertificate`
-    verlangt laut Doku-Kommentar nur eine aktive CTSS-Schnittstelle, **keinen**
-    Nutzerlogin (anders als z. B. `worm_export_deleteStoredData`, das
-    ausdrücklich "the user Admin to be logged in" verlangt — dieser Satz
-    fehlt bei der Zertifikatsfunktion). Auf TSE-Firmware ≥2.0.0 ist die
-    CTSS-Schnittstelle laut `worm_info_isCtssInterfaceActive`-Doku ohnehin
-    automatisch aktiv, sobald der Self-Test bestanden wurde — kein
-    `worm_tse_ctss_enable`-Aufruf nötig (der wäre auf ≥2.0.0 ohnehin ein
-    No-Op). Zusätzlich bestätigt der bereits produktiv genutzte
-    `exportTar`-Befehl (`worm_export_tar`, identische
-    "nur CTSS aktiv"-Doku-Formulierung), dass diese Funktionsklasse im
-    bestehenden Code tatsächlich ohne Login funktioniert. Die CTSS-Anbindung
-    war damit **kein zusätzlicher Aufwand** — nur ein weiterer Auslese-Aufruf
-    im bereits bestehenden `info`-Kommando.
-  - **Umgesetzt:** `native/tse-cli/src/tseCli.cpp`s `cmdInfo()` ruft jetzt
-    zusätzlich `worm_getLogMessageCertificate` auf (Base64-kodiert im neuen
-    JSON-Feld `certificateChain`; leer statt Fehlschlag, falls die TSE sie
-    gerade nicht liefern kann). Durchgereicht über `tse/types.ts`s `TseInfo`
-    und `tse/certificateInfo.ts`s `TseCertificateInfo` (neues Feld
-    `certificateChainBase64`, prozessweit gecacht wie die anderen drei
-    Felder). 4 neue Unit-Tests (`certificateInfo.test.ts`).
-  - **Compile+Link gegen die echte vendorte SDK erfolgreich verifiziert**
-    (`build.sh` lief fehlerfrei mit `-Wall -Wextra`, der gebaute Binary lädt
-    `libWormAPI.so` korrekt und meldet bei ungültigem Mount-Pfad den
-    erwarteten `worm_init failed`-Fehler) — aber **kein Live-Hardware-Test**:
-    ob `worm_getLogMessageCertificate` an einer echten, physisch
-    angeschlossenen TSE tatsächlich ohne Login gelingt, ist bisher nur
-    durch die SDK-Dokumentation belegt, nicht durch einen echten Aufruf.
-  - **Verdrahtet 2026-09-08:** Der offene Punkt (wie die eine PEM-Kette auf
-    `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` aufzuteilen ist) ist jetzt anhand
-    des verbindlichen Spezifikationstexts geklärt — Anhang E (S. 78f.) des
-    offiziellen DSFinV-K-2.4-Downloadpakets (bzst.de, Bundeszentralamt für
-    Steuern): beide Felder enthalten **"das Zertifikat der TSE"** (Singular
-    — nur das TSE-eigene Leaf-Zertifikat, nicht die volle Kette samt
-    Ausstellern), Base64-kodiert, aufgeteilt in zwei 1.000-Zeichen-Blöcke
-    (`TSE_ZERTIFIKAT_I` = erste 1.000 Zeichen, `TSE_ZERTIFIKAT_II` = Rest).
-    Neues Modul `exports/dsfinvk/leafCertificate.ts`
-    (`extractLeafCertificateChunks`) extrahiert das erste PEM-Zertifikat aus
-    der Kette und splittet es entsprechend; `rows.ts` verdrahtet das jetzt in
-    `tse.csv`. 5 neue Unit-Tests (`leafCertificate.test.ts`) plus ein
-    Rows-Test mit einer >1000 Zeichen langen synthetischen PEM-Kette.
-
-  **Noch ausstehend: echter Live-Test der Zertifikats-Spalten selbst.** Ein
-  vom Nutzer bereitgestellter echter DSFinV-K-Export von echter Hardware
-  (`dsfinvk_Bonkasse_z17.zip`, 2026-09-08) bestätigt, dass das `info`-Kommando
-  insgesamt fehlerfrei gegen die echte TSE läuft (`TSE_SIG_ALGO`/
-  `TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind mit echten Werten gefüllt) — das
-  deckt aber nicht ab, ob `worm_getLogMessageCertificate` speziell auf dieser
-  Hardware auch tatsächlich ein Zertifikat liefert, da dieser Export vor der
-  heutigen Verdrahtung erzeugt wurde und `TSE_ZERTIFIKAT_I/II` deshalb noch
-  leer sind. Bleibt offen, bis ein **neuer** Export nach diesem Fix zeigt,
-  dass beide Spalten mit echten Zertifikatsdaten gefüllt sind.
-
-  **2026-09-12 — Blocker gefunden und behoben (siehe D-074 in
-  BACKLOG-DONE.md):** ein zweiter, unabhängiger Export (`dsfinvk_Kasse2_z1.zip`)
-  enthielt `tse.csv` überhaupt nicht — der Live-Test war dadurch bisher gar
-  nicht möglich. Ursache lag nicht in der Task-#120-Verdrahtung selbst,
-  sondern in `load.ts`s `tseSerial`-Ermittlung (nur `invoice` statt auch
-  `service_order`/`order_cancellation`), jetzt gefixt. Ein neuer Export nach
-  diesem Fix ist die Voraussetzung für den weiterhin ausstehenden
-  Live-Nachweis der Zertifikats-Spalten.
-
 - [Task] **#128** Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
   **Klassifikation: Sicherheits-/Datenschutz-Frage (noch nicht bewertet,
   mehrere Optionen genannt, keine Entscheidung getroffen).**
@@ -316,6 +237,9 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Excel-Export) — daher zuerst hier klären, dann den Bugfix angehen.
 
 - [Task] **#137** Kassenjournal — kombinierte, chronologische Übersicht aus Einlagen/Entnahmen und Bareinnahmen
+  **Priorisierung (Nutzervorgabe 2026-09-12): Pre-Release — echte
+  Nutzbarkeitslücke, vor dem ersten Release erledigen.**
+
   **Klassifikation: Feature/Nutzerwunsch, angelegt 2026-09-12.**
 
   Aktuell gibt es zwei getrennte, jeweils unvollständige Ansichten:
@@ -345,6 +269,9 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   FairPOS-interne Komfortfunktion ist, ohne Compliance-Bezug.
 
 - [Task] **#138** Verkaufsstatistik je Artikel/Tag — Excel-Export kennzeichnet Stornos nicht aggregationsfreundlich
+  **Priorisierung (Nutzervorgabe 2026-09-12): Pre-Release — echte
+  Nutzbarkeitslücke, vor dem ersten Release erledigen.**
+
   **Klassifikation: Feature/Nutzerwunsch, angelegt 2026-09-12.**
 
   Aktuell schwer möglich: eine Verkaufsstatistik je Artikel und Tag zu
