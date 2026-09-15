@@ -1,5 +1,7 @@
 /** Structured receipt data: the single source of truth consumed by both the PDF and ESC/POS renderers. */
 
+import type { TaxCategory } from '@fairpos/shared';
+
 /** One aggregated line on the receipt. Multiple identical order items are merged into one position with a quantity. */
 export interface ReceiptPosition {
   /** Display name (the article's name). */
@@ -10,8 +12,12 @@ export interface ReceiptPosition {
   unitPrice: number;
   /** Per-unit gross deposit in euro (positive = Pfand aufgeschlagen, negative = Leergutrückgabe). Null if no deposit. */
   unitDeposit: number | null;
-  /** VAT rate of the article (e.g. 19, 7, 0). */
+  /** VAT rate of the article itself, excluding any deposit (e.g. 19, 7, 0). */
   taxRate: number;
+  /** VAT category `taxRate` belongs to (Task #110) — needed to recompute the exact same TSE `processData` for the QR code (`receipt/qr.ts`), which takes a category, not a raw percentage. */
+  taxCategory: TaxCategory;
+  /** VAT rate the deposit portion was taxed at — always the Regelsteuersatz in effect at booking time (Task #113), independent of `taxRate`. `null` unless `unitDeposit` is set. */
+  depositTaxRate: number | null;
   /** Total gross for the line: `(unitPrice + unitDeposit) * quantity`. */
   lineGross: number;
 }
@@ -20,6 +26,8 @@ export interface ReceiptPosition {
 export interface TaxBreakdownRow {
   /** Rate in percent, e.g. 19, 7, 0. */
   rate: number;
+  /** The tax category `rate` belongs to (Task #115) — used to print the same Kennbuchstabe (A/B/C) as the positions taxed at this rate. */
+  category: TaxCategory;
   /** Sum of all positions at this rate (gross). */
   gross: number;
   /** Net portion of `gross` (gross - tax). */
@@ -51,6 +59,27 @@ export interface ReceiptData {
    */
   isCancellation: boolean;
 
+  /**
+   * True when this invoice belongs to a training register (`register.is_training`,
+   * Task #130). The renderers print a `T R A I N I N G` marker (right after the
+   * logo and again as the very last line) so the document can never be mistaken
+   * for a real receipt. Independent of {@link isCancellation} — a training-register
+   * Bonstorno shows both markers.
+   */
+  isTraining: boolean;
+
+  /**
+   * Name of the dining table this receipt's items were ordered at, or `null`
+   * for a Bonkasse walk-up sale (no table involved). Printed together with
+   * {@link firstOrderTime} — DSFinV-K Tz. 2.7.2 requires the start time of
+   * the first order to be printed on the receipt when, as FairPOS does, the
+   * Kassenbeleg-V1 transaction's own TSE start/end time reflects only the
+   * payment itself rather than spanning back to the first order.
+   */
+  tableName: string | null;
+  /** Timestamp of the earliest order contributing to this receipt. `null` unless `tableName` is set. */
+  firstOrderTime: Date | null;
+
   // ── Optional company logo (loaded conditionally per-document-type) ────────
   /** PNG bytes for the PDF renderer, or `null` to omit. */
   logoPng: Buffer | null;
@@ -77,7 +106,6 @@ export interface ReceiptData {
 
   // ── TSE (null when the sale wasn't signed — TSE unconfigured or an outage;
   //    see docs/TSE-Integration.md → "TSE-Ausfall") ──────────────────────────
-  tseSerial: string | null;
   tseTransactionNumber: number | null;
   tseSignatureCounter: number | null;
   tseSignature: string | null;

@@ -30,7 +30,7 @@ const DEFAULT_CLI_PATH = path.join(
 interface CliEnvelope<T> {
   ok: boolean;
   result?: T;
-  error?: { code: number; message: string };
+  error?: { code: number; message: string; remainingRetries?: number };
 }
 
 /**
@@ -73,6 +73,16 @@ const DEFAULT_TIMEOUT_MS = 15_000;
  * so a slower ceiling costs nothing when the TSE responds promptly.
  */
 const SELF_TEST_TIMEOUT_MS = 60_000;
+
+/**
+ * Timeout for `exportTar` — reads the TSE's entire stored log archive over
+ * USB, which grows with usage and has no documented upper bound on duration.
+ * Generous on purpose, same reasoning as {@link SELF_TEST_TIMEOUT_MS}: this
+ * runs from an explicit, infrequent admin action (see
+ * `routes/admin/tse.ts`'s `GET /export`), never on a hot path. May need
+ * tuning upward once real-world export sizes/durations are known.
+ */
+const EXPORT_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * Runs the TSE CLI with the given command and arguments, and parses its
@@ -120,7 +130,7 @@ async function runCli<T>(
   }
   if (!parsed.ok) {
     const e = parsed.error ?? { code: -1, message: 'unknown error' };
-    throw new TseError(e.code, e.message);
+    throw new TseError(e.code, e.message, e.remainingRetries);
   }
   return parsed.result as T;
 }
@@ -246,19 +256,34 @@ export function maintainTse(timeAdminPin: string): Promise<void> {
  * set up (by design — re-running setup on a live TSE is an operator error
  * that should surface, not be silently handled).
  *
- * @param opts - Credential seed and the four PINs/PUKs to configure.
+ * Deliberately takes `clientId` as an explicit argument instead of reading
+ * the already-saved `config.tseClientId` (unlike every other function in
+ * this file) — the already-saved value belongs to whichever TSE is
+ * currently registered, but `setup` is exactly the operation that can
+ * register a *different* one (e.g. adding a second TSE, or provisioning a
+ * fresh one before its Client-ID has been decided/saved anywhere yet).
+ * Only `config.tseMountPoint` needs to already be set. The caller is
+ * responsible for persisting `clientId` into settings afterward on success
+ * (see `routes/admin/tse.ts`'s `/setup` handler).
+ *
+ * @param opts - Client-ID plus the credential seed and the four PINs/PUKs to configure.
  */
 export function setupTse(opts: {
+  clientId: string;
   credentialSeed: string;
   adminPuk: string;
   adminPin: string;
   timeAdminPin: string;
 }): Promise<void> {
   return enqueueTseCall(async () => {
-    const { mountPoint, clientId } = requireTseConfig();
+    if (!config.tseMountPoint) {
+      throw new Error(
+        'TSE ist nicht konfiguriert (Mount-Pfad fehlt — Systemeinstellungen -> System in der Admin-UI).',
+      );
+    }
     await runCli<Record<string, never>>(
-      mountPoint, 'setup',
-      [clientId, opts.credentialSeed, opts.adminPuk, opts.adminPin, opts.timeAdminPin],
+      config.tseMountPoint, 'setup',
+      [opts.clientId, opts.credentialSeed, opts.adminPuk, opts.adminPin, opts.timeAdminPin],
       SELF_TEST_TIMEOUT_MS,
     );
   });
@@ -274,6 +299,57 @@ export function setupTse(opts: {
 export function exportTar(outputFile: string): Promise<void> {
   return enqueueTseCall(async () => {
     const { mountPoint } = requireTseConfig();
-    await runCli<Record<string, never>>(mountPoint, 'exportTar', [outputFile]);
+    await runCli<Record<string, never>>(mountPoint, 'exportTar', [outputFile], EXPORT_TIMEOUT_MS);
+  });
+}
+
+/**
+ * Resets a *development-firmware* TSE to its factory default state (empties
+ * the TSE Store, resets PUK/all PINs, drops client registration). Fails
+ * harmlessly on real/production firmware — the SDK only permits this on
+ * development hardware by design (see `native/tse-cli`'s `cmdFactoryReset`).
+ */
+export function factoryResetTse(): Promise<void> {
+  return enqueueTseCall(async () => {
+    const { mountPoint } = requireTseConfig();
+    await runCli<Record<string, never>>(mountPoint, 'factoryReset', [], SELF_TEST_TIMEOUT_MS);
+  });
+}
+
+/**
+ * Resets a blocked Admin or TimeAdmin PIN back to a usable state, given the
+ * current PUK. On firmware < 2.0.0 this must always be the Admin PUK, even
+ * to unblock TimeAdmin; on firmware >= 2.0.0 the TimeAdmin PUK is set
+ * identically to the Admin PUK during `setup`, so either works there too
+ * (see `worm_user_unblock`'s doc comment in `WormDLL.h`).
+ *
+ * @param user - Which user's PIN to unblock.
+ * @param puk - The current PUK for that user.
+ * @param newPin - The new 5-digit PIN to set.
+ * @throws {TseError} With `remainingRetries` set when `puk` itself was wrong.
+ */
+export function unblockPin(
+  user: 'admin' | 'timeAdmin',
+  puk: string,
+  newPin: string,
+): Promise<void> {
+  return enqueueTseCall(async () => {
+    const { mountPoint } = requireTseConfig();
+    await runCli<Record<string, never>>(mountPoint, 'unblock', [user, puk, newPin]);
+  });
+}
+
+/**
+ * Dumps every process-data entry currently stored on the TSE to a
+ * tab-separated text file — a diagnostic tool (Task #102) for comparing
+ * what the TSE actually recorded against FairPOS's own database, never
+ * called by FairPOS itself outside an explicit admin action.
+ *
+ * @param outputFile - Absolute path the dump will be written to.
+ */
+export function dumpProcessDataTse(outputFile: string): Promise<void> {
+  return enqueueTseCall(async () => {
+    const { mountPoint } = requireTseConfig();
+    await runCli<Record<string, never>>(mountPoint, 'dumpProcessData', [outputFile], EXPORT_TIMEOUT_MS);
   });
 }

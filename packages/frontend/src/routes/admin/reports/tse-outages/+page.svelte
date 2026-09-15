@@ -16,6 +16,17 @@
   let error = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+  /**
+   * Drift in whole ms between this browser's clock and the server's — used
+   * to correct {@link durationLabel}'s "now" for a still-open outage back to
+   * server time. Never trust the browser's own clock for an operationally
+   * relevant duration (same rationale as the admin dashboard's identical
+   * drift check): a dev-TSE server may run with its system clock
+   * deliberately set back, or an admin could simply be in a different
+   * timezone/have a wrong clock. `null` until the first successful load.
+   */
+  let driftMs: number | null = $state(null);
+
   onMount(() => {
     load();
     refreshTimer = setInterval(load, 30_000);
@@ -23,16 +34,23 @@
 
   onDestroy(() => { if (refreshTimer) clearInterval(refreshTimer); });
 
-  /** Reloads the outage list. */
+  /** Reloads the outage list and the server-time drift used for still-open outages' duration. */
   async function load() {
     try {
-      outages = await api.admin.reports.tseOutages();
+      const [rows, status] = await Promise.all([api.admin.reports.tseOutages(), api.admin.system.status()]);
+      outages = rows;
+      driftMs = Date.now() - new Date(status.server_time).getTime();
       error = '';
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally {
       loading = false;
     }
+  }
+
+  /** Best current estimate of server time, corrected by the last known drift — falls back to the raw browser clock before the first successful load. */
+  function serverNowMs(): number {
+    return driftMs === null ? Date.now() : Date.now() - driftMs;
   }
 
   /**
@@ -55,7 +73,7 @@
    */
   function durationLabel(startIso: string, endIso: string | null): string {
     const start = new Date(startIso).getTime();
-    const end = endIso ? new Date(endIso).getTime() : Date.now();
+    const end = endIso ? new Date(endIso).getTime() : serverNowMs();
     const totalMinutes = Math.max(0, Math.round((end - start) / 60_000));
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;

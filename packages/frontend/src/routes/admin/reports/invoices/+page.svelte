@@ -1,10 +1,10 @@
 <script lang="ts">
   /**
    * "Erstellte Rechnungen" report: list of all invoices issued during the
-   * selected event with a link to download the receipt PDF.
+   * active event with a link to download the receipt PDF.
    */
+  import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import EventSelector from '$lib/components/EventSelector.svelte';
 
   type InvoiceRow = {
     id: string; receipt_number: number; receipt_number_formatted: string; receipt_type: string;
@@ -12,9 +12,8 @@
     receipt_token: string | null; total_gross: number;
   };
 
-  let selectedEventId: string | null = $state(null);
   let invoices: InvoiceRow[] = $state([]);
-  let loading = $state(false);
+  let loading = $state(true);
   let error = $state('');
 
   /** Id of the invoice currently being reprinted (one at a time so the row spinner is unambiguous). */
@@ -41,21 +40,16 @@
     }
   }
 
-  /**
-   * Called by the EventSelector whenever the selection changes; triggers a reload.
-   */
-  async function onEventChange() {
-    if (!selectedEventId) { invoices = []; return; }
-    loading = true; error = '';
+  onMount(async () => {
     try {
-      const result = await api.admin.reports.invoices(selectedEventId);
+      const result = await api.admin.reports.invoices();
       invoices = result.invoices;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally {
       loading = false;
     }
-  }
+  });
 
   let total = $derived(invoices.reduce((s, i) => s + i.total_gross, 0));
 
@@ -107,14 +101,10 @@
 <div class="page">
   <div class="page-header"><h1>Erstellte Rechnungen</h1></div>
 
-  <EventSelector bind:selectedId={selectedEventId} on:change={onEventChange} />
-
   {#if error}<p class="error-text">{error}</p>{/if}
 
   {#if loading}
     <p class="muted">Lade…</p>
-  {:else if !selectedEventId}
-    <p class="muted">Bitte eine Veranstaltung wählen.</p>
   {:else if invoices.length === 0}
     <p class="muted">Keine Rechnungen in diesem Zeitraum.</p>
   {:else}

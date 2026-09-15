@@ -14,7 +14,7 @@ import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import {
   createTestArticle, createTestPrinter, createTestRegister, createTestUser,
-  seedReceiptCounter,
+  seedReceiptCounter, setSystemSetting,
 } from '../../test/fixtures.js';
 import { computeClosingTotals, type ClosingItem, type ClosingInvoice } from '../../closing/totals.js';
 import { config } from '../../config.js';
@@ -50,18 +50,20 @@ beforeEach(async () => {
   const reg = await createTestRegister({ type: 'receipt_register', printerId: printer.id });
   registerId = reg.id;
 
-  const art = await createTestArticle({ name: 'Bier', price: 4, taxRate: 19 });
+  const art = await createTestArticle({ name: 'Bier', price: 4, taxCategory: 'standard' });
   articleId = art.id;
 
   const cancelReason = await pool.query<{ id: string }>(
-    `INSERT INTO cancellation_reason (name, booking_type)
-     VALUES ('Retoure', 'cancellation') RETURNING id`,
+    `INSERT INTO cancellation_reason (name, booking_type, event_id)
+     VALUES ('Retoure', 'cancellation', $1) RETURNING id`,
+    [config.activeEventId],
   );
   cancellationReasonId = cancelReason.rows[0]!.id;
 
   const freeReason = await pool.query<{ id: string }>(
-    `INSERT INTO cancellation_reason (name, booking_type)
-     VALUES ('Mitarbeiter', 'free_of_charge') RETURNING id`,
+    `INSERT INTO cancellation_reason (name, booking_type, event_id)
+     VALUES ('Mitarbeiter', 'free_of_charge', $1) RETURNING id`,
+    [config.activeEventId],
   );
   freeOfChargeReasonId = freeReason.rows[0]!.id;
 
@@ -97,7 +99,47 @@ describe('POST /api/admin/cancellations', () => {
     expect(items.rowCount).toBe(3);
   });
 
-  it('reduces total_cash via the cancellation receipt_type', async () => {
+  it('freezes the current company data onto the cancellation invoice too (Task #112/D-058)', async () => {
+    await setSystemSetting('company_name', 'Testverein e.V.');
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/cancellations',
+      headers: { cookie: adminCookie },
+      payload: {
+        register_id: registerId,
+        cancellation_reason_id: cancellationReasonId,
+        items: [{ article_id: articleId, quantity: 1 }],
+      },
+    });
+    const row = await pool.query<{ company_name: string }>(
+      `SELECT company_name FROM invoice WHERE id = $1`, [response.json().invoice_id],
+    );
+    expect(row.rows[0]!.company_name).toBe('Testverein e.V.');
+  });
+
+  it('stores order_item.price/deposit_price negated — the reversal of the article\'s current master-data price (D-068)', async () => {
+    const article = await createTestArticle({ name: 'Cola', price: 3, depositPrice: 0.5, taxCategory: 'standard' });
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/cancellations',
+      headers: { cookie: adminCookie },
+      payload: {
+        register_id: registerId,
+        cancellation_reason_id: cancellationReasonId,
+        items: [{ article_id: article.id, quantity: 1 }],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    const item = await pool.query<{ price: string; deposit_price: string; status: string }>(
+      `SELECT price::text, deposit_price::text, status FROM order_item WHERE invoice_id = $1`,
+      [response.json().invoice_id],
+    );
+    expect(Number(item.rows[0]!.price)).toBe(-3);
+    expect(Number(item.rows[0]!.deposit_price)).toBe(-0.5);
+    expect(item.rows[0]!.status).toBe('paid');
+  });
+
+  it('reduces total_cash AND total_gross via the item\'s own negative price, with total_bonstorno reporting the same share (D-068 — no receipt_type-based flip needed in the aggregator anymore)', async () => {
     // Seed one sale of 10 EUR, then cancel 4 EUR worth → cash should land at 6.
     await pool.query(
       `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method)
@@ -108,8 +150,8 @@ describe('POST /api/admin/cancellations', () => {
       `SELECT id FROM invoice WHERE receipt_number = 100`,
     );
     await pool.query(
-      `INSERT INTO order_item (invoice_id, register_id, article_id, article_name, article_category_name, tax_rate, price, status)
-       VALUES ($1, $2, $3, 'X', 'C', 19, 10, 'paid')`,
+      `INSERT INTO order_item (invoice_id, register_id, article_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, $3, 'X', 'C', 19, 'standard', 10, 'paid')`,
       [sale.rows[0]!.id, registerId, articleId],
     );
 
@@ -130,18 +172,20 @@ describe('POST /api/admin/cancellations', () => {
     }>(`SELECT id, payment_method, receipt_type FROM invoice WHERE register_id = $1`, [registerId]);
     const allItems = await pool.query<{
       invoice_id: string; status: ClosingItem['status'];
-      tax_rate: string; price: string; deposit_price: string | null;
-    }>(`SELECT invoice_id, status, tax_rate::text, price::text, deposit_price::text
+      tax_category: ClosingItem['tax_category']; price: string; deposit_price: string | null;
+    }>(`SELECT invoice_id, status, tax_category, price::text, deposit_price::text
           FROM order_item WHERE register_id = $1`, [registerId]);
     const itemsByInvoice = new Map<string, ClosingItem[]>();
     for (const r of allItems.rows) {
       const list = itemsByInvoice.get(r.invoice_id) ?? [];
-      list.push({ status: r.status, tax_rate: Number(r.tax_rate), price: Number(r.price),
+      list.push({ status: r.status, tax_category: r.tax_category, price: Number(r.price),
                   deposit_price: r.deposit_price ? Number(r.deposit_price) : null });
       itemsByInvoice.set(r.invoice_id, list);
     }
     const totals = computeClosingTotals(invs.rows.map((i) => ({ ...i, items: itemsByInvoice.get(i.id) ?? [] })));
     expect(totals.total_cash).toBe(6);
+    expect(totals.total_gross).toBe(6);
+    expect(totals.total_bonstorno).toBe(-4);
   });
 
   it('rejects a reason whose booking_type is not cancellation', async () => {

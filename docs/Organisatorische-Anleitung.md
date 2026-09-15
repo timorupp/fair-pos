@@ -129,13 +129,31 @@ Alle Kassendaten (Transaktionen, Rechnungen, Kassenabschlüsse) müssen 10 Jahre
   **nicht** selbst (der Server läuft nicht durchgehend, ein zeitbasierter
   automatischer Trigger würde regelmäßig verpasst — siehe
   `docs/Anforderungen.md` "Backup-Konzept") — stattdessen: Admin klickt in
-  Systemeinstellungen → System auf "Backup herunterladen" (lädt ein
+  Einstellungen → System auf "Backup herunterladen" (lädt ein
   vollständiges `pg_dump`-Backup als ZIP), idealerweise direkt nach jedem
   Tagesabschluss.
 - Sicherung auf einem externen Medium (USB-Festplatte, NAS) oder Cloud-Speicher (verschlüsselt)
 - Sicherung sollte nicht auf demselben Gerät wie der Server liegen
 
-**Aufbewahrung:**
+**TSE-Rohdatenexport (TAR):**
+- Zusätzlich zum Datenbank-Backup regelmäßig die von der TSE selbst
+  signierten Rohdaten sichern: Einstellungen → TSE → "Rohdaten
+  exportieren" lädt einen TR-03153-konformen TAR-Container herunter — das
+  TSE-eigene, kryptographisch signierte Format, das ein Betriebsprüfer
+  unabhängig von den DSFinV-K-/Excel-Exporten gesondert anfordern kann.
+  Immer ein Vollexport (kein Datumsfilter, siehe `docs/TSE-CLI-Referenz.md`
+  Abschnitt 6) — jede Ausführung liefert den kompletten aktuell auf der TSE
+  gespeicherten Bestand erneut.
+- Im selben Rhythmus wie das Datenbank-Backup ziehen (z. B. nach jedem
+  Tagesabschluss/jeder Veranstaltung) und auf demselben externen Medium
+  ablegen — beide gehören fachlich zusammen.
+- **Vor jedem Löschen der TSE-gespeicherten Rohdaten** (`deleteStoredData`,
+  nur über die Kommandozeile erreichbar, nicht Teil der Admin-UI — siehe
+  `docs/TSE-CLI-Referenz.md`) zwingend zuerst einen frischen TAR-Export
+  ziehen. Das Löschen ist unwiderruflich; ohne vorherigen Export gehen die
+  TSE-eigenen Signaturnachweise für den gelöschten Zeitraum verloren.
+
+**Aufbewahrung** (gilt für Datenbank-Backup und TSE-Rohdatenexport gleichermaßen):
 - Backups der letzten 30 Tage: täglich
 - Backups der letzten 12 Monate: monatlich
 - Jahresarchiv: mindestens 10 Jahre aufbewahren
@@ -161,7 +179,10 @@ Alle Kassendaten (Transaktionen, Rechnungen, Kassenabschlüsse) müssen 10 Jahre
 
 ## 5. Inbetriebnahme-Checkliste (Ersteinrichtung)
 
-- [ ] Swissbit USB-TSE beschaffen und über FairPOS (Systemeinstellungen → System bzw. `native/tse-cli`) aktivieren — siehe docs/TSE-Integration.md; fiskaltrust wurde als zu teuer verworfen (August 2026)
+- [ ] Swissbit USB-TSE beschaffen und über FairPOS (Einstellungen → System bzw. `native/tse-cli`) aktivieren — siehe docs/TSE-Integration.md; fiskaltrust wurde als zu teuer verworfen (August 2026)
+- [ ] Erste Veranstaltung anlegen und aktivieren (Adminbereich →
+      Organisation → Veranstaltungen) — erst danach lassen sich
+      Artikel, Kassen, Kassenlayouts und der Saalplan einrichten
 - [ ] FairPOS installieren und konfigurieren (Unternehmensdaten, Steuernummer, Steuersätze)
 - [ ] Kassensystem-Seriennummer und Softwareversion notieren
 - [ ] Kassenmeldung über ELSTER einreichen (Frist beachten)

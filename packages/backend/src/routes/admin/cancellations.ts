@@ -4,21 +4,42 @@
  * Lets the administrator create a stand-alone cancellation invoice — not
  * referencing one specific original receipt, but recording that a certain
  * number of article-units have been returned at a given Bonkasse. The new
- * invoice carries `receipt_type='cancellation'`; aggregation in
- * `computeClosingTotals` automatically reduces the day's cash balance.
+ * invoice carries `receipt_type='cancellation'`.
+ *
+ * **Sign convention (D-068, revised 2026-09-12):** every stored
+ * `order_item.price`/`deposit_price` for this invoice is the **negative**
+ * of the article's current master-data price — the reversal of whatever
+ * would normally happen, regardless of that price's own sign (an article
+ * representing a `PfandRueckzahlung`/deposit-return already has a negative
+ * master price; negating it again correctly yields a positive "money
+ * reclaimed" line). This is a deliberate change from the previous design,
+ * where every stored amount was positive and every consumer (closing
+ * totals, cash-balance, Excel/DSFinV-K export, the QR code, the printed
+ * receipt itself) had to independently branch on `receipt_type`/
+ * `isCancellation` to flip the sign — found to have already been forgotten
+ * in three separate places and duplicated (with the *same* logic
+ * re-implemented, not shared) in three more. See BACKLOG-DONE.md D-068 for
+ * the full list. Downstream code must therefore plainly sum `price`/
+ * `deposit_price` — never branch on `receipt_type` to negate a value again,
+ * and never infer "this is a Bonstorno row" from the sign alone (a
+ * `PfandRueckzahlung` article's negative deposit is unrelated to Bonstorno).
  *
  * The cash-register UIs themselves don't allow negative quantities; the
  * resulting "anti-receipt" therefore only exists through this admin path.
  */
 
 import type { FastifyInstance } from 'fastify';
+import type { TaxCategory } from '@fairpos/shared';
 import { query, withTransaction } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { nextReceiptNumber } from '../../receipt/sequence.js';
 import { generateReceiptToken } from '../../receipt/numbering.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../../receipt/format-receipt-number.js';
+import { snapshotCompanyDataForInvoice } from '../../receipt/data.js';
 import { signTseTransaction } from '../../tse/signing.js';
 import { buildKassenbelegProcessData, KASSENBELEG_PROCESS_TYPE } from '../../tse/processData.js';
+import { loadTaxRates, percentFor } from '../../tax/rates.js';
+import { config } from '../../config.js';
 
 /** Body schema for `POST /api/admin/cancellations`. */
 interface CreateCancellationBody {
@@ -60,9 +81,9 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
     }
 
     // Validate the reason: must exist and be a cancellation (not a free-of-charge entry).
-    const reasonResult = await query<{ booking_type: 'cancellation' | 'free_of_charge'; is_active: boolean }>(
-      `SELECT booking_type, is_active FROM cancellation_reason WHERE id = $1`,
-      [cancellation_reason_id],
+    const reasonResult = await query<{ name: string; booking_type: 'cancellation' | 'free_of_charge'; is_active: boolean }>(
+      `SELECT name, booking_type, is_active FROM cancellation_reason WHERE id = $1 AND event_id = $2`,
+      [cancellation_reason_id, config.activeEventId],
     );
     const reason = reasonResult.rows[0];
     if (!reason) return reply.status(400).send({ error: 'Stornogrund nicht gefunden' });
@@ -73,22 +94,26 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       return reply.status(400).send({ error: 'Stornogrund ist deaktiviert' });
     }
 
-    const regResult = await query(`SELECT id FROM register WHERE id = $1`, [register_id]);
+    const regResult = await query<{ is_training: boolean }>(
+      `SELECT is_training FROM register WHERE id = $1 AND event_id = $2`,
+      [register_id, config.activeEventId],
+    );
     if (regResult.rows.length === 0) return reply.status(400).send({ error: 'Kasse nicht gefunden' });
+    const isTrainingRegister = regResult.rows[0]!.is_training;
 
     // Articles fetched once, up front — reused for the TSE snapshot and the order_item inserts.
     const articleIds = [...new Set(items.map((i) => i.article_id))];
     const articlesResult = await query<{
       id: string; name: string; price: string;
       deposit_price: string | null;
-      category_name: string; tax_rate: string;
+      category_name: string; tax_category: TaxCategory;
     }>(
       `SELECT a.id, a.name, a.price, a.deposit_price,
-              c.name AS category_name, c.tax_rate
+              c.name AS category_name, c.tax_category
          FROM article a
          JOIN article_category c ON c.id = a.category_id
-        WHERE a.id = ANY($1)`,
-      [articleIds],
+        WHERE a.id = ANY($1) AND a.event_id = $2`,
+      [articleIds, config.activeEventId],
     );
     const articleById = new Map(articlesResult.rows.map((a) => [a.id, a]));
     for (const it of items) {
@@ -96,25 +121,33 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
         return reply.status(400).send({ error: `Artikel ${it.article_id} nicht gefunden` });
       }
     }
+    const taxRates = await loadTaxRates();
 
     // Bonstorno is signed as Kassenbeleg-V1 (receipt_type='cancellation'), like
     // any other completed receipt — see docs/Anforderungen.md → "Zu signierende
     // Vorgänge in FairPOS". Never blocks the cancellation — docs/TSE-Integration.md
-    // → "TSE-Ausfall".
+    // → "TSE-Ausfall". Amounts are negated here (D-068) — `buildKassenbelegProcessData`
+    // no longer flips any sign itself, it signs exactly the (already-reversed)
+    // amounts it's given, the same ones stored on `order_item` below.
     const kassenbelegSnapshot = buildKassenbelegProcessData({
       paymentMethod: 'cash',
-      receiptType: 'cancellation',
+      // Task #130: a Bonstorno on a training register must also be signed
+      // (and later exported) as AVTraining, not Beleg — same derivation as
+      // the checkout paths in register-session.ts.
+      vorgangstyp: isTrainingRegister ? 'AVTraining' : 'Beleg',
       positions: items.map((it) => {
         const article = articleById.get(it.article_id)!;
         return {
           quantity: it.quantity,
-          unitPriceEuros: Number(article.price),
-          depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
-          taxRatePercent: Number(article.tax_rate),
+          unitPriceEuros: -Number(article.price),
+          depositPriceEuros: article.deposit_price === null ? null : -Number(article.deposit_price),
+          taxCategory: article.tax_category,
         };
       }),
     });
     const { signature: tse, warning: tseWarning } = await signTseTransaction(KASSENBELEG_PROCESS_TYPE, kassenbelegSnapshot);
+    // Task #112: see register-session.ts's identical comment.
+    const companySnapshot = await snapshotCompanyDataForInvoice('cancellation');
 
     const result = await withTransaction(async (client) => {
       const receiptNumber = await nextReceiptNumber(client);
@@ -125,35 +158,47 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
            register_id, receipt_number, receipt_type, payment_method,
            cancellation_note, receipt_token,
            tse_transaction_number, tse_start_time, tse_end_time,
-           tse_signature, tse_signature_counter, tse_serial_number
-         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4, $5, $6, $7, $8, $9, $10)
+           tse_signature, tse_signature_counter, tse_serial_number,
+           company_name, company_street, company_postal_code, company_city,
+           company_tax_number, company_vat_id, logo_version_id
+         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          RETURNING id`,
         [
           register_id, receiptNumber, note ?? null, receiptToken,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+          companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
+          companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
+          companySnapshot.logoVersionId,
         ],
       );
       const invoiceId = invoiceResult.rows[0]!.id;
 
       // One row per cancelled unit, mirroring the sales-receipt convention.
-      // status='paid' is intentional — the invoice's `receipt_type='cancellation'`
-      // is what gives the rows their negative effect in `computeClosingTotals`.
+      // status='paid' is intentional — it's what makes the row count toward
+      // total_gross/total_cash in `computeClosingTotals`, exactly like a
+      // normal sale. price/deposit_price are negated (D-068, see the module
+      // doc comment above) — the reversal of the article's current
+      // master-data price, regardless of that price's own sign.
       for (const it of items) {
         const article = articleById.get(it.article_id)!;
         const displayName = article.name;
+        const articleTaxRate = percentFor(article.tax_category, taxRates);
+        const negatedPrice = -Number(article.price);
+        const negatedDeposit = article.deposit_price === null ? null : -Number(article.deposit_price);
+        const depositTaxRate = negatedDeposit !== null && negatedDeposit !== 0 ? taxRates.standard : null;
         for (let i = 0; i < it.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (
                invoice_id, register_id, article_id,
-               article_name, article_category_name, tax_rate, price, deposit_price,
-               status, cancellation_reason_id, cancelled_by, cancelled_at
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'paid', $9, $10, now())`,
+               article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
+               status, cancellation_reason_id, cancellation_reason_name, cancelled_by_name, cancelled_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'paid', $11, $12, $13, now())`,
             [
               invoiceId, register_id, article.id,
               displayName, article.category_name,
-              article.tax_rate, article.price, article.deposit_price,
-              cancellation_reason_id, req.adminUser.id,
+              articleTaxRate, article.tax_category, negatedPrice, negatedDeposit, depositTaxRate,
+              cancellation_reason_id, reason.name, req.adminUser.name,
             ],
           );
         }

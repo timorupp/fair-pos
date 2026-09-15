@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { computeClosingTotals, type ClosingInvoice, type ClosingItem } from './totals.js';
 
 const item = (overrides: Partial<ClosingItem> = {}): ClosingItem => ({
-  status: 'paid', tax_rate: 19, price: 5, deposit_price: null, ...overrides,
+  status: 'paid', tax_category: 'standard', price: 5, deposit_price: null, ...overrides,
 });
 
 const invoice = (overrides: Partial<ClosingInvoice> = {}): ClosingInvoice => ({
@@ -15,7 +15,8 @@ describe('computeClosingTotals', () => {
     const t = computeClosingTotals([]);
     expect(t).toEqual({
       total_gross: 0, total_tax_standard: 0, total_tax_reduced: 0, total_tax_zero: 0,
-      total_cash: 0, total_cancellations: 0, is_zero_closing: true,
+      total_cash: 0, total_bonstorno: 0, total_free: 0, total_order_cancellations: 0,
+      is_zero_closing: true,
     });
   });
 
@@ -26,12 +27,12 @@ describe('computeClosingTotals', () => {
     expect(t.total_gross).toBe(8);
   });
 
-  it('buckets gross by tax rate (19 → standard, 7 → reduced, 0 → zero)', () => {
+  it('buckets gross by tax category (standard/reduced/zero)', () => {
     const t = computeClosingTotals([invoice({
       items: [
-        item({ price: 10, tax_rate: 19 }),
-        item({ price: 4,  tax_rate: 7 }),
-        item({ price: 2,  tax_rate: 0 }),
+        item({ price: 10, tax_category: 'standard' }),
+        item({ price: 4,  tax_category: 'reduced' }),
+        item({ price: 2,  tax_category: 'zero' }),
       ],
     })]);
     expect(t.total_tax_standard).toBe(10);
@@ -54,16 +55,45 @@ describe('computeClosingTotals', () => {
     expect(t.total_gross).toBe(-1);
   });
 
-  it('excludes cancelled and free items from total_gross, adds them to total_cancellations', () => {
+  it('buckets a deposit into total_tax_standard even when the article itself is reduced (Task #113 — Pfand unterliegt immer dem Regelsteuersatz)', () => {
+    const t = computeClosingTotals([invoice({
+      items: [item({ price: 4, tax_category: 'reduced', deposit_price: 2 })],
+    })]);
+    expect(t.total_tax_reduced).toBe(4);
+    expect(t.total_tax_standard).toBe(2);
+    expect(t.total_gross).toBe(6);
+  });
+
+  it('buckets a deposit into total_tax_standard even when the article itself is zero-rated', () => {
+    const t = computeClosingTotals([invoice({
+      items: [item({ price: 0, tax_category: 'zero', deposit_price: 2 })],
+    })]);
+    expect(t.total_tax_zero).toBe(0);
+    expect(t.total_tax_standard).toBe(2);
+  });
+
+  it('excludes free items from total_gross, adds them to total_free', () => {
     const t = computeClosingTotals([invoice({
       items: [
         item({ price: 5, status: 'paid' }),
-        item({ price: 3, status: 'cancelled' }),
         item({ price: 2, status: 'free' }),
       ],
     })]);
     expect(t.total_gross).toBe(5);
-    expect(t.total_cancellations).toBe(5);
+    expect(t.total_free).toBe(2);
+    expect(t.total_order_cancellations).toBe(0);
+  });
+
+  it('excludes cancelled items from total_gross, adds them to total_order_cancellations (D-068 — separate from total_free)', () => {
+    const t = computeClosingTotals([invoice({
+      items: [
+        item({ price: 5, status: 'paid' }),
+        item({ price: 3, status: 'cancelled' }),
+      ],
+    })]);
+    expect(t.total_gross).toBe(5);
+    expect(t.total_order_cancellations).toBe(3);
+    expect(t.total_free).toBe(0);
   });
 
   it('counts cash receipts toward total_cash', () => {
@@ -74,20 +104,31 @@ describe('computeClosingTotals', () => {
     expect(t.total_cash).toBe(10);
   });
 
-  it('subtracts cancellation-invoice grosses from total_cash', () => {
+  it('a Bonstorno\'s already-negative price reduces total_cash and total_gross, with no receipt_type-based flip (D-068)', () => {
     const t = computeClosingTotals([
-      invoice({ id: 'a', payment_method: 'cash', receipt_type: 'sales_receipt',  items: [item({ price: 10 })] }),
-      invoice({ id: 'b', payment_method: 'cash', receipt_type: 'cancellation',   items: [item({ price: 3 })] }),
+      invoice({ id: 'a', payment_method: 'cash', receipt_type: 'sales_receipt', items: [item({ price: 10 })] }),
+      invoice({ id: 'b', payment_method: 'cash', receipt_type: 'cancellation', items: [item({ price: -3 })] }),
     ]);
     expect(t.total_cash).toBe(7);
+    expect(t.total_gross).toBe(7);
   });
 
-  it('does not include cancellation-invoice items in total_gross', () => {
+  it('reports the Bonstorno share separately via total_bonstorno, without it being a separate additive total', () => {
     const t = computeClosingTotals([
-      invoice({ id: 'a', receipt_type: 'sales_receipt', items: [item({ price: 10 })] }),
-      invoice({ id: 'b', receipt_type: 'cancellation',  items: [item({ price: 3 })] }),
+      invoice({ id: 'a', payment_method: 'cash', receipt_type: 'sales_receipt', items: [item({ price: 10 })] }),
+      invoice({ id: 'b', payment_method: 'cash', receipt_type: 'cancellation', items: [item({ price: -3 })] }),
+    ]);
+    expect(t.total_bonstorno).toBe(-3);
+    expect(t.total_gross).toBe(7); // 10 + (-3), not 10 with -3 reported on top
+  });
+
+  it('excludes training invoices entirely from every total (Task #130 — no effect on the Kassenabschluss)', () => {
+    const t = computeClosingTotals([
+      invoice({ id: 'a', payment_method: 'cash', receipt_type: 'sales_receipt', items: [item({ price: 10 })] }),
+      invoice({ id: 'b', payment_method: 'cash', receipt_type: 'training', items: [item({ price: 100 })] }),
     ]);
     expect(t.total_gross).toBe(10);
+    expect(t.total_cash).toBe(10);
   });
 
   it('flags is_zero_closing only when every total is exactly zero', () => {
@@ -96,14 +137,6 @@ describe('computeClosingTotals', () => {
     expect(computeClosingTotals([invoice({ items: [item({ price: 1 })] })]).is_zero_closing).toBe(false);
     expect(computeClosingTotals([invoice({ items: [item({ price: 0, status: 'cancelled' })] })])
       .is_zero_closing).toBe(true); // both totals zero
-  });
-
-  it('classifies a non-standard rate like 10,7 % into the reduced bucket', () => {
-    const t = computeClosingTotals([invoice({
-      items: [item({ price: 5, tax_rate: 10.7 })],
-    })]);
-    expect(t.total_tax_reduced).toBe(5);
-    expect(t.total_tax_standard).toBe(0);
   });
 
   it('rounds aggregated totals to the cent', () => {

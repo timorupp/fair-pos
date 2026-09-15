@@ -4,9 +4,10 @@ import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { loadReceiptById, loadReceiptByToken } from '../../receipt/data.js';
-import { buildReceiptEscPos } from '../../receipt/escpos-receipt.js';
+import { buildReceiptBlocks } from '../../receipt/blocks.js';
 import { renderReceiptPdf } from '../../receipt/pdf.js';
 import { enqueuePrintJob } from '../../print/enqueue.js';
+import { renderBlocksToEscPos } from '../../print/blocks.js';
 import { resolvePrinterForRegister } from '../../print/resolve-printer.js';
 
 /**
@@ -20,7 +21,8 @@ export async function invoicesAdminRoute(app: FastifyInstance): Promise<void> {
   /**
    * POST /api/admin/invoices/:id/reprint — re-queues a print job for an already
    * existing invoice. Used when the operator missed the original print (offline
-   * printer, accidental "scanned" click, customer wants a paper copy after all).
+   * printer, accidental "Kunde wünscht keinen Beleg" click, customer wants a
+   * paper copy after all).
    *
    * Returns 400 when the register that produced the invoice has no assigned
    * printer — there is nowhere to send it.
@@ -44,18 +46,19 @@ export async function invoicesAdminRoute(app: FastifyInstance): Promise<void> {
     const data = await loadReceiptByToken(inv.receipt_token);
     if (!data) return reply.status(404).send({ error: 'Rechnungsdaten nicht ladbar' });
 
-    const bytes = buildReceiptEscPos(data);
-    const job = await enqueuePrintJob(printerId, 'receipt', bytes, id);
+    const blocks = await buildReceiptBlocks(data);
+    const job = await enqueuePrintJob(printerId, 'receipt', renderBlocksToEscPos(blocks), blocks, id);
     return reply.send({ print_job_id: job.id });
   });
 
   /**
    * GET /api/admin/invoices/:id/pdf — renders the receipt as PDF for the admin
-   * UI (reports table, print-queue preview). Independent from the public
-   * `/receipt/:token` endpoint, which exists for customers (QR-code link,
-   * possibly served through an external reverse proxy) and which authorises
-   * via the unguessable token. Here we use the invoice id and rely on the
-   * admin session for access control.
+   * UI (reports table, print-queue preview). Uses the invoice id and relies on
+   * the admin session for access control. (The public, unauthenticated
+   * `/receipt/:token` customer-facing endpoint this once paralleled was
+   * removed — Task #100, 2026-09-01 — but `receipt_token` itself and
+   * `loadReceiptByToken` stay, still used internally by this route and by
+   * `admin/reports.ts`/`admin/cancellations.ts`.)
    */
   app.get<{ Params: { id: string } }>('/:id/pdf', async (req, reply) => {
     const data = await loadReceiptById(req.params.id);

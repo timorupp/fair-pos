@@ -73,7 +73,11 @@ async function saveSettings(settings: {
   }
 }
 
-/** Registers `/api/admin/dns-config` routes. */
+/**
+ * Registers `/api/admin/dns-config` routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function dnsConfigAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

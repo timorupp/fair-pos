@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';
   import { copyToClipboard } from '$lib/clipboard';
-  import Modal from '$lib/components/Modal.svelte';
+  import { adminUser } from '$lib/stores/user';
 
   // ── Read-only system status ────────────────────────────────────────────────
   let systemSerial = $state('');
@@ -11,13 +11,6 @@
   let statusLoading = $state(true);
   let statusError = $state('');
   let tick = $state(0); // re-renders the clock every second by changing a reactive dependency
-
-  // ── Editable settings (server_address) ──
-  let settings: Record<string, string> = $state({});
-  let editableLoading = $state(true);
-  let saving = $state(false);
-  let saveError = $state('');
-  let saveSuccess = $state(false);
 
   // ── Manual system-time set (Task #60) — the TSE syncs its clock against
   // this server's system time, and the register can run fully offline, so
@@ -38,20 +31,10 @@
   let setTimezoneError = $state('');
   let setTimezoneSuccess = $state(false);
 
-  // ── Server-Adresse test preview ── mirrors the normalization rule the
-  // backend applies in receipt/qr.ts (buildReceiptQrUrl) — keep both in sync.
-  let addressTestOpen = $state(false);
-  let addressTestUrl = $derived.by(() => {
-    const value = settings['server_address']?.trim();
-    if (!value) return '';
-    const base = /^https?:\/\//i.test(value) ? value.replace(/\/+$/, '') : `http://${value}`;
-    return `${base}/`;
-  });
-
   let clockTimer: ReturnType<typeof setInterval> | null = null;
 
   onMount(async () => {
-    await Promise.all([loadStatus(), loadSettings()]);
+    await loadStatus();
     clockTimer = setInterval(() => { tick++; }, 1000);
   });
 
@@ -68,27 +51,6 @@
     } catch (e) {
       statusError = e instanceof Error ? e.message : 'Fehler';
     } finally { statusLoading = false; }
-  }
-
-  async function loadSettings() {
-    editableLoading = true;
-    try {
-      settings = await api.admin.settings.get();
-    } catch (e) {
-      saveError = e instanceof Error ? e.message : 'Fehler';
-    } finally { editableLoading = false; }
-  }
-
-  async function save() {
-    saveError = ''; saveSuccess = false; saving = true;
-    try {
-      await api.admin.settings.save({
-        server_address: settings['server_address'] ?? '',
-      });
-      saveSuccess = true;
-    } catch (e) {
-      saveError = e instanceof Error ? e.message : 'Fehler';
-    } finally { saving = false; }
   }
 
   /** Returns the current wall-clock time, advanced from the server baseline by the elapsed `tick` seconds. */
@@ -134,22 +96,6 @@
     } catch (e) {
       setTimezoneError = e instanceof Error ? e.message : 'Fehler';
     } finally { settingTimezone = false; }
-  }
-
-  // ── Shutdown (Task #61) ──
-  let shuttingDown = $state(false);
-  let shutdownError = $state('');
-
-  async function requestShutdown() {
-    if (!confirm('Server jetzt wirklich herunterfahren? Das beendet den laufenden Kassenbetrieb sofort und der Server muss vor Ort wieder eingeschaltet werden.')) return;
-    shutdownError = ''; shuttingDown = true;
-    try {
-      await api.admin.system.shutdown();
-      // No further UI update expected — the server is going down.
-    } catch (e) {
-      shutdownError = e instanceof Error ? e.message : 'Fehler';
-      shuttingDown = false;
-    }
   }
 
   function copySerial() {
@@ -232,84 +178,21 @@
     {/if}
   </section>
 
-  <!-- Server address (editable) ──────────────────────────────────────────────── -->
-  <section class="card">
-    <h2>Server-Adresse (QR-Code)</h2>
-    <p class="hint">
-      Lokale Netzwerkadresse des Servers. Wird in den QR-Code des Kassenbons eingebettet —
-      Kunden im selben WLAN scannen und sehen ihren Bon als PDF. Am besten mit Protokoll angeben
-      (<code>http://</code> oder <code>https://</code>) — welches Protokoll der Server tatsächlich
-      spricht, weißt du als Admin am besten. Ohne Angabe wird <code>http://</code> angenommen.
-    </p>
-    {#if editableLoading}
-      <p class="muted">Lade…</p>
-    {:else}
-      <div class="field">
-        <input
-          value={settings['server_address'] ?? ''}
-          oninput={(e) => { settings['server_address'] = e.currentTarget.value; saveSuccess = false; }}
-          placeholder="z. B. http://192.168.1.10 oder https://fairpos.local"
-          disabled={saving}
-        />
-      </div>
-      <button class="btn-ghost" onclick={() => (addressTestOpen = true)} disabled={!addressTestUrl}>
-        Testen
-      </button>
-    {/if}
-  </section>
-
-  <!-- Manual database backup ───────────────────────────────────────────────── -->
-  <section class="card">
-    <h2>Datenbank-Backup</h2>
-    <p class="hint">
-      Kein automatisches Backup — der Server läuft nicht 24/7, ein zeitbasierter
-      Trigger würde regelmäßig verpasst. Stattdessen jederzeit auf Abruf: lädt ein
-      vollständiges Datenbank-Backup als ZIP herunter (z. B. direkt nach dem
-      Tagesabschluss, vor Updates, oder um es auf einen externen Datenträger
-      mitzunehmen).
-    </p>
-    <a class="btn-primary" href={api.admin.backup.downloadUrl()}>Backup herunterladen</a>
-  </section>
-
-  <!-- Shutdown ───────────────────────────────────────────────────────────────── -->
-  <section class="card">
-    <h2>Server herunterfahren</h2>
-    <p class="hint">
-      Fährt den Server kontrolliert herunter, ohne dass jemand dafür auf die Shell muss.
-      Danach muss der Server vor Ort wieder eingeschaltet werden.
-    </p>
-    <button class="btn-ghost danger" onclick={requestShutdown} disabled={shuttingDown}>
-      {shuttingDown ? 'Fährt herunter…' : 'Server herunterfahren'}
-    </button>
-    {#if shutdownError}<p class="error-text">{shutdownError}</p>{/if}
-  </section>
-
-  {#if saveError}<p class="error-text">{saveError}</p>{/if}
-  {#if saveSuccess}<p class="success-text">Gespeichert.</p>{/if}
-
-  <div class="form-footer">
-    <button class="btn-primary" onclick={save} disabled={saving || editableLoading}>
-      {saving ? 'Speichern…' : 'Speichern'}
-    </button>
-  </div>
+  {#if $adminUser?.is_admin}
+    <!-- Manual database backup ───────────────────────────────────────────────── -->
+    <section class="card">
+      <h2>Datenbank-Backup</h2>
+      <p class="hint">
+        Kein automatisches Backup — der Server läuft nicht 24/7, ein zeitbasierter
+        Trigger würde regelmäßig verpasst. Stattdessen jederzeit auf Abruf: lädt ein
+        vollständiges Datenbank-Backup als ZIP herunter (z. B. direkt nach dem
+        Tagesabschluss, vor Updates, oder um es auf einen externen Datenträger
+        mitzunehmen).
+      </p>
+      <a class="btn-primary" href={api.admin.backup.downloadUrl()}>Backup herunterladen</a>
+    </section>
+  {/if}
 </div>
-
-<Modal bind:open={addressTestOpen} title="Server-Adresse testen">
-  <div class="token-box">
-    <p class="muted">
-      Mit dem Handy im selben WLAN scannen — landest du auf der FairPOS-Startseite, ist die Adresse korrekt.
-    </p>
-    {#if addressTestUrl}
-      <img class="token-qr" src="/api/admin/qr.png?data={encodeURIComponent(addressTestUrl)}&size=320" alt="QR-Code zum Testen der Server-Adresse" />
-    {/if}
-    <code class="token-url">{addressTestUrl}</code>
-    <div class="modal-actions">
-      <button class="btn-ghost" onclick={() => (addressTestOpen = false)}>Schließen</button>
-      <button class="btn-ghost" onclick={() => window.open(addressTestUrl, '_blank')}>In neuem Tab öffnen</button>
-      <button class="btn-primary" onclick={() => copyToClipboard(addressTestUrl)}>Link kopieren</button>
-    </div>
-  </div>
-</Modal>
 
 <style>
   .card {
@@ -343,17 +226,4 @@
   .set-time-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
   .set-time-row input, .set-time-row select { width: auto; max-width: 260px; flex: 0 0 auto; }
   .success-text { color: #4caf7d; font-size: 0.875rem; }
-  .form-footer { max-width: 640px; padding-top: 0.5rem; }
-
-  .token-box { display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
-  .token-qr {
-    align-self: center; width: 220px; height: 220px;
-    background: white; padding: 0.5rem; border-radius: var(--radius-sm);
-  }
-  .token-url {
-    display: block; padding: 0.75rem;
-    background: var(--color-surface-2); border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm); font-size: 0.8rem;
-    word-break: break-all; color: var(--color-text);
-  }
 </style>

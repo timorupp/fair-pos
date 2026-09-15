@@ -1,6 +1,7 @@
 /** Integration tests for DELETE /api/admin/registers/:id — see Task #54. */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import { createTestRegister, createTestUser } from '../../test/fixtures.js';
@@ -83,5 +84,283 @@ describe('register.is_active (Task #55)', () => {
 
     const stillThere = await pool.query('SELECT is_active FROM register WHERE id = $1', [register.id]);
     expect(stillThere.rows[0]?.is_active).toBe(false);
+  });
+});
+
+describe('register scoped to the active event (Task #95)', () => {
+  it('GET only shows registers of the active event', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    await createTestRegister({ name: 'Fremd', eventId: otherEvent.rows[0]!.id });
+    await createTestRegister({ name: 'Eigen' });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/registers',
+      headers: { cookie: adminCookie },
+    });
+    const names = (response.json() as { name: string }[]).map((r) => r.name);
+    expect(names).toEqual(['Eigen']);
+  });
+
+  it('does not get, update or delete a register belonging to a different event (404)', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreign = await createTestRegister({ eventId: otherEvent.rows[0]!.id });
+
+    const app = await getTestApp();
+    const getResponse = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${foreign.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(getResponse.statusCode).toBe(404);
+
+    const putResponse = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${foreign.id}`,
+      headers: { cookie: adminCookie },
+      payload: { name: 'Umbenannt' },
+    });
+    expect(putResponse.statusCode).toBe(404);
+
+    const deleteResponse = await app.inject({
+      method: 'DELETE', url: `/api/admin/registers/${foreign.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(deleteResponse.statusCode).toBe(404);
+  });
+
+  it('rejects a register referencing a layout from a different event', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreignLayout = await pool.query<{ id: string }>(
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('Fremd', 4, 4, $1) RETURNING id`,
+      [otherEvent.rows[0]!.id],
+    );
+
+    const app = await getTestApp();
+    const createResponse = await app.inject({
+      method: 'POST', url: '/api/admin/registers',
+      headers: { cookie: adminCookie },
+      payload: { name: 'K1', type: 'receipt_register', layout_id: foreignLayout.rows[0]!.id },
+    });
+    expect(createResponse.statusCode).toBe(400);
+
+    const register = await createTestRegister();
+    const updateResponse = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { layout_id: foreignLayout.rows[0]!.id },
+    });
+    expect(updateResponse.statusCode).toBe(400);
+  });
+});
+
+describe('register.is_training (Task #130)', () => {
+  it('creates a register non-training by default, has_bookings false', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/registers',
+      headers: { cookie: adminCookie },
+      payload: { name: 'K1', type: 'receipt_register' },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().is_training).toBe(false);
+
+    const getResponse = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${response.json().id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(getResponse.json().has_bookings).toBe(false);
+  });
+
+  it('toggles is_training freely while the register has no bookings', async () => {
+    const register = await createTestRegister();
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: true },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().is_training).toBe(true);
+
+    const back = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: false },
+    });
+    expect(back.statusCode).toBe(200);
+    expect(back.json().is_training).toBe(false);
+  });
+
+  it('rejects toggling is_training once the register has a booking (invoice)', async () => {
+    const register = await createTestRegister({ isTraining: true });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method)
+       VALUES ($1, 1, 'training', 'cash')`,
+      [register.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: false },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatch(/Trainingsmodus/);
+
+    const stillTraining = await pool.query<{ is_training: boolean }>(
+      'SELECT is_training FROM register WHERE id = $1', [register.id],
+    );
+    expect(stillTraining.rows[0]?.is_training).toBe(true);
+  });
+
+  it('rejects toggling is_training once the register has a booking (service_order)', async () => {
+    const register = await createTestRegister({ type: 'service_register' });
+    await pool.query(
+      `INSERT INTO service_order (register_id) VALUES ($1)`,
+      [register.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: true },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects toggling is_training once the register has a booking (order_cancellation)', async () => {
+    const register = await createTestRegister();
+    const reason = await pool.query<{ id: string }>(
+      `INSERT INTO cancellation_reason (name, booking_type, event_id) VALUES ('Testgrund', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
+    );
+    await pool.query(
+      `INSERT INTO order_cancellation (register_id, cancellation_reason_id, cancellation_reason_name)
+       VALUES ($1, $2, 'Testgrund')`,
+      [register.id, reason.rows[0]!.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: true },
+    });
+    expect(response.statusCode).toBe(400);
+
+    const detail = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(detail.json().has_bookings).toBe(true);
+  });
+
+  it('does not reject re-sending the current, unchanged is_training value even once the register has a booking (no-op resave precedent)', async () => {
+    const register = await createTestRegister({ isTraining: true });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method)
+       VALUES ($1, 1, 'training', 'cash')`,
+      [register.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { is_training: true, name: 'Umbenannt' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().is_training).toBe(true);
+    expect(response.json().name).toBe('Umbenannt');
+  });
+});
+
+describe('GET /api/admin/registers/:id — open since last closing (Task #143, replaces Einlage/Entnahme)', () => {
+  it('reports zero for a register with no invoices at all', async () => {
+    const register = await createTestRegister();
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().open_cash).toBe(0);
+    expect(response.json().open_card).toBe(0);
+  });
+
+  async function insertInvoiceWithItem(
+    registerId: string, receiptNumber: number, paymentMethod: 'cash' | 'card', price: number, dailyClosingId: string | null = null,
+  ): Promise<void> {
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, daily_closing_id)
+       VALUES ($1, $2, 'sales_receipt', $3, $4) RETURNING id`,
+      [registerId, receiptNumber, paymentMethod, dailyClosingId],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', $3, 'paid')`,
+      [inv.rows[0]!.id, registerId, price],
+    );
+  }
+
+  it('sums open (not yet closed) invoices per payment method', async () => {
+    const register = await createTestRegister();
+    await insertInvoiceWithItem(register.id, 1, 'cash', 10);
+    await insertInvoiceWithItem(register.id, 2, 'card', 25);
+    await insertInvoiceWithItem(register.id, 3, 'cash', 5);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().open_cash).toBe(15);
+    expect(response.json().open_card).toBe(25);
+  });
+
+  it('excludes invoices already linked to a daily_closing', async () => {
+    const register = await createTestRegister();
+    const closing = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, false, now()::date, 10, 10, 0, 0, 10, 0, 0, 0) RETURNING id`,
+      [register.id],
+    );
+    await insertInvoiceWithItem(register.id, 1, 'cash', 10, closing.rows[0]!.id); // already closed
+    await insertInvoiceWithItem(register.id, 2, 'cash', 7); // still open
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().open_cash).toBe(7);
+  });
+
+  it('nets a Bonstorno\'s negative price into the open cash total', async () => {
+    const register = await createTestRegister();
+    await insertInvoiceWithItem(register.id, 1, 'cash', 10);
+    const cancellation = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method)
+       VALUES ($1, 2, 'cancellation', 'cash') RETURNING id`,
+      [register.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -4, 'paid')`,
+      [cancellation.rows[0]!.id, register.id],
+    );
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().open_cash).toBe(6); // 10 - 4
   });
 });

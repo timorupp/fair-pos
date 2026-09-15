@@ -8,7 +8,7 @@
   import { page } from '$app/stores';
   import { api } from '$lib/api';
   import { registerUser } from '$lib/stores/user';
-  import { currentRegisterName } from '$lib/stores/page-title';
+  import { currentRegisterName, currentRegisterIsTraining } from '$lib/stores/page-title';
   interface Props {
     children?: import('svelte').Snippet;
   }
@@ -16,6 +16,14 @@
   let { children }: Props = $props();
 
   let checking = $state(true);
+
+  /**
+   * Running app version (Task #148), piggybacked on the same `register/me`
+   * call this layout already makes on mount — no extra request. Display
+   * position (topbar) is an explicit prototype (Nutzervorgabe 2026-09-15):
+   * to be confirmed/adjusted after live testing on production hardware.
+   */
+  let appVersion = $state('');
   // Hide the "Kasse wechseln" button on the register-picker page itself —
   // there is nothing to switch back to from there.
   let onRegisterPicker = $derived($page.url.pathname === '/register');
@@ -27,6 +35,7 @@
     try {
       const user = await api.auth.register.me();
       registerUser.set(user);
+      appVersion = user.version;
     } catch {
       // No valid session → back to the login page.
       goto('/login');
@@ -43,6 +52,7 @@
 <div class="shell">
   <header class="topbar">
     <div class="brand"><img class="brand-icon" src="/fairpos-icon.svg" alt="" width="18" height="18" /> FairPOS</div>
+    {#if appVersion}<span class="version">v{appVersion}</span>{/if}
     <div class="spacer"></div>
     {#if $registerUser}
       <span class="user-name">{$registerUser.name}</span>
@@ -51,6 +61,14 @@
       {/if}
     {/if}
   </header>
+
+  {#if !checking && $currentRegisterIsTraining}
+    <!-- Task #130: persistent, unmissable — coexists with normal operation
+         (unlike the full-screen "locked" state), so an operator can never
+         lose track of working on a training register while navigating the
+         Bonkasse/Bedienungskasse sub-pages. -->
+    <div class="training-banner">T R A I N I N G — diese Kasse bucht nicht real, keine echte Zahlung</div>
+  {/if}
 
   {#if checking}
     <p class="muted center">Prüfe Sitzung…</p>
@@ -70,11 +88,26 @@
   .brand-icon { width: 18px; height: 18px; flex-shrink: 0; }
   .spacer { flex: 1; }
   .user-name { font-size: 0.85rem; color: var(--color-text-muted); }
+  /* Task #148 — prototype placement, see doc comment above appVersion in the script block. */
+  .version { font-size: 0.7rem; color: var(--color-text-muted); opacity: 0.7; }
   .icon-btn {
     width: 44px; height: 44px; padding: 0; font-size: 1.3rem;
     display: flex; align-items: center; justify-content: center;
   }
   .center { text-align: center; padding: 4rem; }
+
+  /* Task #130 — deliberately louder than the amber Z-Bon-pending banner
+     elsewhere: a training register must never be confusable with a locked
+     real register, so a distinct color (red) is used. */
+  .training-banner {
+    background: #dc262622;
+    border-bottom: 1px solid #dc262688;
+    color: #dc2626;
+    text-align: center;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 0.5rem 1rem;
+  }
 
   /*
    * Base colors for .btn-primary/.btn-ghost — duplicated from

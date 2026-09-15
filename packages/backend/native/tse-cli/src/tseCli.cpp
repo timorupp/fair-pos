@@ -19,6 +19,7 @@
 
 #include <WormDLL/WormDLL.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -54,6 +55,17 @@ int printUsageError(const char *message) {
   std::printf("{\"ok\":false,\"error\":{\"code\":-1,\"message\":\"%s\"}}\n",
               message);
   return 1;
+}
+
+/** Formats a `worm_info_pukBlockingDuration*` value as a JSON number (of
+ * seconds) or `null` when the SDK couldn't read it yet — 0xFFFFFFFF is the
+ * documented sentinel for "self test not passed" (WormDLL.h). Firmware
+ * < 2.0.0 has no PUK-blocking-duration concept and always reports 0 here
+ * (that firmware permanently blocks the PUK after 3 wrong attempts instead —
+ * see docs/TSE-CLI-Referenz.md `unblock` section). */
+std::string jsonUint32OrNull(uint32_t value) {
+  if (value == 0xFFFFFFFFu) return "null";
+  return std::to_string(value);
 }
 
 /** Minimal Base64 encoder, for byte values the CLI reports back to Node
@@ -135,6 +147,38 @@ void printTransactionResult(const WormTransactionResponse *rsp) {
       (unsigned long long)worm_transaction_response_logTime(rsp),
       toHex(signature, signatureLength).c_str(),
       toHex(serial, serialLength).c_str());
+}
+
+/** Human-readable label for a `WormEntryType` — used only by `dumpProcessData`'s
+ * plain-text output, not by any of the JSON-emitting commands. */
+const char *entryTypeName(WormEntryType type) {
+  switch (type) {
+    case WORM_ENTRY_TYPE_TRANSACTION: return "TRANSACTION";
+    case WORM_ENTRY_TYPE_SYSTEM_LOG_MESSAGE: return "SYSTEM_LOG_MESSAGE";
+    case WORM_ENTRY_TYPE_SE_AUDIT_LOG_MESSAGE: return "SE_AUDIT_LOG_MESSAGE";
+    default: return "UNKNOWN";
+  }
+}
+
+/** Writes `processData` bytes to a dump file with control characters
+ * escaped as `\r`/`\n`/`\t` literals. Needed because `Bestellung-V1`
+ * (`tse/processData.ts`'s `buildAvBestellungProcessData`) joins multiple
+ * order lines with a bare `\r` per DSFinV-K Anhang I — written raw, a
+ * terminal/pager renders that `\r` as "cursor back to column 0", visually
+ * overwriting the start of the very line it's part of (id/type/length)
+ * with the second half of the content, looking like data corruption even
+ * though the underlying TSE data is intact. Also guards against a tab or
+ * newline ever appearing in a free-text field (article/Bezeichnung),
+ * which would otherwise be indistinguishable from `dumpProcessData`'s own
+ * column separator. */
+void writeEscaped(std::FILE *f, const unsigned char *data, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    unsigned char c = data[i];
+    if (c == '\r') std::fputs("\\r", f);
+    else if (c == '\n') std::fputs("\\n", f);
+    else if (c == '\t') std::fputs("\\t", f);
+    else std::fputc(c, f);
+  }
 }
 
 // -- command handlers ---------------------------------------------------------
@@ -247,10 +291,26 @@ int cmdFinish(WormContext *ctx, int argc, char **argv) {
  * in the QR-code content (signature algorithm, log-time format, public key —
  * see docs/Rechtliche-Anforderungen.md Abschnitt 6.5/2). These three are
  * fixed per TSE/firmware, not per transaction, so callers can safely cache
- * them instead of re-reading on every receipt. The full certificate chain
- * (`worm_getLogMessageCertificate`, needed only for `tse.csv`'s
- * TSE_ZERTIFIKAT_I/II, not for QR-code verification) is a separate, still
- * open gap — see docs/TSE-Integration.md Abschnitt 11. */
+ * them instead of re-reading on every receipt. Also reads the full
+ * certificate chain (`worm_getLogMessageCertificate`, Task #120) needed for
+ * `tse.csv`'s TSE_ZERTIFIKAT_I/II — per `WormDLL.h`, that function's only
+ * stated precondition is an active CTSS interface (no specific user login,
+ * same precondition class as `worm_export_tar` below, which this project
+ * already calls successfully without logging in first), and on TSE
+ * firmware >= 2.0.0 the CTSS interface is active automatically once the
+ * self-test has passed (`worm_info_isCtssInterfaceActive` — "same as
+ * worm_info_hasPassedSelfTest"). Read tolerantly: on any error, report an
+ * empty chain instead of failing the whole `info` command.
+ *
+ * Also reads the Admin-/TimeAdmin-PUK blocking duration
+ * (`worm_info_pukBlockingDurationAdmin`/`...TimeAdmin`, Task #131
+ * follow-up) — the SDK exposes this as an exponentially growing
+ * time-lock on firmware >= 2.0.0 instead of a fixed retry counter (see the
+ * `unblock` doc comment below), so it's the only passively-readable signal
+ * for "is this PUK currently blocked, and for how much longer". There is
+ * deliberately **no** equivalent PIN-blocked/attempt-count field here — the
+ * SDK has none; the only way to learn a PIN's block state is to actually
+ * attempt a login, which itself consumes a retry attempt. */
 int cmdInfo(WormContext *ctx) {
   WormInfo *info = worm_info_new(ctx);
   if (info == nullptr) return printError(WORM_ERROR_OUTOFMEM, "worm_info_new failed");
@@ -260,12 +320,45 @@ int cmdInfo(WormContext *ctx) {
     return printError(err, "worm_info_read failed");
   }
 
+  // Whether the TSE still needs the one-time `setup` provisioning — read
+  // tolerantly like the certificate chain above: a failure here shouldn't
+  // block the rest of `info`, just leave the field at its safe default
+  // (false, i.e. "assume already set up") since callers only use this to
+  // decide whether to offer the Setup tool at all (Task #131).
+  int needsSetupRaw = 0;
+  worm_tse_needs_setup(ctx, &needsSetupRaw);
+
+  std::string pukBlockAdmin =
+      jsonUint32OrNull(worm_info_pukBlockingDurationAdmin(info));
+  std::string pukBlockTimeAdmin =
+      jsonUint32OrNull(worm_info_pukBlockingDurationTimeAdmin(info));
+
   const unsigned char *serial;
   worm_uint serialLength;
   worm_info_tseSerialNumber(info, &serial, &serialLength);
   const unsigned char *publicKey;
   worm_uint publicKeyLength;
   worm_info_tsePublicKey(info, &publicKey, &publicKeyLength);
+
+  // Certificate chain (TSE_ZERTIFIKAT_I/II, tse.csv Anhang E). See the
+  // function doc comment above for why no user login is attempted here.
+  // Two-call pattern per WormDLL.h: first with a NULL buffer to learn the
+  // required length, then again with an allocated buffer of that size.
+  std::string certificateChainB64;
+  {
+    uint32_t certLen = 0;
+    WormError certErr = worm_getLogMessageCertificate(ctx, nullptr, &certLen);
+    if (certErr == WORM_ERROR_NOERROR && certLen > 0) {
+      std::vector<unsigned char> certBuf(certLen);
+      certErr = worm_getLogMessageCertificate(ctx, certBuf.data(), &certLen);
+      if (certErr == WORM_ERROR_NOERROR) {
+        certificateChainB64 = base64Encode(certBuf.data(), certLen);
+      }
+    }
+    // Any failure (CTSS not active yet, unsupported firmware, ...) leaves
+    // certificateChainB64 empty rather than aborting the whole `info` call —
+    // the other fields remain valid and useful on their own.
+  }
 
   std::printf(
       "{\"ok\":true,\"result\":{"
@@ -283,7 +376,11 @@ int cmdInfo(WormContext *ctx) {
       "\"tseSerialNumber\":\"%s\","
       "\"signatureAlgorithm\":\"%s\","
       "\"logTimeFormat\":\"%s\","
-      "\"publicKey\":\"%s\""
+      "\"publicKey\":\"%s\","
+      "\"certificateChain\":\"%s\","
+      "\"needsSetup\":%s,"
+      "\"pukBlockingDurationAdminSeconds\":%s,"
+      "\"pukBlockingDurationTimeAdminSeconds\":%s"
       "}}\n",
       worm_info_hasPassedSelfTest(info) ? "true" : "false",
       worm_info_hasValidTime(info) ? "true" : "false",
@@ -295,7 +392,11 @@ int cmdInfo(WormContext *ctx) {
       worm_info_tseCertificationId(info), worm_info_formFactor(info),
       toHex(serial, serialLength).c_str(),
       worm_signatureAlgorithm(), worm_logTimeFormat(),
-      base64Encode(publicKey, publicKeyLength).c_str());
+      base64Encode(publicKey, publicKeyLength).c_str(),
+      certificateChainB64.c_str(),
+      needsSetupRaw ? "true" : "false",
+      pukBlockAdmin.c_str(),
+      pukBlockTimeAdmin.c_str());
 
   worm_info_free(info);
   return 0;
@@ -323,12 +424,173 @@ int cmdExportTar(WormContext *ctx, int argc, char **argv) {
   return 0;
 }
 
+/** `factoryReset` — resets a *development-firmware* TSE to factory default
+ * (empties the TSE Store, resets PUK/all PINs, drops client registration).
+ * Not called by FairPOS itself — admin-only, for resetting a dev/test TSE
+ * between test cycles. `worm_tse_factoryReset` only works on development
+ * firmware by design and simply fails on a real/production TSE, so there is
+ * no separate safety check here — see docs/TSE-CLI-Referenz.md section 4.1. */
+int cmdFactoryReset(WormContext *ctx, int argc, char **argv) {
+  (void)argv;
+  if (argc != 0) return printUsageError("factoryReset takes no arguments");
+  WormError err = worm_tse_factoryReset(ctx);
+  if (err != WORM_ERROR_NOERROR) return printError(err, "worm_tse_factoryReset failed");
+  std::printf("{\"ok\":true,\"result\":{}}\n");
+  return 0;
+}
+
+/** `unblock <user: admin|timeAdmin> <puk> <newPin>` — resets a blocked Admin
+ * or TimeAdmin PIN via `worm_user_unblock`. Requires the current PUK for
+ * that user (per `WormDLL.h`: on firmware < 2.0.0 this must always be the
+ * Admin PUK, even to unblock TimeAdmin; on firmware >= 2.0.0 the TimeAdmin
+ * PUK is set identically to the Admin PUK during `setup`, so either works
+ * there too). Reports `remainingRetries` in the error response on a failed
+ * attempt (wrong PUK) — the SDK only sets it in that case — so the caller
+ * can warn before the PUK itself gets blocked (Task #131). */
+int cmdUnblock(WormContext *ctx, int argc, char **argv) {
+  if (argc != 3) return printUsageError("unblock needs 3 arguments");
+  std::string userArg(argv[0]), puk(argv[1]), newPin(argv[2]);
+
+  WormUserId user;
+  if (userArg == "admin") user = WORM_USER_ADMIN;
+  else if (userArg == "timeAdmin") user = WORM_USER_TIME_ADMIN;
+  else return printUsageError("unblock: first argument must be \"admin\" or \"timeAdmin\"");
+
+  int remainingRetries = -1;
+  WormError err = worm_user_unblock(
+      ctx, user,
+      (const unsigned char *)puk.data(), (int)puk.size(),
+      (const unsigned char *)newPin.data(), (int)newPin.size(),
+      &remainingRetries);
+  if (err != WORM_ERROR_NOERROR) {
+    std::printf(
+        "{\"ok\":false,\"error\":{\"code\":%d,\"message\":\"worm_user_unblock failed\",\"remainingRetries\":%d}}\n",
+        (int)err, remainingRetries);
+    return 1;
+  }
+
+  std::printf("{\"ok\":true,\"result\":{}}\n");
+  return 0;
+}
+
+/** `deleteStoredData <adminPin> <exportFile>` — deletes all TSE-stored log
+ * data. Not called by FairPOS itself — admin-only, for the rare case the
+ * TSE store actually fills up (see TASKS.md Task #103, "bewusst nicht
+ * umgesetzt"). Follows the exact sequence WormDLL.h documents as required:
+ * login as Admin, set the time, perform a full (unfiltered) export, only
+ * then delete — setting the time after exporting would itself create a new,
+ * not-yet-exported log entry that blocks the deletion. Aborts without
+ * deleting anything if the export step fails. See
+ * docs/TSE-CLI-Referenz.md section 4.2 for the full rationale. */
+int cmdDeleteStoredData(WormContext *ctx, int argc, char **argv) {
+  if (argc != 2) return printUsageError("deleteStoredData needs 2 arguments");
+  std::string adminPin(argv[0]);
+  const char *exportFile = argv[1];
+
+  int retries = 0;
+  WormError err = worm_user_login(ctx, WORM_USER_ADMIN,
+                                  (const unsigned char *)adminPin.data(),
+                                  (int)adminPin.size(), &retries);
+  if (err != WORM_ERROR_NOERROR) return printError(err, "Admin login failed");
+
+  err = worm_tse_updateTime(ctx, (worm_uint)time(nullptr));
+  if (err != WORM_ERROR_NOERROR) {
+    worm_user_logout(ctx, WORM_USER_ADMIN);
+    return printError(err, "worm_tse_updateTime failed");
+  }
+
+  std::FILE *f = std::fopen(exportFile, "wb");
+  if (f == nullptr) {
+    worm_user_logout(ctx, WORM_USER_ADMIN);
+    return printUsageError("failed to open export file");
+  }
+  err = worm_export_tar(ctx, fileWriteCallback, f);
+  std::fclose(f);
+  if (err != WORM_ERROR_NOERROR) {
+    worm_user_logout(ctx, WORM_USER_ADMIN);
+    return printError(err, "worm_export_tar failed (deletion aborted, TSE data unchanged)");
+  }
+
+  err = worm_export_deleteStoredData(ctx);
+  worm_user_logout(ctx, WORM_USER_ADMIN);
+  if (err != WORM_ERROR_NOERROR) return printError(err, "worm_export_deleteStoredData failed");
+
+  std::printf("{\"ok\":true,\"result\":{}}\n");
+  return 0;
+}
+
+/** `dumpProcessData <ausgabedatei>` — admin-only testing helper (TASKS.md
+ * Task #102): walks every entry currently stored on the TSE via
+ * `worm_entry_iterate_*` and writes one tab-separated line per entry
+ * (`id`, entry type, processData length, decoded processData, control
+ * characters escaped — see `writeEscaped`) to `<ausgabedatei>`. Lets an
+ * admin eyeball, during a manual test run, that every expected
+ * receipt/order actually reached the TSE with the right amounts — reads
+ * only `processData` (FairPOS's own DSFinV-K Anhang I wire format, plain
+ * UTF-8 text, see `tse/processData.ts`), never the signed Log Message
+ * envelope itself (undocumented in the vendored SDK headers, see
+ * docs/TSE-Integration.md Abschnitt 11). No login required — reading
+ * entries only fails while *TimeAdmin* is logged in (`WormDLL.h`'s "Export
+ * Changes" notes), which FairPOS never leaves active outside of `maintain`.
+ * Never called by FairPOS itself; deliberately not wired into the
+ * backend/admin UI — see docs/TSE-CLI-Referenz.md section 2. */
+int cmdDumpProcessData(WormContext *ctx, int argc, char **argv) {
+  if (argc != 1) return printUsageError("dumpProcessData needs 1 argument");
+  std::FILE *f = std::fopen(argv[0], "wb");
+  if (f == nullptr) return printUsageError("failed to open output file");
+
+  WormEntry *entry = worm_entry_new(ctx);
+  if (entry == nullptr) {
+    std::fclose(f);
+    return printError(WORM_ERROR_OUTOFMEM, "worm_entry_new failed");
+  }
+
+  WormError err = worm_entry_iterate_first(entry);
+  if (err != WORM_ERROR_NOERROR) {
+    worm_entry_free(entry);
+    std::fclose(f);
+    return printError(err, "worm_entry_iterate_first failed");
+  }
+
+  unsigned int count = 0;
+  std::vector<unsigned char> buf;
+  while (worm_entry_isValid(entry)) {
+    worm_uint len = worm_entry_processDataLength(entry);
+    buf.resize(len);
+    if (len > 0) {
+      WormError readErr = worm_entry_readProcessData(entry, 0, buf.data(), len);
+      if (readErr != WORM_ERROR_NOERROR) {
+        worm_entry_free(entry);
+        std::fclose(f);
+        return printError(readErr, "worm_entry_readProcessData failed");
+      }
+    }
+    std::fprintf(f, "%u\t%s\t%llu\t", worm_entry_id(entry),
+                 entryTypeName(worm_entry_type(entry)), (unsigned long long)len);
+    if (len > 0) writeEscaped(f, buf.data(), len);
+    std::fputc('\n', f);
+    count++;
+
+    err = worm_entry_iterate_next(entry);
+    if (err != WORM_ERROR_NOERROR) {
+      worm_entry_free(entry);
+      std::fclose(f);
+      return printError(err, "worm_entry_iterate_next failed");
+    }
+  }
+
+  worm_entry_free(entry);
+  std::fclose(f);
+  std::printf("{\"ok\":true,\"result\":{\"entries\":%u}}\n", count);
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
   if (argc < 3) {
     return printUsageError(
-        "usage: tseCli <mountPoint> <setup|maintain|start|update|finish|info|exportTar> [args...]");
+        "usage: tseCli <mountPoint> <setup|maintain|start|update|finish|info|exportTar|factoryReset|unblock|deleteStoredData|dumpProcessData> [args...]");
   }
   const char *mountPoint = argv[1];
   std::string command(argv[2]);
@@ -347,6 +609,10 @@ int main(int argc, char **argv) {
   else if (command == "finish") exitCode = cmdFinish(ctx, cmdArgc, cmdArgs);
   else if (command == "info") exitCode = cmdInfo(ctx);
   else if (command == "exportTar") exitCode = cmdExportTar(ctx, cmdArgc, cmdArgs);
+  else if (command == "factoryReset") exitCode = cmdFactoryReset(ctx, cmdArgc, cmdArgs);
+  else if (command == "unblock") exitCode = cmdUnblock(ctx, cmdArgc, cmdArgs);
+  else if (command == "deleteStoredData") exitCode = cmdDeleteStoredData(ctx, cmdArgc, cmdArgs);
+  else if (command == "dumpProcessData") exitCode = cmdDumpProcessData(ctx, cmdArgc, cmdArgs);
   else exitCode = printUsageError("unknown command");
 
   worm_cleanup(ctx);

@@ -11,8 +11,9 @@
 
   type ClosingRow = {
     id: string; z_number: number; created_at: string; business_date: string;
-    is_zero_closing: boolean; total_gross: number; total_cash: number; total_cancellations: number;
-    created_by: string;
+    is_zero_closing: boolean; total_gross: number; total_cash: number;
+    total_bonstorno: number; total_free: number; total_order_cancellations: number;
+    created_by_name: string;
   };
 
   let registers: Register[] = $state([]);
@@ -99,7 +100,7 @@
               <td class="num">{fmt(c.total_gross)} €</td>
               <td class="actions">
                 <a class="btn-ghost" href={api.admin.closings.dsfinvkUrl(c.id)} rel="noopener">ZIP herunterladen</a>
-                {#if c.is_zero_closing}<span class="muted small">Null</span>{/if}
+                {#if c.is_zero_closing}<span class="muted small">Nullabschluss</span>{/if}
               </td>
             </tr>
           {/each}

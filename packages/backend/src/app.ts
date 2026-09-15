@@ -4,12 +4,14 @@
  */
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyCookie from '@fastify/cookie';
+import fastifyHelmet from '@fastify/helmet';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { loadTseSettingsFromDb } from './tse/settings.js';
+import { loadActiveEventFromDb } from './system/activeEvent.js';
 import { healthRoute } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { usersAdminRoute } from './routes/admin/users.js';
@@ -29,7 +31,6 @@ import { exportsAdminRoute } from './routes/admin/exports.js';
 import { invoicesAdminRoute } from './routes/admin/invoices.js';
 import { cancellationsAdminRoute } from './routes/admin/cancellations.js';
 import { logoAdminRoute } from './routes/admin/logo.js';
-import { qrAdminRoute } from './routes/admin/qr.js';
 import { printJobsAdminRoute } from './routes/admin/print-jobs.js';
 import { tseAdminRoute } from './routes/admin/tse.js';
 import { backupAdminRoute } from './routes/admin/backup.js';
@@ -38,7 +39,6 @@ import { sessionsAdminRoute } from './routes/admin/sessions.js';
 import { tlsCertAdminRoute } from './routes/admin/tlsCert.js';
 import { healthChecksAdminRoute } from './routes/admin/healthChecks.js';
 import { dnsConfigAdminRoute } from './routes/admin/dnsConfig.js';
-import { receiptRoutes } from './routes/receipt.js';
 import { registerSessionRoutes } from './routes/register-session.js';
 
 /** Absolute path to the compiled frontend SPA. Resolved relative to dist/. */
@@ -52,14 +52,39 @@ const PUBLIC_DIR = path.join(
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.isDev ? 'info' : 'warn' },
+    // D-077 (2026-09-15, found via live security testing): without this,
+    // `request.ip` is always the TCP peer address — in production that's
+    // nginx's own loopback connection (`proxy_pass http://127.0.0.1:3000`,
+    // see docs/Installationsanleitung.md), identical for every real visitor.
+    // That made auth/rateLimit.ts's per-IP PIN-login lockout a single
+    // *global* bucket shared by every external client — three bad requests
+    // from anyone anywhere locked login out for the whole site, confirmed
+    // live. Scoped to the loopback address (not a blanket `true`) rather
+    // than trusting X-Forwarded-For from any peer, so a client that somehow
+    // reaches this process directly (bypassing nginx) can't spoof its own
+    // IP via that header.
+    trustProxy: '127.0.0.1',
   });
 
   // Overlay `config`'s TSE fields with whatever the admin has configured via
   // the Settings UI, so a DB-stored value always wins over the env-var default.
   await loadTseSettingsFromDb();
+  // The one globally active event (Task #95) — every Veranstaltungs-
+  // Administrator-scoped view operates against it.
+  await loadActiveEventFromDb();
 
   await app.register(fastifyCookie, {
     secret: config.sessionSecret,
+  });
+
+  // D-077 (2026-09-15, live security testing): baseline security headers
+  // (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, etc.)
+  // were missing entirely. `contentSecurityPolicy: false` is deliberate for
+  // now — the SPA's exact script/style-src needs haven't been audited yet,
+  // and shipping an untuned CSP risks silently breaking the live frontend;
+  // see BACKLOG.md for the follow-up task to design a properly scoped one.
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
   });
 
   // Multipart parsing is only needed by the logo-upload endpoint. The plugin
@@ -73,10 +98,6 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Cast needed because decorateRequest expects the declared type, not null.
   app.decorateRequest('adminUser', null as unknown as import('@fairpos/shared').User);
   app.decorateRequest('registerUser', null as unknown as import('@fairpos/shared').User);
-
-  // Public receipt PDF route — registered BEFORE the static-file plugin so the
-  // explicit `/receipt/:token` path is matched ahead of the SPA fallback.
-  await app.register(receiptRoutes);
 
   await app.register(fastifyStatic, {
     root: PUBLIC_DIR,
@@ -106,7 +127,6 @@ export async function buildApp(): Promise<FastifyInstance> {
         await admin.register(invoicesAdminRoute, { prefix: '/invoices' });
         await admin.register(cancellationsAdminRoute, { prefix: '/cancellations' });
         await admin.register(logoAdminRoute, { prefix: '/logo' });
-        await admin.register(qrAdminRoute);
         await admin.register(printJobsAdminRoute, { prefix: '/print-jobs' });
         await admin.register(tseAdminRoute, { prefix: '/tse' });
         await admin.register(backupAdminRoute, { prefix: '/backup' });

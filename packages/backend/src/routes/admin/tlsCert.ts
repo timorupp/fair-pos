@@ -7,7 +7,11 @@ import { installCert, readInstalledCertInfo, validateCertKeyPair } from '../../s
 /** PEM text fields are tiny — this is generous headroom, not a real-world size. */
 const MAX_PEM_LENGTH = 64 * 1024;
 
-/** Registers `/api/admin/tls-cert` routes. */
+/**
+ * Registers `/api/admin/tls-cert` routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function tlsCertAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

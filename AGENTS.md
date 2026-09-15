@@ -34,14 +34,21 @@ kollidieren können (z.B. manche CDDL/EPL-Varianten), und bei jeglicher
 - `docs/SETUP.md` — Technisches Setup, Architektur, Deployment
 - `docs/Installationsanleitung.md` — Schritt-für-Schritt-Produktionsinstallation (native Ubuntu, kein Docker); Automatisierungsskripte in `scripts/install/`
 - `docs/TSE-Integration.md` — TSE-Architekturkonzept (CLI-Subprozess, Vendoring, Lifecycle, aktueller Umsetzungsstand)
+- `docs/TSE-CLI-Referenz.md` — vollständige Befehlsreferenz für `tseCli` zum direkten Kommandozeilen-Aufruf (Setup, Diagnose, Entwickler-TSE-Reset, Rohdaten-Löschung)
 - `docs/Rechtliche-Anforderungen.md` / `docs/Organisatorische-Anleitung.md` — KassenSichV-/GoBD-Vorgaben und Betriebsabläufe
 - `docs/Manueller-Testplan.md` — Checkliste für den manuellen Regressionstest (UI, TSE-Ausfallverhalten, DSFinV-K-Export)
+- `docs/Veranstaltungscheckliste.md` — operative Checkliste pro Veranstaltung (vor/während/nach einem Fair), abzugrenzen von den jährlichen/einmaligen Checklisten in `docs/Organisatorische-Anleitung.md`
 
 **Projekt-Metadateien** (Repo-Root, nicht unter `docs/`):
-- `TASKS.md` — maßgebliche, versionierte Aufgabenliste (ersetzt eine
-  werkzeug-interne, nicht persistente Task-Verwaltung; `Task #<N>`-Verweise
-  im Code lösen hier auf)
-- `DANGER.md` — gefundene Risiken, fragwürdige Designs, Refactoring-Bedarf
+- `BACKLOG.md` — maßgebliche, versionierte Liste offener Tasks (Nutzerwünsche/
+  geplante Arbeit) und Findings (gefundene Risiken, fragwürdige Designs,
+  Refactoring-Bedarf), gemeinsam per `[Task]`/`[Finding]`-Tag (ersetzt eine
+  werkzeug-interne, nicht persistente Task-Verwaltung; `Task #<N>`- und
+  `D-<N>`/`T-<N>`/`DOC-<N>`-Verweise im Code lösen hier oder in
+  `BACKLOG-DONE.md` auf)
+- `BACKLOG-DONE.md` — Archiv erledigter Einträge aus `BACKLOG.md`, gleiches
+  Format, IDs unverändert. Beim Abschließen eines Eintrags: aus `BACKLOG.md`
+  ausschneiden und hierher verschieben (nicht kopieren), inkl. Erledigt-Vermerk
 
 ---
 
@@ -152,6 +159,22 @@ Bei strukturellen Refactors (Spalten umbenennen, Tabellen umbauen): drei
 Schritte in einer Migration — neue Struktur anlegen, Daten migrieren, alte
 Struktur entfernen. So bleiben bestehende Daten erhalten.
 
+### Compliance-Prüfungen gegen offizielle Standards
+
+Beim Prüfen, ob FairPOS (Export-Formate, Datenmodell, Abläufe) einem externen
+Standard entspricht (DSFinV-K, GoBD/GDPdU, KassenSichV, TR-03153 o.ä.):
+**ausschließlich Dokumente von offiziellen Behördenseiten** heranziehen —
+Bundesfinanzministerium (`bundesfinanzministerium.de`), Bundeszentralamt für
+Steuern (`bzst.de`), BSI, Gesetze/Verordnungen im Original. Keine
+Drittanbieter-Spiegelungen (IHK-Seiten, Kassenhersteller-Blogs,
+kassensichv.com o.ä.) als Prüfgrundlage verwenden, selbst wenn der Inhalt
+identisch aussieht — nur die Behördenseite selbst ist maßgeblich und aktuell.
+
+**Warum:** Nur die Behörden-Originalquelle garantiert, dass die aktuellste
+Version geprüft wird und keine (auch unabsichtliche) Abweichung einer
+Spiegelung übersehen wird — bei KassenSichV-relevanten Prüfungen mit
+möglichen Bußgeldfolgen ist das nicht verhandelbar.
+
 ### Git-Workflow (Branches)
 
 **`develop`** ist der Arbeits-Branch — alle laufende Entwicklung passiert
@@ -169,13 +192,49 @@ git commit -m "Release: ..."
 
 Ein Squash-Merge verändert `develop` nicht — die volle Detail-Historie
 bleibt dort für immer erhalten, `master` zeigt dauerhaft nur einen Commit
-pro Release. Der Produktivserver ist auf `master` ausgecheckt und bekommt
-damit nur fertige Release-Stände, nie Zwischenschritte aus `develop`.
+pro Release.
+
+**Der Produktivserver ist bewusst auf `develop` ausgecheckt, nicht auf
+`master`** — er dient laufend als Testumgebung für Zwischenstände direkt
+während der Entwicklung (nicht nur für fertige Releases). `master` ist
+aktuell rein die aufgeräumte, öffentlich sichtbare Historie ohne
+Zwischenschritte.
 
 `master` wurde am 2026-08-30 bewusst als Orphan-Branch neu gestartet (ein
 einziger Commit mit dem damaligen Codestand, keine Elternhistorie) — die
 komplette bisherige Entwicklungsgeschichte bis dahin liegt vollständig in
 `develop`.
+
+### Versionsnummer (Task #148)
+
+FairPOS führt eine Versionsnummer im Format `[Major].[Release].[Build]`
+(z. B. `0.3.17`), gepflegt in der Datei `VERSION` im Repo-Root (einzeilig,
+einfacher Text, kein führendes `v`).
+
+- **Major** — nur durch explizite Entscheidung des Nutzers geändert.
+- **Release** — wird bei jedem Squash-Merge `develop` → `master` (siehe
+  Git-Workflow oben) automatisch um eins erhöht. Ein Release-Stand =
+  ein Merge nach `master`.
+- **Build** — wird bei jedem Commit auf `develop` automatisch erhöht.
+
+**Kaskadierendes Zurücksetzen** (wie bei Semver — ein höherwertiger Bump
+setzt alle niedrigerwertigeren auf 0 zurück):
+- Ein **Major**-Inkrement setzt **Release UND Build** auf 0 zurück.
+- Ein **Release**-Inkrement setzt **Build** auf 0 zurück.
+
+**Durchsetzung:** aktuell reine Konvention, kein Git-Hook — wer committet
+(Mensch oder KI-Agent), pflegt `VERSION` im selben Commit mit. Beim
+Squash-Merge nach `master`: `Release` erhöhen, `Build` auf 0 setzen, bevor
+der Merge-Commit erstellt wird.
+
+**Sichtbarkeit:** `config.ts` liest `VERSION` beim Start des Backends und
+liefert sie über `GET /api/auth/admin/me` und `GET /api/auth/register/me`
+mit aus (kein zusätzlicher Request nötig, beide Layouts rufen ohnehin
+einen davon beim Laden auf). Angezeigt (Stand 2026-09-15, **ausdrücklich
+als Prototyp/experimentell zu behandeln** — Platzierung noch nicht auf
+echter Produktivhardware bestätigt) im Admin-Sidebar-Footer
+(`admin/+layout.svelte`) und in der Kassen-Topbar
+(`register/+layout.svelte`).
 
 ---
 

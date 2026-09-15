@@ -13,10 +13,22 @@ import type {
 import {
   KASSENBELEG_PROCESS_TYPE, BESTELLUNG_PROCESS_TYPE, SONSTIGER_VORGANG_PROCESS_TYPE,
 } from '../../tse/processData.js';
+import { extractLeafCertificateChunks } from './leafCertificate.js';
+import type { TaxCategory } from '@fairpos/shared';
 
-/** Maps a DSFinV-K `BON_TYP` to the literal TSE `processType` FairPOS actually signed it with — these are two distinct vocabularies (see tse/processData.ts), and Anhang E defines `TSE_TA_VORGANGSART` as the latter. */
+/**
+ * Maps a DSFinV-K `BON_TYP` to the literal TSE `processType` FairPOS actually
+ * signed it with — these are two distinct vocabularies (see
+ * tse/processData.ts), and Anhang E defines `TSE_TA_VORGANGSART` as the latter.
+ *
+ * `AVTraining` (Task #130) maps to the same `Kassenbeleg-V1` as `Beleg` —
+ * researched and confirmed against AEAO zu §146a Nr. 2.2.3.5/2.2.3.6 and
+ * DSFinV-K 2.4 Anhang I: a training booking needs no dedicated TSE-hardware
+ * processType, `AVTraining` is purely an export-level `BON_TYP` classification.
+ */
 function tseProcessTypeFor(bonTyp: SourceVorgang['bonTyp']): string {
   if (bonTyp === 'Beleg') return KASSENBELEG_PROCESS_TYPE;
+  if (bonTyp === 'AVTraining') return KASSENBELEG_PROCESS_TYPE;
   if (bonTyp === 'AVBestellung') return BESTELLUNG_PROCESS_TYPE;
   return SONSTIGER_VORGANG_PROCESS_TYPE;
 }
@@ -36,26 +48,50 @@ export interface SourceLineItem {
   articleId: string | null;
   articleName: string;
   categoryName: string;
-  /** Percent, e.g. 19, 7, 0. */
+  /** Percent, e.g. 19, 7, 0 — the article's own rate (excludes any deposit). */
   taxRate: number;
+  /** VAT category `taxRate` belongs to (Task #110) — used for `UST_SCHLUESSEL` instead of re-guessing it from the raw percentage. */
+  taxCategory: TaxCategory;
+  /** Already signed (D-068) — a Bonstorno's rows are negative from `order_item.price` itself; do not flip based on `bonTyp`/any storno flag here. */
   priceEuros: number;
   /** Positive = Pfand aufgeschlagen, negative = Leergutrückgabe, null/0 = kein Pfand. */
   depositPriceEuros: number | null;
+  /** Percent the deposit portion was taxed at — always the Regelsteuersatz in effect at booking time (Task #113), independent of `taxCategory`. `null` unless `depositPriceEuros` is set. */
+  depositTaxRate: number | null;
 }
 
 /** One fiscal Vorgang — an invoice (Kassenbeleg-V1/Beleg), a service_order (AVBestellung), or an order_cancellation (AVSonstige). */
 export interface SourceVorgang {
   /** Stable, globally unique ID — becomes BON_ID (invoice/service_order/order_cancellation primary key). */
   id: string;
-  /** DSFinV-K BON_TYP, see Rechtliche-Anforderungen.md Abschnitt 6.2. */
-  bonTyp: 'Beleg' | 'AVBestellung' | 'AVSonstige';
+  /**
+   * DSFinV-K BON_TYP, see Rechtliche-Anforderungen.md Abschnitt 6.2.
+   * `AVTraining` (Task #130) is derived from the owning register's
+   * `is_training` flag, not from `receipt_type` alone — a Bonstorno on a
+   * training register is `AVTraining`, not `AVSonstige`/`Beleg`. See
+   * `exports/dsfinvk/load.ts`.
+   */
+  bonTyp: 'Beleg' | 'AVBestellung' | 'AVSonstige' | 'AVTraining';
   /** Required by the spec when bonTyp is AVSonstige; optional otherwise. */
   bonName: string | null;
   /** The printed receipt number — only invoices have one; null for AVBestellung/AVSonstige. */
   receiptNumber: number | null;
   createdAt: Date;
-  /** True for a Bonstorno / reversed-sign cancellation invoice (BON_STORNO flag) — NOT the same as bonTyp. */
-  isStornoBeleg: boolean;
+  /**
+   * True for a Bonstorno invoice (`invoice.receipt_type='cancellation'`),
+   * false otherwise (always false for AVBestellung/AVSonstige, which are
+   * service_order/order_cancellation rows, never invoices).
+   *
+   * D-069, 2026-09-12 — **used for exactly one purpose**: recovering the
+   * article's original Pfand/PfandRueckzahlung classification for
+   * `GV_TYP`, which a Bonstorno's negated `depositPriceEuros` (D-068)
+   * would otherwise flip to the wrong bucket. **Must never be used to
+   * flip a monetary amount** — every amount arriving in `items` is already
+   * correctly signed at the source (D-068); re-introducing a
+   * receipt-type-based sign flip here is exactly the bug class D-068
+   * eliminated.
+   */
+  isBonstorno: boolean;
   diningTableName: string | null;
   operatorUserId: string | null;
   operatorUserName: string | null;
@@ -82,7 +118,11 @@ export interface DsfinvkSource {
   tseClientId: string | null;
   tseSerial: string | null;
   /** Signature algorithm / log-time format / public key, cached from the TSE (see tse/certificateInfo.ts) — `null` when unavailable (unconfigured/unreachable TSE), in which case `tse.csv`'s corresponding fields stay empty. */
-  tseCertificate: { signatureAlgorithm: string; logTimeFormat: string; publicKeyBase64: string } | null;
+  tseCertificate: {
+    signatureAlgorithm: string; logTimeFormat: string; publicKeyBase64: string;
+    /** Base64 encoding of the raw PEM chain (leaf certificate first) read via `worm_getLogMessageCertificate` — see `leafCertificate.ts` for how `TSE_ZERTIFIKAT_I/II` are derived from it. */
+    certificateChainBase64: string;
+  } | null;
   company: {
     name: string;
     street: string;
@@ -91,21 +131,37 @@ export interface DsfinvkSource {
     taxNumber: string;
     vatId: string | null;
   };
-  /** Distinct active tax rates, e.g. [{rate: 19, description: 'Allgemeiner Steuersatz'}, ...]. */
-  taxRates: { rate: number; description: string }[];
+  /** Distinct active tax rates, e.g. [{category: 'standard', rate: 19, description: 'Allgemeiner Steuersatz'}, ...]. */
+  taxRates: { category: TaxCategory; rate: number; description: string }[];
   vorgaenge: SourceVorgang[];
 }
 
-/** Maps a percent tax rate to its DSFinV-K UST_SCHLUESSEL (Stamm_USt, Abschnitt 6.4). Only the rates FairPOS actually uses. */
-function ustSchluessel(ratePercent: number): number {
-  if (Math.abs(ratePercent - 19) < 0.01) return 1;
-  if (Math.abs(ratePercent - 7) < 0.01) return 2;
-  return 5; // 0 % / steuerfrei
+/** Maps a VAT category to its DSFinV-K UST_SCHLUESSEL (Stamm_USt, Abschnitt 6.4). Category-based rather than a percentage comparison (Task #110) — stays correct across any future Regelsteuersatz change. */
+function ustSchluessel(category: TaxCategory): number {
+  if (category === 'standard') return 1;
+  if (category === 'reduced') return 2;
+  return 5; // zero / steuerfrei
 }
 
-/** Formats a euro amount with exactly two decimal places, dot as separator, no thousands separator (per Anhang I formatting rules, also applied to CSV amounts here for consistency). */
+/** Formats a euro amount with exactly two decimal places, dot as separator, no thousands separator (per Anhang I formatting rules, also applied to CSV amounts here for consistency). Used for fields the official field catalog (Anhang E) itself declares with 2 decimals (`UMS_BRUTTO`, `*_BETRAG`/`*_ZAHLUNGEN` payment fields) — see `euro5()` for the net/tax fields declared with 5. */
 function euro(amount: number): string {
   return amount.toFixed(2);
+}
+
+/**
+ * Formats a euro amount with five decimal places (D-065, 2026-09-12) — for
+ * exactly the net/tax fields the official DSFinV-K field catalog (Anhang E)
+ * declares with 5 decimals (`Z_UMS_BRUTTO/_NETTO`, `Z_UST`,
+ * `BON_BRUTTO/_NETTO/_UST`, `POS_BRUTTO/_NETTO/_UST`, `STK_BR` — see
+ * `index-xml.ts`'s `NUMERIC_COLUMNS`, which already declared `Accuracy=5`
+ * for these before this fix). Rounding each line to only 2 decimals before
+ * summing can produce a printed aggregate that doesn't match the sum of the
+ * printed line items (a genuine, auditor-visible off-by-a-cent
+ * discrepancy) — the underlying division/summation here was always
+ * full-precision; this only changes how many of those digits get printed.
+ */
+function euro5(amount: number): string {
+  return amount.toFixed(5);
 }
 
 /** Hex string (as returned by the TSE client) to base64, for TSE_TA_SIG. */
@@ -173,11 +229,17 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
 
   const vat: VatRow[] = source.taxRates.map((t) => ({
     ...schluessel,
-    UST_SCHLUESSEL: ustSchluessel(t.rate),
+    UST_SCHLUESSEL: ustSchluessel(t.category),
     UST_SATZ: t.rate.toFixed(2),
     UST_BESCHR: t.description,
   }));
 
+  // Anhang E (S. 78f. of the official DSFinV-K 2.4 spec, bzst.de): both
+  // fields hold "das Zertifikat der TSE" (the TSE's own leaf certificate,
+  // not the full chain), base64, split into two 1.000-character chunks.
+  const { zertifikatI, zertifikatII } = extractLeafCertificateChunks(
+    source.tseCertificate?.certificateChainBase64 ?? '',
+  );
   const tse: TseRow[] = source.tseSerial ? [{
     ...schluessel,
     TSE_ID: 1,
@@ -186,12 +248,8 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     TSE_ZEITFORMAT: source.tseCertificate?.logTimeFormat ?? '',
     TSE_PD_ENCODING: 'UTF-8',
     TSE_PUBLIC_KEY: source.tseCertificate?.publicKeyBase64 ?? '',
-    // The certificate chain itself is not yet exposed by native/tse-cli
-    // (worm_getLogMessageCertificate, needs the CTSS interface) — see
-    // docs/TSE-Integration.md Abschnitt 11. Left empty rather than guessed;
-    // not required for QR-code verification, only for this file's completeness.
-    TSE_ZERTIFIKAT_I: '',
-    TSE_ZERTIFIKAT_II: '',
+    TSE_ZERTIFIKAT_I: zertifikatI,
+    TSE_ZERTIFIKAT_II: zertifikatII,
   }] : [];
 
   // ── Per-Vorgang rows ───────────────────────────────────────────────────────
@@ -214,8 +272,10 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     // the TSE's own timestamps are reported separately in transactions_tse.csv.
     const start = v.createdAt;
     const end = v.createdAt;
+    // Already signed (D-068) — a Bonstorno's items carry their own negative
+    // priceEuros/depositPriceEuros from the source, so this sum needs no
+    // storno-flag-based flip on top.
     const umsBrutto = v.items.reduce((s, it) => s + it.priceEuros + (it.depositPriceEuros ?? 0), 0);
-    const signedUmsBrutto = v.isStornoBeleg ? -umsBrutto : umsBrutto;
 
     transactions.push({
       ...schluessel,
@@ -229,7 +289,7 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
       BON_ENDE: isoWithMillis(end),
       BEDIENER_ID: v.operatorUserId ?? '',
       BEDIENER_NAME: v.operatorUserName ?? '',
-      UMS_BRUTTO: euro(signedUmsBrutto),
+      UMS_BRUTTO: euro(umsBrutto),
       KUNDE_NAME: '', KUNDE_ID: '', KUNDE_TYP: '', KUNDE_STRASSE: '',
       KUNDE_PLZ: '', KUNDE_ORT: '', KUNDE_LAND: '', KUNDE_USTID: '',
       BON_NOTIZ: '',
@@ -243,66 +303,102 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     const vatBuckets = new Map<number, { brutto: number; netto: number; ust: number }>();
     let posZeile = 0;
     for (const it of v.items) {
-      const key = ustSchluessel(it.taxRate);
-      const sign = v.isStornoBeleg ? -1 : 1;
+      const key = ustSchluessel(it.taxCategory);
 
-      // Article line (GV_TYP = Umsatz).
+      // Article line (GV_TYP = Umsatz). it.priceEuros is already signed
+      // (D-068) — no storno-flag-based flip needed.
       posZeile += 1;
-      const articleBrutto = sign * it.priceEuros;
+      const articleBrutto = it.priceEuros;
       const articleNetto = articleBrutto / (1 + it.taxRate / 100);
       lines.push({
         ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
         GUTSCHEIN_NR: '', ARTIKELTEXT: it.articleName, POS_TERMINAL_ID: source.tseClientId ?? '',
         GV_TYP: 'Umsatz', GV_NAME: '', INHAUS: '1', P_STORNO: '0', AGENTUR_ID: 0,
         ART_NR: it.articleId ?? '', GTIN: '', WARENGR_ID: it.categoryName, WARENGR: it.categoryName,
-        MENGE: '1.000', FAKTOR: '1.000', EINHEIT: 'Stück', STK_BR: euro(Math.abs(it.priceEuros)),
+        MENGE: '1.000', FAKTOR: '1.000', EINHEIT: 'Stück', STK_BR: euro5(Math.abs(it.priceEuros)),
       });
       linesVat.push({
         ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
-        UST_SCHLUESSEL: key, POS_BRUTTO: euro(articleBrutto), POS_NETTO: euro(articleNetto),
-        POS_UST: euro(articleBrutto - articleNetto),
+        UST_SCHLUESSEL: key, POS_BRUTTO: euro5(articleBrutto), POS_NETTO: euro5(articleNetto),
+        POS_UST: euro5(articleBrutto - articleNetto),
       });
       addToVatBucket(vatBuckets, key, articleBrutto, articleNetto);
-      addToBusinesscase(businesscaseTotals, 'Umsatz', key, articleBrutto, articleNetto);
+      // Task #130: a training Vorgang still gets full lines.csv/lines_vat.csv/
+      // transactions_vat.csv documentation (above) — only the Z_GV_TYP
+      // (Kassenabschluss revenue total) contribution is suppressed, so a
+      // training booking can never leak into the delivered export's revenue
+      // totals.
+      if (v.bonTyp !== 'AVTraining') {
+        addToBusinesscase(businesscaseTotals, 'Umsatz', key, articleBrutto, articleNetto);
+      }
 
-      // Separate Pfand / PfandRueckzahlung line, if this position carries a deposit.
+      // Separate Pfand / PfandRueckzahlung line, if this position carries a
+      // deposit — always taxed at `standard` (Task #113: Pfand unterliegt
+      // immer dem Regelsteuersatz), independent of the article's own `key`.
       if (it.depositPriceEuros !== null && it.depositPriceEuros !== 0) {
         posZeile += 1;
-        const depositBrutto = sign * it.depositPriceEuros;
-        const depositNetto = depositBrutto / (1 + it.taxRate / 100);
-        const gvTyp = it.depositPriceEuros > 0 ? 'Pfand' : 'PfandRueckzahlung';
+        const depositKey = ustSchluessel('standard');
+        const depositRate = it.depositTaxRate ?? 0;
+        const depositBrutto = it.depositPriceEuros;
+        const depositNetto = depositBrutto / (1 + depositRate / 100);
+        // GV_TYP classifies by the article's ORIGINAL Pfand/PfandRueckzahlung
+        // nature (D-069, 2026-09-12) — a fixed property of the article
+        // itself (a "Bier" article always charges a deposit, a dedicated
+        // "Leergut" article always refunds one), not of the sign the
+        // Bonstorno reversal happens to leave behind. For a Bonstorno,
+        // `depositPriceEuros` is already negated (D-068) relative to the
+        // article's master price at booking time — undo exactly that one
+        // negation here, for classification only, to recover what the
+        // article originally was. The actual amount used below
+        // (`depositBrutto`/`STK_BR`) is untouched by this — only the label.
+        // Mirrors Anhang I's own "Warenrücknahme" example (S. 115): a
+        // storno stays in its original bucket, just with reversed sign.
+        const originalSign = v.isBonstorno ? -it.depositPriceEuros : it.depositPriceEuros;
+        const gvTyp = originalSign > 0 ? 'Pfand' : 'PfandRueckzahlung';
         lines.push({
           ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
           GUTSCHEIN_NR: '', ARTIKELTEXT: 'Pfand', POS_TERMINAL_ID: source.tseClientId ?? '',
           GV_TYP: gvTyp, GV_NAME: '', INHAUS: '1', P_STORNO: '0', AGENTUR_ID: 0,
           ART_NR: it.articleId ?? '', GTIN: '', WARENGR_ID: it.categoryName, WARENGR: it.categoryName,
-          MENGE: '1.000', FAKTOR: '1.000', EINHEIT: 'Stück', STK_BR: euro(Math.abs(it.depositPriceEuros)),
+          MENGE: '1.000', FAKTOR: '1.000', EINHEIT: 'Stück', STK_BR: euro5(Math.abs(it.depositPriceEuros)),
         });
         linesVat.push({
           ...schluessel, BON_ID: v.id, POS_ZEILE: String(posZeile),
-          UST_SCHLUESSEL: key, POS_BRUTTO: euro(depositBrutto), POS_NETTO: euro(depositNetto),
-          POS_UST: euro(depositBrutto - depositNetto),
+          UST_SCHLUESSEL: depositKey, POS_BRUTTO: euro5(depositBrutto), POS_NETTO: euro5(depositNetto),
+          POS_UST: euro5(depositBrutto - depositNetto),
         });
-        addToVatBucket(vatBuckets, key, depositBrutto, depositNetto);
-        addToBusinesscase(businesscaseTotals, gvTyp, key, depositBrutto, depositNetto);
+        addToVatBucket(vatBuckets, depositKey, depositBrutto, depositNetto);
+        // Task #130 — same exclusion as the article line above.
+        if (v.bonTyp !== 'AVTraining') {
+          addToBusinesscase(businesscaseTotals, gvTyp, depositKey, depositBrutto, depositNetto);
+        }
       }
     }
     for (const [key, sums] of vatBuckets) {
       transactionsVat.push({
         ...schluessel, BON_ID: v.id, UST_SCHLUESSEL: key,
-        BON_BRUTTO: euro(sums.brutto), BON_NETTO: euro(sums.netto), BON_UST: euro(sums.brutto - sums.netto),
+        BON_BRUTTO: euro5(sums.brutto), BON_NETTO: euro5(sums.netto), BON_UST: euro5(sums.brutto - sums.netto),
       });
     }
 
     // Payment — only "Beleg" Vorgänge (invoices) carry an actual payment.
+    // `datapayment.csv` (Bonkopf_Zahlarten, per-Vorgang documentation) always
+    // gets its row, same as transactions.csv/lines.csv — but `paymentTotals`
+    // feeds the Z_Zahlart aggregate (payment.csv / cash_per_currency.csv),
+    // the same kind of Kassenabschluss-level revenue total as businesscases.csv
+    // (Z_GV_TYP) above, so a training Vorgang's amount is excluded from it too
+    // (Task #130) — otherwise it would silently reappear in the delivered
+    // export's aggregated cash/card totals despite being excluded from Z_GV_TYP.
     if (v.paymentMethod) {
       const zahlartTyp: 'Bar' | 'Unbar' = v.paymentMethod === 'cash' ? 'Bar' : 'Unbar';
-      const amount = signedUmsBrutto;
+      const amount = umsBrutto;
       datapayment.push({
         ...schluessel, BON_ID: v.id, ZAHLART_TYP: zahlartTyp, ZAHLART_NAME: zahlartTyp,
         ZAHLWAEH_CODE: '', ZAHLWAEH_BETRAG: '', BASISWAEH_BETRAG: euro(amount),
       });
-      paymentTotals.set(zahlartTyp, (paymentTotals.get(zahlartTyp) ?? 0) + amount);
+      if (v.bonTyp !== 'AVTraining') {
+        paymentTotals.set(zahlartTyp, (paymentTotals.get(zahlartTyp) ?? 0) + amount);
+      }
     }
 
     if (v.tse) {
@@ -316,7 +412,14 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
     } else {
       transactionsTse.push({
         ...schluessel, BON_ID: v.id, TSE_ID: 1, TSE_TANR: '',
-        TSE_TA_START: '', TSE_TA_ENDE: '', TSE_TA_VORGANGSART: v.bonTyp === 'Beleg' ? 'Kassenbeleg-V1' : v.bonTyp,
+        // Same mapping as the signed branch above (`tseProcessTypeFor`) —
+        // previously duplicated ad hoc here as `v.bonTyp === 'Beleg' ?
+        // 'Kassenbeleg-V1' : v.bonTyp`, which silently printed the raw
+        // BON_TYP string for AVBestellung/AVTraining instead of the correct
+        // TSE vocabulary (e.g. 'AVBestellung' instead of 'Bestellung-V1').
+        // Fixed as part of Task #130 since it directly affects AVTraining's
+        // TSE_TA_VORGANGSART in the no-signature fallback case.
+        TSE_TA_START: '', TSE_TA_ENDE: '', TSE_TA_VORGANGSART: tseProcessTypeFor(v.bonTyp),
         TSE_TA_SIGZ: '', TSE_TA_SIG: '',
         TSE_TA_FEHLER: 'Kein TSE-Signatur vorhanden — siehe docs/TSE-Integration.md "TSE-Ausfall".',
         TSE_VORGANGSDATEN: '',
@@ -326,7 +429,7 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
 
   const businesscases: BusinesscaseRow[] = [...businesscaseTotals.values()].map((b) => ({
     ...schluessel, GV_TYP: b.gvTyp, GV_NAME: b.gvName, AGENTUR_ID: 0, UST_SCHLUESSEL: b.ustSchluessel,
-    Z_UMS_BRUTTO: euro(b.brutto), Z_UMS_NETTO: euro(b.netto), Z_UST: euro(b.brutto - b.netto),
+    Z_UMS_BRUTTO: euro5(b.brutto), Z_UMS_NETTO: euro5(b.netto), Z_UST: euro5(b.brutto - b.netto),
   }));
 
   const payment: PaymentRow[] = [...paymentTotals.entries()].map(([typ, amount]) => ({

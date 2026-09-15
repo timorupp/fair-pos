@@ -73,7 +73,7 @@ zusätzliches Netzwerk-Setup nötig.
 Das `postgresql`-Metapaket zieht das passende `postgresql-client-*` (u.a.
 `pg_dump`, `psql`) als Abhängigkeit automatisch mit — kein separater Schritt
 nötig für den manuellen
-Datenbank-Backup-Download in der Admin-UI (Systemeinstellungen → System,
+Datenbank-Backup-Download in der Admin-UI (Einstellungen → System,
 siehe `docs/Anforderungen.md` "Backup-Konzept").
 
 ---
@@ -122,8 +122,14 @@ Shell-Skeleton-Dateien (`.bashrc` etc.) abgelegt. Deshalb: als `tru` (mit dem
 eigenen Git-Zugang) in ein Temp-Verzeichnis klonen, dann nach `/opt/fairpos`
 kopieren und umbesitzen:
 
+**Bewusst `develop`, nicht `master`** — der Produktivserver dient laufend
+als Testumgebung für Zwischenstände direkt während der Entwicklung, nicht
+nur für fertige Releases (siehe AGENTS.md, „Git-Workflow (Branches)").
+`master` enthält nur die aufgeräumte, öffentlich sichtbare Historie ohne
+Zwischenschritte.
+
 ```bash
-git clone <repository-url> /tmp/fairpos-checkout
+git clone -b develop <repository-url> /tmp/fairpos-checkout
 sudo cp -a /tmp/fairpos-checkout/. /opt/fairpos/
 sudo chown -R fairpos:fairpos /opt/fairpos
 rm -rf /tmp/fairpos-checkout
@@ -183,7 +189,8 @@ werden, sondern gehört ausschließlich in die `.env` auf diesem Server.
 ## 6. Bauen
 
 ```bash
-npm ci
+npm ci --ignore-scripts
+npm rebuild esbuild   # einzige Ausnahme: esbuild braucht sein install-Skript für den Frontend-Build
 npm run build   # baut packages/shared, packages/backend, packages/frontend in der richtigen Reihenfolge
 
 # Frontend-SPA in das Verzeichnis kopieren, aus dem Fastify sie ausliefert:
@@ -217,6 +224,16 @@ läuft für alle, auch Admins, ausschließlich über PIN; `<sicheres-passwort>`
 wird nur noch für die Systemverwaltung-Stufenauth im Adminbereich gebraucht)
 und gibt sie einmalig auf der Konsole aus — notieren, sie wird danach nicht
 erneut angezeigt (bei Bedarf über die Benutzerverwaltung neu vergeben).
+
+**Erste Veranstaltung anlegen und aktivieren (Task #95):** Eine frische,
+leere Datenbank hat bewusst **keine** Veranstaltung — anders als ein
+Upgrade einer bestehenden Installation, wo die Migration automatisch ein
+„Altbestand"-Sammelbecken für die vorhandenen Daten anlegt. Ohne aktive
+Veranstaltung lassen sich weder Artikel, Kassen, Kassenlayouts, der
+Saalplan noch Stornogründe anlegen. Nach dem ersten Login also im
+Adminbereich unter „Organisation → Veranstaltungen" eine Veranstaltung
+anlegen und über den „Aktivieren"-Button in der Liste aktiv setzen, bevor
+mit der eigentlichen Konfiguration (Abschnitt weiter unten) begonnen wird.
 
 ---
 
@@ -255,7 +272,7 @@ Da der Server ggf. von mehreren Vereinen mit je eigener TSE genutzt wird
 (kein fester Mountpunkt für ein bestimmtes Gerät, siehe `docs/SETUP.md`),
 reicht ein generisches Automount für **beliebige** eingesteckte
 USB-Massenspeicher — welcher Mountpunkt tatsächlich die TSE ist, ermittelt
-FairPOS selbst über den "Auto-erkennen"-Button in der Admin-UI (Abschnitt 8.3).
+FairPOS selbst über den "Auto-erkennen"-Button in der Admin-UI (Abschnitt 8.4).
 
 **✅ Verifiziert gegen echte Swissbit-USB-TSE-Hardware** (2026-08-24, Ubuntu
 26.04 LTS "resolute"). `usbmount` — das ursprünglich hier vorgesehene Paket
@@ -315,31 +332,82 @@ verzeichnis vor Abschluss des asynchronen Mounts; `systemd-mount --no-block`
 gibt sofort zurück, ohne auf den tatsächlichen Mount-Abschluss zu warten —
 bei Bedarf `lsblk`/`stat` einfach nach einer Sekunde erneut ausführen).
 
-### 8.3 TSE in der Admin-UI konfigurieren
+### 8.3 Einmalige Hardware-Inbetriebnahme (`setup`)
 
-Nach dem ersten Start des Backends (Abschnitt 10): Systemeinstellungen →
-System → "Auto-erkennen" klickt sich durch alle aktuell gemounteten
-Wechseldatenträger und trägt den ersten Treffer automatisch ein. Danach
-Client-ID frei vergeben (z.B. `FairPOS-1`), TimeAdmin-PIN eintragen und
-speichern.
-
-### 8.4 Einmalige Hardware-Inbetriebnahme (`setup`)
+**Reihenfolge wichtig: dieser Schritt zuerst, Abschnitt 8.4 (Admin-UI)
+erst danach.** Würde die TSE zuerst in der Admin-UI eingetragen (Mount-
+Pfad, Client-ID, TimeAdmin-PIN) und erst anschließend per `setup`
+initialisiert, beginnt der automatische Hintergrund-Health-Job
+(`docs/TSE-Integration.md` Abschnitt 6) sofort nach dem Speichern, die
+noch uninitialisierte TSE mit der bereits eingetragenen TimeAdmin-PIN
+anzusprechen — eine TSE, die diese PIN noch gar nicht kennt, quittiert das
+mit Fehlversuchen und riskiert dieselbe Sperre wie unten beschrieben
+(siehe `BACKLOG.md` D-055 zum Health-Job-Risiko). Deshalb: TSE zuerst
+per `setup` initialisieren, danach dieselben Werte in der Admin-UI
+eintragen.
 
 **Kein Admin-UI-Schritt** — bewusst nicht Teil der UI (siehe
 `docs/TSE-Integration.md` Abschnitt 7): die einmalige Aktivierung der TSE
-läuft direkt über die `tseCli`-Binary, mit Zugangsdaten (Credential-Seed,
-Admin-PUK, Admin-PIN), die aus den Swissbit-Vertragsunterlagen des Vereins
-kommen — nicht aus diesem Repo, und laut KassenSichV-Vorgabe nirgends
-dauerhaft speicherbar (auch nicht in der Bash-History):
+läuft direkt über die `tseCli`-Binary. Zugangsdaten dafür, laut
+KassenSichV-Vorgabe nirgends dauerhaft speicherbar (auch nicht in der
+Bash-History):
+
+- **Credential-Seed** — kommt **nicht** vom TSE-Hersteller direkt, sondern
+  wird vom TSE-**Händler** vergeben (häufig, aber nicht garantiert,
+  `SwissbitSwissbit`) — im Zweifel immer beim Händler nachfragen, nicht
+  raten.
+- **Admin-PUK/Admin-PIN** — jede TSE hat werksseitig einen ursprünglichen
+  PUK/PIN, der bei diesem `setup`-Aufruf aber zwingend durch neue,
+  selbst gewählte Werte ersetzt wird. Die hier übergebenen `<admin-puk>`/
+  `<admin-pin>` sind also die **neuen**, vom Verein selbst festgelegten
+  Werte — nicht Werte aus irgendwelchen Herstellerunterlagen. **Feste
+  Längen, von der TSE hart geprüft:** `<admin-puk>` muss genau **6-stellig**
+  sein, `<admin-pin>` und `<time-admin-pin>` müssen genau **5-stellig**
+  sein — jeweils nur Ziffern. Eine falsche Länge lässt `setup` sofort mit
+  `WORM_ERROR_TSE_INVALID_PARAMETER` (Fehlercode `4103`) fehlschlagen.
+- **Client-ID** — frei wählbar (z.B. `FairPOS-1`), aber nur bei diesem
+  einen, allerersten `setup`-Aufruf: `setup` bricht danach für immer mit
+  `"TSE is already set up"` ab, sobald die TSE einmal erfolgreich
+  eingerichtet wurde — unabhängig vom Zustand von PIN/PUK. **Korrektur
+  (2026-09-10):** Ein erneuter `setup`-Aufruf ist entgegen einer früheren
+  Annahme in diesem Dokument **kein** Weg, eine gesperrte PIN
+  zurückzusetzen oder die Client-ID nachträglich zu ändern — die TSE lässt
+  sich damit nicht "zurücksetzen". Für eine gesperrte Admin-PIN oder
+  TimeAdmin-PIN gibt es aktuell **keine unterstützte Möglichkeit** in
+  FairPOS (`worm_user_unblock` ist im `tseCli` bisher nicht implementiert),
+  siehe Task #131.
 
 ```bash
 sudo -u fairpos /opt/fairpos/packages/backend/native/tse-cli/vendor/bin/tseCli \
   <mount-pfad> setup <client-id> <credential-seed> <admin-puk> <admin-pin> <time-admin-pin>
 ```
 
-`<mount-pfad>`/`<client-id>`/`<time-admin-pin>` entsprechen genau den Werten
-aus Abschnitt 8.3. Danach in der Admin-UI über "TSE testen" verifizieren
-(`hasPassedSelfTest: true` erwartet).
+> ⚠️ **Ein falscher Credential-Seed kann die TSE unwiderruflich sperren.**
+> `setup` versucht mit dem angegebenen Credential-Seed den werksseitigen
+> PUK zu ändern. Ist der Credential-Seed falsch (Tippfehler), wird daraus
+> der falsche ursprüngliche PUK abgeleitet — der Änderungsversuch schlägt
+> fehl. Nach **drei** solchen Fehlversuchen ist die TSE **dauerhaft und
+> unwiderruflich gesperrt** (keine Wiederherstellung möglich). Vor dem
+> ersten `setup`-Aufruf den Credential-Seed daher unbedingt beim
+> TSE-Händler verifizieren, nicht aus dem Gedächtnis oder einer Vermutung
+> eintragen.
+
+Die hier verwendeten Werte für `<mount-pfad>`, `<client-id>` und
+`<time-admin-pin>` werden im nächsten Schritt (Abschnitt 8.4) identisch in
+die Admin-UI übertragen. Vollständige Befehlsreferenz für `tseCli` (alle
+Befehle, Fehlercodes, Entwickler-TSE-Reset): `docs/TSE-CLI-Referenz.md`.
+
+### 8.4 TSE in der Admin-UI konfigurieren
+
+Nach dem ersten Start des Backends (Abschnitt 10) **und** nach der
+Hardware-Inbetriebnahme (Abschnitt 8.3): Einstellungen → System →
+"Auto-erkennen" klickt sich durch alle aktuell gemounteten
+Wechseldatenträger und trägt den ersten Treffer automatisch ein. Danach
+Client-ID und TimeAdmin-PIN **exakt identisch zu den beim `setup`-Aufruf
+verwendeten Werten** eintragen und speichern — abweichende Werte hier
+lösen denselben Sperrrisiko-Mechanismus aus, der oben die Reihenfolge
+begründet. Danach über "TSE testen" verifizieren (`hasPassedSelfTest:
+true` erwartet).
 
 ---
 
@@ -352,7 +420,7 @@ voraussetzt) sind als idempotente Skripte in `scripts/install/` hinterlegt:
 |---|---|
 | `scripts/install/01-system.sh` | Node.js + PostgreSQL (Ubuntu-Standardpaket) + Build-Tools installieren |
 | `scripts/install/02-database.sh` | Rolle + Datenbank anlegen (liest Werte aus `.env`) |
-| `scripts/install/03-build.sh` | `npm ci`, Build, Frontend-Kopie nach `packages/backend/public/` |
+| `scripts/install/03-build.sh` | `npm ci`, Build, `tseCli` neu bauen, Frontend-Kopie nach `packages/backend/public/` |
 | `scripts/install/04-systemd.sh` | systemd-Unit installieren + aktivieren |
 | `scripts/install/smoke-test.sh` | DB-Verbindung, TSE-Erreichbarkeit (falls konfiguriert), Backend-Healthcheck |
 | `scripts/install/update.sh` | Update-Ablauf (Abschnitt 12) — als `sudo` von einem beliebigen Account startbar, führt `git pull`/`npm ci`/Build/Migration intern selbst als Service-User aus (liest den Namen aus der installierten systemd-Unit), nur der Neustart läuft als root |
@@ -425,35 +493,46 @@ TSE-Status (`GET /api/admin/tse/status`, falls konfiguriert), Login als Admin
 sudo /opt/fairpos/scripts/install/update.sh
 ```
 
-Führt den kompletten Ablauf aus (`git pull`, `npm ci`, Build, Frontend-Kopie,
-Migration, Neustart, Smoke-Test) — `git`/`npm`/Migration laufen dabei intern
-als Service-User, nicht als root, auch wenn das Skript selbst per `sudo`
-gestartet wird. Äquivalent manuell, falls das Skript einmal nicht zur Hand
-ist:
+Führt den kompletten Ablauf aus (`git pull`, `npm ci`, Build, `tseCli`
+neu bauen, Frontend-Kopie, Migration, Neustart, Smoke-Test) —
+`git`/`npm`/Migration laufen dabei intern als Service-User, nicht als root,
+auch wenn das Skript selbst per `sudo` gestartet wird. Äquivalent manuell,
+falls das Skript einmal nicht zur Hand ist:
 
 ```bash
 cd /opt/fairpos
 git pull
-npm ci
+npm ci --ignore-scripts --prefer-offline
+npm rebuild esbuild   # einzige Ausnahme: esbuild braucht sein install-Skript für den Frontend-Build
 npm run build
+packages/backend/native/tse-cli/build.sh
 rm -rf packages/backend/public && mkdir -p packages/backend/public
 cp -r packages/frontend/build/* packages/backend/public/
 npm run db:migrate
 sudo systemctl restart fairpos
 ```
 
+> ⚠️ **`tseCli` neu bauen nicht vergessen.** Die Binary (`native/tse-cli/vendor/bin/tseCli`)
+> ist ein C++-Build-Artefakt, kein npm-Workspace — `npm run build` baut sie
+> **nicht** mit. Ein reiner `git pull` + `npm run build` lässt sie unbemerkt
+> auf dem alten Stand, selbst wenn sich `tseCli.cpp` geändert hat (live
+> 2026-09-10 aufgefallen: neue `info`-Felder fehlten trotz aktuellem
+> Checkout, bis die Binary manuell neu gebaut wurde). Seit demselben Datum
+> ist der Build-Schritt oben fest in `update.sh`/`03-build.sh` verdrahtet —
+> nur beim manuellen Update-Weg selbst dran denken.
+
 ---
 
 ## 13. Optionale privilegierte Admin-Aktionen (Sudoers)
 
-Drei Funktionen in der Admin-UI (Systemeinstellungen → System) brauchen
-Root-Rechte, die der `fairpos`-Service-User bewusst nicht hat (Abschnitt 4):
-Systemzeit und Zeitzone manuell setzen (Task #60) und Server herunterfahren
-(Task #61). Alle drei Endpunkte sind bereits implementiert und rufen `sudo`
-auf — ohne die folgende `sudoers`-Regel schlagen sie mit einer klaren
-Fehlermeldung fehl, statt etwas Unerwartetes zu tun. Ohne diesen Abschnitt
-funktioniert der Rest von FairPOS unverändert — alle drei Funktionen sind
-rein optional.
+Drei Funktionen in der Admin-UI brauchen Root-Rechte, die der
+`fairpos`-Service-User bewusst nicht hat (Abschnitt 4): Systemzeit und
+Zeitzone manuell setzen (Task #60, Einstellungen → System) und Server
+herunterfahren (Task #61, Button oben rechts im Dashboard, siehe Task #99).
+Alle drei Endpunkte sind bereits implementiert und rufen `sudo` auf — ohne
+die folgende `sudoers`-Regel schlagen sie mit einer klaren Fehlermeldung
+fehl, statt etwas Unerwartetes zu tun. Ohne diesen Abschnitt funktioniert
+der Rest von FairPOS unverändert — alle drei Funktionen sind rein optional.
 
 ### 13.1 Voraussetzung: NTP deaktivieren
 
@@ -518,7 +597,7 @@ Passwort zu fragen (`-n` bricht sofort ab, statt zu warten, falls doch eins
 nötig wäre — dann stimmt etwas an der Regel/Dateiberechtigung nicht).
 
 **Echter Funktionstest:**
-- Systemzeit/Zeitzone setzen: über die Admin-UI (Systemeinstellungen →
+- Systemzeit/Zeitzone setzen: über die Admin-UI (Einstellungen →
   System) einen Wert setzen und prüfen, dass die Erfolgsmeldung erscheint
   und `date`/`timedatectl` auf dem Server sich tatsächlich geändert haben.
 - Shutdown: **fährt den Server wirklich herunter** — bewusst am Ende einer
@@ -588,6 +667,10 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     server_name _;
+
+    # Verhindert, dass die nginx-Version im Server-Header preisgegeben wird
+    # (D-077, 2026-09-15, live Security-Test).
+    server_tokens off;
 
     ssl_certificate     /etc/nginx/ssl/fairpos.crt;
     ssl_certificate_key /etc/nginx/ssl/fairpos.key;

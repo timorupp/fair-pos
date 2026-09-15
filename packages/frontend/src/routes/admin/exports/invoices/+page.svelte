@@ -2,20 +2,34 @@
   /**
    * Rechnungs-PDFs (ZIP) export page. Offers two download buttons:
    *   - Tag: scoped to a calendar day (date picker, defaults to "today")
-   *   - Veranstaltung: scoped to the selected event's full range
+   *   - Veranstaltung: scoped to the currently active event's full range (Task #95)
    *
-   * Same scoping/UI pattern as the Excel-export page. Both endpoints stream
-   * a .zip file (one PDF per invoice, every receipt type — sales, Storno,
-   * Training); the browser handles the download via a synthetic anchor click
-   * so the user stays on this page.
+   * Same scoping/UI pattern as the Excel-export page (including the D-025
+   * server-timezone default fix, added here to match — this page's default
+   * was previously computed from the browser's own clock/timezone only,
+   * inconsistent with its sibling). Both endpoints stream a .zip file (one
+   * PDF per invoice, every receipt type — sales, Storno, Training); the
+   * browser handles the download via a synthetic anchor click so the user
+   * stays on this page.
    */
-  import EventSelector from '$lib/components/EventSelector.svelte';
+  import { api } from '$lib/api';
+  import { onMount } from 'svelte';
 
-  let selectedEventId: string | null = $state(null);
   let dayDate: string = $state(todayIso());
 
+  onMount(async () => {
+    try {
+      const status = await api.admin.system.status();
+      dayDate = serverDateIso(status.server_time, status.timezone);
+    } catch {
+      // Falls back to the browser's own "today" (set above) — only affects
+      // the pre-filled default, the user can still pick any date manually.
+    }
+  });
+
   /**
-   * Returns today's date as a `YYYY-MM-DD` string in the user's local timezone.
+   * Returns today's date as a `YYYY-MM-DD` string in the browser's local
+   * timezone. Used only as a fallback until the server's own date has loaded.
    *
    * @returns The ISO date portion of "right now".
    */
@@ -23,6 +37,20 @@
     const d = new Date();
     const p = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
+  /**
+   * Formats an instant as a `YYYY-MM-DD` string in the given IANA timezone —
+   * used to compute "today" the same way the day-export endpoint interprets
+   * its `date` query (the server's local calendar day), regardless of the
+   * browser's own timezone.
+   *
+   * @param isoInstant - The instant to format, as an ISO-8601 timestamp.
+   * @param timezone - IANA timezone identifier, e.g. `Europe/Berlin`.
+   * @returns The date portion in `YYYY-MM-DD` form.
+   */
+  function serverDateIso(isoInstant: string, timezone: string): string {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(isoInstant));
   }
 
   /**
@@ -46,10 +74,9 @@
     download(`/api/admin/exports/invoices/day?date=${encodeURIComponent(dayDate)}`);
   }
 
-  /** Triggers the event-export download for the currently selected event. */
+  /** Triggers the event-export download for the currently active event. */
   function downloadEvent() {
-    const qs = selectedEventId ? `?event_id=${encodeURIComponent(selectedEventId)}` : '';
-    download(`/api/admin/exports/invoices/event${qs}`);
+    download('/api/admin/exports/invoices/event');
   }
 </script>
 
@@ -72,10 +99,9 @@
 
   <section class="card">
     <h2>Veranstaltungsexport</h2>
-    <p class="hint">Ein PDF je Rechnung einer Veranstaltung — vom Start bis zum Ende, inkl. Storno- und Trainingsbelegen.</p>
-    <EventSelector bind:selectedId={selectedEventId} />
+    <p class="hint">Ein PDF je Rechnung der aktiven Veranstaltung — vom Start bis zum Ende, inkl. Storno- und Trainingsbelegen.</p>
     <div class="row">
-      <button class="btn-primary" onclick={downloadEvent} disabled={!selectedEventId}>
+      <button class="btn-primary" onclick={downloadEvent}>
         ZIP herunterladen
       </button>
     </div>

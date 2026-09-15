@@ -44,6 +44,9 @@
   :global(body) {
     min-height: 100dvh;
     background: var(--color-bg);
+    /* iPadOS zoomt bei Doppel-Tap; `manipulation` unterbindet das, erlaubt aber
+       weiterhin Pinch-Zoom (Barrierefreiheit) und normales Scrollen. */
+    touch-action: manipulation;
   }
 
   :global(input) {

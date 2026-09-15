@@ -14,8 +14,16 @@
   };
 
   let registers: RegisterRow[] = $state([]);
-  /** Whether the logged-in user is admin-flagged — drives the "Systemverwaltung" button (Task #90). */
-  let isAdmin = $state(false);
+  /**
+   * Whether the logged-in user has either admin level — drives the
+   * "Systemverwaltung" button (Task #90) and whether the single-register
+   * auto-skip below applies. Task #94: a pure Veranstaltungs-Administrator
+   * (is_event_admin only) must reach this screen exactly like a
+   * System-Administrator does — checking only is_admin here would silently
+   * lock them out of /admin entirely if they have exactly one register
+   * assigned (found live).
+   */
+  let hasAdminAccess = $state(false);
   let loading = $state(true);
   let error = $state('');
 
@@ -26,12 +34,23 @@
   let verifyPassword = $state('');
   let verifyError = $state('');
   let verifying = $state(false);
+  let verifyInput: HTMLInputElement | undefined = $state();
+
+  // Plain `autofocus` on the input doesn't reliably focus it here — the
+  // input is freshly mounted each time the modal opens (Modal.svelte uses
+  // `{#if open}`), and dynamic-insertion autofocus isn't consistently
+  // honored across browsers/WebViews, including some of the embedded
+  // browsers this app runs in on touch-register hardware. Focusing
+  // explicitly once the input exists is reliable everywhere.
+  $effect(() => {
+    if (verifyOpen) verifyInput?.focus();
+  });
 
   onMount(async () => {
     try {
       const me = await api.registerSession.me();
       registers = me.registers;
-      isAdmin = me.user.is_admin;
+      hasAdminAccess = me.user.is_admin || me.user.is_event_admin;
       // If exactly one register is assigned, skip the selection screen —
       // but never for an admin (needs the chance to reach Systemverwaltung
       // instead of being routed straight past this screen), and never when
@@ -40,7 +59,7 @@
       // reach this screen at all after logging in, since it's also the
       // only place the "Abmelden" button lives (found live, 2026-08-29).
       const stay = page.url.searchParams.get('stay') === '1';
-      if (!isAdmin && !stay && registers.length === 1) {
+      if (!hasAdminAccess && !stay && registers.length === 1) {
         goto(`/register/${registers[0]!.id}`, { replaceState: true });
         return;
       }
@@ -123,7 +142,7 @@
     </div>
   {/if}
 
-  {#if !loading && isAdmin}
+  {#if !loading && hasAdminAccess}
     <div class="admin-row">
       <button class="btn-ghost" onclick={openSystemverwaltung}>Systemverwaltung</button>
     </div>
@@ -139,8 +158,7 @@
   <form onsubmit={(e) => { e.preventDefault(); confirmVerify(); }}>
     <label class="field-label">
       Passwort
-      <!-- svelte-ignore a11y_autofocus -->
-      <input type="password" bind:value={verifyPassword} autocomplete="current-password" disabled={verifying} required autofocus />
+      <input type="password" bind:this={verifyInput} bind:value={verifyPassword} autocomplete="current-password" disabled={verifying} required />
     </label>
     {#if verifyError}<p class="error-text small">{verifyError}</p>{/if}
     <div class="modal-actions">

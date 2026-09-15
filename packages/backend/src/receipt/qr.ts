@@ -20,10 +20,13 @@ function hexToBase64(hex: string): string {
  * <log-time-format>;<signatur>;<public-key>`.
  *
  * `<processData>` is recomputed from the receipt's own line items rather
- * than persisted separately — deterministic given the same
- * positions/payment method/`isCancellation` flag that were actually signed
- * (see tse/processData.ts), so there is no second copy that could drift from
- * what's on the TSE.
+ * than persisted separately — deterministic given the same positions/
+ * payment method that were actually signed (see tse/processData.ts), so
+ * there is no second copy that could drift from what's on the TSE.
+ * `data.positions` already carries whatever sign each amount should
+ * contribute with (D-068) — a Bonstorno's `unitPrice`/`unitDeposit` are
+ * already negative from the DB, so no sign flip happens here or in
+ * `buildKassenbelegProcessData` itself.
  *
  * @param data - Full receipt data. TSE fields are `null` when the sale
  *   wasn't signed (TSE unconfigured or an outage — see
@@ -36,12 +39,17 @@ function hexToBase64(hex: string): string {
 export async function buildQrPayload(data: ReceiptData): Promise<string> {
   const processData = buildKassenbelegProcessData({
     paymentMethod: data.paymentMethod,
-    receiptType: data.isCancellation ? 'cancellation' : 'sales_receipt',
+    // Task #130: must reproduce the exact processData that was actually
+    // signed — a training-register receipt was signed with vorgangstyp
+    // 'AVTraining', so the QR code's own reconstruction must match, or its
+    // embedded process-data hash would no longer verify against the real
+    // TSE signature.
+    vorgangstyp: data.isTraining ? 'AVTraining' : 'Beleg',
     positions: data.positions.map((p) => ({
       quantity: p.quantity,
       unitPriceEuros: p.unitPrice,
       depositPriceEuros: p.unitDeposit,
-      taxRatePercent: p.taxRate,
+      taxCategory: p.taxCategory,
     })),
   }).toString('utf-8');
 
@@ -73,30 +81,4 @@ export async function buildQrPayload(data: ReceiptData): Promise<string> {
  */
 export function renderQrPng(payload: string, sizePx: number = 220): Promise<Buffer> {
   return toBuffer(payload, { type: 'png', width: sizePx, margin: 1 });
-}
-
-/**
- * Builds the customer-facing URL for a receipt's "scan to view your PDF"
- * QR code from the configured `server_address` system setting.
- *
- * The admin may include an explicit `http://`/`https://` prefix (relevant
- * once Task #66 sets up TLS) — that choice is always honored as-is; a bare
- * host/IP without a prefix defaults to `http://` for backward compatibility
- * with existing configurations.
- *
- * @param configuredAddress - The `server_address` system-setting value, or
- *   `null`/empty if unset.
- * @param fallbackHost - Host to fall back to when unset (typically the
- *   inbound request's own `Host` header).
- * @param receiptToken - The receipt's public access token.
- * @returns The full URL to embed in the QR code.
- */
-export function buildReceiptQrUrl(
-  configuredAddress: string | null | undefined,
-  fallbackHost: string,
-  receiptToken: string,
-): string {
-  const host = configuredAddress || fallbackHost;
-  const base = /^https?:\/\//i.test(host) ? host.replace(/\/+$/, '') : `http://${host}`;
-  return `${base}/receipt/${receiptToken}`;
 }

@@ -1,4 +1,16 @@
-/** Admin endpoint for the generic system-log viewer (Task #64). */
+/**
+ * Admin endpoint for the generic system-log viewer (Task #64).
+ *
+ * V+S accessible (Task #94 revision, 2026-08-31) — originally
+ * System-Administrator-exclusive like events.ts/backup.ts, but the
+ * Dashboard's "TSE-Zustand" tile (visible to both admin levels) reads its
+ * data from here (`category=tse_health`), and system_log currently only
+ * ever receives that one category in practice (see system/log.ts and every
+ * `logSystemEvent` call site) — nothing sensitive to a specific rented
+ * event/tenant. Revisit this if a future feature starts logging something
+ * more sensitive under a new category; `authenticateSystemAdmin` is a
+ * one-line change back if so.
+ */
 
 import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
@@ -8,7 +20,11 @@ import type { LogSeverity, SystemLogEntry } from '../../system/log.js';
 /** Hard cap on rows returned per request — the log grows unbounded over time, so the viewer always shows the most recent slice, not the whole table. */
 const MAX_ROWS = 500;
 
-/** Registers `/api/admin/logs` routes. */
+/**
+ * Registers `/api/admin/logs` routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function logsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
@@ -18,6 +34,13 @@ export async function logsAdminRoute(app: FastifyInstance): Promise<void> {
    * Query params (both optional, combinable):
    *   - `severity` — exact match on `info | warning | error`
    *   - `category` — exact match on the log's source tag (e.g. `tse_health`)
+   *
+   * Sorted by `seq` (D-073, 2026-09-12), not `created_at` — `created_at`
+   * reflects the system clock, which the established practice of backdating
+   * it for an expired dev TSE (docs/TSE-Integration.md) can move backwards,
+   * silently burying freshly-written rows in the middle of the list instead
+   * of at the top. `seq` is a plain `BIGSERIAL`, so it always matches actual
+   * insertion order regardless of what the clock says.
    */
   app.get<{ Querystring: { severity?: LogSeverity; category?: string } }>('/', async (req, reply) => {
     const { severity, category } = req.query;
@@ -39,7 +62,7 @@ export async function logsAdminRoute(app: FastifyInstance): Promise<void> {
       `SELECT id, created_at, severity, category, message
          FROM system_log
          ${where}
-        ORDER BY created_at DESC
+        ORDER BY seq DESC
         LIMIT ${MAX_ROWS}`,
       params,
     );

@@ -9,9 +9,25 @@
   import { api } from '$lib/api';
 
   type SessionRow = {
-    id: string; user_name: string; is_admin: boolean; admin_verified: boolean;
+    id: string; user_name: string; is_admin: boolean; is_event_admin: boolean;
+    admin_verified: boolean;
     created_at: string; last_activity_at: string; user_agent: string | null;
   };
+
+  /**
+   * Combined role label for a session row — a user can hold either admin
+   * flag, both, or neither (Task #94), mirrored from `admin/users/+page.svelte`'s
+   * `roleLabel()`.
+   *
+   * @param s - The session row to label.
+   * @returns The role label to display.
+   */
+  function roleLabel(s: SessionRow): string {
+    const roles: string[] = [];
+    if (s.is_admin) roles.push('System-Administrator');
+    if (s.is_event_admin) roles.push('Veranstaltungs-Administrator');
+    return roles.length > 0 ? roles.join(' + ') : 'Bediener';
+  }
 
   let sessions: SessionRow[] = $state([]);
   let loading = $state(true);
@@ -91,8 +107,8 @@
           <tr>
             <td>{s.user_name}</td>
             <td>
-              {s.is_admin ? 'Administrator' : 'Bediener'}
-              {#if s.is_admin}
+              {roleLabel(s)}
+              {#if s.is_admin || s.is_event_admin}
                 <span class="verified-badge" class:on={s.admin_verified}>
                   {s.admin_verified ? 'Systemverwaltung freigeschaltet' : 'nur Kasse'}
                 </span>

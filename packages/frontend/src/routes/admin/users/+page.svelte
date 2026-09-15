@@ -20,6 +20,7 @@
   let formName = $state('');
   let formPassword = $state('');
   let formIsAdmin = $state(false);
+  let formIsEventAdmin = $state(false);
   let formActive = $state(true);
   let formRegisterIds: string[] = $state([]);
   let formError = $state('');
@@ -59,13 +60,14 @@
   let assignableRegisters = $derived(registers.filter((r) => r.is_active || formRegisterIds.includes(r.id)));
 
   function openCreate() {
-    editing = null; formName = ''; formPassword = ''; formIsAdmin = false; formActive = true;
+    editing = null; formName = ''; formPassword = ''; formIsAdmin = false; formIsEventAdmin = false; formActive = true;
     formRegisterIds = []; formError = '';
     modalOpen = true;
   }
 
   async function openEdit(u: User) {
-    editing = u; formName = u.name; formPassword = ''; formIsAdmin = u.is_admin; formActive = u.is_active; formError = '';
+    editing = u; formName = u.name; formPassword = '';
+    formIsAdmin = u.is_admin; formIsEventAdmin = u.is_event_admin; formActive = u.is_active; formError = '';
     formRegisterIds = await api.admin.users.listRegisters(u.id).catch(() => []);
     modalOpen = true;
   }
@@ -73,20 +75,25 @@
   async function save() {
     formError = ''; saving = true;
     try {
+      const needsAdminLevel = formIsAdmin || formIsEventAdmin;
       if (editing) {
-        if (formIsAdmin && !formPassword && !editing.is_admin) {
+        const hadAdminLevel = editing.is_admin || editing.is_event_admin;
+        if (needsAdminLevel && !formPassword && !hadAdminLevel) {
           formError = 'Passwort erforderlich für Administrator';
           saving = false;
           return;
         }
-        const data: { name?: string; password?: string; is_admin?: boolean; is_active?: boolean } =
-          { name: formName, is_admin: formIsAdmin, is_active: formActive };
+        const data: { name?: string; password?: string; is_admin?: boolean; is_event_admin?: boolean; is_active?: boolean } =
+          { name: formName, is_event_admin: formIsEventAdmin, is_active: formActive };
+        if ($adminUser?.is_admin) data.is_admin = formIsAdmin;
         if (formPassword) data.password = formPassword;
         await api.admin.users.update(editing.id, data);
         await api.admin.users.setRegisters(editing.id, formRegisterIds);
       } else {
-        if (formIsAdmin && !formPassword) { formError = 'Passwort erforderlich für Administrator'; saving = false; return; }
-        const created = await api.admin.users.create({ name: formName, password: formPassword || '', is_admin: formIsAdmin });
+        if (needsAdminLevel && !formPassword) { formError = 'Passwort erforderlich für Administrator'; saving = false; return; }
+        const created = await api.admin.users.create({
+          name: formName, password: formPassword || '', is_admin: formIsAdmin, is_event_admin: formIsEventAdmin,
+        });
         await api.admin.users.setRegisters(created.id, formRegisterIds);
       }
       modalOpen = false;
@@ -193,6 +200,27 @@
 
   const isSelf = (u: User) => u.id === $adminUser?.id;
 
+  /**
+   * Whether the current form's password field may be shown — hidden for a
+   * Veranstaltungs-Administrator editing an existing System-Administrator,
+   * since setting a new password would let them take over that account
+   * without ever touching is_admin directly (backend enforces the same rule).
+   */
+  let canSetPassword = $derived.by(() => {
+    if (!formIsAdmin && !formIsEventAdmin) return false;
+    const target = editing;
+    if (!target || !target.is_admin) return true;
+    return Boolean($adminUser?.is_admin);
+  });
+
+  /** Combined role label — a user can hold either admin flag, both, or neither (Task #94). */
+  function roleLabel(u: User): string {
+    const roles: string[] = [];
+    if (u.is_admin) roles.push('System-Administrator');
+    if (u.is_event_admin) roles.push('Veranstaltungs-Administrator');
+    return roles.length > 0 ? roles.join(' + ') : 'Bediener';
+  }
+
   const typeLabel = (t: string) => t === 'receipt_register' ? 'Bonkasse' : 'Bedienungskasse';
 </script>
 
@@ -215,7 +243,7 @@
         {#each users as u}
           <tr class:inactive={!u.is_active}>
             <td>{u.name}{#if isSelf(u)} <span class="self-badge">ich</span>{/if}</td>
-            <td>{u.is_admin ? 'Administrator' : 'Bediener'}</td>
+            <td>{roleLabel(u)}</td>
             <td>{#if !u.is_active}<span class="archived-badge">Deaktiviert</span>{:else}<span class="muted small">aktiv</span>{/if}</td>
             <td class="num">{new Date(u.created_at).toLocaleDateString('de-DE')}</td>
             <td class="actions">
@@ -237,16 +265,23 @@
       <label for="u-name">Name</label>
       <input id="u-name" bind:value={formName} required disabled={saving || deleting} />
     </div>
+    {#if $adminUser?.is_admin}
+      <div class="field-check">
+        <input type="checkbox" id="u-admin" bind:checked={formIsAdmin}
+               disabled={saving || deleting || (editing !== null && isSelf(editing))} />
+        <label for="u-admin">System-Administrator (voller Zugriff)</label>
+      </div>
+    {/if}
     <div class="field-check">
-      <input type="checkbox" id="u-admin" bind:checked={formIsAdmin}
-             disabled={saving || deleting || (editing !== null && isSelf(editing))} />
-      <label for="u-admin">Administrator (Zugang zur Administrationsoberfläche)</label>
+      <input type="checkbox" id="u-event-admin" bind:checked={formIsEventAdmin}
+             disabled={saving || deleting} />
+      <label for="u-event-admin">Veranstaltungs-Administrator (Zugriff beschränkt auf die aktive Veranstaltung)</label>
     </div>
-    {#if formIsAdmin}
+    {#if canSetPassword}
       <div class="field">
         <label for="u-pw">{editing ? 'Neues Passwort (leer = unverändert)' : 'Passwort'}</label>
         <input id="u-pw" type="password" bind:value={formPassword}
-               required={!editing && formIsAdmin} disabled={saving || deleting} />
+               required={!editing && (formIsAdmin || formIsEventAdmin)} disabled={saving || deleting} />
       </div>
     {/if}
     {#if editing}

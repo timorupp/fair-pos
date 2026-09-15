@@ -2,7 +2,8 @@
  * Row types for the DSFinV-K export, one interface per CSV file.
  *
  * Field names and types are taken verbatim from the official specification
- * ("DSFinV-K", Version 2.4, kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf —
+ * ("DSFinV-K", Version 2.4, published by the Bundeszentralamt für Steuern at
+ * bzst.de —
  * see docs/Rechtliche-Anforderungen.md Abschnitt 6 for the full citation and
  * page references). Only files/fields relevant to FairPOS's actual use case
  * are populated; inapplicable optional fields are typed but always emitted

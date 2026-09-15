@@ -1,52 +1,33 @@
-/** Tests for the ESC/POS receipt renderer. Verifies framing bytes, text content and the two-column helper. */
+/** Tests for the ESC/POS receipt renderer. Verifies framing bytes and text content — see `print/blocks.test.ts` for the shared renderer's own tests, and `print/escpos-encoding.test.ts` for `twoColumn`. */
 import { describe, it, expect } from 'vitest';
-import { buildReceiptEscPos, twoColumn } from './escpos-receipt.js';
+import { buildReceiptEscPos } from './escpos-receipt.js';
 import { buildDemoReceipt } from './demo.js';
-
-describe('twoColumn', () => {
-  it('pads with spaces so left + right fill the width', () => {
-    expect(twoColumn('Bier', '5,00', 20)).toBe('Bier            5,00');
-    expect(twoColumn('Bier', '5,00', 20).length).toBe(20);
-  });
-
-  it('keeps at least one space between left and right when content is tight', () => {
-    const result = twoColumn('Sehr langer Artikelname', '12,34', 25);
-    expect(result.length).toBe(25);
-    expect(result).toMatch(/12,34$/);
-  });
-
-  it('truncates the left side when the row would overflow', () => {
-    const result = twoColumn('Sehr langer Artikelname der nicht passt', '1,00', 20);
-    expect(result.length).toBe(20);
-    expect(result).toMatch(/1,00$/);
-  });
-});
 
 describe('buildReceiptEscPos', () => {
   const data = buildDemoReceipt(new Date(2026, 5, 24, 12, 0, 0));
 
-  it('begins with the ESC @ initialise sequence', () => {
-    const buf = buildReceiptEscPos(data);
+  it('begins with the ESC @ initialise sequence', async () => {
+    const buf = await buildReceiptEscPos(data);
     expect(buf[0]).toBe(0x1b);
     expect(buf[1]).toBe(0x40);
   });
 
-  it('ends with line feeds followed by a full cut (GS V 0)', () => {
-    const buf = buildReceiptEscPos(data);
+  it('ends with line feeds followed by a full cut (GS V 0)', async () => {
+    const buf = await buildReceiptEscPos(data);
     const tail = buf.subarray(buf.length - 3);
     expect(tail[0]).toBe(0x1d);
     expect(tail[1]).toBe(0x56);
     expect(tail[2]).toBe(0x00);
   });
 
-  it('contains the receipt number and date in the rendered text', () => {
-    const ascii = buildReceiptEscPos(data).toString('ascii');
+  it('contains the receipt number and date in the rendered text', async () => {
+    const ascii = (await buildReceiptEscPos(data)).toString('ascii');
     expect(ascii).toContain('RE-00042');
     expect(ascii).toContain('24.06.2026 12:00:00');
   });
 
-  it('encodes German umlauts as CP858 bytes', () => {
-    const buf = buildReceiptEscPos({
+  it('encodes German umlauts as CP858 bytes', async () => {
+    const buf = await buildReceiptEscPos({
       ...data,
       companyName: 'Käse Müller GmbH',
       companyAddressLines: ['Straße der Einheit 1'],
@@ -57,14 +38,20 @@ describe('buildReceiptEscPos', () => {
     expect(buf.includes(Buffer.from([0x53, 0x74, 0x72, 0x61, 0xe1, 0x65]))).toBe(true); // "Straße"
   });
 
-  it('selects CP858 as the active code page at the start of the stream', () => {
-    const buf = buildReceiptEscPos(data);
+  it('selects CP858 as the active code page at the start of the stream', async () => {
+    const buf = await buildReceiptEscPos(data);
     // ESC @ + ESC t 19
     expect(buf.subarray(0, 5).equals(Buffer.from([0x1b, 0x40, 0x1b, 0x74, 0x13]))).toBe(true);
   });
 
-  it('shows the TSE-error hint when no signature is present', () => {
-    const buf = buildReceiptEscPos(data);
+  it('shows the TSE-error hint when no signature is present', async () => {
+    const buf = await buildReceiptEscPos(data);
     expect(buf.includes('TSE Fehler')).toBe(true);
+  });
+
+  it('embeds a QR code raster (Task #101 — now on the printout too, not just the PDF)', async () => {
+    const buf = await buildReceiptEscPos(data);
+    // GS v 0 — raster image command; distinct from GS V 0 (paper cut) by the lowercase 'v'.
+    expect(buf.includes(Buffer.from([0x1d, 0x76, 0x30]))).toBe(true);
   });
 });

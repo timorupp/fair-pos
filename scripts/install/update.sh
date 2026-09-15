@@ -41,11 +41,61 @@ run_as_service_user() {
 echo "==> git pull (als $SERVICE_USER)"
 run_as_service_user "git pull"
 
+echo "==> Pflicht-Umgebungsvariablen prüfen"
+# Liest die Liste der Pflichtvariablen direkt aus config.ts (requireEnv(...))
+# aus, statt sie hier separat zu pflegen — eine künftig neu hinzukommende
+# Pflichtvariable wird dadurch automatisch mitgeprüft. Läuft bewusst direkt
+# nach git pull und vor dem restlichen (langsamen) Update, damit ein
+# Update mit fehlender Variable sofort abbricht statt erst nach Build und
+# Migration mit einem abgestürzten Neustart zu enden (siehe D-049).
+ENV_FILE="$REPO_ROOT/.env"
+CONFIG_FILE="$REPO_ROOT/packages/backend/src/config.ts"
+MISSING=""
+for VAR in $(grep -oE "requireEnv\('[A-Z_]+'\)" "$CONFIG_FILE" | grep -oE "'[A-Z_]+'" | tr -d "'"); do
+  VALUE="$(grep -E "^${VAR}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+  if [ -z "$VALUE" ]; then
+    MISSING="$MISSING $VAR"
+  fi
+done
+if [ -n "$MISSING" ]; then
+  echo "error: folgende Pflicht-Umgebungsvariable(n) fehlen in $ENV_FILE:$MISSING" >&2
+  echo "Bitte eintragen (siehe docs/Installationsanleitung.md) und Update erneut ausführen." >&2
+  exit 1
+fi
+
 echo "==> npm ci (als $SERVICE_USER)"
-run_as_service_user "npm ci"
+# --prefer-offline: vertraut dem lokalen npm-Cache, statt bei jedem der
+# gut 500 Pakete erst eine Registry-Anfrage abzuwarten — auf einer
+# latenzreichen Veranstaltungs-Internetverbindung (z. B. mobiler Hotspot)
+# macht das den Unterschied zwischen Sekunden und mehreren Minuten pro
+# Update, wenn sich package-lock.json ohnehin nicht geändert hat.
+#
+# --ignore-scripts (D-070, 2026-09-12): `testcontainers` (nur für
+# Integrationstests, packages/backend/package.json devDependencies) zieht
+# über dockerode/docker-modem das Paket `ssh2` und dessen native
+# Crypto-Beschleunigung (`cpu-features`) mit — beide bauen bei jedem
+# `npm ci` per node-gyp aus C-Quellcode neu, was auf schwächerer
+# Server-Hardware 20-30+ Minuten dauern kann, obwohl sie im
+# Produktivbetrieb nie verwendet werden (ssh2 fällt ohnehin auf reines
+# JavaScript zurück, falls der native Build fehlschlägt oder fehlt).
+# `--ignore-scripts` überspringt diesen Build (und den harmlosen
+# Versions-Hinweis von `protobufjs`, ebenfalls nur aus der
+# testcontainers-Kette) — einzige Ausnahme ist `esbuild` (für den
+# Frontend-Build nötig), dessen install-Skript direkt danach gezielt
+# nachgeholt wird.
+run_as_service_user "npm ci --ignore-scripts --prefer-offline"
+run_as_service_user "npm rebuild esbuild"
 
 echo "==> Build (als $SERVICE_USER)"
 run_as_service_user "npm run build"
+
+echo "==> tseCli neu bauen (als $SERVICE_USER)"
+# Eigener Build-Schritt, weil er nicht Teil von "npm run build" ist (C++,
+# kein npm-Workspace) — ein reiner `git pull` + npm-Build lässt die
+# TSE-CLI-Binary sonst unbemerkt auf dem alten Stand, selbst wenn sich
+# tseCli.cpp geändert hat (live 2026-09-10 aufgefallen: neue info-Felder
+# fehlten trotz aktuellem Checkout, bis die Binary manuell neu gebaut wurde).
+run_as_service_user "packages/backend/native/tse-cli/build.sh"
 
 echo "==> Frontend-SPA nach packages/backend/public/ kopieren (als $SERVICE_USER)"
 run_as_service_user "rm -rf packages/backend/public && mkdir -p packages/backend/public && cp -r packages/frontend/build/. packages/backend/public/"

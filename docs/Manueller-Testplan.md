@@ -8,9 +8,9 @@ und mit echter (oder simulierter) TSE-Hardware.
 
 **Nutzung:** Vor jedem größeren Release / vor dem ersten Produktivgang einmal
 komplett durchgehen. Zwischendurch reicht der jeweils betroffene Abschnitt.
-Gefundene Probleme in `DANGER.md` eintragen, nicht nur hier abhaken.
+Gefundene Probleme in `BACKLOG.md` eintragen, nicht nur hier abhaken.
 
-**Stand:** August 2026. Bei neuen Features diese Liste ergänzen (siehe
+**Stand:** September 2026. Bei neuen Features diese Liste ergänzen (siehe
 Abschnitt „Diese Liste aktuell halten" am Ende).
 
 ---
@@ -24,7 +24,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] Mindestens 3 Artikel in mind. 2 Artikelgruppen mit unterschiedlichen Steuersätzen (19 %, 7 %, ggf. 0 %)
 - [ ] Mindestens 1 Artikel mit Pfand (`deposit_price` > 0)
 - [ ] Getestet in mind. einem Desktop-Browser und einem mobilen/Touch-Browser (Bonkasse/Bedienungskasse sind Touch-UIs)
-- [ ] TSE-Konfiguration (Systemeinstellungen → System) für diesen Lauf bewusst gewählt: **entweder** komplett unkonfiguriert (Warnungs-Pfad testen) **oder** auf echte/simulierte Hardware zeigend (Erfolgs-Pfad testen) — beide Zustände separat durchlaufen, siehe Abschnitt 9
+- [ ] TSE-Konfiguration (Einstellungen → TSE) für diesen Lauf bewusst gewählt: **entweder** komplett unkonfiguriert (Warnungs-Pfad testen) **oder** auf echte/simulierte Hardware zeigend (Erfolgs-Pfad testen) — beide Zustände separat durchlaufen, siehe Abschnitt 9
 
 ---
 
@@ -32,9 +32,9 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 - [ ] PIN-Login funktioniert (PIN aus Admin-Benutzerverwaltung vergeben, auf der Login-Seite eingeben — mit und ohne Bindestriche, Groß-/Kleinschreibung egal)
 - [ ] Falsche/unbekannte PIN wird mit generischer Meldung abgelehnt
-- [ ] Nach 3 Fehlversuchen wird die eigene IP für 15 Minuten gesperrt; „Alle aktiven IP-Sperren zurücksetzen" (Systemeinstellungen → System) hebt die Sperre sofort auf
+- [ ] Nach 3 Fehlversuchen wird die eigene IP für 15 Minuten gesperrt; die „PIN-Login: IP-Sperren"-Kachel auf dem Dashboard zeigt die Anzahl und bietet einen „Zurücksetzen"-Button, der die Sperre sofort aufhebt
 - [ ] Deaktivierter Benutzer kann sich nicht mehr per PIN anmelden, eine bereits offene Session wird beim nächsten Request sofort beendet (Task #56)
-- [ ] „Systemverwaltung"-Button erscheint auf der Kassenauswahl nur bei einem Administrator-Konto, zwischen Kassenliste und „Abmelden"
+- [ ] „Systemverwaltung"-Button erscheint auf der Kassenauswahl bei einem System- **oder** Veranstaltungs-Administrator-Konto (Task #94), zwischen Kassenliste und „Abmelden" — insbesondere bei einer reinen Veranstaltungs-Administratorin mit genau einer zugewiesenen Kasse, die sonst automatisch direkt in diese Kasse weitergeleitet würde
 - [ ] Passwort-Abfrage bei „Systemverwaltung" wird nur beim ersten Klick pro Sitzung gestellt, nicht erneut bei weiteren Wechseln zwischen Kasse und Verwaltung
 - [ ] Falsches Passwort bei der Systemverwaltung-Abfrage wird abgelehnt, Zugriff auf `/admin/*` bleibt verwehrt
 - [ ] Logout beendet die Sitzung vollständig — sowohl Kassenauswahl als auch Systemverwaltung sind danach ohne erneuten Login nicht mehr erreichbar
@@ -42,26 +42,40 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 ---
 
-## 2. Admin: Systemeinstellungen
+## 2. Admin: Einstellungen
 
-### Unternehmensdaten (`/admin/settings/company`)
+### Unternehmensdaten (Organisation → Unternehmensdaten, `/admin/settings/company`)
 - [ ] Name, Anschrift, Steuernummer, USt-IdNr. speichern und laden
-- [ ] Belegnummer-Präfix + Startwert ändern — nächster Beleg übernimmt neuen Präfix
+- [ ] Belegnummer-Präfix + Startwert ändern — nächster Beleg übernimmt neuen Präfix — **System-Administrator-exklusiv** (Task #94): bei einer Veranstaltungs-Administratorin nicht editierbar/sichtbar
 - [ ] Logo hochladen, auf Bon-Vorschau sichtbar; Logo entfernen
 - [ ] Logo-Zoom ändern, Vorschau aktualisiert sich
-- [ ] Pfand-USt-Satz ändern
+- [ ] Pfand-USt-Satz ändern — **System-Administrator-exklusiv** (Task #94)
 
-### System (`/admin/settings/system`)
+### System (Einstellungen → System, `/admin/settings/system`)
 - [ ] Kassensystem-Seriennummer wird angezeigt (nicht editierbar), Kopieren-Button funktioniert
 - [ ] Zeitzone + laufende Serverzeit werden angezeigt und aktualisieren sich
-- [ ] Server-Adresse speichern — QR-Code auf Kundenbon zeigt danach korrekt auf diese Adresse
-- [ ] **Datenbank-Backup:** „Backup herunterladen" liefert ein ZIP mit SQL-Dump + Wiederherstellungs-README
+- [ ] **Datenbank-Backup:** „Backup herunterladen" liefert ein ZIP mit SQL-Dump + Wiederherstellungs-README — **System-Administrator-exklusiv** (Task #94)
+
+### TSE (Einstellungen → TSE, `/admin/settings/tse`)
 - [ ] **TSE-Verbindung:** Mount-Pfad, Client-ID, TimeAdmin-PIN eintragen und speichern — Änderung wirkt **ohne Neustart**
 - [ ] **TSE testen**-Button:
   - [ ] Ohne Konfiguration: zeigt „TSE ist nicht konfiguriert"
   - [ ] Mit falschem/nicht existierendem Pfad: zeigt Fehlermeldung, keine Absturz
   - [ ] Mit funktionierender TSE: zeigt Self-Test-Status, Seriennummer, Zertifizierungs-ID, Restsignaturen, Zertifikatsablauf
   - [ ] „Rohdaten (JSON)"-Aufklapper + Kopieren-Button funktionieren
+- [ ] **Zeit synchronisieren**-Button (Task #64) läuft ohne Fehler, wenn die TSE erreichbar ist
+- [ ] **TSE-Rohdaten exportieren**-Button (Task #103) liefert einen TAR-Download; Export wird als `system_log`-Eintrag (Kategorie `tse_export`) protokolliert; ohne konfigurierte TSE erscheint eine Fehlermeldung statt Absturz
+
+### Dashboard (Task #104)
+- [ ] Kacheln sind in zwei Abschnitte gruppiert: „Veranstaltung" (Aktive Veranstaltung, Ausstehende Tagesabschlüsse, Tagesumsatz, Offene Rechnungen) und „System" (TSE-Zustand, Druckwarteschlange, Aktive Sitzungen, PIN-Login: IP-Sperren)
+- [ ] „Aktive Veranstaltung"-Kachel zeigt eine orangene Zeitfenster-Warnung (inkl. `warn`-Kachelrand), wenn die aktuelle Systemzeit außerhalb `startTime`/`endTime` der aktiven Veranstaltung liegt — keine Warnung, wenn die Systemzeit innerhalb liegt
+- [ ] „Server herunterfahren"-Button steht oben rechts im Dashboard-Header (nicht mehr unter Einstellungen → System), Bestätigungsdialog + Shutdown-Aufruf funktionieren unverändert
+
+### Zwei-Stufen-Admin (Task #94)
+- [ ] Veranstaltungs-Administrator-Konto: Menüpunkte „Veranstaltungen" und „Backup" sind nicht sichtbar/erreichbar (403 bei direktem Aufruf der jeweiligen Route) — „Systemprotokoll" dagegen bewusst sichtbar (seit 2026-08-31, siehe Task #94-Revision), da die Dashboard-Kachel „TSE-Zustand" für beide Adminstufen davon abhängt
+- [ ] Veranstaltungs-Administrator kann `is_admin` bei keinem Benutzer setzen, keinen System-Administrator löschen oder dessen Passwort/PIN ändern
+- [ ] Veranstaltungs-Administrator sieht in den Einstellungen keine System-exklusiven Felder (Belegnummer-Präfix/-Start, Pfand-USt-Satz)
+- [ ] Veranstaltungs-Administrator sieht die aktive Veranstaltung auf dem Dashboard und in der Veranstaltungsliste, hat aber keinen „Aktivieren"-Button
 
 ---
 
@@ -69,51 +83,61 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 
 - [ ] **Artikelgruppen:** anlegen, Steuersatz ändern, löschen (nur wenn keine Artikel mehr zugeordnet)
 - [ ] **Artikel:** anlegen mit Preis/Pfand/Belegtext, Produktoptionen hinzufügen, Drucker zuordnen, deaktivieren/aktivieren
-- [ ] **Drucker:** anlegen (IP/Port), Standarddrucker setzen (genau einer aktiv), Testdruck auslösen, Löschen eines noch zugeordneten Druckers zeigt klare Fehlermeldung statt Absturz (Task #57)
+  - [ ] Löschen eines bereits verkauften Artikels zeigt klare Fehlermeldung („wurde bereits verkauft… über die 'Aktiv'-Checkbox deaktivieren") statt „Internal Server Error" (Task #84)
+  - [ ] **Nachträgliche Datenänderung (Task #127):** Artikel verkaufen (Beleg/Bon abschließen), danach am selben Artikel Name, Preis **und** USt-Satz ändern. Prüfen, dass die **historische** Buchung überall unverändert bleibt (Snapshot zum Verkaufszeitpunkt), nicht rückwirkend die neuen Stammdaten zeigt: Rechnungs-PDF/Reprint (Name, Preis, Steuersatz), Z-Bon-Summen des betroffenen Tagesabschlusses (Steuertöpfe unverändert), DSFinV-K-Export (`ARTIKELTEXT`/`UST_SCHLUESSEL`/`POS_BRUTTO` in `lines.csv`/`lines_vat.csv` für den alten Vorgang). Verwandter, bereits bekannter Fall: Task #112 (Firmendaten/Logo).
+- [ ] **Drucker:** anlegen (IP/Port), Standarddrucker setzen (genau einer aktiv), Testdruck auslösen
+  - [ ] Löschen eines noch zugeordneten Druckers zeigt klare Fehlermeldung statt Absturz (Task #57)
+  - [ ] Drucker ohne Zuordnung erfolgreich löschen (Task #96)
 - [ ] **Kassen (Register):** Bonkasse + Bedienungskasse anlegen, Typ nicht nachträglich änderbar (falls so vorgesehen), Drucker zuordnen
   - [ ] Kasse mit vorhandener Rechnung archivieren (Aktiv-Häkchen entfernen) — verschwindet aus dem Kassen-Login-Picker, bleibt in Auswertungen/DSFinV-K-Export sichtbar (Task #55)
-- [ ] **Kassenlayouts:** Raster anlegen, Artikel per Drag&Drop platzieren, Standardlayout je Kassentyp setzen
+- [ ] **Kassenlayouts:** Raster anlegen, Artikel per Drag&Drop platzieren, Standardlayout je Kassentyp der aktiven Veranstaltung setzen (Task #95 — Einstellung liegt auf der Kassenlayouts-Seite, nicht mehr global)
 - [ ] **Kassenlayout-Slot-Attribute (Task #91):** Farbe/Beschriftung/Versteckt bleiben beim Verschieben eines Artikels auf einen anderen Slot erhalten; individuelle Tastenbeschriftung erscheint an der Kasse, Bestellliste zeigt weiterhin den echten Artikelnamen; versteckte Taste ist an Bonkasse/Bedienung nicht sichtbar
 - [ ] **Saalplan:** Spalten/Zeilen hinzufügen/löschen, Tische anlegen, Tisch-Status ändern (aktiv/inaktiv/versteckt), Tisch umbenennen
 - [ ] **Stornogründe:** anlegen mit `booking_type` Storno bzw. Kostenfrei, deaktivieren
-- [ ] **Benutzer:** anlegen (Admin/Kassenpersonal), Passwort setzen (nur Admin), PIN generieren/manuell ändern, Selbstlöschung wird verhindert
+- [ ] **Benutzer:** anlegen (System-/Veranstaltungs-Administrator/Kassenpersonal), Passwort setzen (nur bei aktiviertem Admin-Schalter), PIN generieren/manuell ändern/drucken
   - [ ] PIN-Duplikat wird beim Speichern abgelehnt (409), eigene unveränderte PIN erneut speichern funktioniert
-  - [ ] Benutzer mit vorhandener Buchung deaktivieren — PIN-Login und Passwort-Stufenauth werden abgelehnt, eine bereits offene Session dieses Benutzers wird sofort beendet, Selbstdeaktivierung wird verhindert (Task #56)
-- [ ] **Veranstaltungen:** anlegen mit Zeitraum, wird als Standard in Auswertungen/Excel-Export vorausgewählt
+  - [ ] Selbstlöschung wird verhindert; nur ein System-Administrator darf einen anderen System-Administrator löschen (Task #94)
+  - [ ] Benutzer mit vorhandener Buchungshistorie erfolgreich löschen (Task #97) — keine Fehlermeldung mehr, Buchungen behalten den Namen als Text-Schnappschuss
+  - [ ] Benutzer deaktivieren — PIN-Login und Passwort-Stufenauth werden abgelehnt, eine bereits offene Session dieses Benutzers wird sofort beendet, Selbstdeaktivierung wird verhindert (Task #56)
+- [ ] **Veranstaltungen (Organisation → Veranstaltungen, System-Administrator-exklusiv):** anlegen mit Zeitraum; in der Liste per „Aktivieren"-Button als aktive Veranstaltung setzen (markiert wie der Standarddrucker) — nichts wird mehr automatisch vorausgewählt
+  - [ ] Neue Veranstaltung anlegen und aktivieren → Artikel/Kassen/Kassenlayouts/Saalplan/Stornogründe zeigen sich leer
+  - [ ] Zurück auf die vorherige Veranstaltung wechseln → alle Altdaten sind wieder vollständig sichtbar
+  - [ ] Zeiträume überschneidender Veranstaltungen werden beim Anlegen abgelehnt (409)
 
 ---
 
 ## 4. Bonkasse (Kassieren)
 
-- [ ] Login per QR-Token, Kassenlayout wird angezeigt
+- [ ] PIN-Login, Kasse aus der Auswahl wählen, Kassenlayout wird angezeigt
 - [ ] Artikel per Tap zur Bestellliste hinzufügen, Menge ändern, Position entfernen
 - [ ] Negative/leere Bestellliste wird beim Kassieren-Versuch abgelehnt
 - [ ] Kassieren erzeugt Beleg mit korrekter, fortlaufender Belegnummer
-- [ ] QR-Code im Kassierdialog zeigt auf den Kundenbeleg (siehe Abschnitt 13)
 - [ ] „Rechnung drucken" enqueued einen Druckauftrag
+- [ ] „Kunde wünscht keinen Beleg" schließt den Dialog ohne Druckauftrag (Task #100 — ersetzt die frühere QR-Code-Anzeige)
 - [ ] Selbstabholerbon wird pro Artikel-Einheit am Kassendrucker gedruckt (nicht am Standarddrucker der Bedienung)
 - [ ] Pfandartikel: Pfandbon wird korrekt gedruckt (separat oder inline, je Artikelkonfiguration)
 - [ ] Kassieren funktioniert weiterhin, wenn kein Drucker zugeordnet ist — `slip_printer_missing`-Hinweis sichtbar
 - [ ] **TSE konfiguriert + funktionsfähig:** keine Warnung, Beleg trägt TSE-Transaktionsnummer/-Signatur (in Admin-Rechnungsansicht prüfbar)
+- [ ] **QR-Code auf dem physischen Ausdruck (Task #101/#105):** gedruckter Kassenbon zeigt denselben TSE-Prüf-QR-Code wie die PDF-Rechnung (vorher nur auf der PDF), Beschriftung „Kassensystem-Seriennr." identisch auf beiden Formaten
 - [ ] **TSE nicht konfiguriert oder nicht erreichbar:** Verkauf wird **trotzdem abgeschlossen**, orange Warnung erscheint im Kassierdialog, Beleg hat keine TSE-Felder
 
 ---
 
 ## 5. Bedienungskasse
 
-- [ ] Login per QR-Token, Saalplan wird angezeigt, Tisch-Belegungsstatus korrekt
+- [ ] PIN-Login, Kasse aus der Auswahl wählen, Saalplan wird angezeigt, Tisch-Belegungsstatus korrekt
 - [ ] Tisch auswählen → Bestellansicht → Artikel mit Optionen bestellen
 - [ ] Bestellbon wird am artikelspezifischen Drucker gedruckt (Fallback: Standarddrucker)
 - [ ] Bestellung ohne verfügbaren Drucker: Bestellung wird trotzdem angelegt, Warnhinweis (Alert) erscheint
 - [ ] **TSE-Warnung bei Bestellung:** wie oben — erscheint als Alert, Bestellung wird trotzdem angelegt (AVBestellung)
 - [ ] Zurück zur Tischaktionsauswahl, mehrere Bestellrunden am selben Tisch möglich
 - [ ] **Kassieren (Split):** offene Positionen laden, Teilmenge auswählen, kassieren → korrekte Restmenge bleibt offen
-- [ ] Kassieren-Dialog zeigt QR-Code + Drucken-Button wie Bonkasse
+- [ ] Kassieren-Dialog: „Drucken"-Button und „Kunde wünscht keinen Beleg"-Button (Task #100 — ersetzt die frühere QR-Code-Anzeige, identisch zur Bonkasse)
 - [ ] **TSE-Warnung beim Kassieren:** Kassenbeleg-V1-Signierung fehlgeschlagen/nicht konfiguriert → inline sichtbar im Kassierdialog, Zahlung trotzdem abgeschlossen
 - [ ] **Stornieren:** Positionen auswählen, Stornogrund wählen, bestätigen → Positionen als storniert markiert
 - [ ] **Kostenfrei:** wie oben mit `booking_type=free_of_charge`
 - [ ] **TSE-Warnung bei Storno/Kostenfrei:** erscheint als Alert (Dialog schließt sofort), AVSonstige-Signierung wird versucht
-- [ ] Register-Sperre: Bedienungskasse blockiert Bestellen/Kassieren, wenn für die Kasse ein ausstehender Z-Bon existiert (409, klare Fehlermeldung)
+- [x] Register-Sperre: Bedienungskasse blockiert Bestellen/Kassieren, wenn für die Kasse ein ausstehender Z-Bon existiert (409, klare Fehlermeldung) — getestet 2026-09-10
 
 ---
 
@@ -122,11 +146,17 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] Manueller Tagesabschluss für eine Kasse mit offenen (unabgeschlossenen) Rechnungen erzeugt korrekten Z-Bon (Summen, Steueraufschlüsselung, Storno-Summe)
 - [ ] Nullabschluss (keine Bewegung) wird als solcher markiert und gedruckt/angezeigt
 - [ ] Z-Bon-Nummer ist fortlaufend pro Kasse, keine Lücken
-- [ ] Ausstehende Tage werden im Banner/Badge angezeigt, bevor sie abgeschlossen werden
-- [ ] „Alle ausstehenden Tage jetzt nachholen" schließt sie chronologisch nacheinander ab
-- [ ] „Alle Kassen jetzt abschließen" (globaler Shortcut) funktioniert
+- [x] Ausstehende Tage werden an allen UI-Stellen angezeigt, bevor sie abgeschlossen werden (globales Banner, Dashboard-Kachel, Kassenliste-Badge, Kassendetail-Karte) — getestet 2026-09-10
+- [x] „Alle ausstehenden Tage jetzt nachholen" schließt sie chronologisch nacheinander ab — getestet 2026-09-10
+- [x] Heutigen Tag erst nach vollständigem Nachholen separat abschließen (Button vorher disabled mit Hinweistext) — getestet 2026-09-10
 - [ ] Z-Bon-PDF öffnet sich korrekt, Reprint enqueued einen neuen Druckauftrag
 - [ ] Nach Abschluss: betroffene Rechnungen sind dem Z-Bon zugeordnet und erscheinen nicht mehr als „offen"
+
+**Hinweis:** Der frühere Eintrag „„Alle Kassen jetzt abschließen" (globaler
+Shortcut) funktioniert" wurde entfernt — dieser systemweite Button/Endpunkt
+(`POST /closings/close-all`) wurde am 2026-09-06 bewusst gestrichen (siehe
+D-054 in `BACKLOG-DONE.md`); jede Kasse wird seither einzeln über ihre
+Detailseite abgeschlossen.
 
 ---
 
@@ -137,16 +167,18 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] Falscher Stornogrund (`free_of_charge`) wird abgelehnt (400)
 - [ ] Leere Positionsliste wird abgelehnt
 - [ ] **TSE-Warnung:** wie bei anderen Kassenbeleg-V1-Vorgängen — Storno wird trotzdem angelegt, Warnung sichtbar
+- [ ] **Z-Bon (D-068, 2026-09-12):** nach dem nächsten Tagesabschluss erscheint der Bonstorno-Betrag als eigene Zeile "Stornierte Rechnungen" (nicht mehr in einer gemeinsamen "Stornos/Kostenfrei"-Zeile) und reduziert `total_gross`/die Steueraufschlüsselung korrekt mit — vorher wurde er dort komplett unsichtbar
 
 ---
 
 ## 8. Auswertungen & Excel-Export
 
-- [ ] Umsatz-/Storno-/offene-Positionen-Reports laden korrekte Daten für die ausgewählte Veranstaltung
+- [ ] Umsatz-/Storno-/offene-Positionen-Reports laden korrekte Daten für die **aktive** Veranstaltung (Task #95 — keine Veranstaltungsauswahl mehr auf diesen Seiten; zum Prüfen einer anderen Veranstaltung diese zuerst unter „Organisation → Veranstaltungen" aktivieren)
 - [ ] Kassenbestand-Auswertung zeigt korrekten Soll-Bestand (Stornos/kostenfreie Positionen korrekt ausgeschlossen/eingerechnet)
 - [ ] „Erstellte Rechnungen"-Auswertung: Reprint-Button je Zeile funktioniert
 - [ ] Excel-Tagesexport für ein gewähltes Datum lädt herunter, öffnet in Excel/LibreOffice, Zeilen plausibel
-- [ ] Excel-Veranstaltungsexport für die gewählte Veranstaltung lädt herunter
+- [ ] Excel-Veranstaltungsexport für die aktive Veranstaltung lädt herunter — ohne Veranstaltungsauswahl
+- [ ] Rechnungs-PDFs (ZIP) — Tagesexport und Veranstaltungsexport laden je ein ZIP mit einem PDF pro Rechnung herunter
 
 ---
 
@@ -173,6 +205,7 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 - [ ] Erfolgreiche Signierung: Beleg trägt korrekte TSE-Transaktionsnummer, Signaturzähler, Signatur, Start-/Endzeit
 - [ ] `maintain` (Self-Test + Zeit-Sync) läuft ohne Fehler, sofern/wenn ein periodischer Job existiert
 - [ ] AVBelegabbruch-Pfad: TSE-Verbindung mitten in einem Vorgang trennen (z. B. USB-Stick kurz abziehen) — Vorgang wird per Zweit-`finish` als `AVBelegabbruch` geschlossen, kein dauerhaft offener Vorgang auf der TSE (`info`-Abruf zeigt `startedTransactions` zurück auf 0 statt aufsteigend hängen)
+- [ ] **Inhaltliche Vollständigkeitsprüfung (Task #47/#102):** vor einer Serie von Testbuchungen `info`s `startedTransactions` notieren, danach erneut abfragen — Differenz muss der Anzahl der Testbuchungen entsprechen. Zusätzlich `tseCli dumpProcessData <ausgabedatei>` ausführen (siehe `docs/TSE-CLI-Referenz.md` Abschnitt 2/3) und die `processData`-Spalte jeder `TRANSACTION`-Zeile gegen die tatsächlich getätigten Testbuchungen (Beträge, Zahlart) abgleichen
 
 ---
 
@@ -197,11 +230,11 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 - [ ] `vat.csv`: `UST_SCHLUESSEL` 1=19 %, 2=7 %, 5=0 % — passend zu den im Abschluss tatsächlich verwendeten Steuersätzen
 - [ ] Summen in `businesscases.csv`/`payment.csv`/`cash_per_currency.csv` stimmen mit dem gedruckten Z-Bon überein (Bar-Summe, Steueraufschlüsselung)
 - [ ] CSV-Dateien lassen sich in Excel/LibreOffice mit Semikolon als Trenner öffnen und sind lesbar (Umlaute korrekt, kein Encoding-Problem)
+- [ ] **`tse.csv`:** `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` sind mit echten Zertifikatsdaten gefüllt (Base64, nicht leer) — noch nicht an echter Hardware bestätigt, siehe Task #120
+- [ ] Export-ZIP enthält `gdpdu-01-09-2004.dtd` neben `index.xml`
 
 **Bekannte, dokumentierte Einschränkungen — nicht als Bug melden, aber im Hinterkopf behalten:**
-- `service_order`/`order_cancellation` werden über Kasse + Kalendertag angenähert, nicht exakt dem Kassenabschluss zugeordnet (Abschnitt 6.7)
-- Nur die volle TSE-Zertifikatskette (`TSE_ZERTIFIKAT_I/II` in `tse.csv`) ist noch leer — Signaturalgorithmus/Zeitformat/Public-Key sind seit Task #46 gefüllt
-- CSV-Trennzeichen/`index.xml`-Schema folgen der verbreiteten Konvention, sind aber nicht gegen die separate GoBD-Anlage verifiziert (Abschnitt 6, Einleitung)
+- `TSE_ZERTIFIKAT_I/II` sind seit 2026-09-08 verdrahtet, aber ein Live-Hardware-Test steht noch aus (siehe oben) — bis dahin können sie an echter Hardware theoretisch noch leer bleiben, falls das Auslesen der Zertifikatskette selbst fehlschlägt (Signaturalgorithmus/Zeitformat/Public-Key sind davon unabhängig und seit Task #46 bestätigt gefüllt)
 
 ---
 
@@ -211,18 +244,21 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 - [ ] Fehlgeschlagener Job (Drucker offline) kann erneut versucht werden
 - [ ] Job kann abgebrochen/gelöscht werden
 - [ ] Testdruck vom Drucker-Einstellungsbildschirm funktioniert
+- [ ] **PDF-Button (Task #105):** für jeden Auftragstyp außer PIN-Zettel
+      verfügbar (Rechnung, Z-Bon, Bestellzettel, Testdruck) — öffnet eine
+      PDF-Vorschau, die optisch wie der Ausdruck aussieht (Monospace, keine
+      Farbe)
+- [ ] **"Erneut drucken" (Task #105):** für jeden Auftragstyp außer
+      PIN-Zettel verfügbar, unabhängig vom Status — legt einen neuen
+      Druckauftrag mit identischem Inhalt auf demselben Drucker an
+- [ ] **PIN-Zettel-Sperre (Task #105, Sicherheit):** weder PDF-Button noch
+      "Erneut drucken" erscheinen bei einem PIN-Zettel-Auftrag; direkter
+      Aufruf der Endpunkte (`GET/POST .../pin-zettel-id/pdf` bzw.
+      `/reprint`) liefert `403`, nicht nur ausgeblendet im UI
 
 ---
 
-## 12. Kundenansicht (Rechnung online)
-
-- [ ] QR-Code vom Kassierdialog scannen (oder URL manuell öffnen) → öffentliche Rechnungsseite lädt ohne Login
-- [ ] Rechnungs-PDF zeigt dieselben Daten wie der gedruckte Bon (inkl. TSE-Block, auch wenn leer)
-- [ ] Ungültiger/abgelaufener Token liefert 404, keine Serverfehler-Seite
-
----
-
-## 13. Rand- und Fehlerfälle
+## 12. Rand- und Fehlerfälle
 
 - [ ] Doppeltes Anlegen (Artikelgruppe, Benutzername, Tisch-Label) wird mit 409 abgelehnt, nicht mit 500
 - [ ] Sehr lange Texteingaben (Artikelname, Notiz) werden ohne Absturz verarbeitet oder sinnvoll begrenzt
@@ -232,7 +268,7 @@ Abschnitt 9 — Team plant Wechsel auf natives Ubuntu-System dafür):
 
 ---
 
-## 14. Touch-/Mobile-Bedienung
+## 13. Touch-/Mobile-Bedienung
 
 - [ ] Bonkasse- und Bedienungskasse-UI auf einem Tablet/Touch-Gerät im Querformat getestet
 - [ ] Buttons groß genug für Touch-Bedienung (kein versehentliches Doppel-Tap-Auslösen)
@@ -246,4 +282,4 @@ Wenn ein neues Feature entsteht: hier einen Abschnitt/Punkt ergänzen, bevor
 die Aufgabe als abgeschlossen gilt — siehe Vorgehen in dieser Session (Docs
 werden bei jeder Änderung mitgepflegt, nicht nachträglich gesammelt). Wenn ein
 Testschritt beim Durchlaufen einen echten Fehler aufdeckt, den Fehler in
-`DANGER.md` eintragen (nicht nur hier den Haken weglassen).
+`BACKLOG.md` eintragen (nicht nur hier den Haken weglassen).

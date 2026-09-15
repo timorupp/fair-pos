@@ -12,8 +12,10 @@ import { applyTseSettings, TSE_SETTING_KEYS } from '../../tse/settings.js';
 const ALLOWED_KEYS = new Set([
   'company_name', 'company_street', 'company_postal_code', 'company_city',
   'company_tax_number', 'company_vat_id', 'receipt_prefix', 'receipt_counter_start',
-  'vat_rate_deposit', 'server_address',
-  'default_layout_receipt_register', 'default_layout_service_register',
+  // USt-Sätze (Task #110) — Regelsteuersatz/ermäßigter Steuersatz. Pfand
+  // (Task #113) verwendet direkt `vat_rate_standard`, braucht kein eigenes
+  // Setting mehr (löst das frühere, nie verdrahtete `vat_rate_deposit` ab).
+  'vat_rate_standard', 'vat_rate_reduced',
   // Per-document-type checkboxes for the company logo.
   'logo_on_receipt', 'logo_on_cancellation', 'logo_on_z_bon',
   'logo_on_order_slip', 'logo_on_pickup_slip', 'logo_on_deposit_slip',
@@ -24,7 +26,25 @@ const ALLOWED_KEYS = new Set([
   ...TSE_SETTING_KEYS,
 ]);
 
-/** Admin routes for system settings (key-value store). */
+/**
+ * Keys editable only by a System-Administrator (Task #94) — everything else
+ * in `ALLOWED_KEYS` is editable by a Veranstaltungs-Administrator too. A
+ * renting club needs to set its own company data/logo/TSE connection, but
+ * must not touch the legally-sensitive global receipt numbering. The USt-
+ * Sätze (`vat_rate_standard`/`vat_rate_reduced`) are deliberately NOT
+ * System-Administrator-exklusiv (Nutzervorgabe 2026-09-03) — a
+ * Veranstaltungs-Administrator must be able to react to a legal rate change
+ * for their own event without depending on the System-Administrator.
+ */
+const SYSTEM_ONLY_KEYS = new Set([
+  'receipt_prefix', 'receipt_counter_start',
+]);
+
+/**
+ * Admin routes for system settings (key-value store).
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function settingsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
@@ -49,7 +69,9 @@ export async function settingsAdminRoute(app: FastifyInstance): Promise<void> {
    */
   app.put('/', async (req, reply) => {
     const body = req.body as Record<string, string>;
-    const entries = Object.entries(body).filter(([k]) => ALLOWED_KEYS.has(k));
+    const entries = Object.entries(body).filter(
+      ([k]) => ALLOWED_KEYS.has(k) && (req.adminUser.is_admin || !SYSTEM_ONLY_KEYS.has(k)),
+    );
 
     for (const [key, value] of entries) {
       await query(
@@ -92,6 +114,11 @@ export async function settingsAdminRoute(app: FastifyInstance): Promise<void> {
       logoWidth: logo?.pdfWidth ?? 0,
       logoHeight: logo?.pdfHeight ?? 0,
       logoWidthFactor: logo?.pdfWidthFactor ?? 0,
+      // Task #105: the shared block builder now needs the ESC/POS raster
+      // too (a receipt's logo block carries both representations), even
+      // though this endpoint only ever renders the PDF — without this, the
+      // logo image block was silently skipped entirely, PDF or not.
+      logoEscPos: logo?.escposBytes ?? null,
     });
     reply
       .header('Content-Type', 'application/pdf')

@@ -15,48 +15,49 @@ describe('localDateString', () => {
 
 describe('pendingClosingDays', () => {
   const today = new Date(2026, 5, 24); // 24 June 2026, local
+  const noStragglers = new Set<string>();
 
   it('returns an empty list when the register has never been used', () => {
-    expect(pendingClosingDays(null, new Set(), today)).toEqual([]);
+    expect(pendingClosingDays(null, new Set(), noStragglers, today)).toEqual([]);
   });
 
   it('returns an empty list when the first activity is today', () => {
-    expect(pendingClosingDays(new Date(2026, 5, 24, 10, 0), new Set(), today)).toEqual([]);
+    expect(pendingClosingDays(new Date(2026, 5, 24, 10, 0), new Set(), noStragglers, today)).toEqual([]);
   });
 
   it('returns one day when activity started yesterday and there is no closing', () => {
-    expect(pendingClosingDays(new Date(2026, 5, 23, 18, 0), new Set(), today)).toEqual(['2026-06-23']);
+    expect(pendingClosingDays(new Date(2026, 5, 23, 18, 0), new Set(), noStragglers, today)).toEqual(['2026-06-23']);
   });
 
   it('returns every day between the first activity and yesterday inclusive', () => {
-    expect(pendingClosingDays(new Date(2026, 5, 20), new Set(), today))
+    expect(pendingClosingDays(new Date(2026, 5, 20), new Set(), noStragglers, today))
       .toEqual(['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23']);
   });
 
-  it('skips days that already have a closing', () => {
+  it('skips days that already have a closing and no stragglers', () => {
     const closed = new Set(['2026-06-21', '2026-06-22']);
-    expect(pendingClosingDays(new Date(2026, 5, 20), closed, today))
+    expect(pendingClosingDays(new Date(2026, 5, 20), closed, noStragglers, today))
       .toEqual(['2026-06-20', '2026-06-23']);
   });
 
   it('treats the first-activity day itself as needing a closing', () => {
-    expect(pendingClosingDays(new Date(2026, 5, 23, 11, 30), new Set(), today)).toEqual(['2026-06-23']);
+    expect(pendingClosingDays(new Date(2026, 5, 23, 11, 30), new Set(), noStragglers, today)).toEqual(['2026-06-23']);
   });
 
   it('never includes today even when no closing exists', () => {
-    expect(pendingClosingDays(new Date(2026, 5, 24, 8, 0), new Set(), today)).toEqual([]);
+    expect(pendingClosingDays(new Date(2026, 5, 24, 8, 0), new Set(), noStragglers, today)).toEqual([]);
   });
 
   it('handles a closing chain followed by a fresh gap', () => {
     // First activity 2026-06-18, closings on 18 and 19, then no abschluss for 20-23.
     const closed = new Set(['2026-06-18', '2026-06-19']);
-    expect(pendingClosingDays(new Date(2026, 5, 18), closed, today))
+    expect(pendingClosingDays(new Date(2026, 5, 18), closed, noStragglers, today))
       .toEqual(['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23']);
   });
 
   it('handles a month boundary correctly', () => {
     // First activity 2026-05-30 → ten days until 2026-06-23 inclusive.
-    const result = pendingClosingDays(new Date(2026, 4, 30), new Set(), today);
+    const result = pendingClosingDays(new Date(2026, 4, 30), new Set(), noStragglers, today);
     expect(result[0]).toBe('2026-05-30');
     expect(result[result.length - 1]).toBe('2026-06-23');
     expect(result).toHaveLength(25);
@@ -64,7 +65,34 @@ describe('pendingClosingDays', () => {
 
   it('handles a year boundary correctly', () => {
     const newYearsToday = new Date(2026, 0, 3); // 3 January 2026
-    expect(pendingClosingDays(new Date(2025, 11, 30), new Set(), newYearsToday))
+    expect(pendingClosingDays(new Date(2025, 11, 30), new Set(), noStragglers, newYearsToday))
       .toEqual(['2025-12-30', '2025-12-31', '2026-01-01', '2026-01-02']);
+  });
+
+  describe('daysWithUnlinkedRows (D-075)', () => {
+    it('re-opens an already-closed day when a straggler row still needs linking', () => {
+      const closed = new Set(['2026-06-21', '2026-06-22', '2026-06-23']);
+      const stragglers = new Set(['2026-06-22']); // e.g. a booking created after that day's Z-Bon
+      expect(pendingClosingDays(new Date(2026, 5, 21), closed, stragglers, today))
+        .toEqual(['2026-06-22']);
+    });
+
+    it('has no effect on a day with no closing at all — already pending either way', () => {
+      const stragglers = new Set(['2026-06-23']);
+      expect(pendingClosingDays(new Date(2026, 5, 23), new Set(), stragglers, today))
+        .toEqual(['2026-06-23']);
+    });
+
+    it('never re-opens today, even with a straggler dated today', () => {
+      const closed = new Set(['2026-06-23']);
+      const stragglers = new Set(['2026-06-24']); // today itself
+      expect(pendingClosingDays(new Date(2026, 5, 23), closed, stragglers, today)).toEqual([]);
+    });
+
+    it('ignores a straggler day outside the [firstActivity, today) walk range', () => {
+      const closed = new Set(['2026-06-23']);
+      const stragglers = new Set(['2026-06-10']); // before firstActivity — cannot happen in practice, but must not crash/duplicate
+      expect(pendingClosingDays(new Date(2026, 5, 23), closed, stragglers, today)).toEqual([]);
+    });
   });
 });

@@ -16,20 +16,22 @@
  * see `tse/certificateInfo.ts`.
  */
 
+import type { TaxCategory } from '@fairpos/shared';
+
 /** The three DSFinV-K tax-rate slots FairPOS ever populates for `<Brutto-Steuerumsätze>` — the other two (Durchschnittssätze §24 UStG) are always `0.00`, FairPOS has no Landwirtschaft/Forstwirtschaft turnover. */
 interface TaxSlotTotals {
-  /** Allgemeiner Steuersatz (19 %). */
+  /** Allgemeiner Steuersatz. */
   allgemein: number;
-  /** Ermäßigter Steuersatz (7 %). */
+  /** Ermäßigter Steuersatz. */
   ermaessigt: number;
   /** 0 % / steuerfrei. */
   steuerfrei: number;
 }
 
-/** Maps a percent tax rate to its `<Brutto-Steuerumsätze>` slot (Anhang I: fixed order, only the rates FairPOS actually uses). */
-function taxSlot(ratePercent: number): keyof TaxSlotTotals {
-  if (Math.abs(ratePercent - 19) < 0.01) return 'allgemein';
-  if (Math.abs(ratePercent - 7) < 0.01) return 'ermaessigt';
+/** Maps a VAT category to its `<Brutto-Steuerumsätze>` slot (Anhang I: fixed order). Category-based rather than a percentage comparison (Task #110) — stays correct across any future Regelsteuersatz change instead of silently falling into `steuerfrei` for an unrecognised number. */
+function taxSlot(category: TaxCategory): keyof TaxSlotTotals {
+  if (category === 'standard') return 'allgemein';
+  if (category === 'reduced') return 'ermaessigt';
   return 'steuerfrei';
 }
 
@@ -51,42 +53,81 @@ export const BESTELLUNG_PROCESS_TYPE = 'Bestellung-V1';
 /** The literal TSE `processType` for anything that's neither a receipt nor an order (here: cancelling/free-of-charge an open, unpaid position). */
 export const SONSTIGER_VORGANG_PROCESS_TYPE = 'SonstigerVorgang';
 
-/** One sold article-unit (or several units aggregated on one line) as it contributes to the signed Kassenbeleg-V1 totals. */
+/**
+ * One sold article-unit (or several units aggregated on one line) as it
+ * contributes to the signed Kassenbeleg-V1 totals.
+ *
+ * Both amounts already carry whatever sign they should contribute with
+ * (D-068, 2026-09-12) — a Bonstorno reversal passes already-negated
+ * amounts; a normal sale passes its plain positive price. This function
+ * does not know or care which one it is, it only sums what it's given —
+ * see `routes/admin/cancellations.ts`'s module doc comment for the full
+ * reasoning and why no `receiptType`/sign flag lives here anymore.
+ */
 export interface KassenbelegPosition {
   quantity: number;
   unitPriceEuros: number;
+  /** Positive = Pfand aufgeschlagen, negative = Leergutrückgabe, null/0 = kein Pfand. Always taxed at `standard` regardless of `taxCategory` (Task #113 — Pfand unterliegt immer dem Regelsteuersatz). */
   depositPriceEuros: number | null;
-  taxRatePercent: number;
+  /** VAT category of the article itself — does NOT apply to `depositPriceEuros`, see above. */
+  taxCategory: TaxCategory;
 }
 
 /** Everything about a completed sale (or Bonstorno) that gets signed as `Kassenbeleg-V1`. */
 export interface KassenbelegSnapshot {
   paymentMethod: 'cash' | 'card';
-  /** Mirrors `invoice.receipt_type`. Determines the sign of every amount below — see Anhang I's "Warenrücknahme" example. */
-  receiptType: 'sales_receipt' | 'cancellation';
   positions: KassenbelegPosition[];
+  /**
+   * The embedded `<Vorgangstyp>` value (Task #130, 2026-09-12) — `'Beleg'`
+   * for a normal sale/Bonstorno, `'AVTraining'` when the booking happened on
+   * a register flagged `is_training`. This is the TSE-signed, tamper-proof
+   * record of what kind of booking this was — it must agree with the
+   * `BON_TYP` FairPOS later exports for the same Vorgang
+   * (`exports/dsfinvk/load.ts`/`rows.ts`), or an auditor comparing the raw
+   * TSE process-data log against the DSFinV-K export would find a mismatch
+   * (found live 2026-09-12 via the "Process-Data-Dump" tool: every
+   * Trainingskasse booking was still signed as plain `Beleg`, even though
+   * the DSFinV-K export already correctly classified it as `AVTraining` —
+   * the two must be derived from the exact same `register.is_training`
+   * flag, not just the export layer). Note this is still `Kassenbeleg-V1`
+   * at the TSE-hardware `processType` level either way (Task #130's own
+   * research: AEAO zu §146a Nr. 2.2.3.5/2.2.3.6 knows no fourth Vorgangsart)
+   * — only this embedded string, inside the signed processData, changes.
+   */
+  vorgangstyp: 'Beleg' | 'AVTraining';
 }
 
 /**
  * Serialises a Kassenbeleg-V1 snapshot into the exact
  * `<Vorgangstyp>^<Brutto-Steuerumsätze>^<Zahlungen>` wire format Anhang I
- * mandates for the `finishTransaction` call. `<Vorgangstyp>` is always
- * `Beleg`: FairPOS never uses `AVBelegstorno` once a TSE is in use — a
- * cancellation is its own `Beleg` with reversed-sign amounts instead (see
+ * mandates for the `finishTransaction` call. `<Vorgangstyp>` is `snapshot.
+ * vorgangstyp` — `'Beleg'` for every normal sale and Bonstorno (FairPOS
+ * never uses `AVBelegstorno` once a TSE is in use — a cancellation is its
+ * own `Beleg` with reversed-sign amounts instead, see
  * docs/Rechtliche-Anforderungen.md Abschnitt 6.2 for the verbatim citation
- * on why `AVBelegstorno` cannot be used with a TSE).
+ * on why `AVBelegstorno` cannot be used with a TSE), `'AVTraining'` for a
+ * training-register booking (Task #130). This function itself is
+ * sign-agnostic (D-068) — see `KassenbelegPosition`'s doc comment.
  *
- * @param snapshot - The sale's positions and payment method.
+ * @param snapshot - The sale's positions, payment method, and Vorgangstyp.
  * @returns UTF-8-encoded processData bytes.
  */
 export function buildKassenbelegProcessData(snapshot: KassenbelegSnapshot): Buffer {
-  const sign = snapshot.receiptType === 'cancellation' ? -1 : 1;
   const totals: TaxSlotTotals = { allgemein: 0, ermaessigt: 0, steuerfrei: 0 };
   let totalBrutto = 0;
   for (const pos of snapshot.positions) {
-    const brutto = sign * pos.quantity * (pos.unitPriceEuros + (pos.depositPriceEuros ?? 0));
-    totals[taxSlot(pos.taxRatePercent)] += brutto;
-    totalBrutto += brutto;
+    // Article and deposit are bucketed separately — the deposit always goes
+    // to `allgemein` (Regelsteuersatz) regardless of the article's own
+    // category (Task #113), so the two must never be summed before bucketing.
+    const articleBrutto = pos.quantity * pos.unitPriceEuros;
+    totals[taxSlot(pos.taxCategory)] += articleBrutto;
+    totalBrutto += articleBrutto;
+
+    if (pos.depositPriceEuros) {
+      const depositBrutto = pos.quantity * pos.depositPriceEuros;
+      totals.allgemein += depositBrutto;
+      totalBrutto += depositBrutto;
+    }
   }
 
   // "Zahlungen von 0.00 müssen entfallen" — omit the payment entirely rather
@@ -97,7 +138,7 @@ export function buildKassenbelegProcessData(snapshot: KassenbelegSnapshot): Buff
     ? ''
     : `${formatAmount(totalBrutto)}:${snapshot.paymentMethod === 'cash' ? 'Bar' : 'Unbar'}`;
 
-  return Buffer.from(`Beleg^${formatBruttoSteuerumsaetze(totals)}^${zahlungen}`, 'utf-8');
+  return Buffer.from(`${snapshot.vorgangstyp}^${formatBruttoSteuerumsaetze(totals)}^${zahlungen}`, 'utf-8');
 }
 
 /** The fixed processData Anhang I's own worked example uses to close out a dangling transaction (start succeeded, finish never did) — see docs/TSE-Integration.md Abschnitt 8.1, rule 6. */

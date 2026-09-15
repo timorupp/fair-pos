@@ -44,6 +44,22 @@ describe('GET /api/admin/sessions', () => {
     expect(rows.some((r: { admin_verified: boolean }) => r.admin_verified === true)).toBe(true);
   });
 
+  it('includes is_event_admin so an Veranstaltungs-Administrator-only session is distinguishable from a plain Bediener', async () => {
+    const app = await getTestApp();
+    const eventAdmin = await createTestUser({ isAdmin: false, isEventAdmin: true, password: 'pw', name: 'Event-Admin' });
+    await loginAsAdmin(app, eventAdmin.pin, eventAdmin.password);
+
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/sessions',
+      headers: { cookie: adminCookie },
+    });
+    const rows = response.json();
+    const row = rows.find((r: { user_name: string }) => r.user_name === 'Event-Admin');
+    expect(row).toBeDefined();
+    expect(row.is_admin).toBe(false);
+    expect(row.is_event_admin).toBe(true);
+  });
+
   it('rejects without an admin session', async () => {
     const app = await getTestApp();
     const response = await app.inject({ method: 'GET', url: '/api/admin/sessions' });

@@ -1,7 +1,7 @@
 /** Unit tests for the receipt formatting and aggregation helpers. */
 import { describe, it, expect } from 'vitest';
 import {
-  formatEuro, formatEuroLabel, formatGermanDateTime, formatTaxRate,
+  formatEuro, formatEuroLabel, formatGermanDateTime, formatGermanDateTimeShort, formatTaxRate, taxCategoryLetter,
   computeTaxBreakdown, computeTotalGross,
 } from './format.js';
 import type { ReceiptPosition } from './types.js';
@@ -48,6 +48,12 @@ describe('formatGermanDateTime', () => {
   });
 });
 
+describe('formatGermanDateTimeShort', () => {
+  it('formats like formatGermanDateTime but omits seconds', () => {
+    expect(formatGermanDateTimeShort(new Date(2026, 0, 3, 4, 5, 6))).toBe('03.01.2026 04:05');
+  });
+});
+
 describe('formatTaxRate', () => {
   it('strips trailing zeros on whole rates', () => {
     expect(formatTaxRate(19)).toBe('19 %');
@@ -60,8 +66,27 @@ describe('formatTaxRate', () => {
   });
 });
 
-const p = (name: string, qty: number, unit: number, rate: number, deposit: number | null = null): ReceiptPosition => ({
-  name, quantity: qty, unitPrice: unit, unitDeposit: deposit, taxRate: rate,
+describe('taxCategoryLetter', () => {
+  it('maps each tax category to its Kennbuchstabe (Task #115)', () => {
+    expect(taxCategoryLetter('standard')).toBe('A');
+    expect(taxCategoryLetter('reduced')).toBe('B');
+    expect(taxCategoryLetter('zero')).toBe('C');
+  });
+});
+
+/** Maps a plain test rate to its category — only the rates these tests actually use. */
+function categoryFor(rate: number): ReceiptPosition['taxCategory'] {
+  if (rate === 19) return 'standard';
+  if (rate === 7) return 'reduced';
+  return 'zero';
+}
+
+const p = (
+  name: string, qty: number, unit: number, rate: number,
+  deposit: number | null = null, depositRate: number | null = null,
+): ReceiptPosition => ({
+  name, quantity: qty, unitPrice: unit, unitDeposit: deposit, taxRate: rate, taxCategory: categoryFor(rate),
+  depositTaxRate: deposit === null ? null : (depositRate ?? rate),
   lineGross: qty * (unit + (deposit ?? 0)),
 });
 
@@ -108,6 +133,24 @@ describe('computeTaxBreakdown', () => {
     ]);
     const r19 = rows[0]!;
     expect(r19.gross).toBe(8);
+  });
+
+  it('buckets the deposit at its own rate, separately from the article (Task #113 — Pfand ist immer Regelsteuersatz, auch bei einem ermäßigt besteuerten Artikel)', () => {
+    const rows = computeTaxBreakdown([
+      p('Essen im Pfandglas', 1, 4, 7, 2, 19), // article @ 7%, deposit @ 19%
+    ]);
+    const r7 = rows.find((r) => r.rate === 7)!;
+    const r19 = rows.find((r) => r.rate === 19)!;
+    expect(r7.gross).toBe(4);
+    expect(r19.gross).toBe(2);
+  });
+
+  it('tags each row with the tax category, always \'standard\' for the deposit bucket even when the article itself is \'reduced\' (Task #115)', () => {
+    const rows = computeTaxBreakdown([
+      p('Essen im Pfandglas', 1, 4, 7, 2, 19), // article: reduced @ 7%, deposit: standard @ 19%
+    ]);
+    expect(rows.find((r) => r.rate === 7)!.category).toBe('reduced');
+    expect(rows.find((r) => r.rate === 19)!.category).toBe('standard');
   });
 });
 

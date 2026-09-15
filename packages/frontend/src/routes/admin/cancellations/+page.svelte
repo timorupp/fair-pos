@@ -10,14 +10,14 @@
    */
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import type { Register, CancellationReason, Article } from '@fairpos/shared';
+  import type { Register, CancellationReason, Article, TaxCategory } from '@fairpos/shared';
 
   /** One line in the form — points at an article + count to cancel. */
   type FormLine = { article_id: string; quantity: number };
 
   let registers: Register[] = $state([]);
   let reasons: CancellationReason[] = $state([]);
-  let articles: (Article & { category_name: string; tax_rate: number })[] = $state([]);
+  let articles: (Article & { category_name: string; tax_category: TaxCategory })[] = $state([]);
 
   let registerId = $state('');
   let cancellationReasonId = $state('');

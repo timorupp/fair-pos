@@ -8,6 +8,16 @@
 /** Type of a cash register, determines which UI is shown to the operator. */
 export type RegisterType = 'receipt_register' | 'service_register';
 
+/**
+ * VAT category an article/order line belongs to (Task #110) — used instead
+ * of a raw percentage so that a future change to the legal rates (e.g. a
+ * Regelsteuersatz increase) can never silently misclassify a line as
+ * `zero`. The actual percentage for `reduced`/`standard` is looked up from
+ * the `vat_rate_reduced`/`vat_rate_standard` system settings; `zero` is
+ * always exactly 0 %, no setting needed.
+ */
+export type TaxCategory = 'zero' | 'reduced' | 'standard';
+
 /** Lifecycle status of a single order item. */
 export type OrderItemStatus = 'open' | 'paid' | 'free' | 'cancelled';
 
@@ -32,7 +42,10 @@ export type PrintJobType = 'order_slip' | 'receipt' | 'daily_closing' | 'test_pr
 export interface User {
   id: string;
   name: string;
+  /** System-Administrator (Task #94) — unrestricted access. */
   is_admin: boolean;
+  /** Veranstaltungs-Administrator (Task #94) — access scoped to what's needed for the active event; independent of is_admin, a user can hold either, both, or neither. */
+  is_event_admin: boolean;
   /** Deactivated users cannot log in and disappear from register assignment; never anonymized/deleted. */
   is_active: boolean;
   created_at: string;
@@ -46,14 +59,22 @@ export interface Register {
   printer_id: string | null;
   /** Archived registers disappear from the operator login/register picker but stay in history/exports. */
   is_active: boolean;
+  /**
+   * Task #130: a training register produces TSE-signed, fully documented
+   * bookings that are excluded from Kassenabschluss totals and exported as
+   * DSFinV-K `BON_TYP=AVTraining`. Locked (cannot be toggled either
+   * direction) once the register has any booking — see
+   * `routes/admin/registers.ts`.
+   */
+  is_training: boolean;
   created_at: string;
 }
 
-/** Groups articles by type and carries the applicable VAT rate. */
+/** Groups articles by type and carries the applicable VAT category (Task #110 — was a free percentage, now one of the three legally possible categories). */
 export interface ArticleCategory {
   id: string;
   name: string;
-  tax_rate: number;
+  tax_category: TaxCategory;
   created_at: string;
 }
 
@@ -65,6 +86,8 @@ export interface Article {
   price: number;
   deposit_price: number | null;
   print_deposit_receipt: boolean;
+  /** Skips the Bonkasse self-pickup slip for this article entirely (Task #114) — e.g. for direct-takeaway items or Pfandrückgabe, where nothing needs to be "picked up". No effect on the Bedienungskasse, which never prints this slip type. */
+  skip_pickup_slip: boolean;
   printer_id: string | null;
   is_active: boolean;
   created_at: string;
@@ -108,17 +131,26 @@ export interface OrderItem {
   invoice_id: string | null;
   dining_table_id: string | null;
   register_id: string;
-  user_id: string | null;
+  /** Name of the user who booked the item, snapshotted at booking time (Task #97) — not a live reference, survives user deletion. */
+  user_name: string | null;
   article_id: string | null;
   article_name: string;
   article_category_name: string;
+  /** Percent, snapshotted at booking time (e.g. 19, 7, 0) — the article's own rate, not including any deposit. */
   tax_rate: number;
+  /** VAT category the article's `tax_rate` belonged to at booking time (Task #110), snapshotted alongside `tax_rate` so downstream code never has to re-guess a category from a raw percentage. */
+  tax_category: TaxCategory;
   price: number;
   deposit_price: number | null;
+  /** Percent the deposit portion of `deposit_price` was taxed at, snapshotted at booking time (Task #113) — always the Regelsteuersatz in effect then, independent of the article's own `tax_rate`. `null` when `deposit_price` is null. */
+  deposit_tax_rate: number | null;
   options: string | null;
   status: OrderItemStatus;
   cancellation_reason_id: string | null;
-  cancelled_by: string | null;
+  /** Name of the cancellation reason, snapshotted at cancellation time (Task #111) — not a live reference, survives a later rename of the reason. `null` unless `cancellation_reason_id` is set. */
+  cancellation_reason_name: string | null;
+  /** Name of the user who cancelled the item, snapshotted at cancellation time (Task #97). */
+  cancelled_by_name: string | null;
   created_at: string;
   cancelled_at: string | null;
 }
@@ -149,7 +181,8 @@ export interface DailyClosing {
   register_id: string;
   z_number: number;
   created_at: string;
-  created_by: string | null;
+  /** Name of the user who created the closing, snapshotted at creation time (Task #97) — not a live reference, survives user deletion. */
+  created_by_name: string | null;
   is_zero_closing: boolean;
   total_gross: number;
   total_tax_standard: number;
@@ -191,23 +224,19 @@ export interface RegisterLayoutSlot {
   hidden: boolean;
 }
 
-/** An event used as a reporting period; does not affect live operations. */
+/**
+ * A Veranstaltung — the hierarchy level articles, registers, layouts, the
+ * floor plan, invoices and orders belong to (Task #95). `start_time`/
+ * `end_time` are informational display fields only; they play no role in
+ * scoping which data belongs to the event (that's `event_id`/register
+ * ownership) — exactly one event is globally "active" at a time.
+ */
 export interface Event {
   id: string;
   name: string;
   start_time: string;
   end_time: string;
   created_at: string;
-}
-
-/** A manual cash deposit or withdrawal on a register. */
-export interface CashTransaction {
-  id: string;
-  register_id: string;
-  user_id: string | null;
-  user_name: string | null;
-  type: 'deposit' | 'withdrawal';
-  amount: number;
-  note: string | null;
-  created_at: string;
+  /** Whether this is the currently active event. Only present on `GET /admin/events` responses — derived, not a stored column. */
+  is_active?: boolean;
 }

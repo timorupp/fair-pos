@@ -20,15 +20,26 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { query } from '../db/client.js';
+import { config } from '../config.js';
 
 /** Name of the single session cookie. */
 const SESSION_COOKIE = 'session';
 /** Sliding inactivity timeout — a session with no activity for this long is treated as expired. */
 export const SESSION_INACTIVITY_INTERVAL = '4 hours';
 
-/** Cookie options — `httpOnly` + signed + `sameSite=lax`, matching the previous two cookies. */
+/**
+ * Cookie options — `httpOnly` + signed + `sameSite=lax`, matching the
+ * previous two cookies. `secure` was previously left unset (D-077,
+ * 2026-09-15, found via live security testing) — practical exposure was low
+ * since production already redirects HTTP→HTTPS, but the flag should be
+ * explicit rather than relying on that redirect always being in place.
+ * `!config.isDev` rather than unconditionally `true` — local dev runs on
+ * plain `http://localhost`, where a `secure` cookie would simply never be
+ * sent, breaking login entirely outside of production.
+ */
 const COOKIE_OPTIONS = {
   httpOnly: true,
+  secure: !config.isDev,
   sameSite: 'lax' as const,
   path: '/',
   signed: true,
@@ -41,17 +52,26 @@ export interface SessionWithUser {
   adminVerified: boolean;
   name: string;
   isAdmin: boolean;
+  /** Veranstaltungs-Administrator (Task #94) — independent of isAdmin. */
+  isEventAdmin: boolean;
   isActive: boolean;
 }
 
 /**
  * Creates a new session row for the given user and sets the session cookie.
+ * Also opportunistically deletes every already-expired session row (Task
+ * #97) — `loadSession` only ever treats them as invalid via a timestamp
+ * comparison, nothing else ever removes them, so without this they'd
+ * accumulate in the table forever. Piggybacking on login (a frequent,
+ * already-write-heavy path) avoids needing a separate scheduled job.
  *
  * @param reply - Outgoing Fastify reply onto which the cookie is set.
  * @param userId - UUID of the user who just authenticated via PIN.
  * @param userAgent - `User-Agent` header of the logging-in request, stored for the admin sessions list.
  */
 export async function createSession(reply: FastifyReply, userId: string, userAgent: string | undefined): Promise<void> {
+  await query(`DELETE FROM session WHERE last_activity_at <= now() - interval '${SESSION_INACTIVITY_INTERVAL}'`);
+
   const token = randomBytes(32).toString('hex');
   await query(
     `INSERT INTO session (user_id, token, user_agent) VALUES ($1, $2, $3)`,
@@ -90,10 +110,10 @@ export function getSessionToken(request: FastifyRequest): string | null {
 export async function loadSession(token: string): Promise<SessionWithUser | null> {
   const result = await query<{
     session_id: string; user_id: string; admin_verified: boolean;
-    name: string; is_admin: boolean; is_active: boolean;
+    name: string; is_admin: boolean; is_event_admin: boolean; is_active: boolean;
   }>(
     `SELECT s.id AS session_id, s.user_id, s.admin_verified,
-            u.name, u.is_admin, u.is_active
+            u.name, u.is_admin, u.is_event_admin, u.is_active
        FROM session s
        JOIN "user" u ON u.id = s.user_id
       WHERE s.token = $1
@@ -104,7 +124,7 @@ export async function loadSession(token: string): Promise<SessionWithUser | null
   if (!row) return null;
   return {
     sessionId: row.session_id, userId: row.user_id, adminVerified: row.admin_verified,
-    name: row.name, isAdmin: row.is_admin, isActive: row.is_active,
+    name: row.name, isAdmin: row.is_admin, isEventAdmin: row.is_event_admin, isActive: row.is_active,
   };
 }
 

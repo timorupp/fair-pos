@@ -10,6 +10,7 @@ import { closeTestApp, getTestApp } from '../test/app-helpers.js';
 import { createTestUser } from '../test/fixtures.js';
 import { truncateAllTables } from '../test/db-fixture.js';
 import { resetAllLockouts } from '../auth/rateLimit.js';
+import { config } from '../config.js';
 
 beforeAll(async () => { await getTestApp(); });
 afterAll(closeTestApp);
@@ -35,6 +36,15 @@ describe('POST /api/auth/pin', () => {
     expect(body.id).toBe(user.id);
     expect(body.is_admin).toBe(false);
     expect(cookieFrom(response.headers['set-cookie'])).toContain('session=');
+  });
+
+  it('sets the session cookie\'s Secure flag to match config.isDev (D-077 — previously always unset)', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const response = await app.inject({ method: 'POST', url: '/api/auth/pin', payload: { pin: user.pin } });
+    const setCookie = response.headers['set-cookie'];
+    const raw = Array.isArray(setCookie) ? setCookie.join(';') : (setCookie ?? '');
+    expect(/;\s*Secure/i.test(raw)).toBe(!config.isDev);
   });
 
   it('accepts the PIN with or without hyphens, case-insensitively', async () => {
@@ -85,6 +95,57 @@ describe('POST /api/auth/pin', () => {
     resetAllLockouts();
     const response = await app.inject({ method: 'POST', url: '/api/auth/pin', payload: { pin: user.pin } });
     expect(response.statusCode).toBe(200);
+  });
+
+  it('locks out X-Forwarded-For claims independently when the connection is from the trusted proxy (D-077 — previously one shared, global lockout bucket for every visitor)', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser();
+    // trustProxy is scoped to '127.0.0.1' (app.ts) — light-my-request's
+    // default MockSocket remoteAddress is already '127.0.0.1', simulating
+    // exactly nginx's own loopback connection per docs/Installationsanleitung.md.
+    for (let i = 0; i < 3; i++) {
+      const fail = await app.inject({
+        method: 'POST', url: '/api/auth/pin', payload: { pin: 'ZZZZZZZZZ' },
+        headers: { 'x-forwarded-for': '203.0.113.1' },
+      });
+      expect(fail.statusCode).toBe(401);
+    }
+    const lockedOut = await app.inject({
+      method: 'POST', url: '/api/auth/pin', payload: { pin: user.pin },
+      headers: { 'x-forwarded-for': '203.0.113.1' },
+    });
+    expect(lockedOut.statusCode).toBe(429);
+
+    // A different claimed client IP must be completely unaffected.
+    const otherClient = await app.inject({
+      method: 'POST', url: '/api/auth/pin', payload: { pin: user.pin },
+      headers: { 'x-forwarded-for': '203.0.113.2' },
+    });
+    expect(otherClient.statusCode).toBe(200);
+  });
+
+  it('ignores a spoofed X-Forwarded-For from a peer other than the trusted proxy (D-077)', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser();
+    // remoteAddress simulates a connection that did NOT come through nginx
+    // (e.g. the backend port reached directly) — trustProxy is scoped to
+    // '127.0.0.1' only, so this X-Forwarded-For must be ignored and the raw
+    // peer address used instead, exactly like an unspoofed client.
+    for (let i = 0; i < 3; i++) {
+      await app.inject({
+        method: 'POST', url: '/api/auth/pin', payload: { pin: 'ZZZZZZZZZ' },
+        remoteAddress: '198.51.100.9',
+        headers: { 'x-forwarded-for': '203.0.113.50' },
+      });
+    }
+    // Same real peer, a freshly "spoofed" claimed IP — must still be locked
+    // out, proving the header alone can't evade the limiter.
+    const stillLockedOut = await app.inject({
+      method: 'POST', url: '/api/auth/pin', payload: { pin: user.pin },
+      remoteAddress: '198.51.100.9',
+      headers: { 'x-forwarded-for': '203.0.113.99' },
+    });
+    expect(stillLockedOut.statusCode).toBe(429);
   });
 });
 
@@ -158,6 +219,16 @@ describe('GET /api/auth/register/me', () => {
     const app = await getTestApp();
     const response = await app.inject({ method: 'GET', url: '/api/auth/register/me' });
     expect(response.statusCode).toBe(401);
+  });
+
+  it('includes the app version (Task #148)', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const login = await app.inject({ method: 'POST', url: '/api/auth/pin', payload: { pin: user.pin } });
+    const cookie = cookieFrom(login.headers['set-cookie']);
+    const response = await app.inject({ method: 'GET', url: '/api/auth/register/me', headers: { cookie } });
+    expect(typeof response.json().version).toBe('string');
+    expect(response.json().version.length).toBeGreaterThan(0);
   });
 });
 

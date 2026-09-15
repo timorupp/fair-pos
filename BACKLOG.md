@@ -1,0 +1,248 @@
+# Backlog
+
+Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, fragwürdige Designs, Refactoring-Bedarf) in einer gemeinsamen Liste — Typ per `[Task]`/`[Finding]`-Tag. IDs unverändert aus der vorherigen Trennung übernommen (`#N` für Tasks, `D-N`/`T-N`/`DOC-N` für Findings) — bestehende Code-/Commit-Verweise bleiben gültig. Erledigte Einträge wandern nach `BACKLOG-DONE.md`.
+
+---
+
+## Tasks
+
+
+- [Task] **#47** Vollen manuellen Regressionstest durchführen (inkl. DSFinV-K)
+  **Umfasst auch Task #102** (2026-09-01 dorthin verschoben, Nutzereinordnung:
+  "gehört für mich zum Testing"): prüfen, dass wirklich **jede**
+  Bestellung/jeder Vorgang der Test-Veranstaltung korrekt an die TSE
+  gemeldet und signiert wurde — nicht nur, dass irgendeine Signatur
+  erscheint (siehe D-038-Fortsetzung). Bausteine dafür:
+  Zähler-Plausibilität (`GET /api/admin/tse/status`, `startedTransactions`
+  vor/nach einer bekannten Anzahl Testverkäufe vergleichen), DSFinV-K-Export
+  (`transactions_tse.csv`, `TSE_TANR`/`TSE_TA_SIG` pro Vorgang gegen die
+  tatsächlich getätigten Testbuchungen abgleichen), sowie **(Werkzeug dafür
+  jetzt verfügbar, siehe Task #102)** `tseCli dumpProcessData` für den
+  direkten Beträge-Abgleich gegen die TSE selbst — Details/Aufruf in
+  `docs/TSE-CLI-Referenz.md` Abschnitt 2/3. Der eigentliche Abgleich selbst
+  ist Teil dieses Tasks (#47) und steht noch aus, **nicht** bereits erledigt.
+
+- [Task] **#119** Unterstützung für Kleinunternehmerregelung (§ 19 UStG)
+  **Priorisierung (Nutzervorgabe 2026-09-06): nicht mehr für das erste
+  Release, aber bald danach angehen — kein Release-Blocker, aber zeitnahe
+  Folgearbeit.**
+
+  **Klassifikation: Feature (aktuell nicht unterstützt).** Nutzerfrage
+  2026-09-06: kann ein Verein, der der Kleinunternehmerregelung
+  unterliegt (keine USt.-Abführung), einfach `vat_rate_standard`/
+  `vat_rate_reduced` in den Einstellungen auf 0 setzen, oder braucht es
+  dafür eine eigene Funktion?
+
+  **Antwort der Analyse: reines Nullsetzen der beiden Einstellungen
+  reicht nicht.**
+
+  - Der DSFinV-K-Export ordnet den USt-Schlüssel nach `tax_category`
+    (`standard`/`reduced`/`zero`) zu, nicht nach dem tatsächlichen
+    Prozentsatz (`exports/dsfinvk/rows.ts::ustSchluessel()`). Bei
+    genullten Sätzen würden Artikel weiterhin unter Schlüssel 1/2
+    ("regelbesteuert"/"ermäßigt", nur mit 0,00 % Satz) exportiert statt
+    unter Schlüssel 5 ("nicht steuerbar" — laut
+    `docs/Rechtliche-Anforderungen.md` der fachlich korrekte Fall für
+    Kleinunternehmer). Für einen echten Kleinunternehmer-Betrieb müssten
+    alle Artikelgruppen tatsächlich auf `tax_category = 'zero'`
+    umkategorisiert werden — das ist eine Datenumstellung, keine reine
+    Einstellungsänderung.
+  - Es gibt aktuell keinen Pflicht-/Hinweistext auf dem Beleg für diesen
+    Fall (üblich: "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.").
+    FairPOS druckt unabhängig vom Satz immer die MwSt-Aufschlüsselungs-
+    zeilen.
+  - TSE-Signierung ist unabhängig vom Steuersatz und bereits unkritisch
+    (läuft immer, keine Änderung nötig).
+
+  **Ausdrücklich kein Bug, sondern Nutzervorgabe (2026-09-06):** bei der
+  Analyse fiel auf, dass `receipt/format.ts::computeTaxBreakdown()` die
+  gedruckte Aufschlüsselung nach dem **Zahlenwert** des Steuersatzes
+  bündelt, nicht nach `tax_category` (anders als `closing/totals.ts` und
+  die TSE-`processData`, die nach Kategorie bündeln) — bei zwei
+  Kategorien mit zufällig identischem Satz würden sie auf dem Bon in
+  eine Zeile mit einem Kennbuchstaben zusammenfallen, obwohl TSE/
+  DSFinV-K sie intern weiterhin getrennt (unterschiedlicher USt-
+  Schlüssel) führen. **Nutzerentscheidung dazu: das ist so gewollt** —
+  identische Sätze brauchen auf dem Bon keine unterschiedlichen
+  Kennbuchstaben. Diese Stelle also nicht "reparieren".
+
+  **Ergänzung 2026-09-06 (Nutzerhinweis) — manuelle Umkategorisierung
+  allein greift nicht, wegen Pfand:** Pfand wird an vier unabhängigen
+  Stellen fest auf die Kategorie `'standard'` verdrahtet, unabhängig vom
+  `tax_category` des zugehörigen Artikels (Task #113/D-060, jeweils ein
+  Literal im Code, keine Einstellung/Daten): `closing/totals.ts:82`
+  (`total_tax_standard += depositGross` unbedingt), `receipt/format.ts:113`
+  (`computeTaxBreakdown` bucketet Pfand fest auf `'standard'`),
+  `receipt/blocks.ts:79` (`taxCategoryLetter('standard')` für die
+  gedruckte Pfand-Zeile) und `exports/dsfinvk/rows.ts:278`
+  (`ustSchluessel('standard')` für die DSFinV-K-Pfandzeile). Ein Admin
+  könnte also jede Artikelgruppe auf `tax_category = 'zero'`
+  umkategorisieren — der Pfandanteil jeder Position bliebe trotzdem
+  überall als USt-Schlüssel 1 (Regelsteuersatz) verbucht, da dieser Wert
+  nirgends aus den Artikeldaten gelesen wird. Für Vereine mit
+  Pfandartikeln (Becher, Flaschen — der Normalfall bei Festen) ist die
+  reine Umkategorisierung damit **nicht nur mühsam, sondern unvollständig
+  und erreicht nie echte Nullsteuer**.
+
+  **Ausdrücklich noch offen — Lösungsansatz nicht vorweggenommen:**
+  - Manuelle Umkategorisierung aller Artikelgruppen auf `tax_category =
+    'zero'` — reicht wegen des oben beschriebenen Pfand-Problems allein
+    nicht aus; bräuchte zusätzlich eine Code-Änderung, die die vier
+    Pfand-`'standard'`-Stellen an einen System-Zustand koppelt.
+  - Ein dedizierter System-Schalter ("Kleinunternehmer nach § 19 UStG"),
+    der beim Aktivieren automatisch DSFinV-K-Schlüssel 5 erzwingt (auch
+    für Pfand), den Beleghinweistext ergänzt und die vier Pfand-Stellen
+    mit umschaltet — deckt beide Fälle (Artikel und Pfand) aus einer
+    Hand ab, ohne jede Artikelgruppe einzeln anfassen zu müssen.
+  - Kombination/anderer Ansatz.
+
+  Vor der Umsetzung: Nutzerentscheidung, welcher Ansatz gewünscht ist.
+
+- [Task] **#128** (niedrige Priorität, Nutzervorgabe 2026-09-12) Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
+  **Klassifikation: Sicherheits-/Datenschutz-Frage (noch nicht bewertet,
+  mehrere Optionen genannt, keine Entscheidung getroffen).**
+  Angelegt 2026-09-09 (Nutzerwunsch).
+
+  **Kontext:** Der Server wird laut Konzept zwischen Vereinen verliehen
+  (siehe `docs/Anforderungen.md`, Begründung der AGPL-3.0-Lizenzwahl mit
+  Netzwerk-Klausel). Offene Frage, wie die Daten eines Vereins vor dem
+  nächsten Nutzer geschützt werden — genannte Optionen:
+  - Druckaufträge (`print_job`) je Veranstaltung filtern/zuordnen? Aktuell
+    hat `print_job` keine `event_id`-Spalte, nur `reference_id` mit
+    uneinheitlichem Event-Bezug je nach `type`.
+  - Alternativ: eine "alle löschen"-Funktion für die Druckwarteschlange?
+  - Grundsätzlichere Frage: wie schützt man beim Verleih überhaupt die
+    Daten des vorherigen Vereins insgesamt (nicht nur Druckaufträge) —
+    Bezug zu Task #121 (Backup-Berechtigungen) und dem bestehenden
+    Veranstaltungs-Datenmodell.
+
+  Noch nicht bewertet: welche der genannten Optionen (oder Kombination)
+  sinnvoll ist, ob eine `event_id`-Migration auf `print_job` nötig ist.
+
+
+- [Task] **#135** (niedrige Priorität, Nutzervorgabe 2026-09-12) Entscheidung: `cancels_invoice_id` entfernen oder "Fall A – Rechnungsstorno" implementieren
+  **Klassifikation: Design-Entscheidung, angelegt 2026-09-12.** Ursprünglich
+  als Vorbedingung für den gravierenden Bonstorno-Aggregationsbug gedacht —
+  der ist inzwischen unabhängig davon behoben (siehe D-068 in
+  `BACKLOG-DONE.md`, 2026-09-12: negative Vorzeichen direkt in
+  `order_item.price`/`deposit_price`, dreiteilige Z-Bon-Aufschlüsselung).
+  Diese Entscheidung bleibt trotzdem offen und sinnvoll zu klären.
+
+- [Task] **#136** (niedrige Priorität) Preisänderung während laufender Bestellung an der Bonkasse — UI zeigt alten Preis, Rechnung nutzt neuen
+  **Klassifikation: Nutzerwunsch/Konsistenz-Bug, angelegt 2026-09-12.**
+  Wird ein Artikelpreis geändert, während an der Bonkasse parallel bereits
+  eine Bestellung mit diesem Artikel erfasst wird, zeigt die UI weiterhin
+  den alten Preis, aber die beim Kassieren erzeugte Rechnung wird schon mit
+  dem neuen Preis gebucht — inkonsistent für den Bedienenden (sieht einen
+  anderen Betrag als der, der tatsächlich abgerechnet wird).
+
+  Nutzerwunsch ausdrücklich: erst Lösungswege sondieren, **ohne allzu viel
+  technischen Aufwand** — kein Auftrag, das sofort umzusetzen.
+
+  Mögliche Ansatzpunkte, noch nicht bewertet:
+  - Artikelpreis beim Laden/Hinzufügen zur Bestellung auf dem Client
+    festschreiben (Snapshot im Frontend-State) statt bei jedem Rendern neu
+    vom Server abzufragen — aber: woher kommt der "alte" Preis in der UI
+    aktuell überhaupt (Polling-Intervall? einmaliger Ladevorgang beim
+    Öffnen der Bonkasse)? Muss zuerst nachvollzogen werden.
+  - Server könnte den zum Zeitpunkt des Hinzufügens gültigen Preis dem
+    Frontend zusammen mit der Bestellposition zurückgeben, statt dass das
+    Frontend den Artikelpreis separat/veraltet vorhält.
+  - Live-Update der Bonkasse bei Preisänderung (z. B. via bestehendem
+    Polling-Mechanismus) — würde das Problem eher verschärfen als lösen,
+    wenn mitten in einer Bestellung der angezeigte Preis "unter der Hand"
+    wechselt; ggf. bewusst NICHT live aktualisieren, sondern nur beim
+    nächsten Öffnen/Hinzufügen.
+
+  Verwandte Problemklasse: Task #127 (nachträgliche Datenänderungen an
+  bereits abgeschlossenen Belegen) — dort geht es um historische
+  Snapshots, hier um eine laufende, noch nicht abgeschlossene Bestellung.
+
+  **Hintergrund (aus der Storno-Konzept-Recherche):** `docs/Anforderungen.md`
+  beschrieb ursprünglich zwei getrennte Admin-Storno-Wege:
+  - **Fall A — Rechnungsstorno:** ein Storno-Button direkt an einer
+    bestehenden Rechnung (z. B. in der Auswertung "Erstellte Rechnungen"),
+    mit klarem Bezug zum stornierten Original über `invoice.cancels_invoice_id`.
+  - **Fall B — Bonstorno:** der tatsächlich implementierte, kassenübergreifende
+    Weg (`routes/admin/cancellations.ts`, `POST /api/admin/cancellations`) —
+    erzeugt eine neue, eigenständige Rechnung (`receipt_type = 'cancellation'`),
+    bewusst **ohne** Bezug zu einer einzelnen Ursprungsrechnung.
+
+  Nur Fall B wurde je gebaut. Die Spalte `invoice.cancels_invoice_id` existiert
+  weiterhin im Schema (`docs/Datenmodell.dbml`), wird aber **nirgends mehr im
+  Code gelesen oder gesetzt** — seit D-068 auch die (zuvor einzige Lesestelle)
+  `exports/dsfinvk/load.ts`s `isStornoBeleg`-Erkennung entfernt, da das
+  Vorzeichen jetzt direkt in `price`/`deposit_price` lebt. Kein Storno-Button
+  existiert in `routes/admin/invoices.ts`. Damit ist die Spalte inzwischen
+  ein vollständig totes Feld — Option 1 unten wäre also ein reiner
+  Aufräumschritt ohne jeden Code-Bezug mehr, der entfernt werden müsste.
+
+  **Zu entscheiden:**
+  1. **Option 1 — `cancels_invoice_id` entfernen:** Fall A endgültig verwerfen,
+     Spalte als totes Feld aus Schema/Export-Logik streichen, Bonstorno
+     (Fall B) bleibt der einzige Weg. Einfachste Option, verliert aber die
+     Möglichkeit einer präzisen 1:1-Zuordnung Storno↔Original.
+  2. **Option 2 — Fall A tatsächlich implementieren:** Storno-Button an
+     einer bestehenden Rechnung ergänzen, der `cancels_invoice_id` korrekt
+     setzt. Aufwändiger, aber ggf. sauberer für Auswertungen/Nachvollzug
+     (z. B. exakte Zuordnung, welche Rechnung durch welche Storno-Buchung
+     rückgängig gemacht wurde) und relevant für die Gestaltung des
+     Bonstorno-Aggregations-Fixes (siehe Hintergrund oben).
+
+  **Wichtig:** Diese Entscheidung beeinflusst das Design des eigentlichen
+  Bonstorno-Bugfixes (Aggregation in `closing/totals.ts`, `/cash-balance`,
+  Excel-Export) — daher zuerst hier klären, dann den Bugfix angehen.
+
+- [Task] **#149** Content-Security-Policy für die SPA entwerfen
+  **Klassifikation: Sicherheit/Feature, angelegt 2026-09-15** — Nebenbefund
+  aus dem Security-Test D-077 (`BACKLOG-DONE.md`).
+
+  `@fastify/helmet` ist seit D-077 aktiv, aber mit `contentSecurityPolicy:
+  false` — die genauen Script-/Style-Src-Anforderungen der per
+  `adapter-static` gebauten SvelteKit-SPA (Inline-Styles? Nonces nötig?)
+  wurden noch nicht geprüft, ein pauschal aktivierter Standard-CSP hätte das
+  Risiko, die Live-Anwendung ungetestet zu brechen. Braucht einen echten
+  Blick in den gebauten Output (`packages/frontend/build/`) plus einen
+  Live-Test im Browser, bevor eine engere Policy scharf geschaltet wird.
+
+- [Task] **#150** TLS-Zertifikat-Upload: Hinweis bei unvollständiger Zertifikatskette
+  **Klassifikation: Sicherheit/UX, angelegt 2026-09-15** — Nebenbefund aus
+  dem Security-Test D-077 (`BACKLOG-DONE.md`).
+
+  `system/tlsCert.ts`s `validateCertKeyPair()` akzeptiert laut eigenem
+  Doc-Kommentar ausdrücklich sowohl ein einzelnes Leaf-Zertifikat als auch
+  eine vollständige Kette ("nginx accepts both") — ohne jeden Hinweis an den
+  Admin, dass ein alleiniges Leaf-Zertifikat bei manchen Clients (ältere/
+  eingebettete Browser ohne AIA-Chasing) zu TLS-Warnungen führen kann. Live
+  am Produktivsystem genau so aufgetreten (nur Leaf-Zertifikat hochgeladen,
+  `openssl s_client` liefert nur 1 statt 2+ Zertifikate in der Kette).
+
+  **Noch zu entscheiden:** wie eine sinnvolle Warnung aussieht, ohne
+  legitime Einzel-Leaf-Uploads (z. B. manche CAs, Übergangs-/Platzhalter-
+  Zertifikate) fälschlich als Fehler zu behandeln — vermutlich ein reiner
+  Hinweistext beim Upload ("nur ein Zertifikat erkannt — falls deine CA eine
+  Zwischenzertifikat-Kette verlangt, prüfe, ob die Datei vollständig ist"),
+  kein hartes Ablehnen.
+
+## Findings
+
+- [Finding] **D-033** (mittel, Backend / Excel-Export) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  `exceljs` (Produktions-Abhängigkeit für Task #10/#32) bündelt intern `uuid@^8.3.0` — betroffen von GHSA-w5hq-g745-h8pq (fehlende Buffer-Bounds-Prüfung in `uuid` v3/v5/v6 bei übergebenem `buf`-Parameter). Verifiziert: `npm view exceljs dist-tags` → `latest: 4.4.0`, identisch mit der installierten Version — es gibt aktuell **keine** neuere `exceljs`-Version, die ein aktuelleres `uuid` zieht. `npm audit fix --force` schlägt widersinnig ein *Downgrade* auf `exceljs@3.4.0` vor (npms generischer Lösungsversuch, kein echter Fix). Praktische Ausnutzbarkeit gering: eigener Code ruft `uuid` nie direkt auf, nur `exceljs` intern. Dieselbe exceljs-interne Abhängigkeitskette ist auch Ursache der `npm ci`-Deprecation-Warnungen `inflight`, `rimraf@2`, `lodash.isequal`, `glob@7` (über `archiver`/`fast-csv`/`unzipper`) — nicht eigenständig behebbar.
+  Kein Handlungsbedarf jetzt. exceljs-Upstream beobachten (öffentlich bekanntes Problem, kein eigenes Issue nötig); sobald exceljs `uuid` intern anhebt, zieht ein normales `npm update` den Fix automatisch.
+
+- [Finding] **D-034** (niedrig, Frontend / Build-Tooling) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  `@sveltejs/kit` (und darüber `@sveltejs/adapter-static`) hängt an `cookie@^0.6.0` — betroffen von GHSA-pxg6-pf52-xh8x (Cookie-Name/Path/Domain mit Out-of-Bounds-Zeichen). Verifiziert: selbst `@sveltejs/kit@latest` (2.70.3, aktueller Stable) verlangt weiterhin `cookie: ^0.6.0`; ein Fix existiert nur in `@sveltejs/kit@3.0.0-next` (Prerelease, nicht produktionsreif). Betrifft nur SvelteKits eigenen Dev-/Build-Server — der ausgelieferte Build läuft im SPA-Modus (`adapter-static`, siehe `CLAUDE.md`), Produktions-Cookie-Handling läuft ohnehin komplett über `@fastify/cookie` im Backend (dort bereits `cookie@1.1.1`, sauber).
+  Kein Handlungsbedarf jetzt. SvelteKit-3.0-Release beobachten — hängt ohnehin an der größeren Svelte-5-Migrationsfrage (Task #71).
+
+- [Finding] **D-052** (niedrig, Backend / Tests) — Gefunden 2026-08-31 — Kontext: Während Task #94/#95-Umsetzung (Zwei-Stufen-Admin, Veranstaltung als Hierarchieebene) gefunden
+  `settings.receipt-preview.integration.test.ts` — Test `renders identically whether no logo is stored at all, or one is stored but the flag stays off (default)` ist zeitabhängig-flaky, reproduzierbar aber mit jeweils unterschiedlicher Byte-Differenz (einmal 6329 vs. 6328, dann 6327 vs. 6326). Ursache: `receipt/demo.ts`s `buildDemoReceipt(now: Date = new Date())` nutzt beim Aufruf ohne explizites Argument den echten aktuellen Zeitpunkt; die Route ruft sie ohne Override auf, und der Test macht zwei sequentielle `fetchPreview()`-HTTP-Aufrufe, die dadurch minimal unterschiedliche Zeitstempel einbetten — vermutlich wirkt sich das über schriftgrößen-/kerning-abhängige Fließkomma-Koordinaten im PDF-Content-Stream auf die Byte-Länge aus. Kein Zusammenhang mit Task #94/#95 — nur während der Vollständigkeits-Testläufe für Phase 2.3 aufgefallen (Test lief davor offenbar nie zufällig zu einem ungünstigen Zeitpunkt).
+  Der Test sollte einen festen `now`-Zeitpunkt injizieren (z. B. Route-Parameter oder Test-Override) statt sich auf `new Date()` zu verlassen — noch nicht umgesetzt, da unabhängig vom aktuellen Task.
+
+- [Finding] **D-076** (niedrig, Backend / Kassenabschluss) — Gefunden 2026-09-12 — Kontext: Während der D-075-Diskussion zum "Ausstehende Tagesabschlüsse"-Banner (Task #146) aufgefallen
+  `closing/pending-db.ts`s neue `daysWithUnlinkedRows`-Abfrage (D-075) bucketet Kalendertage über `to_char(created_at::date, 'YYYY-MM-DD')` — folgt damit der **Postgres-Session-Zeitzone**. `closing/pending.ts`s `localDateString()` (für den Tage-Walk und den `closedDays`-Vergleich) bucketet dagegen über die **Node-Prozess-Zeitzone**. Weichen beide Zeitzonen voneinander ab, könnte eine Buchung nahe Mitternacht serverseitig einem anderen Kalendertag zugeordnet werden als clientseitig erwartet — betrifft potenziell auch die schon bestehende `created_at::date = $2::date`-Filterung beim tageweisen Abschluss (`routes/admin/closings.ts`) und den `business_date`-Fallback auf Postgres' `current_date`.
+  **Niedrige Priorität (Nutzereinordnung 2026-09-12):** nur relevant, wenn die Datenbank auf einem anderen Host als die Anwendung läuft (unterschiedliche Systemzeitzonen möglich) — im dokumentierten Produktivbetrieb läuft Postgres nativ auf demselben Ubuntu-Host wie der Node-Prozess (`docs/SETUP.md`), beide erben dieselbe OS-Zeitzone, kein praktisches Risiko. Nur in der lokalen Docker-Dev-Umgebung potenziell divergent (Alpine-Postgres-Container ohne gesetztes `TZ`, vermutlich UTC, gegen die Zeitzone des Host-Rechners). Kein Handlungsbedarf jetzt — ggf. später durch ein explizites `SET timezone`/`TZ`-Env auf dem DB-Pool vereinheitlichen, falls sich das Deployment-Modell je ändert.
+
+- [Finding] **D-078** (mittel, Backend / Auth; **Priorisierung: Post-Release**, Nutzervorgabe 2026-09-15 — kein Release-Blocker) — Gefunden 2026-09-15 — Kontext: Task #33, zweite (authentifizierte) Runde des Security-Tests gegen die Produktivinstanz des Nutzers
+  `POST /api/auth/admin/verify` (Admin-Step-up, Task #90) rotiert das Session-Token nicht — es wird lediglich das `admin_verified`-Flag auf derselben Session-Zeile umgeschaltet (`auth/session.ts::setAdminVerified()`), das signierte Cookie selbst bleibt vor und nach der Passworteingabe byte-identisch. Praktisches Risiko: ein bereits vor dem Step-up entwendetes Session-Cookie (z. B. via XSS, Sniffing auf ungesichertem Netz, physischer Zugriff aufs Gerät) wird automatisch admin-fähig, sobald sich der legitime Nutzer selbst verifiziert — ohne dass sich am Cookie irgendetwas ändert, das ein Angreifer neu abgreifen müsste. Kein Bug im eigentlichen Sinne (das ursprüngliche Auth-Design von Task #90 sah das so vor), aber ein reales Risiko bei Cookie-Diebstahl.
+  **Empfehlung, noch nicht umgesetzt:** beim erfolgreichen Step-up ein neues Session-Token ausstellen (alte Session invalidieren, neues signiertes Cookie setzen) statt nur das Flag auf der bestehenden Session zu ändern — analog zum verbreiteten "session regeneration on privilege escalation"-Muster.
+

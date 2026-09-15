@@ -6,9 +6,11 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';
+  import type { Printer } from '@fairpos/shared';
+  import Modal from '$lib/components/Modal.svelte';
 
   type JobRow = {
-    id: string; printer_id: string; printer_name: string;
+    id: string; printer_id: string | null; printer_name: string;
     type: string; status: string; attempts: number;
     reference_id: string | null;
     created_at: string; last_attempt_at: string | null;
@@ -16,13 +18,16 @@
   };
 
   let jobs: JobRow[] = $state([]);
+  let printers: Printer[] = $state([]);
   let loading = $state(true);
   let error = $state('');
   let statusFilter: '' | 'all' | 'pending' | 'printing' | 'failed' | 'done' | 'cancelled' = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
+  let cancellingAll = $state(false);
 
   onMount(() => {
     load();
+    api.admin.printers.list().then((p) => { printers = p; }).catch(() => {});
     refreshTimer = setInterval(load, 5_000);
   });
 
@@ -37,6 +42,25 @@
       error = e instanceof Error ? e.message : 'Fehler';
     } finally {
       loading = false;
+    }
+  }
+
+  /**
+   * Bulk-cancels every currently `pending` job, system-wide, regardless of
+   * the active status filter (Task #107) — e.g. to clear out stale test
+   * prints before switching a printer back on.
+   */
+  async function cancelAll() {
+    if (!confirm('Alle wartenden Druckaufträge (Status "Wartet") abbrechen? Betrifft alle Drucker, unabhängig vom aktuellen Filter.')) return;
+    cancellingAll = true;
+    try {
+      const result = await api.admin.printJobs.cancelAll();
+      await load();
+      alert(`${result.cancelled} Druckauftrag(e) abgebrochen.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Fehler');
+    } finally {
+      cancellingAll = false;
     }
   }
 
@@ -63,6 +87,59 @@
   async function retryJob(j: JobRow) {
     try { await api.admin.printJobs.retry(j.id); await load(); }
     catch (e) { alert(e instanceof Error ? e.message : 'Fehler'); }
+  }
+
+  /** The job currently targeted by the printer-selection modal, if open. */
+  let reprintTarget: JobRow | null = $state(null);
+  let reprintModalOpen = $state(false);
+  let reprintPrinterId = $state('');
+  let reprintBusy = $state(false);
+
+  /**
+   * Opens the printer-selection modal for a reprint (Task #105/#108).
+   * Preselects the job's original printer if it still exists; otherwise
+   * falls back to the system default printer. If there is no printer at
+   * all, reprinting isn't possible and the button doesn't even reach here
+   * (see `typeAllowsPdfOrReprint`/template below — but guarded here too).
+   *
+   * @param j - The job to reprint.
+   */
+  function openReprint(j: JobRow) {
+    reprintTarget = j;
+    const originalStillExists = j.printer_id !== null && printers.some((p) => p.id === j.printer_id);
+    const defaultPrinter = printers.find((p) => p.is_default);
+    reprintPrinterId = originalStillExists ? j.printer_id! : (defaultPrinter?.id ?? printers[0]?.id ?? '');
+    reprintModalOpen = true;
+  }
+
+  /** Confirms the printer-selection modal and enqueues the reprint. */
+  async function confirmReprint() {
+    if (!reprintTarget || !reprintPrinterId) return;
+    reprintBusy = true;
+    try {
+      await api.admin.printJobs.reprint(reprintTarget.id, reprintPrinterId);
+      reprintModalOpen = false;
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Fehler');
+    } finally {
+      reprintBusy = false;
+    }
+  }
+
+  /**
+   * Whether the PDF-preview and "Erneut drucken" actions should be offered
+   * for this row. `pin_slip` is excluded (Nutzerentscheidung 2026-09-01,
+   * Sicherheit) — it's the only document type carrying a live credential
+   * (the PIN) that exists nowhere else in the system in plaintext. Hiding
+   * the button here is only a UX nicety; the actual enforcement is
+   * server-side (`routes/admin/print-jobs.ts` returns 403 for both actions
+   * on a `pin_slip` job even if called directly).
+   *
+   * @param t - The job type.
+   */
+  function typeAllowsPdfOrReprint(t: string): boolean {
+    return t !== 'pin_slip';
   }
 
   /**
@@ -111,7 +188,12 @@
 <div class="page">
   <div class="page-header">
     <h1>Druckwarteschlange</h1>
-    <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
+    <div class="header-actions">
+      <button class="btn-ghost danger" onclick={cancelAll} disabled={cancellingAll}>
+        {cancellingAll ? 'Bricht ab…' : 'Alle abbrechen'}
+      </button>
+      <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
+    </div>
   </div>
 
   <div class="filter-row">
@@ -162,8 +244,9 @@
             <td>{timeLabel(j.last_attempt_at)}</td>
             <td class="err-cell">{j.error_message ?? '—'}</td>
             <td class="actions">
-              {#if (j.type === 'receipt' || j.type === 'daily_closing') && j.reference_id}
+              {#if typeAllowsPdfOrReprint(j.type)}
                 <a class="btn-ghost" href={api.admin.printJobs.pdfUrl(j.id)} target="_blank" rel="noopener">PDF</a>
+                <button class="btn-ghost" onclick={() => openReprint(j)} disabled={printers.length === 0}>Erneut drucken</button>
               {/if}
               {#if j.status === 'failed'}
                 <button class="btn-ghost" onclick={() => retryJob(j)}>Wiederholen</button>
@@ -181,7 +264,32 @@
   {/if}
 </div>
 
+<Modal bind:open={reprintModalOpen} title="Erneut drucken">
+  {#if reprintTarget}
+    <p class="hint">
+      {typeLabel(reprintTarget.type)} — ursprünglich: {reprintTarget.printer_name}
+    </p>
+    <div class="field">
+      <label for="reprint-printer">Drucker</label>
+      <select id="reprint-printer" bind:value={reprintPrinterId} disabled={reprintBusy}>
+        {#each printers as p}
+          <option value={p.id}>{p.name}{p.is_default ? ' (Standard)' : ''}</option>
+        {/each}
+      </select>
+    </div>
+    <div class="modal-actions">
+      <div class="spacer"></div>
+      <button type="button" class="btn-ghost" onclick={() => (reprintModalOpen = false)} disabled={reprintBusy}>Abbrechen</button>
+      <button type="button" class="btn-primary" onclick={confirmReprint} disabled={reprintBusy || !reprintPrinterId}>
+        {reprintBusy ? 'Sende…' : 'Drucken'}
+      </button>
+    </div>
+  {/if}
+</Modal>
+
 <style>
+  .header-actions { display: flex; gap: 0.5rem; }
+  .spacer { flex: 1; }
   .filter-row { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1rem; }
   .filter-row label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--color-text-muted); }
   .filter-row select { padding: 0.4rem 0.6rem; min-width: 220px; }

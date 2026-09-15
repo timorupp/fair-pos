@@ -1,10 +1,19 @@
 /** Tests for the kitchen-/bar-order-slip ESC/POS renderer and the routing helper. */
 import { describe, it, expect } from 'vitest';
 import {
-  bucketItemsByPrinter, buildOrderSlipEscPos,
-  buildPickupSlipEscPos, buildDepositSlipEscPos,
+  bucketItemsByPrinter, buildOrderSlipBlocks,
+  buildPickupSlipBlocks, buildDepositSlipBlocks,
   type OrderSlipItem,
 } from './order-slip.js';
+import { renderBlocksToEscPos } from './blocks.js';
+
+/** Renders straight through the shared block model, same as every production call site. */
+const buildOrderSlipEscPos = (...args: Parameters<typeof buildOrderSlipBlocks>): Buffer =>
+  renderBlocksToEscPos(buildOrderSlipBlocks(...args));
+const buildPickupSlipEscPos = (...args: Parameters<typeof buildPickupSlipBlocks>): Buffer =>
+  renderBlocksToEscPos(buildPickupSlipBlocks(...args));
+const buildDepositSlipEscPos = (...args: Parameters<typeof buildDepositSlipBlocks>): Buffer =>
+  renderBlocksToEscPos(buildDepositSlipBlocks(...args));
 
 const item = (overrides: Partial<OrderSlipItem> = {}): OrderSlipItem => ({
   name: 'Bier',
@@ -139,9 +148,9 @@ describe('buildOrderSlipEscPos', () => {
 describe('buildPickupSlipEscPos (Bonkasse self-pickup slip)', () => {
   const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z') };
 
-  it('emits a SELBSTABHOLER header and the article line with price', () => {
+  it('emits a "W E R T B O N" header and the article line with price', () => {
     const buf = buildPickupSlipEscPos({ name: 'Bier', priceEuros: 4, depositEuros: null }, ctx);
-    expect(buf.includes('SELBSTABHOLER')).toBe(true);
+    expect(buf.includes('W E R T B O N')).toBe(true);
     expect(buf.includes('1x Bier')).toBe(true);
     expect(buf.includes('4.00 ')).toBe(true);  // price is on the same line as the article
     expect(buf.includes('Pfand')).toBe(false);
@@ -168,6 +177,33 @@ describe('buildPickupSlipEscPos (Bonkasse self-pickup slip)', () => {
     expect(buildPickupSlipEscPos({ name: 'Bier', priceEuros: 4, depositEuros: 0 }, ctx).includes('Pfand')).toBe(false);
     expect(buildPickupSlipEscPos({ name: 'Bier', priceEuros: 4, depositEuros: null }, ctx).includes('Pfand')).toBe(false);
   });
+
+  // Task #114: a negative deposit (Leergutrückgabe) used to be silently
+  // dropped (`> 0` check) — the pickup slip showed a 0-€ article with no
+  // indication of the refund at all.
+  it('shows a sign-aware "Pfand-Rückgabe" line (absolute amount) for a negative deposit', () => {
+    const buf = buildPickupSlipEscPos({ name: 'Bier', priceEuros: 4, depositEuros: -1.5 }, ctx);
+    // Match around the CP858-encoded "ü" rather than asserting its exact byte.
+    expect(buf.includes('Pfand-R')).toBe(true);
+    expect(buf.includes('ckgabe')).toBe(true);
+    expect(buf.includes('+ Pfand')).toBe(false);
+    // Absolute value shown, not a leading minus — 1.50, not -1.50.
+    expect(buf.includes(Buffer.from([0x31, 0x2e, 0x35, 0x30, 0x20, 0xd5]))).toBe(true);
+    expect(buf.includes('-1.50')).toBe(false);
+  });
+
+  it('prints "PFANDRÜCKGABE" instead of "W E R T B O N" for a pure return (0-€ article, negative deposit)', () => {
+    const buf = buildPickupSlipEscPos({ name: 'Leergutrückgabe', priceEuros: 0, depositEuros: -2 }, ctx);
+    // Match around the CP858-encoded "Ü" rather than asserting its exact byte.
+    expect(buf.includes('PFANDR')).toBe(true);
+    expect(buf.includes('CKGABE')).toBe(true);
+    expect(buf.includes('W E R T B O N')).toBe(false);
+  });
+
+  it('keeps the "W E R T B O N" header for a normal purchase with a positive deposit', () => {
+    const buf = buildPickupSlipEscPos({ name: 'Bier', priceEuros: 4, depositEuros: 2 }, ctx);
+    expect(buf.includes('W E R T B O N')).toBe(true);
+  });
 });
 
 describe('buildDepositSlipEscPos (Bonkasse separate Pfandbon)', () => {
@@ -178,5 +214,13 @@ describe('buildDepositSlipEscPos (Bonkasse separate Pfandbon)', () => {
     expect(buf.includes('PFAND')).toBe(true);
     expect(buf.includes('1x Pfand')).toBe(true);   // never the article name
     expect(buf.includes('2.00 ')).toBe(true);
+  });
+
+  it('shows a sign-aware "PFANDRÜCKGABE" header and "1x Pfand-Rückgabe" line for a negative deposit', () => {
+    const buf = buildDepositSlipEscPos({ depositEuros: -2 }, ctx);
+    expect(buf.includes('1x Pfand-R')).toBe(true);
+    expect(buf.includes('ckgabe')).toBe(true);
+    expect(buf.includes('2.00 ')).toBe(true); // absolute amount, no leading minus
+    expect(buf.includes('-2.00')).toBe(false);
   });
 });

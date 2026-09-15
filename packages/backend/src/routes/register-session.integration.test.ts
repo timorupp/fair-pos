@@ -15,6 +15,7 @@ import {
   createTestRegister, createTestUser, seedReceiptCounter, setSystemSetting,
 } from '../test/fixtures.js';
 import { config } from '../config.js';
+import { loadReceiptById } from '../receipt/data.js';
 
 /** Test double for native/tse-cli — see tse/client.test.ts for the same fixture. */
 const TSE_CLI_STUB_PATH = path.join(
@@ -62,7 +63,7 @@ beforeEach(async () => {
   serviceRegisterId = sr.id;
   await assignRegisterToUser(userId, serviceRegisterId);
 
-  const a = await createTestArticle({ price: 5, taxRate: 19, printerId });
+  const a = await createTestArticle({ price: 5, taxCategory: 'standard', printerId });
   articleId = a.id;
 
   await seedReceiptCounter(0);
@@ -87,6 +88,30 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
       `SELECT id FROM order_item WHERE invoice_id = $1`, [body.invoice_id],
     );
     expect(items.rowCount).toBe(3);
+  });
+
+  it('freezes the current company data onto the invoice at checkout time (Task #112/D-058)', async () => {
+    await setSystemSetting('company_name', 'Testverein e.V.');
+    await setSystemSetting('company_street', 'Hauptstr. 1');
+    await setSystemSetting('company_tax_number', '12/345/67890');
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    const invoiceId = response.json().invoice_id;
+    const row = await pool.query<{ company_name: string; company_street: string; company_tax_number: string }>(
+      `SELECT company_name, company_street, company_tax_number FROM invoice WHERE id = $1`, [invoiceId],
+    );
+    expect(row.rows[0]).toEqual({
+      company_name: 'Testverein e.V.', company_street: 'Hauptstr. 1', company_tax_number: '12/345/67890',
+    });
+
+    // Changing the settings afterwards must not retroactively alter the invoice's own snapshot.
+    await setSystemSetting('company_name', 'Anderer Name GmbH');
+    const data = await loadReceiptById(invoiceId);
+    expect(data!.companyName).toBe('Testverein e.V.');
   });
 
   it('vergibt fortlaufende Belegnummern bei aufeinanderfolgenden Checkouts', async () => {
@@ -176,7 +201,7 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
       // `toString('ascii')` here because the slip is CP858-encoded (the €
       // sign is byte 0xd5), so non-ASCII bytes would turn into '?'.
       const buf = Buffer.from(row.content, 'base64');
-      expect(buf.includes('SELBSTABHOLER')).toBe(true);
+      expect(buf.includes('W E R T B O N')).toBe(true);
       // The article line and the Pfand line are now right-aligned two-column
       // rows. Spaces sit between the label and the amount, so we check the
       // pieces separately. The CP858 € byte is 0xd5.
@@ -203,7 +228,7 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
     expect(jobs.rowCount).toBe(2);
     const decoded = jobs.rows.map((r) => Buffer.from(r.content, 'base64'));
     // Article slip first (no inline deposit line), Pfandbon second.
-    expect(decoded[0]!.includes('SELBSTABHOLER')).toBe(true);
+    expect(decoded[0]!.includes('W E R T B O N')).toBe(true);
     expect(decoded[0]!.includes('Pfand')).toBe(false);
     expect(decoded[1]!.includes('PFAND')).toBe(true);
     // "2.00 " followed by the CP858 € byte (0xd5).
@@ -230,10 +255,139 @@ describe('Bonkasse: POST /api/register-session/registers/:id/checkout', () => {
   });
 });
 
+describe('POST /api/register-session/invoices/:id/print (T-012/T-013)', () => {
+  async function checkout(): Promise<string> {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    return response.json().invoice_id;
+  }
+
+  it('enqueues a receipt print_job for the register\'s assigned printer, referencing the invoice', async () => {
+    const invoiceId = await checkout();
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/${invoiceId}/print`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const { print_job_id } = response.json();
+    expect(print_job_id).toMatch(/^[0-9a-f-]{36}$/);
+
+    const job = await pool.query<{ type: string; printer_id: string; reference_id: string }>(
+      `SELECT type, printer_id, reference_id FROM print_job WHERE id = $1`, [print_job_id],
+    );
+    expect(job.rows[0]).toMatchObject({ type: 'receipt', printer_id: printerId, reference_id: invoiceId });
+  });
+
+  it('returns 404 for an invoice that does not exist', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/00000000-0000-0000-0000-000000000000/print`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns 403 when the caller is not assigned to the invoice\'s register', async () => {
+    const invoiceId = await checkout();
+    const other = await createTestUser({ isAdmin: false });
+    const otherCookie = await loginAsRegisterUser(await getTestApp(), other.pin);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/${invoiceId}/print`,
+      headers: { cookie: otherCookie },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('returns 400 when neither the register nor the system has a printer configured', async () => {
+    await pool.query(`UPDATE printer SET is_default = false WHERE id = $1`, [printerId]);
+    const bare = await createTestRegister({ type: 'receipt_register' }); // no printerId
+    await assignRegisterToUser(userId, bare.id);
+    const app = await getTestApp();
+    const checkoutResult = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${bare.id}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/${checkoutResult.json().invoice_id}/print`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('returns 500 for an invoice whose receipt_token is somehow null instead of crashing', async () => {
+    const invoiceId = await checkout();
+    await pool.query(`UPDATE invoice SET receipt_token = NULL WHERE id = $1`, [invoiceId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/invoices/${invoiceId}/print`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(500);
+  });
+});
+
+describe('GET /api/register-session/invoices/:id/preview (Task #147)', () => {
+  async function checkout(): Promise<string> {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 2 }] },
+    });
+    return response.json().invoice_id;
+  }
+
+  it('returns the receipt blocks for the invoice, without enqueuing any print job', async () => {
+    const invoiceId = await checkout();
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/invoices/${invoiceId}/preview`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const { blocks } = response.json();
+    expect(Array.isArray(blocks)).toBe(true);
+    expect(blocks.length).toBeGreaterThan(0);
+    expect(blocks.some((b: { kind: string }) => b.kind === 'row')).toBe(true);
+
+    const jobs = await pool.query(`SELECT id FROM print_job WHERE reference_id = $1`, [invoiceId]);
+    expect(jobs.rowCount).toBe(0);
+  });
+
+  it('returns 404 for an invoice that does not exist', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/invoices/00000000-0000-0000-0000-000000000000/preview`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns 403 when the caller is not assigned to the invoice\'s register', async () => {
+    const invoiceId = await checkout();
+    const other = await createTestUser({ isAdmin: false });
+    const otherCookie = await loginAsRegisterUser(await getTestApp(), other.pin);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/invoices/${invoiceId}/preview`,
+      headers: { cookie: otherCookie },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+});
+
 describe('GET /api/register-session/registers/:id — layout slots (Task #91 follow-up)', () => {
   it('excludes hidden slots entirely and includes the custom label of visible ones', async () => {
     const layout = await pool.query<{ id: string }>(
-      `INSERT INTO register_layout (name, grid_cols, grid_rows) VALUES ('L', 2, 2) RETURNING id`,
+      `INSERT INTO register_layout (name, grid_cols, grid_rows, event_id) VALUES ('L', 2, 2, $1) RETURNING id`,
+      [config.activeEventId],
     );
     const layoutId = layout.rows[0]!.id;
     const hiddenArticle = await createTestArticle({ name: 'Versteckt' });
@@ -256,42 +410,21 @@ describe('GET /api/register-session/registers/:id — layout slots (Task #91 fol
     expect(slots[0].article_id).toBe(articleId);
     expect(slots[0].label).toBe('Meine Taste');
   });
-});
 
-describe('GET /api/register-session/invoices/:id/qr.png', () => {
-  it('renders a PNG for a valid invoice', async () => {
+  it('only lists articles of the active event (Task #95)', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    await createTestArticle({ name: 'Fremd', eventId: otherEvent.rows[0]!.id });
+
     const app = await getTestApp();
-    const checkout = await app.inject({
-      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
-      headers: { cookie: userCookie },
-      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
-    });
-    const invoiceId = checkout.json().invoice_id;
-
     const response = await app.inject({
-      method: 'GET', url: `/api/register-session/invoices/${invoiceId}/qr.png`,
+      method: 'GET', url: `/api/register-session/registers/${registerId}`,
       headers: { cookie: userCookie },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.headers['content-type']).toBe('image/png');
-  });
-
-  it('404s for an invoice belonging to a register the user has no access to', async () => {
-    const app = await getTestApp();
-    const checkout = await app.inject({
-      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
-      headers: { cookie: userCookie },
-      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
-    });
-    const invoiceId = checkout.json().invoice_id;
-
-    const otherUser = await createTestUser({ isAdmin: false });
-    const otherCookie = await loginAsRegisterUser(app, otherUser.pin);
-    const response = await app.inject({
-      method: 'GET', url: `/api/register-session/invoices/${invoiceId}/qr.png`,
-      headers: { cookie: otherCookie },
-    });
-    expect(response.statusCode).toBe(403);
+    const names = (response.json().articles as { name: string }[]).map((a) => a.name);
+    expect(names).not.toContain('Fremd');
   });
 });
 
@@ -373,11 +506,12 @@ describe('Bedienungskasse: order + checkout flow', () => {
   let tableId: string;
 
   beforeEach(async () => {
-    await pool.query(`INSERT INTO floor_plan_column (label, col_order) VALUES ('A', 0)`);
-    await pool.query(`INSERT INTO floor_plan_row    (label, row_order) VALUES ('1', 0)`);
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
     const t = await pool.query<{ id: string }>(
-      `INSERT INTO dining_table (name, col_label, row_label, status)
-       VALUES ('A1', 'A', '1', 'active') RETURNING id`,
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('A1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
     );
     tableId = t.rows[0]!.id;
   });
@@ -434,11 +568,63 @@ describe('Bedienungskasse: order + checkout flow', () => {
     expect(stillOpen.rows[0]!.n).toBe(1);
   });
 
+  it('receipt for a table checkout carries the table name and the first order\'s timestamp (DSFinV-K Tz. 2.7.2, Task #116)', async () => {
+    const app = await getTestApp();
+    const firstOrder = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(firstOrder.statusCode).toBe(200);
+    // Backdate the first order so it's clearly distinguishable from "now" —
+    // the receipt's table line must reflect this earlier timestamp, not the
+    // checkout/payment moment.
+    const backdated = new Date(Date.now() - 3600_000);
+    await pool.query(`UPDATE order_item SET created_at = $1 WHERE dining_table_id = $2`, [backdated, tableId]);
+    await pool.query(`UPDATE service_order SET created_at = $1 WHERE dining_table_id = $2`, [backdated, tableId]);
+
+    const openItems = await app.inject({
+      method: 'GET',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/open-items`,
+      headers: { cookie: userCookie },
+    });
+    const groupKey = openItems.json().groups[0].group_key;
+    const checkoutResult = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { quantities: [{ group_key: groupKey, count: 1 }] },
+    });
+    expect(checkoutResult.statusCode).toBe(200);
+
+    const receipt = await loadReceiptById(checkoutResult.json().invoice_id);
+    expect(receipt).not.toBeNull();
+    expect(receipt!.tableName).toBe('A1');
+    expect(receipt!.firstOrderTime?.getTime()).toBe(backdated.getTime());
+  });
+
+  it('receipt for a Bonkasse walk-up sale has no table name or first-order time', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    const receipt = await loadReceiptById(response.json().invoice_id);
+    expect(receipt).not.toBeNull();
+    expect(receipt!.tableName).toBeNull();
+    expect(receipt!.firstOrderTime).toBeNull();
+  });
+
   it('cancel marks selected items as cancelled with the reason', async () => {
     const app = await getTestApp();
     const reason = await pool.query<{ id: string }>(
-      `INSERT INTO cancellation_reason (name, booking_type)
-       VALUES ('Test-Storno', 'cancellation') RETURNING id`,
+      `INSERT INTO cancellation_reason (name, booking_type, event_id)
+       VALUES ('Test-Storno', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
     );
     await app.inject({
       method: 'POST',
@@ -477,11 +663,12 @@ describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSon
   let tableId: string;
 
   beforeEach(async () => {
-    await pool.query(`INSERT INTO floor_plan_column (label, col_order) VALUES ('A', 0)`);
-    await pool.query(`INSERT INTO floor_plan_row    (label, row_order) VALUES ('1', 0)`);
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
     const t = await pool.query<{ id: string }>(
-      `INSERT INTO dining_table (name, col_label, row_label, status)
-       VALUES ('A1', 'A', '1', 'active') RETURNING id`,
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('A1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
     );
     tableId = t.rows[0]!.id;
   });
@@ -599,8 +786,9 @@ describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSon
   it('signs a cancellation as AVSonstige and stores it on order_cancellation', async () => {
     const appSetup = await getTestApp();
     const reason = await pool.query<{ id: string }>(
-      `INSERT INTO cancellation_reason (name, booking_type)
-       VALUES ('Test-Storno', 'cancellation') RETURNING id`,
+      `INSERT INTO cancellation_reason (name, booking_type, event_id)
+       VALUES ('Test-Storno', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
     );
     await appSetup.inject({
       method: 'POST',
@@ -635,6 +823,103 @@ describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSon
     const cancellations = await pool.query(`SELECT tse_transaction_number, tse_signature FROM order_cancellation`);
     expect(cancellations.rowCount).toBe(1);
     expect(cancellations.rows[0]).toMatchObject({ tse_transaction_number: '3', tse_signature: 'ee' });
+  });
+});
+
+describe('Trainingsmodus (Task #130)', () => {
+  it('Bonkasse checkout on a training register sets receipt_type=training', async () => {
+    await pool.query('UPDATE register SET is_training = true WHERE id = $1', [registerId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    const invoice = await pool.query<{ receipt_type: string }>(
+      'SELECT receipt_type FROM invoice WHERE id = $1', [response.json().invoice_id],
+    );
+    expect(invoice.rows[0]?.receipt_type).toBe('training');
+  });
+
+  it('signs a training-register checkout with vorgangstyp=AVTraining in the actual TSE processData (found live via Process-Data-Dump: this used to always say Beleg)', async () => {
+    await pool.query('UPDATE register SET is_training = true WHERE id = $1', [registerId]);
+    config.tseMountPoint = '/tmp/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-training-signature-calls.log';
+    const fs = await import('node:fs');
+    fs.writeFileSync('/tmp/tsecli-training-signature-calls.log', '');
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: { transactionNumber: 1, signatureCounter: 1, logTime: 1735689600, signature: 'aa', serialNumber: 'bb' },
+    });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const calls = fs.readFileSync('/tmp/tsecli-training-signature-calls.log', 'utf8').trim().split('\n').filter(Boolean);
+    const finishCall = calls.find((c) => c.includes(' finish '))!;
+    const processDataB64 = finishCall.trim().split(' ').pop()!;
+    const processData = Buffer.from(processDataB64, 'base64').toString('utf-8');
+    expect(processData).toMatch(/^AVTraining\^/);
+
+    delete process.env['TSE_STUB_LOG_FILE'];
+  });
+
+  it('Bonkasse checkout on a normal register still sets receipt_type=sales_receipt', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    const invoice = await pool.query<{ receipt_type: string }>(
+      'SELECT receipt_type FROM invoice WHERE id = $1', [response.json().invoice_id],
+    );
+    expect(invoice.rows[0]?.receipt_type).toBe('sales_receipt');
+  });
+
+  it('Bedienungskasse split-checkout on a training register also sets receipt_type=training', async () => {
+    await pool.query('UPDATE register SET is_training = true WHERE id = $1', [serviceRegisterId]);
+    const app = await getTestApp();
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
+    const table = await pool.query<{ id: string }>(
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('T1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
+    );
+    const tableId = table.rows[0]!.id;
+    const order = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(order.statusCode).toBe(200);
+
+    const openItems = await app.inject({
+      method: 'GET', url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/open-items`,
+      headers: { cookie: userCookie },
+    });
+    const groupKey = openItems.json().groups[0].group_key;
+
+    const checkout = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { quantities: [{ group_key: groupKey, count: 1 }] },
+    });
+    expect(checkout.statusCode).toBe(200);
+    const invoice = await pool.query<{ receipt_type: string }>(
+      'SELECT receipt_type FROM invoice WHERE id = $1', [checkout.json().invoice_id],
+    );
+    expect(invoice.rows[0]?.receipt_type).toBe('training');
   });
 });
 
@@ -682,6 +967,41 @@ describe('Archivierte Kassen (Task #55)', () => {
       headers: { cookie: userCookie },
     });
     expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('GET /me user object (Task #94)', () => {
+  it('reports is_event_admin so a pure Veranstaltungs-Administrator is recognised on the Kassenauswahl screen', async () => {
+    // Regression test: GET /me previously only returned is_admin, so a pure
+    // Veranstaltungs-Administrator (is_event_admin only) was never
+    // recognised as admin-level here — with exactly one assigned register,
+    // the frontend auto-skip logic would silently route them straight past
+    // the "Systemverwaltung" button, permanently locking them out of
+    // /admin/* through the normal UI (found during Task #98 docs audit).
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    await assignRegisterToUser(eventAdmin.id, registerId);
+    const eventAdminCookie = await loginAsRegisterUser(await getTestApp(), eventAdmin.pin);
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/register-session/me',
+      headers: { cookie: eventAdminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const user = response.json().user as { is_admin: boolean; is_event_admin: boolean };
+    expect(user.is_admin).toBe(false);
+    expect(user.is_event_admin).toBe(true);
+  });
+
+  it('reports is_event_admin: false for a plain non-admin operator', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/register-session/me',
+      headers: { cookie: userCookie },
+    });
+    const user = response.json().user as { is_admin: boolean; is_event_admin: boolean };
+    expect(user.is_admin).toBe(false);
+    expect(user.is_event_admin).toBe(false);
   });
 });
 

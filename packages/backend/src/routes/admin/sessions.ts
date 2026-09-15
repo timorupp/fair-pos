@@ -10,13 +10,18 @@ interface SessionListRow {
   id: string;
   user_name: string;
   is_admin: boolean;
+  is_event_admin: boolean;
   admin_verified: boolean;
   created_at: string;
   last_activity_at: string;
   user_agent: string | null;
 }
 
-/** Registers `/api/admin/sessions` routes. */
+/**
+ * Registers `/api/admin/sessions` routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function sessionsAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
@@ -26,7 +31,7 @@ export async function sessionsAdminRoute(app: FastifyInstance): Promise<void> {
    */
   app.get('/', async (_req, reply) => {
     const result = await query<SessionListRow>(
-      `SELECT s.id, u.name AS user_name, u.is_admin, s.admin_verified,
+      `SELECT s.id, u.name AS user_name, u.is_admin, u.is_event_admin, s.admin_verified,
               s.created_at, s.last_activity_at, s.user_agent
          FROM session s
          JOIN "user" u ON u.id = s.user_id

@@ -1,0 +1,346 @@
+/**
+ * Integration tests for the Excel "Veranstaltungsexport" — verifies it is
+ * scoped to the currently active event (Task #95), not a manually-selected
+ * one (the old `event_id` query param / EventSelector mechanism was removed).
+ */
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import ExcelJS from 'exceljs';
+import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
+import { truncateAllTables } from '../../test/db-fixture.js';
+import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
+import { createTestRegister, createTestUser } from '../../test/fixtures.js';
+
+beforeAll(async () => { await getTestApp(); });
+afterAll(closeTestApp);
+
+let adminCookie: string;
+
+beforeEach(async () => {
+  await truncateAllTables();
+  const admin = await createTestUser({ isAdmin: true, password: 'pw' });
+  adminCookie = await loginAsAdmin(await getTestApp(), admin.pin, admin.password);
+});
+
+describe('GET /api/admin/exports/excel/event', () => {
+  it('returns 404 when the active event has no invoices yet', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    // No invoices in the freshly-seeded active event — the workbook still
+    // renders (an empty sheet), so this asserts 200, not 404.
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('includes only invoices of the active event, not a different one', async () => {
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now() - interval '30 days', now() - interval '20 days') RETURNING id`,
+    );
+    const foreignRegister = await createTestRegister({ name: 'Fremd', eventId: otherEvent.rows[0]!.id });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'sales_receipt', 'cash', now() - interval '25 days')`,
+      [foreignRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Bier', 'Getränke', 19, 'standard', 5, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      [foreignRegister.id],
+    );
+
+    const ownRegister = await createTestRegister({ name: 'Eigen', eventId: config.activeEventId });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 2, 'sales_receipt', 'cash', now())`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Wein', 'Getränke', 19, 'standard', 7, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      [ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('spreadsheetml');
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    const articleNames: unknown[] = [];
+    for (let row = 4; row <= sheet.rowCount; row++) {
+      const value = sheet.getCell(row, 9).value;
+      if (value !== null && value !== undefined) articleNames.push(value);
+    }
+    expect(articleNames).toEqual(['Wein']);
+  });
+
+  it('includes an invoice booked on the active event\'s register even when its created_at falls outside the event\'s own start/end window', async () => {
+    // Task #95: the event's start_time/end_time are informational display
+    // fields only — scoping must go by register.event_id alone. Regression
+    // test for a bug where the export still additionally filtered by that
+    // date range, silently dropping invoices outside it (e.g. anything
+    // booked after the auto-created "Altbestand" event's frozen end_time).
+    const ownRegister = await createTestRegister({ name: 'Eigen', eventId: config.activeEventId });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'sales_receipt', 'cash', now() - interval '90 days')`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Radler', 'Getränke', 19, 'standard', 4, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      [ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 9).value).toBe('Radler');
+  });
+
+  it('includes a Bonstorno invoice with its negative price (D-068/Task #126 — previously excluded entirely via receipt_type=sales_receipt)', async () => {
+    const ownRegister = await createTestRegister({ name: 'Eigen', eventId: config.activeEventId });
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'cancellation', 'cash', now()) RETURNING id`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -5, 'paid', now())`,
+      [inv.rows[0]!.id, ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 9).value).toBe('Bier');
+    expect(sheet.getCell(4, 12).value).toBe(-5); // unit_price column
+    expect(sheet.getCell(4, 2).value).toBe('ja'); // Storno column (Task #138)
+  });
+
+  it('shows the cancelling admin as Besteller for a Bonstorno row (Task #126 follow-up — was empty before, even though cancelled_by_name was already captured)', async () => {
+    const ownRegister = await createTestRegister({ name: 'EigenBesteller', eventId: config.activeEventId });
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'cancellation', 'cash', now()) RETURNING id`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, cancelled_by_name, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -5, 'paid', 'Storno-Admin', now())`,
+      [inv.rows[0]!.id, ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 7).value).toBe('Storno-Admin'); // Besteller column
+  });
+
+  it('shows the Z-Bon number once an invoice is linked to a daily_closing, blank while not yet closed (Task #142)', async () => {
+    const ownRegister = await createTestRegister({ name: 'EigenZBon', eventId: config.activeEventId });
+    const closing = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 7, false, now()::date, 5, 5, 0, 0, 5, 0, 0, 0) RETURNING id`,
+      [ownRegister.id],
+    );
+    const closedInvoice = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at, daily_closing_id)
+       VALUES ($1, 1, 'sales_receipt', 'cash', now(), $2) RETURNING id`,
+      [ownRegister.id, closing.rows[0]!.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Geschlossen', 'Getränke', 19, 'standard', 5, 'paid', now())`,
+      [closedInvoice.rows[0]!.id, ownRegister.id],
+    );
+    const openInvoice = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 2, 'sales_receipt', 'cash', now()) RETURNING id`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Offen', 'Getränke', 19, 'standard', 5, 'paid', now())`,
+      [openInvoice.rows[0]!.id, ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 3).value).toBe(7);       // Geschlossen — Z-Bon Nr. 7
+    expect(sheet.getCell(5, 3).value).toBeNull();     // Offen — noch kein Abschluss
+  });
+
+  it('never includes a Bedienungskasse Storno/kostenfrei order_item (Task #126 — never charged, no invoice, already correctly excluded by the invoice join, now verified explicitly)', async () => {
+    const ownRegister = await createTestRegister({ name: 'EigenKostenfrei', eventId: config.activeEventId });
+    await pool.query(
+      `INSERT INTO order_item (register_id, article_name, article_category_name, tax_rate, tax_category, price, status, cancelled_by_name, created_at)
+       VALUES ($1, 'Bier', 'Getränke', 19, 'standard', 5, 'cancelled', 'Theken-Anna', now())`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (register_id, article_name, article_category_name, tax_rate, tax_category, price, status, cancelled_by_name, created_at)
+       VALUES ($1, 'Bier', 'Getränke', 19, 'standard', 5, 'free', 'Theken-Anna', now())`,
+      [ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    // Only the title/subtitle/header rows (rows 1-3) — neither the 'cancelled'
+    // nor the 'free' item ever got an invoice, so no data row (row 4+) exists.
+    expect(sheet.rowCount).toBe(3);
+  });
+
+  it('rejects the request without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/exports/excel/event' });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('GET /api/admin/exports/excel/day', () => {
+  it('includes only invoices of the active event, not a different event\'s invoice on the same calendar day (D-067)', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now() - interval '1 day', now() + interval '1 day') RETURNING id`,
+    );
+    const foreignRegister = await createTestRegister({ name: 'Fremd', eventId: otherEvent.rows[0]!.id });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'sales_receipt', 'cash', now())`,
+      [foreignRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Bier', 'Getränke', 19, 'standard', 5, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      [foreignRegister.id],
+    );
+
+    const ownRegister = await createTestRegister({ name: 'Eigen', eventId: config.activeEventId });
+    await pool.query(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 2, 'sales_receipt', 'cash', now())`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       SELECT id, register_id, 'Wein', 'Getränke', 19, 'standard', 7, 'paid', created_at FROM invoice WHERE register_id = $1`,
+      [ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/exports/excel/day?date=${today}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    const articleNames: unknown[] = [];
+    for (let row = 4; row <= sheet.rowCount; row++) {
+      const value = sheet.getCell(row, 9).value;
+      if (value !== null && value !== undefined) articleNames.push(value);
+    }
+    expect(articleNames).toEqual(['Wein']);
+  });
+
+  it('includes a Bonstorno invoice with its negative price (D-068/Task #126)', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const ownRegister = await createTestRegister({ name: 'Eigen', eventId: config.activeEventId });
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 1, 'cancellation', 'cash', now()) RETURNING id`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', -5, 'paid', now())`,
+      [inv.rows[0]!.id, ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/exports/excel/day?date=${today}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(4, 9).value).toBe('Bier');
+    expect(sheet.getCell(4, 12).value).toBe(-5);
+  });
+
+  it('returns 404 when no event is active', async () => {
+    const previousActiveEventId = config.activeEventId;
+    config.activeEventId = null;
+    try {
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'GET', url: '/api/admin/exports/excel/day?date=2026-01-01',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(404);
+    } finally {
+      config.activeEventId = previousActiveEventId;
+    }
+  });
+
+  it('rejects the request without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/exports/excel/day?date=2026-01-01' });
+    expect(response.statusCode).toBe(401);
+  });
+});

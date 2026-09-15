@@ -15,6 +15,7 @@
  * render step on the stored original.
  */
 
+import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { query } from '../db/client.js';
 
@@ -211,6 +212,67 @@ export async function loadCompanyLogo(): Promise<CompanyLogo | null> {
     pdfWidth: row.pdf_width,
     pdfHeight: row.pdf_height,
     pdfWidthFactor: Math.min(1, zoom / 100),
+    escposBytes: row.escpos_data,
+  };
+}
+
+/** Computes a stable content hash over everything that makes two rendered logo variants visually identical. */
+function hashLogoVariant(logo: CompanyLogo): string {
+  return createHash('sha256')
+    .update(logo.pdfPng)
+    .update(logo.escposBytes)
+    .update(`:${logo.pdfWidth}:${logo.pdfHeight}:${logo.pdfWidthFactor}`)
+    .digest('hex');
+}
+
+/**
+ * Returns the id of a `logo_version` row holding exactly this rendered logo,
+ * inserting a new row only if this exact content hasn't been snapshotted
+ * before (Task #112) — an event's invoices normally share one unchanged
+ * logo, so this keeps every sale from duplicating the same PNG/ESC-POS bytes
+ * onto `invoice`. Safe under concurrent callers: the insert is a single
+ * atomic upsert keyed on the content hash, not a separate check-then-insert.
+ *
+ * @param logo - The currently-rendered logo to snapshot, or `null` when no
+ *   logo should be attached to the invoice (flag disabled for this target).
+ * @returns The `logo_version.id` to store on `invoice.logo_version_id`, or `null`.
+ */
+export async function ensureLogoVersion(logo: CompanyLogo | null): Promise<string | null> {
+  if (!logo) return null;
+  const contentHash = hashLogoVariant(logo);
+  const result = await query<{ id: string }>(
+    `INSERT INTO logo_version (content_hash, pdf_data, escpos_data, pdf_width, pdf_height, pdf_width_factor)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (content_hash) DO UPDATE SET content_hash = EXCLUDED.content_hash
+     RETURNING id`,
+    [contentHash, logo.pdfPng, logo.escposBytes, logo.pdfWidth, logo.pdfHeight, logo.pdfWidthFactor],
+  );
+  return result.rows[0]!.id;
+}
+
+/**
+ * Reads one snapshotted logo version by id — used to render a historical
+ * invoice's PDF/reprint exactly as its logo looked at sale time (Task #112),
+ * independent of the currently-configured logo/zoom.
+ *
+ * @param id - `invoice.logo_version_id`.
+ * @returns The stored variants, or `null` if the id doesn't exist (defensive
+ *   only — the FK on `invoice` guarantees it does).
+ */
+export async function loadLogoVersion(id: string): Promise<CompanyLogo | null> {
+  const result = await query<{
+    pdf_data: Buffer; escpos_data: Buffer; pdf_width: number; pdf_height: number; pdf_width_factor: string;
+  }>(
+    `SELECT pdf_data, escpos_data, pdf_width, pdf_height, pdf_width_factor FROM logo_version WHERE id = $1`,
+    [id],
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0]!;
+  return {
+    pdfPng: row.pdf_data,
+    pdfWidth: row.pdf_width,
+    pdfHeight: row.pdf_height,
+    pdfWidthFactor: Number(row.pdf_width_factor),
     escposBytes: row.escpos_data,
   };
 }

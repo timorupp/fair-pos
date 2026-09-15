@@ -4,7 +4,11 @@ import type { FastifyInstance } from 'fastify';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { runHealthChecks } from '../../system/healthChecks.js';
 
-/** Registers `/api/admin/health-checks` routes. */
+/**
+ * Registers `/api/admin/health-checks` routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function healthChecksAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 

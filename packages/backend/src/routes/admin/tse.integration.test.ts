@@ -110,6 +110,110 @@ describe('TSE connection settings + status', () => {
     expect(body.error).toBeTruthy();
   });
 
+  it('computes certificateExpiresTodayOrEarlier against server time, not the browser (Task #132 follow-up)', async () => {
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    config.tseMountPoint = '/mnt/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    const expiredSecondsAgo = Math.floor(Date.now() / 1000) - 24 * 3600;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true, result: { hasPassedSelfTest: true, hasValidTime: true, certificateExpirationDate: expiredSecondsAgo },
+    });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/status',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.configured).toBe(true);
+    expect(body.certificateExpiresTodayOrEarlier).toBe(true);
+    delete process.env['TSE_STUB_STDOUT'];
+    config.tseCliPath = null;
+  });
+
+  describe('POST /test-signature (Task #133)', () => {
+    it('returns 400 when the TSE is not configured', async () => {
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/tse/test-signature',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('runs a real start/finish cycle and returns the signature detail on success', async () => {
+      config.tseCliPath = TSE_CLI_STUB_PATH;
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+        ok: true,
+        result: { transactionNumber: 42, signatureCounter: 7, logTime: 1735689600, signature: 'aabbcc', serialNumber: 'ddeeff' },
+      });
+
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/tse/test-signature',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        transactionNumber: 42, signatureCounter: 7, signature: 'aabbcc', serialNumber: 'ddeeff',
+      });
+      delete process.env['TSE_STUB_STDOUT'];
+      config.tseCliPath = null;
+    });
+
+    it('uses AVBelegabbruch content for finish, so the test never creates a persisted Vorgang', async () => {
+      config.tseCliPath = TSE_CLI_STUB_PATH;
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-test-signature-calls.log';
+      const fs = await import('node:fs');
+      fs.writeFileSync('/tmp/tsecli-test-signature-calls.log', '');
+      process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+        ok: true,
+        result: { transactionNumber: 1, signatureCounter: 1, logTime: 1735689600, signature: 'aa', serialNumber: 'bb' },
+      });
+
+      const app = await getTestApp();
+      await app.inject({
+        method: 'POST', url: '/api/admin/tse/test-signature',
+        headers: { cookie: adminCookie },
+      });
+
+      const calls = fs.readFileSync('/tmp/tsecli-test-signature-calls.log', 'utf8').trim().split('\n').filter(Boolean);
+      const finishCall = calls.find((c) => c.includes(' finish '))!;
+      const processDataB64 = finishCall.trim().split(' ').pop()!;
+      const processData = Buffer.from(processDataB64, 'base64').toString('utf-8');
+      expect(processData).toMatch(/^AVBelegabbruch/);
+
+      delete process.env['TSE_STUB_STDOUT'];
+      delete process.env['TSE_STUB_LOG_FILE'];
+      config.tseCliPath = null;
+    });
+
+    it('returns 502 with the real TSE error detail on failure', async () => {
+      config.tseCliPath = TSE_CLI_STUB_PATH;
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      process.env['TSE_STUB_EXIT_CODE'] = '1';
+      process.env['TSE_STUB_STDOUT'] = JSON.stringify({ ok: false, error: { code: 4098, message: 'no valid time set' } });
+
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/tse/test-signature',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(502);
+      expect(response.json().error).toMatch(/4098/);
+
+      delete process.env['TSE_STUB_STDOUT'];
+      delete process.env['TSE_STUB_EXIT_CODE'];
+      config.tseCliPath = null;
+    });
+  });
+
   it('GET /candidates lists removable mount points via the real lsblk binary without throwing', async () => {
     const app = await getTestApp();
     const response = await app.inject({
@@ -190,9 +294,368 @@ describe('POST /api/admin/tse/maintain', () => {
     expect(log.rows).toEqual([{ severity: 'info', category: 'tse_health' }]);
   });
 
+  // Task #141 (2026-09-12): a wrong TimeAdmin-PIN entered via the manual
+  // "Zeit synchronisieren" button used to fail silently — 502 to the
+  // browser, but no system_log entry and no effect on
+  // `tse_auto_maintain_enabled`, unlike the periodic health job's own
+  // handling of the exact same error (see healthJob.integration.test.ts).
+  it('logs an error and disables auto-maintain when maintain fails with a PIN authentication error', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: {
+        tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test', tse_time_admin_pin: '000000',
+      },
+    });
+    process.env['TSE_STUB_MAINTAIN_FAILS'] = '1';
+    process.env['TSE_STUB_MAINTAIN_ERROR_CODE'] = '4352'; // WORM_ERROR_AUTHENTICATION_FAILED
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/tse/maintain',
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(502);
+
+      expect(config.tseAutoMaintainEnabled).toBe(false);
+      const setting = await pool.query<{ value: string }>(
+        `SELECT value FROM system_setting WHERE key = 'tse_auto_maintain_enabled'`,
+      );
+      expect(setting.rows[0]?.value).toBe('false');
+
+      const log = await pool.query<{ severity: string; category: string; message: string }>(
+        `SELECT severity, category, message FROM system_log ORDER BY created_at`,
+      );
+      // Two separate error rows: the failed-attempt message from this route's
+      // own catch block, and the "disabled" message from `disableAutoMaintain()`.
+      expect(log.rows.some((r) => r.severity === 'error' && r.category === 'tse_health' && /fehlgeschlagen/.test(r.message))).toBe(true);
+      expect(log.rows.some((r) => r.severity === 'error' && r.category === 'tse_health' && /deaktiviert/.test(r.message))).toBe(true);
+    } finally {
+      delete process.env['TSE_STUB_MAINTAIN_FAILS'];
+      delete process.env['TSE_STUB_MAINTAIN_ERROR_CODE'];
+      config.tseAutoMaintainEnabled = true;
+    }
+  });
+
   it('rejects without an admin session', async () => {
     const app = await getTestApp();
     const response = await app.inject({ method: 'POST', url: '/api/admin/tse/maintain' });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('GET /api/admin/tse/export (Task #103)', () => {
+  it('rejects when the TSE is not configured', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/export',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('downloads the raw TAR archive from the stub CLI and logs the export', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_EXPORT_CONTENT'] = 'FAKE-TSE-TAR-CONTENT';
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/export',
+      headers: { cookie: adminCookie },
+    });
+    delete process.env['TSE_STUB_EXPORT_CONTENT'];
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toBe('application/x-tar');
+    expect(response.headers['content-disposition']).toMatch(/attachment; filename="fairpos_tse_export_.*\.tar"/);
+    expect(response.body).toBe('FAKE-TSE-TAR-CONTENT');
+
+    const log = await pool.query(`SELECT severity, category FROM system_log`);
+    expect(log.rows).toEqual([{ severity: 'info', category: 'tse_export' }]);
+  });
+
+  it('allows a Veranstaltungs-Administrator too — the TSE may belong to their event', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_EXPORT_CONTENT'] = 'FAKE-TSE-TAR-CONTENT';
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const eventAdmin = await createTestUser({ isEventAdmin: true, password: 'pw' });
+    const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/export',
+      headers: { cookie: eventAdminCookie },
+    });
+    delete process.env['TSE_STUB_EXPORT_CONTENT'];
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/tse/export' });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('POST /api/admin/tse/setup (Task #131)', () => {
+  it('rejects when the TSE is not configured', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/setup',
+      headers: { cookie: adminCookie },
+      payload: { credentialSeed: 'SwissbitSwissbit', adminPuk: '123456', adminPin: '12345', timeAdminPin: '12345' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects a missing/invalid client-id before ever calling the CLI', async () => {
+    const app = await getTestApp();
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/setup',
+      headers: { cookie: adminCookie },
+      payload: { clientId: 'invalid client id!', credentialSeed: 'SwissbitSwissbit', adminPuk: '123456', adminPin: '12345', timeAdminPin: '12345' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatch(/Client-ID/);
+  });
+
+  it('rejects a 5-digit admin-puk before ever calling the CLI', async () => {
+    const app = await getTestApp();
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/setup',
+      headers: { cookie: adminCookie },
+      payload: { clientId: 'FairPOS-Test', credentialSeed: 'SwissbitSwissbit', adminPuk: '12345', adminPin: '12345', timeAdminPin: '12345' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatch(/6-stellig/);
+  });
+
+  it('rejects a non-numeric pin', async () => {
+    const app = await getTestApp();
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/setup',
+      headers: { cookie: adminCookie },
+      payload: { clientId: 'FairPOS-Test', credentialSeed: 'SwissbitSwissbit', adminPuk: '123456', adminPin: 'abcde', timeAdminPin: '12345' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatch(/5-stellig/);
+  });
+
+  it('succeeds against the stub CLI when fully configured and validly formatted, persists the client-id, and logs it', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/setup',
+      headers: { cookie: adminCookie },
+      payload: { clientId: 'FairPOS-Test', credentialSeed: 'SwissbitSwissbit', adminPuk: '123456', adminPin: '12345', timeAdminPin: '12345' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true, clientId: 'FairPOS-Test' });
+
+    const setting = await pool.query(`SELECT value FROM system_setting WHERE key = 'tse_client_id'`);
+    expect(setting.rows).toEqual([{ value: 'FairPOS-Test' }]);
+    expect(config.tseClientId).toBe('FairPOS-Test');
+
+    const log = await pool.query(`SELECT severity, category FROM system_log`);
+    expect(log.rows).toEqual([{ severity: 'info', category: 'tse_setup' }]);
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'POST', url: '/api/admin/tse/setup' });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('POST /api/admin/tse/unblock (Task #109/#131)', () => {
+  it('rejects an invalid user value', async () => {
+    const app = await getTestApp();
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/unblock',
+      headers: { cookie: adminCookie },
+      payload: { user: 'bogus', puk: '123456', newPin: '12345' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects a malformed puk before ever calling the CLI', async () => {
+    const app = await getTestApp();
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/unblock',
+      headers: { cookie: adminCookie },
+      payload: { user: 'timeAdmin', puk: '1234567', newPin: '12345' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatch(/6-stellig/);
+  });
+
+  it('succeeds against the stub CLI and logs which user was unblocked', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/unblock',
+      headers: { cookie: adminCookie },
+      payload: { user: 'timeAdmin', puk: '123456', newPin: '54321' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+
+    const log = await pool.query<{ severity: string; category: string; message: string }>(
+      `SELECT severity, category, message FROM system_log`,
+    );
+    expect(log.rows).toHaveLength(1);
+    expect(log.rows[0]).toMatchObject({ severity: 'info', category: 'tse_setup' });
+    expect(log.rows[0]!.message).toMatch(/TimeAdmin-PIN entsperrt/);
+  });
+
+  it('reports remainingRetries from the stub CLI on a failed attempt', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: false,
+      error: { code: 4352, message: 'worm_user_unblock failed', remainingRetries: 1 },
+    });
+    process.env['TSE_STUB_EXIT_CODE'] = '1';
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/unblock',
+      headers: { cookie: adminCookie },
+      payload: { user: 'admin', puk: '999999', newPin: '54321' },
+    });
+    delete process.env['TSE_STUB_STDOUT'];
+    delete process.env['TSE_STUB_EXIT_CODE'];
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json().remainingRetries).toBe(1);
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'POST', url: '/api/admin/tse/unblock' });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('POST /api/admin/tse/factory-reset (Task #131)', () => {
+  it('rejects when the TSE is not configured', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/factory-reset',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('succeeds against the stub CLI and logs a warning-level entry', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/tse/factory-reset',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const log = await pool.query(`SELECT severity, category FROM system_log`);
+    expect(log.rows).toEqual([{ severity: 'warning', category: 'tse_setup' }]);
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'POST', url: '/api/admin/tse/factory-reset' });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('GET /api/admin/tse/dump-process-data (Task #102/#131)', () => {
+  it('rejects when the TSE is not configured', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/dump-process-data',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('downloads the dump file from the stub CLI and logs the download', async () => {
+    const app = await getTestApp();
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    process.env['TSE_STUB_DUMP_CONTENT'] = 'id\ttype\tprocessData\n1\tstart\tAAA\n';
+    await app.inject({
+      method: 'PUT', url: '/api/admin/settings',
+      headers: { cookie: adminCookie },
+      payload: { tse_mount_point: '/mnt/fake-tse', tse_client_id: 'FairPOS-Test' },
+    });
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/dump-process-data',
+      headers: { cookie: adminCookie },
+    });
+    delete process.env['TSE_STUB_DUMP_CONTENT'];
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-disposition']).toMatch(/attachment; filename="fairpos_tse_process_data_.*\.txt"/);
+    expect(response.body).toBe('id\ttype\tprocessData\n1\tstart\tAAA\n');
+
+    const log = await pool.query(`SELECT severity, category FROM system_log`);
+    expect(log.rows).toEqual([{ severity: 'info', category: 'tse_export' }]);
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/tse/dump-process-data' });
     expect(response.statusCode).toBe(401);
   });
 });

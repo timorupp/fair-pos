@@ -1,10 +1,11 @@
 /** Loads a persisted daily closing for reprint / PDF rendering. */
 
 import { query } from '../db/client.js';
-import type { ClosingContext } from './escpos.js';
+import type { ClosingContext } from './blocks.js';
 import type { ClosingTotals } from './totals.js';
 import { loadLogoFor } from '../logo/visibility.js';
 import type { CompanyLogo } from '../logo/logo.js';
+import { loadTaxRates } from '../tax/rates.js';
 
 /** Read-only view of one stored closing, sufficient for re-rendering. */
 export interface StoredClosing {
@@ -30,18 +31,20 @@ const COMPANY_SETTING_KEYS = ['company_name', 'system_serial'] as const;
  */
 export async function loadClosingById(id: string): Promise<StoredClosing | null> {
   const result = await query<{
-    id: string; register_id: string; register_name: string;
+    id: string; register_id: string; register_name: string; register_is_training: boolean;
     z_number: string; created_at: Date; business_date: string;
     is_zero_closing: boolean;
     total_gross: string; total_tax_standard: string; total_tax_reduced: string;
-    total_tax_zero: string; total_cash: string; total_cancellations: string;
+    total_tax_zero: string; total_cash: string;
+    total_bonstorno: string; total_free: string; total_order_cancellations: string;
   }>(
-    `SELECT c.id, c.register_id, r.name AS register_name,
+    `SELECT c.id, c.register_id, r.name AS register_name, r.is_training AS register_is_training,
             c.z_number::text, c.created_at,
             to_char(c.business_date, 'YYYY-MM-DD') AS business_date,
             c.is_zero_closing,
             c.total_gross::text, c.total_tax_standard::text, c.total_tax_reduced::text,
-            c.total_tax_zero::text, c.total_cash::text, c.total_cancellations::text
+            c.total_tax_zero::text, c.total_cash::text,
+            c.total_bonstorno::text, c.total_free::text, c.total_order_cancellations::text
        FROM daily_closing c
        JOIN register r ON r.id = c.register_id
       WHERE c.id = $1`,
@@ -64,6 +67,7 @@ export async function loadClosingById(id: string): Promise<StoredClosing | null>
     [COMPANY_SETTING_KEYS as unknown as string[]],
   );
   const settings = new Map(settingsResult.rows.map((r) => [r.key, r.value]));
+  const taxRates = await loadTaxRates();
 
   const ctx: ClosingContext = {
     company_name:  settings.get('company_name')  ?? '',
@@ -72,6 +76,9 @@ export async function loadClosingById(id: string): Promise<StoredClosing | null>
     z_number:      Number(row.z_number),
     created_at:    row.created_at,
     zero_counter:  zeroCounter,
+    vat_rate_standard: taxRates.standard,
+    vat_rate_reduced:  taxRates.reduced,
+    is_training:   row.register_is_training,
   };
   const totals: ClosingTotals = {
     total_gross:         Number(row.total_gross),
@@ -79,7 +86,9 @@ export async function loadClosingById(id: string): Promise<StoredClosing | null>
     total_tax_reduced:   Number(row.total_tax_reduced),
     total_tax_zero:      Number(row.total_tax_zero),
     total_cash:          Number(row.total_cash),
-    total_cancellations: Number(row.total_cancellations),
+    total_bonstorno:            Number(row.total_bonstorno),
+    total_free:                 Number(row.total_free),
+    total_order_cancellations:  Number(row.total_order_cancellations),
     is_zero_closing:     row.is_zero_closing,
   };
 

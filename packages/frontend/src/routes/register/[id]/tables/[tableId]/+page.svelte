@@ -102,7 +102,7 @@
   .open-list li:last-child { border-bottom: none; }
   .qty { font-weight: 700; }
   /* Options always on their own line below the name, consistent with the
-     order list and checkout table (see DANGER.md D-046). */
+     order list and checkout table (see D-046). */
   .name { display: flex; flex-direction: column; }
   .opts { display: block; font-size: 0.8rem; color: var(--color-text-muted); }
   .line-total { font-weight: 600; text-align: right; }

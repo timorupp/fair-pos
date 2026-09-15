@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
+  import type { ActiveEvent } from '$lib/api';
   import type { RegisterLayout } from '@fairpos/shared';
 
   type LayoutRow = RegisterLayout & { slot_count: number };
 
   let layouts: LayoutRow[] = $state([]);
-  let settings: Record<string, string> = $state({});
+  let activeEvent: ActiveEvent | null = $state(null);
   let loading = $state(true);
   let error = $state('');
   let duplicating: string | null = $state(null);
@@ -16,10 +17,12 @@
   async function load() {
     loading = true;
     try {
-      [layouts, settings] = await Promise.all([
+      const [layoutsResult, eventResult] = await Promise.all([
         api.admin.layouts.list(),
-        api.admin.settings.get(),
+        api.admin.system.getActiveEvent(),
       ]);
+      layouts = layoutsResult;
+      activeEvent = eventResult.event;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Fehler';
     } finally { loading = false; }
@@ -48,10 +51,11 @@
 
   async function saveDefaults() {
     try {
-      await api.admin.settings.save({
-        default_layout_receipt_register: settings['default_layout_receipt_register'] ?? '',
-        default_layout_service_register: settings['default_layout_service_register'] ?? '',
-      });
+      const result = await api.admin.system.setActiveEventDefaultLayouts(
+        activeEvent?.defaultReceiptRegisterLayoutId ?? null,
+        activeEvent?.defaultServiceRegisterLayoutId ?? null,
+      );
+      activeEvent = result.event;
     } catch (e) { alert(e instanceof Error ? e.message : 'Fehler'); }
   }
 </script>
@@ -73,8 +77,8 @@
         <div class="field">
           <label for="def-receipt">Standard für Bonkassen</label>
           <select id="def-receipt"
-                  value={settings['default_layout_receipt_register'] ?? ''}
-                  onchange={(e) => { settings['default_layout_receipt_register'] = e.currentTarget.value; saveDefaults(); }}>
+                  value={activeEvent?.defaultReceiptRegisterLayoutId ?? ''}
+                  onchange={(e) => { if (activeEvent) activeEvent.defaultReceiptRegisterLayoutId = e.currentTarget.value || null; saveDefaults(); }}>
             <option value="">— kein Standard —</option>
             {#each layouts as l}
               <option value={l.id}>{l.name}</option>
@@ -84,8 +88,8 @@
         <div class="field">
           <label for="def-service">Standard für Bedienungskassen</label>
           <select id="def-service"
-                  value={settings['default_layout_service_register'] ?? ''}
-                  onchange={(e) => { settings['default_layout_service_register'] = e.currentTarget.value; saveDefaults(); }}>
+                  value={activeEvent?.defaultServiceRegisterLayoutId ?? ''}
+                  onchange={(e) => { if (activeEvent) activeEvent.defaultServiceRegisterLayoutId = e.currentTarget.value || null; saveDefaults(); }}>
             <option value="">— kein Standard —</option>
             {#each layouts as l}
               <option value={l.id}>{l.name}</option>

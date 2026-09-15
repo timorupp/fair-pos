@@ -11,3 +11,12 @@ import { writable } from 'svelte/store';
 
 /** The cash-register name currently being shown, or `null` before it's loaded. */
 export const currentRegisterName = writable<string | null>(null);
+
+/**
+ * Whether the cash register currently being shown is a training register
+ * (Task #130) — written alongside {@link currentRegisterName} by the same
+ * sub-pages. The register layout renders a persistent, unmissable banner
+ * whenever this is `true`, so an operator can never lose track of working on
+ * a training register across the Bonkasse/Bedienungskasse sub-pages.
+ */
+export const currentRegisterIsTraining = writable<boolean>(false);

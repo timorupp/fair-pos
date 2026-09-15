@@ -4,9 +4,24 @@
  */
 import type {
   User, Article, ArticleCategory, Printer, Register, ProductOption,
-  CancellationReason, Event, CashTransaction, RegisterLayout, RegisterLayoutSlot,
-  DiningTable,
+  CancellationReason, Event, RegisterLayout, RegisterLayoutSlot,
+  DiningTable, TaxCategory,
 } from '@fairpos/shared';
+
+/**
+ * Neutral, format-independent print block, mirroring
+ * `packages/backend/src/print/blocks.ts`'s `PrintBlock` union (Task #147) —
+ * used for the read-only on-screen receipt preview. Kept as its own local
+ * type rather than imported from the backend package (frontend/backend are
+ * separate npm workspaces); `escposRasterBase64` is intentionally omitted
+ * here since the preview only ever needs the PNG variant.
+ */
+export type PrintBlock =
+  | { kind: 'text'; text: string; align?: 'left' | 'center'; bold?: boolean; size?: 'normal' | 'large' | 'xlarge' }
+  | { kind: 'row'; left: string; right: string; bold?: boolean; size?: 'normal' | 'large' | 'xlarge' }
+  | { kind: 'hr' }
+  | { kind: 'blank' }
+  | { kind: 'image'; pngBase64: string; pngWidth: number; pngHeight: number; widthFactor: number };
 
 /** Snapshot of TSE health/status, mirroring `packages/backend/src/tse/types.ts`. */
 export interface TseInfo {
@@ -32,13 +47,31 @@ export interface TseInfo {
   logTimeFormat: string;
   /** Base64-encoded public key, extracted from the TSE's certificate. */
   publicKey: string;
+  /** Whether the TSE still needs the one-time `setup` provisioning (Task #131). */
+  needsSetup: boolean;
+  /** Seconds for which the Admin PUK is currently blocked, `0` if not blocked, `null` if unreadable (self-test not passed). Always `0` on firmware < 2.0.0 (no blocking-duration concept there). */
+  pukBlockingDurationAdminSeconds: number | null;
+  /** Same as {@link pukBlockingDurationAdminSeconds}, for the TimeAdmin PUK. */
+  pukBlockingDurationTimeAdminSeconds: number | null;
 }
 
 /** Response shape of `GET /api/admin/tse/status`. */
 export interface TseStatus {
   configured: boolean;
   info?: TseInfo;
+  /** Whether the certificate expires today or earlier — computed server-side against server time (Task #132 follow-up), never in the browser. */
+  certificateExpiresTodayOrEarlier?: boolean;
   error?: string;
+}
+
+/** Result of a real test signature against the TSE (Task #133) — see `tse.testSignature()`. */
+export interface TseTestSignatureResult {
+  transactionNumber: number;
+  signatureCounter: number;
+  signature: string;
+  serialNumber: string;
+  startTime: string;
+  endTime: string;
 }
 
 /** One currently-mounted removable filesystem — a candidate TSE mount point. */
@@ -55,6 +88,16 @@ export interface DnsConfigSettings {
   targetIp: string;
   ttl: number;
   configured: boolean;
+}
+
+/** The one globally active event (Task #95). */
+export interface ActiveEvent {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  defaultReceiptRegisterLayoutId: string | null;
+  defaultServiceRegisterLayoutId: string | null;
 }
 
 /** Sends a JSON request to the backend and returns the parsed response. Exported for testing. */
@@ -83,6 +126,29 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   return res.json() as Promise<T>;
 }
 
+/**
+ * Fetches a binary file from an endpoint that streams the file directly on
+ * success but responds with a JSON `{error}` body (like `request()` above)
+ * on failure — e.g. TSE-Rohdatenexport/Process-Data-Dump (Task #131
+ * follow-up). A plain `<a href>` to such an endpoint can't distinguish the
+ * two cases — a failure just navigates the browser to a raw JSON error
+ * page instead of showing it inline — so callers fetch first, check for an
+ * error, and only then trigger the actual save (see `$lib/download.ts`).
+ *
+ * @param path - API path (without the `/api` prefix), as for `request()`.
+ * @returns The file content and the filename from `Content-Disposition`.
+ */
+async function requestFile(path: string): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`/api${path}`, { credentials: 'include' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error((data['error'] as string | undefined) ?? 'Unbekannter Fehler');
+  }
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  return { blob: await res.blob(), filename: match?.[1] ?? 'download' };
+}
+
 /** All available API calls, grouped by domain. */
 export const api = {
   /**
@@ -98,7 +164,7 @@ export const api = {
      * authenticates in one step (no separate username). Sets the session
      * cookie; lands everyone on the Kassenauswahl.
      */
-    pin: (pin: string): Promise<User> => request('POST', '/auth/pin', { pin }),
+    pin: (pin: string): Promise<User & { version: string }> => request('POST', '/auth/pin', { pin }),
 
     admin: {
       /**
@@ -110,14 +176,14 @@ export const api = {
       verify: (password: string): Promise<{ ok: boolean }> =>
         request('POST', '/auth/admin/verify', { password }),
 
-      /** Returns the current admin user, or throws when the session hasn't passed the step-up yet. */
-      me: (): Promise<User> =>
+      /** Returns the current admin user, or throws when the session hasn't passed the step-up yet. `version` is the running app version (Task #148). */
+      me: (): Promise<User & { version: string }> =>
         request('GET', '/auth/admin/me'),
     },
 
     register: {
-      /** Returns the current user, or throws when no session exists. Works for any logged-in user, admin or not. */
-      me: (): Promise<User> =>
+      /** Returns the current user, or throws when no session exists. Works for any logged-in user, admin or not. `version` is the running app version (Task #148). */
+      me: (): Promise<User & { version: string }> =>
         request('GET', '/auth/register/me'),
     },
 
@@ -130,9 +196,9 @@ export const api = {
     users: {
       /** `has_pin` (Task #90) tells the UI whether a PIN is already assigned, without ever exposing the hash. */
       list: (): Promise<(User & { has_pin: boolean })[]> => request('GET', '/admin/users'),
-      create: (data: { name: string; password: string; is_admin: boolean; is_active?: boolean }): Promise<User> =>
+      create: (data: { name: string; password: string; is_admin: boolean; is_event_admin?: boolean; is_active?: boolean }): Promise<User> =>
         request('POST', '/admin/users', data),
-      update: (id: string, data: { name?: string; password?: string; is_admin?: boolean; is_active?: boolean }): Promise<User> =>
+      update: (id: string, data: { name?: string; password?: string; is_admin?: boolean; is_event_admin?: boolean; is_active?: boolean }): Promise<User> =>
         request('PUT', `/admin/users/${id}`, data),
       delete: (id: string): Promise<void> => request('DELETE', `/admin/users/${id}`),
       listRegisters: (id: string): Promise<string[]> =>
@@ -154,7 +220,8 @@ export const api = {
     sessions: {
       /** Every currently active session (Task #90), newest activity first. */
       list: (): Promise<{
-        id: string; user_name: string; is_admin: boolean; admin_verified: boolean;
+        id: string; user_name: string; is_admin: boolean; is_event_admin: boolean;
+        admin_verified: boolean;
         created_at: string; last_activity_at: string; user_agent: string | null;
       }[]> => request('GET', '/admin/sessions'),
       /** Forcibly ends one session — that device is logged out on its next request. */
@@ -163,19 +230,20 @@ export const api = {
 
     categories: {
       list: (): Promise<ArticleCategory[]> => request('GET', '/admin/categories'),
-      create: (data: { name: string; tax_rate: number }): Promise<ArticleCategory> =>
+      create: (data: { name: string; tax_category: TaxCategory }): Promise<ArticleCategory> =>
         request('POST', '/admin/categories', data),
-      update: (id: string, data: { name?: string; tax_rate?: number }): Promise<ArticleCategory> =>
+      update: (id: string, data: { name?: string; tax_category?: TaxCategory }): Promise<ArticleCategory> =>
         request('PUT', `/admin/categories/${id}`, data),
       delete: (id: string): Promise<void> => request('DELETE', `/admin/categories/${id}`),
     },
 
     articles: {
-      list: (): Promise<(Article & { category_name: string; tax_rate: number })[]> =>
+      list: (): Promise<(Article & { category_name: string; tax_category: TaxCategory })[]> =>
         request('GET', '/admin/articles'),
       create: (data: {
         name: string; category_id: string; price: number;
-        deposit_price?: number | null; printer_id?: string | null; is_active?: boolean;
+        deposit_price?: number | null; print_deposit_receipt?: boolean;
+        printer_id?: string | null; is_active?: boolean; skip_pickup_slip?: boolean;
       }): Promise<Article> => request('POST', '/admin/articles', data),
       update: (id: string, data: Partial<Article>): Promise<Article> =>
         request('PUT', `/admin/articles/${id}`, data),
@@ -212,18 +280,19 @@ export const api = {
       get: (id: string): Promise<Register & {
         printer_name: string | null;
         effective_printer_name: string | null;
-        total_deposits: number; total_withdrawals: number;
+        /** Gross totals still open since the last Z-Bon, per payment method (Task #143) — replaces the removed Einlage/Entnahme balance. */
+        open_cash: number; open_card: number;
+        /** Whether this register already has any booking (Task #130) — when true, `is_training` can no longer be toggled. */
+        has_bookings: boolean;
       }> =>
         request('GET', `/admin/registers/${id}`),
-      create: (data: { name: string; type: string; printer_id?: string | null; is_active?: boolean }): Promise<Register> =>
+      create: (data: {
+        name: string; type: string; printer_id?: string | null; is_active?: boolean; is_training?: boolean;
+      }): Promise<Register> =>
         request('POST', '/admin/registers', data),
       update: (id: string, data: Partial<Register>): Promise<Register> =>
         request('PUT', `/admin/registers/${id}`, data),
       delete: (id: string): Promise<void> => request('DELETE', `/admin/registers/${id}`),
-      listTransactions: (id: string): Promise<CashTransaction[]> =>
-        request('GET', `/admin/registers/${id}/transactions`),
-      addTransaction: (id: string, data: { type: 'deposit' | 'withdrawal'; amount: number; note?: string }): Promise<CashTransaction> =>
-        request('POST', `/admin/registers/${id}/transactions`, data),
     },
 
     events: {
@@ -296,6 +365,16 @@ export const api = {
       shutdown: (): Promise<void> => request('POST', '/admin/system/shutdown'),
       /** Clears every IP's PIN-login lockout (Task #90) — for a device that locked itself out by mistake. */
       resetIpLockouts: (): Promise<void> => request('POST', '/admin/system/reset-ip-lockouts'),
+      /** The one globally active event (Task #95) — readable by either admin level. */
+      getActiveEvent: (): Promise<{ event: ActiveEvent | null }> => request('GET', '/admin/system/active-event'),
+      /** Switches the active event — System-Administrator only. */
+      setActiveEvent: (eventId: string): Promise<{ event: ActiveEvent | null }> =>
+        request('PUT', '/admin/system/active-event', { event_id: eventId }),
+      /** Sets the active event's default register layouts — reachable by either admin level (see `layouts.ts`). */
+      setActiveEventDefaultLayouts: (receiptLayoutId: string | null, serviceLayoutId: string | null): Promise<{ event: ActiveEvent | null }> =>
+        request('PUT', '/admin/system/active-event/default-layouts', {
+          receipt_layout_id: receiptLayoutId, service_layout_id: serviceLayoutId,
+        }),
     },
 
     backup: {
@@ -352,13 +431,66 @@ export const api = {
         request('POST', '/admin/tse/detect'),
       /** Manually runs self-test + time sync (Task #58/#64) — needed once after a fresh TSE setup, since nothing calls this automatically yet. */
       maintain: (): Promise<{ ok: true }> => request('POST', '/admin/tse/maintain'),
+      /**
+       * Runs one real `start`/`finish` signature cycle against the TSE
+       * (Task #133) — unlike `status()`, this directly confirms the TSE can
+       * still actually sign right now, catching failures `status()`'s
+       * passive `info` read alone would miss (Task #132: self-test/time-sync
+       * can both read "healthy" while a real signature still fails). Creates
+       * no invoice/order — by construction never appears in any export or
+       * Kassenabschluss. Throws with the real TSE error detail on failure.
+       */
+      testSignature: (): Promise<TseTestSignatureResult> => request('POST', '/admin/tse/test-signature'),
+      /**
+       * Raw TR-03153 TAR archive of everything currently stored on the TSE
+       * (Task #103) — always a full export, no date-range filter (the TSE's
+       * own filtered-export functions no longer work on firmware >= 2.0.0).
+       * FairPOS does not interpret the contents. Throws on failure (e.g. TSE
+       * locked/unreachable) instead of silently downloading an error page
+       * (Task #131 follow-up) — see `requestFile`.
+       */
+      export: (): Promise<{ blob: Blob; filename: string }> => requestFile('/admin/tse/export'),
+      /**
+       * One-time provisioning of a fresh TSE (Task #131 "TSE-Tools"). Uses
+       * the already-saved Mount-Pfad from the TSE-Verbindung panel, but
+       * `clientId` is its own dialog field, independent from that panel's
+       * Client-ID — `setup` is exactly the operation that can register a
+       * *different* one. `credentialSeed`/`adminPuk`/`adminPin`/
+       * `timeAdminPin` are never persisted anywhere — sent once, used,
+       * discarded; `clientId` is persisted as the new `tse_client_id`
+       * setting on success (returned here so the caller can reflect it
+       * without a reload).
+       */
+      setup: (data: { clientId: string; credentialSeed: string; adminPuk: string; adminPin: string; timeAdminPin: string }): Promise<{ ok: true; clientId: string }> =>
+        request('POST', '/admin/tse/setup', data),
+      /**
+       * Resets a blocked Admin or TimeAdmin PIN, given the current PUK
+       * (Task #109/#131). On a failed attempt the thrown error carries
+       * `remainingRetries` when the TSE reported one.
+       */
+      unblock: (data: { user: 'admin' | 'timeAdmin'; puk: string; newPin: string }): Promise<{ ok: true }> =>
+        request('POST', '/admin/tse/unblock', data),
+      /** Resets a *development-firmware* TSE to factory default (Task #131) — fails harmlessly on real/production hardware. */
+      factoryReset: (): Promise<{ ok: true }> => request('POST', '/admin/tse/factory-reset'),
+      /**
+       * Tab-separated dump of every process-data entry currently stored on
+       * the TSE (Task #102/#131) — a diagnostic tool, not interpreted by
+       * FairPOS. Throws on failure instead of silently downloading an error
+       * page (Task #131 follow-up) — see `requestFile`.
+       */
+      dumpProcessData: (): Promise<{ blob: Blob; filename: string }> => requestFile('/admin/tse/dump-process-data'),
     },
 
     closings: {
-      /** Closes the day for the given register, prints the Z-Bon if a printer is assigned. */
+      /**
+       * Closes the register: one Z-Bon per distinct calendar day it has
+       * unassigned invoices for (Task #106). Usually a single entry, but more
+       * than one when the register had invoices from more than one still-open
+       * day. No print job is enqueued (Task #139) — print via `reprint()` or
+       * archive via `pdfUrl()`.
+       */
       closeRegister: (registerId: string): Promise<{
-        closing_id: string; register_id: string; z_number: number;
-        is_zero_closing: boolean; print_job_id: string | null;
+        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean }[];
       }> => request('POST', `/admin/registers/${registerId}/closings`),
 
       /** Past Z-Bons for the register, newest first. */
@@ -367,8 +499,9 @@ export const api = {
           id: string; z_number: number;
           created_at: string; business_date: string;
           is_zero_closing: boolean;
-          total_gross: number; total_cash: number; total_cancellations: number;
-          created_by: string;
+          total_gross: number; total_cash: number;
+          total_bonstorno: number; total_free: number; total_order_cancellations: number;
+          created_by_name: string;
         }[];
       }> => request('GET', `/admin/registers/${registerId}/closings`),
 
@@ -385,11 +518,6 @@ export const api = {
       reprint: (closingId: string): Promise<{ print_job_id: string }> =>
         request('POST', `/admin/closings/${closingId}/reprint`),
 
-      /** System-wide shortcut: closes the day on every register. */
-      closeAll: (): Promise<{
-        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean; print_job_id: string | null }[];
-      }> => request('POST', '/admin/closings/close-all'),
-
       /** Pending-Z-Bon summary across every register. Drives the global banner + badges. */
       pending: (): Promise<{
         today: string;
@@ -398,9 +526,9 @@ export const api = {
         total_pending_days: number;
       }> => request('GET', '/admin/closings/pending'),
 
-      /** Closes every outstanding past day for one register in chronological order. */
+      /** Closes every outstanding past day for one register in chronological order. No print job is enqueued (Task #139). */
       closePending: (registerId: string): Promise<{
-        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean; print_job_id: string | null }[];
+        closings: { closing_id: string; register_id: string; z_number: number; is_zero_closing: boolean }[];
         pending_days_remaining: number;
       }> => request('POST', `/admin/registers/${registerId}/close-pending`),
     },
@@ -465,18 +593,33 @@ export const api = {
       /** Cancels a queued or terminally-failed job. Refuses jobs in `printing` status. */
       cancel: (id: string): Promise<void> => request('DELETE', `/admin/print-jobs/${id}`),
 
+      /** Bulk-cancels every job currently `pending`, regardless of the active status filter (Task #107). */
+      cancelAll: (): Promise<{ cancelled: number }> => request('POST', '/admin/print-jobs/cancel-all'),
+
       /** Resets a failed job back to `pending` so the worker retries it. */
       retry: (id: string): Promise<{ ok: true }> => request('POST', `/admin/print-jobs/${id}/retry`),
 
       /**
-       * Session-authenticated PDF URL for a print job (currently only meaningful
-       * for `receipt`-type jobs). Returns the URL string; the browser handles
-       * the actual fetch via `<a>` or `<iframe>`.
+       * Session-authenticated PDF URL for a print job — works for every job
+       * type except `pin_slip` (Task #105; excluded for security, see
+       * `routes/admin/print-jobs.ts`). Returns the URL string; the browser
+       * handles the actual fetch via `<a>` or `<iframe>`.
        *
        * @param id - The print-job primary key.
        * @returns Absolute URL path that the admin browser can navigate to.
        */
       pdfUrl: (id: string): string => `/api/admin/print-jobs/${id}/pdf`,
+
+      /**
+       * Re-queues a brand-new print job with the exact same content as an
+       * existing one (Task #105) — works for every job type except
+       * `pin_slip` (excluded for security, same reasoning as `pdfUrl`).
+       * Reprints to the job's original printer by default — or, with Task
+       * #108's optional `printerId`, to an explicitly chosen one (e.g.
+       * because the original printer was since deleted).
+       */
+      reprint: (id: string, printerId?: string): Promise<{ print_job_id: string }> =>
+        request('POST', `/admin/print-jobs/${id}/reprint`, printerId ? { printer_id: printerId } : undefined),
     },
 
     logs: {
@@ -496,13 +639,7 @@ export const api = {
     },
 
     reports: {
-      /** List of events for the report selector, with the default-selection hint. */
-      events: (): Promise<{
-        events: { id: string; name: string; start_time: string; end_time: string }[];
-        default_event_id: string | null;
-      }> => request('GET', '/admin/reports/events'),
-
-      /** Open positions grouped by table — always "now", `event_id` is ignored. */
+      /** Open positions grouped by table — always "now", not event-scoped. */
       openPositions: (): Promise<{
         tables: {
           table_id: string | null; table_name: string; total_gross: number;
@@ -515,8 +652,8 @@ export const api = {
         }[];
       }> => request('GET', '/admin/reports/open-positions'),
 
-      /** Invoices issued during the selected event. */
-      invoices: (eventId?: string): Promise<{
+      /** Invoices issued on a register of the active event (Task #95). */
+      invoices: (): Promise<{
         event: { id: string; start: string; end: string } | null;
         invoices: {
           id: string; receipt_number: number; receipt_number_formatted: string;
@@ -524,19 +661,12 @@ export const api = {
           payment_method: string; created_at: string; register_name: string;
           receipt_token: string | null; total_gross: number;
         }[];
-      }> => request('GET', `/admin/reports/invoices${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`),
+      }> => request('GET', '/admin/reports/invoices'),
 
-      /** Single-figure cash balance per register, scoped to the event. */
-      cashBalance: (eventId?: string): Promise<{
+      /** Cancelled and free-of-charge items of the active event (Task #95), with per-user summary. */
+      cancellations: (): Promise<{
         event: { id: string; start: string; end: string } | null;
-        registers: { id: string; name: string; type: string;
-          deposits: number; withdrawals: number; cash_takings: number; balance: number; }[];
-      }> => request('GET', `/admin/reports/cash-balance${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`),
-
-      /** Cancelled and free-of-charge items in the event, with per-user summary. */
-      cancellations: (eventId?: string): Promise<{
-        event: { id: string; start: string; end: string } | null;
-        summary: { user_id: string | null; user_name: string; count: number; total: number }[];
+        summary: { user_name: string; count: number; total: number }[];
         items: {
           id: string; cancelled_at: string | null; created_at: string;
           user_name: string; table_name: string;
@@ -544,7 +674,7 @@ export const api = {
           price: number; deposit_price: number | null; line_gross: number;
           reason_name: string; booking_type: string;
         }[];
-      }> => request('GET', `/admin/reports/cancellations${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`),
+      }> => request('GET', '/admin/reports/cancellations'),
 
       /** TSE outage log (Task #72) — not event-scoped, newest first, capped at 500 rows. */
       tseOutages: (): Promise<{
@@ -605,13 +735,20 @@ export const api = {
         id: string; name: string;
         type: 'receipt_register' | 'service_register';
         printer_id: string | null; layout_id: string | null;
+        /** Task #130 — training register, banner-worthy in the register picker. */
+        is_training: boolean;
         locked: boolean; pending_days: string[];
       }[];
     }> => request('GET', '/register-session/me'),
 
     /** Full operating context for one register: register, resolved layout, active articles, lock state. */
     register: (id: string): Promise<{
-      register: { id: string; name: string; type: 'receipt_register' | 'service_register'; printer_id: string | null; layout_id: string | null };
+      register: {
+        id: string; name: string; type: 'receipt_register' | 'service_register';
+        printer_id: string | null; layout_id: string | null;
+        /** Task #130 — drives the persistent training banner in the register UIs. */
+        is_training: boolean;
+      };
       layout: { id: string; name: string; grid_cols: number; grid_rows: number; slots: { article_id: string; grid_row: number; grid_col: number; color: string; label: string | null }[] } | null;
       articles: (Article & { category_name: string; tax_rate: string })[];
       locked: boolean;
@@ -633,8 +770,9 @@ export const api = {
     print: (invoiceId: string): Promise<{ print_job_id: string }> =>
       request('POST', `/register-session/invoices/${invoiceId}/print`),
 
-    /** URL of the QR-code PNG embedded by the checkout dialog. */
-    qrUrl: (invoiceId: string): string => `/api/register-session/invoices/${invoiceId}/qr.png`,
+    /** Read-only receipt blocks for the on-screen preview (Task #147) — no print job, no printer needed. */
+    previewInvoice: (invoiceId: string): Promise<{ blocks: PrintBlock[] }> =>
+      request('GET', `/register-session/invoices/${invoiceId}/preview`),
 
     /** Saalplan view: all visible tables annotated with their occupancy status. */
     floorPlan: (registerId: string): Promise<{

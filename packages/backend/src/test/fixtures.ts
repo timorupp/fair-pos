@@ -6,21 +6,24 @@
  * helpers truncate — pair them with `truncateAllTables()` in `beforeEach`.
  */
 
+import type { TaxCategory } from '@fairpos/shared';
 import { pool } from '../db/client.js';
 import { hashPassword } from '../auth/password.js';
 import { generateRandomPin, hashPin } from '../auth/pin.js';
+import { config } from '../config.js';
 
 /**
  * Inserts a `"user"` row. Every user gets a PIN (Task #90 — PIN login is the
  * only way in, admin or not), plus a password for admin users (only ever
  * checked again by the "Systemverwaltung" step-up, `POST /api/auth/admin/verify`).
  *
- * @param overrides - Optional overrides for `name`, `isAdmin`, `password` (plaintext, hashed before insert), `pin` (plaintext, hashed before insert), `isActive`.
+ * @param overrides - Optional overrides for `name`, `isAdmin`, `isEventAdmin` (Task #94 — Veranstaltungs-Administrator, independent of `isAdmin`), `password` (plaintext, hashed before insert), `pin` (plaintext, hashed before insert), `isActive`.
  * @returns The new user id and the supplied/default name/password/PIN (all plaintext, for use with the test login helpers).
  */
 export async function createTestUser(overrides: {
   name?: string;
   isAdmin?: boolean;
+  isEventAdmin?: boolean;
   password?: string;
   pin?: string;
   isActive?: boolean;
@@ -30,8 +33,8 @@ export async function createTestUser(overrides: {
   const pin = overrides.pin ?? generateRandomPin();
   const hash = await hashPassword(password);
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO "user" (name, password_hash, pin_hash, is_admin, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [name, hash, hashPin(pin), overrides.isAdmin ?? false, overrides.isActive ?? true],
+    `INSERT INTO "user" (name, password_hash, pin_hash, is_admin, is_event_admin, is_active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [name, hash, hashPin(pin), overrides.isAdmin ?? false, overrides.isEventAdmin ?? false, overrides.isActive ?? true],
   );
   return { id: result.rows[0]!.id, name, password, pin };
 }
@@ -59,7 +62,8 @@ export async function createTestPrinter(overrides: {
 /**
  * Inserts a `register` row.
  *
- * @param overrides - Optional overrides for `name`, `type`, `printerId`, `layoutId`, `isActive`.
+ * @param overrides - Optional overrides for `name`, `type`, `printerId`, `layoutId`, `isActive`,
+ *   `isTraining` (Task #130), `eventId` (Task #95 — defaults to `config.activeEventId`).
  * @returns The new register id.
  */
 export async function createTestRegister(overrides: {
@@ -68,17 +72,21 @@ export async function createTestRegister(overrides: {
   printerId?: string | null;
   layoutId?: string | null;
   isActive?: boolean;
+  isTraining?: boolean;
+  eventId?: string | null;
 } = {}): Promise<{ id: string; name: string }> {
   const name = overrides.name ?? `register-${Math.random().toString(36).slice(2, 8)}`;
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO register (name, type, printer_id, layout_id, is_active)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    `INSERT INTO register (name, type, printer_id, layout_id, is_active, is_training, event_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
     [
       name,
       overrides.type ?? 'receipt_register',
       overrides.printerId ?? null,
       overrides.layoutId ?? null,
       overrides.isActive ?? true,
+      overrides.isTraining ?? false,
+      overrides.eventId ?? config.activeEventId,
     ],
   );
   return { id: result.rows[0]!.id, name };
@@ -101,17 +109,18 @@ export async function assignRegisterToUser(userId: string, registerId: string): 
 /**
  * Inserts an `article_category` row.
  *
- * @param overrides - Optional name/taxRate.
+ * @param overrides - Optional name/taxCategory.
  * @returns The new category id and name.
  */
 export async function createTestCategory(overrides: {
   name?: string;
-  taxRate?: number;
+  taxCategory?: TaxCategory;
+  eventId?: string | null;
 } = {}): Promise<{ id: string; name: string }> {
   const name = overrides.name ?? `cat-${Math.random().toString(36).slice(2, 8)}`;
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO article_category (name, tax_rate) VALUES ($1, $2) RETURNING id`,
-    [name, overrides.taxRate ?? 19],
+    `INSERT INTO article_category (name, tax_category, event_id) VALUES ($1, $2, $3) RETURNING id`,
+    [name, overrides.taxCategory ?? 'standard', overrides.eventId ?? config.activeEventId],
   );
   return { id: result.rows[0]!.id, name };
 }
@@ -127,20 +136,26 @@ export async function createTestArticle(overrides: {
   price?: number;
   depositPrice?: number | null;
   printDepositReceipt?: boolean;
+  /** Skips the Bonkasse self-pickup slip for this article (Task #114). */
+  skipPickupSlip?: boolean;
   categoryId?: string;
   printerId?: string | null;
-  taxRate?: number;
+  taxCategory?: TaxCategory;
+  eventId?: string | null;
 } = {}): Promise<{ id: string; name: string; categoryId: string }> {
-  const categoryId = overrides.categoryId ?? (await createTestCategory({ taxRate: overrides.taxRate ?? 19 })).id;
+  const eventId = overrides.eventId ?? config.activeEventId;
+  const categoryId = overrides.categoryId ?? (await createTestCategory({ taxCategory: overrides.taxCategory ?? 'standard', eventId })).id;
   const name = overrides.name ?? `art-${Math.random().toString(36).slice(2, 8)}`;
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO article (category_id, name, price, deposit_price, print_deposit_receipt, printer_id, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
+    `INSERT INTO article (category_id, name, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, event_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8) RETURNING id`,
     [
       categoryId, name, overrides.price ?? 5,
       overrides.depositPrice ?? null,
       overrides.printDepositReceipt ?? false,
+      overrides.skipPickupSlip ?? false,
       overrides.printerId ?? null,
+      eventId,
     ],
   );
   return { id: result.rows[0]!.id, name, categoryId };

@@ -1,12 +1,20 @@
 /** Admin endpoints for the system-wide print-queue page. */
 
 import type { FastifyInstance } from 'fastify';
+import type { PrintJobType } from '@fairpos/shared';
 import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
-import { loadReceiptById } from '../../receipt/data.js';
-import { renderReceiptPdf } from '../../receipt/pdf.js';
-import { loadClosingById } from '../../closing/load.js';
-import { renderZBonPdf } from '../../closing/pdf.js';
+import { enqueuePrintJob } from '../../print/enqueue.js';
+import { renderBlocksToEscPos, renderBlocksToPdf, type PrintBlock } from '../../print/blocks.js';
+
+/** German label per job type, used for the PDF preview's filename/title. */
+const TYPE_LABELS: Record<PrintJobType, string> = {
+  receipt: 'Rechnung',
+  daily_closing: 'Z-Bon',
+  order_slip: 'Bestellzettel',
+  test_print: 'Testdruck',
+  pin_slip: 'PIN-Zettel',
+};
 
 /**
  * Registers `/api/admin/print-jobs/*` routes for the print-queue overview UI.
@@ -18,7 +26,10 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
 
   /**
    * GET /api/admin/print-jobs — print jobs across ALL printers with the joined
-   * printer name. Drives the print-queue overview page.
+   * printer name. Drives the print-queue overview page. `printer_name` reads
+   * "Drucker gelöscht" for a job whose printer was deleted since (Task #96,
+   * `print_job.printer_id` is `ON DELETE SET NULL`) — a plain `JOIN` would
+   * silently drop that job from the list instead.
    *
    * Query param `status` accepts:
    *   - `pending | printing | failed | done | cancelled` → exact-match filter
@@ -39,11 +50,11 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
           : [filterStatus];
 
       const result = await query(
-        `SELECT j.id, j.printer_id, p.name AS printer_name,
+        `SELECT j.id, j.printer_id, COALESCE(p.name, 'Drucker gelöscht') AS printer_name,
                 j.type, j.status, j.attempts, j.reference_id,
                 j.created_at, j.last_attempt_at, j.error_message
            FROM print_job j
-           JOIN printer p ON p.id = j.printer_id
+           LEFT JOIN printer p ON p.id = j.printer_id
           WHERE j.status = ANY($1)
           ORDER BY j.created_at DESC
           LIMIT 500`,
@@ -57,6 +68,23 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
       return reply.send(rows);
     },
   );
+
+  /**
+   * POST /api/admin/print-jobs/cancel-all — bulk-cancels every job currently
+   * `pending` (Task #107), regardless of the queue page's active status
+   * filter. Purpose: let an admin clear out stale queued jobs (e.g. leftover
+   * test prints) in one click before switching a printer back on, instead of
+   * having it blast through a backlog of no-longer-relevant jobs. Scoped to
+   * `pending` only — `failed` jobs stay as-is (nothing would print anyway
+   * without an explicit retry), `printing` can't be cancelled here either,
+   * same rule as the single-job `DELETE /:id` below.
+   *
+   * @returns The number of jobs cancelled.
+   */
+  app.post('/cancel-all', async (_req, reply) => {
+    const result = await query(`UPDATE print_job SET status = 'cancelled' WHERE status = 'pending'`);
+    return reply.send({ cancelled: result.rowCount ?? 0 });
+  });
 
   /**
    * DELETE /api/admin/print-jobs/:id — cancels a queued or terminally-failed
@@ -92,11 +120,21 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
     const result = await query<{ status: string }>(
       `UPDATE print_job
           SET status = 'pending', last_attempt_at = NULL, error_message = NULL
-        WHERE id = $1 AND status = 'failed'
+        WHERE id = $1 AND status = 'failed' AND printer_id IS NOT NULL
         RETURNING status`,
       [id],
     );
     if (result.rows.length === 0) {
+      // Distinguish "wrong status" from "printer was deleted" (Task #96) for
+      // a clearer message — retrying with a NULL printer_id would just leave
+      // the job stuck as 'pending' forever, since the print worker's claim
+      // query can never match a NULL printer_id.
+      const current = await query<{ printer_id: string | null }>(
+        `SELECT printer_id FROM print_job WHERE id = $1 AND status = 'failed'`, [id],
+      );
+      if (current.rows[0] && current.rows[0].printer_id === null) {
+        return reply.status(409).send({ error: 'Der Drucker dieses Auftrags wurde gelöscht — kann nicht erneut gestartet werden.' });
+      }
       return reply.status(409).send({ error: 'Druckauftrag ist nicht im Status "Fehlgeschlagen" und kann nicht erneut gestartet werden.' });
     }
     return reply.send({ ok: true });
@@ -104,46 +142,83 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
 
   /**
    * GET /api/admin/print-jobs/:id/pdf — PDF preview for a queued/done print
-   * job. Resolved per job-type:
-   *  - `receipt`        → re-renders the source invoice via `renderReceiptPdf`.
-   *  - `daily_closing`  → re-renders the persisted Z-Bon via `renderZBonPdf`.
-   *  - `order_slip`     → no structured source exists, 404.
-   *  - `test_print`     → no source data, 404.
+   * job, for every job type EXCEPT `pin_slip` (Task #105 — previously only
+   * `receipt`/`daily_closing`, re-rendered from their own structured source
+   * row; `order_slip`/`test_print`/`pin_slip` returned 404, "no structured
+   * source exists"). Now works generically off the job's own persisted
+   * `blocks` (the neutral document description it was originally built
+   * from) via the shared renderer — no per-type source reload needed, so no
+   * per-type gap either.
    *
-   * The job's `content` column holds raw ESC/POS bytes (Init / Cut / Bold /
-   * Mode selects) — that is *not* a document format and cannot be turned into
-   * a PDF generically. Each renderable type therefore has its own renderer
-   * working from the structured source row.
+   * `pin_slip` is deliberately excluded (Nutzerentscheidung 2026-09-01,
+   * security): it's the only document type carrying a live credential (the
+   * PIN itself) that exists nowhere else in the system in plaintext — a
+   * generic "view any past print job as PDF" feature must not become a way
+   * to read out a user's PIN after the fact.
    */
   app.get<{ Params: { id: string } }>('/:id/pdf', async (req, reply) => {
-    const row = await query<{ type: string; reference_id: string | null }>(
-      `SELECT type, reference_id FROM print_job WHERE id = $1`, [req.params.id],
+    const row = await query<{ type: PrintJobType; blocks: PrintBlock[] }>(
+      `SELECT type, blocks FROM print_job WHERE id = $1`, [req.params.id],
     );
     if (row.rows.length === 0) return reply.status(404).send({ error: 'Druckauftrag nicht gefunden' });
     const job = row.rows[0]!;
-    if (!job.reference_id) {
-      return reply.status(404).send({ error: 'PDF-Vorschau für diesen Druckauftrag nicht verfügbar' });
+    if (job.type === 'pin_slip') {
+      return reply.status(403).send({ error: 'PDF-Vorschau für PIN-Zettel ist aus Sicherheitsgründen nicht verfügbar.' });
     }
-    if (job.type === 'receipt') {
-      const data = await loadReceiptById(job.reference_id);
-      if (!data) return reply.status(404).send({ error: 'Rechnungsdaten nicht ladbar' });
-      const pdf = await renderReceiptPdf(data);
-      return reply
-        .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `inline; filename="${data.receiptNumber}.pdf"`)
-        .header('Cache-Control', 'no-store')
-        .send(pdf);
-    }
-    if (job.type === 'daily_closing') {
-      const stored = await loadClosingById(job.reference_id);
-      if (!stored) return reply.status(404).send({ error: 'Z-Bon-Daten nicht ladbar' });
-      const pdf = await renderZBonPdf(stored.ctx, stored.totals, stored.business_date, stored.logo);
-      return reply
-        .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `inline; filename="z-bon-${stored.ctx.z_number}.pdf"`)
-        .header('Cache-Control', 'no-store')
-        .send(pdf);
-    }
-    return reply.status(404).send({ error: 'PDF-Vorschau für diesen Druckauftragstyp nicht verfügbar' });
+    const label = TYPE_LABELS[job.type];
+    const pdf = await renderBlocksToPdf(job.blocks, label);
+    return reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `inline; filename="${label}-${req.params.id}.pdf"`)
+      .header('Cache-Control', 'no-store')
+      .send(pdf);
   });
+
+  /**
+   * POST /api/admin/print-jobs/:id/reprint — re-queues a brand-new print job
+   * with the exact same content as an existing one, for every job type
+   * EXCEPT `pin_slip` (Task #105). Generic for the same reason as `/:id/pdf`
+   * above — works from the persisted `blocks`, not from reloading each
+   * type's own source data, which isn't even possible for every type (a PIN
+   * slip's PIN is never stored anywhere else, only in the blocks/content of
+   * the original job — precisely why it's excluded here too, see `/:id/pdf`
+   * for the full reasoning).
+   *
+   * Reprints to the job's *original* printer by default — or, with Task
+   * #108's optional `printer_id` body field, to an explicitly chosen one
+   * (e.g. because the original printer is offline, or the original printer
+   * was since deleted, which previously hit a hard 409 dead end here).
+   */
+  app.post<{ Params: { id: string }; Body: { printer_id?: string } | undefined }>(
+    '/:id/reprint',
+    async (req, reply) => {
+      const row = await query<{
+        type: PrintJobType; printer_id: string | null; blocks: PrintBlock[]; reference_id: string | null;
+      }>(
+        `SELECT type, printer_id, blocks, reference_id FROM print_job WHERE id = $1`, [req.params.id],
+      );
+      if (row.rows.length === 0) return reply.status(404).send({ error: 'Druckauftrag nicht gefunden' });
+      const job = row.rows[0]!;
+      if (job.type === 'pin_slip') {
+        return reply.status(403).send({ error: 'Erneutes Drucken von PIN-Zetteln ist aus Sicherheitsgründen nicht verfügbar.' });
+      }
+
+      const requestedPrinterId = req.body?.printer_id;
+      let targetPrinterId: string | null;
+      if (requestedPrinterId) {
+        const printerExists = await query('SELECT 1 FROM printer WHERE id = $1', [requestedPrinterId]);
+        if (printerExists.rowCount === 0) return reply.status(400).send({ error: 'Drucker nicht gefunden' });
+        targetPrinterId = requestedPrinterId;
+      } else {
+        targetPrinterId = job.printer_id;
+      }
+      if (!targetPrinterId) {
+        return reply.status(409).send({ error: 'Der Drucker dieses Auftrags wurde gelöscht — bitte einen Drucker auswählen.' });
+      }
+
+      const bytes = renderBlocksToEscPos(job.blocks);
+      const newJob = await enqueuePrintJob(targetPrinterId, job.type, bytes, job.blocks, job.reference_id);
+      return reply.send({ print_job_id: newJob.id });
+    },
+  );
 }

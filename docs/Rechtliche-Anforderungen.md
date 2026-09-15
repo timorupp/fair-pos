@@ -148,7 +148,7 @@ Quelle: [Neufassung des Anwendungserlasses zu § 146a AO, 30.06.2023](https://ww
 
 Rechtsgrundlage: **§ 146 Abs. 1 AO**, **GoBD**, **§ 239 Abs. 2 HGB**
 
-Ein **täglicher Kassenabschluss** ist rechtlich zwingend. Pflichtangaben auf dem Z-Bon:
+Ein **täglicher Kassenabschluss** ist rechtlich zwingend. **"Z-Bon"/"Tagesabschluss" ist dabei reiner Branchenjargon** — der Begriff kommt weder in der KassenSichV noch in der DSFinV-K-2.4-Spezifikation vor (verifiziert 2026-09-12 durch Volltextprüfung der offiziellen KassenSichV auf gesetze-im-internet.de). Die folgende Liste ist entsprechend **keine wörtliche Zitat-Checkliste aus einer einzelnen Norm, sondern eine Synthese** aus den allgemeinen Grundsätzen (§ 146 Abs. 1 AO: "täglich festzuhalten"; § 239 Abs. 2 HGB: "vollständig, richtig, zeitgerecht und geordnet") und den konkret in DSFinV-K für das Kassenabschlussmodul vorgeschriebenen Feldern (`Z_ERSTELLUNG`, `Z_NR`, Steuersatz-Summen, Zahlarten-Summen):
 
 | Angabe |
 |---|
@@ -162,23 +162,46 @@ Ein **täglicher Kassenabschluss** ist rechtlich zwingend. Pflichtangaben auf de
 
 **Nicht zulässig:** manuelle Nachbearbeitung, periodische statt tägliche Abrechnung, lückenhafte Z-Bon-Nummerierung.
 
+**Offene Frage zu "Nullstellungszähler" (2026-09-12):** Bei der obigen Verifikation ließ sich dieser Begriff in der DSFinV-K-2.4-Spezifikation nicht finden — möglicherweise ein Relikt aus der Vor-TSE-Ära (INSIKA/ältere Registrierkassen-Anforderungen). Die aktuelle Rechtsgrundlage dieses konkreten Punktes ist noch nicht abschließend verifiziert und sollte bei Gelegenheit nachgeprüft werden, bevor er als zwingende Pflichtangabe kommuniziert wird.
+
+**Warengruppen-/Artikel-Aufschlüsselung ist freiwillig, nicht vorgeschrieben (verifiziert 2026-09-12):** DSFinV-K 2.4 §4 ("Gliederungsebenen für Kassenabschluss-Summen") lässt für den Kassenabschluss ausdrücklich nur genau vier Aggregationsebenen zu: `BON_TYP → BON_NAME → GV_TYP → GV_NAME`. Eine Aufschlüsselung nach Warengruppe oder einzelnem Artikel — wie sie manche kommerzielle Kassensysteme zusätzlich anzeigen — kommt in dieser Liste nicht vor; `WARENGR_ID`/`WARENGR`-Felder existieren nur im separaten Einzelaufzeichnungsmodul (`Bonpos`), nicht im Kassenabschluss selbst. FairPOS' Z-Bon (nur Steuersatz-Ebene) entspricht damit bereits dem gesetzlichen Minimum; eine feinere Aufschlüsselung wäre eine rein freiwillige Zusatzfunktion.
+
+**Keine Pflicht zum physischen Ausdruck (verifiziert 2026-09-12):** Es gibt keine eigenständige gesetzliche Pflicht, den Tagesabschluss auf Papier auszudrucken. § 146a Abs. 2 AO (Belegausgabepflicht) betrifft ausdrücklich nur den Einzelbeleg pro Vorgang ("in unmittelbarem zeitlichem Zusammenhang mit dem Geschäftsvorfall"), nicht den Tagesabschluss. Die AEAO zu § 146a AO (Neufassung 30.06.2023) stellt in Nr. 2.5.7 klar, dass die Belegpflicht "unabhängig davon [gilt], ob der Beleg in Papierform oder elektronisch bereitgestellt wird". § 147 Abs. 2 AO und § 146 Abs. 5 AO erlauben Aufbewahrung "auf Datenträgern" ausdrücklich, sofern die Wiedergabe inhaltlich übereinstimmt und während der Aufbewahrungsfrist verfügbar/lesbar/maschinell auswertbar bleibt. Die DSFinV-K-Spezifikation selbst formuliert für die Kassenabschluss-Daten, dass sie "digital zu speichern sind" — sie geht also selbst von einem elektronischen, nicht papierbasierten Ursprungsdokument aus. **Fazit: die von FairPOS ohnehin erzeugte, GoBD-konform archivierte PDF-Fassung erfüllt die rechtlichen Anforderungen; ein zusätzlicher Papierausdruck ist eine rein betriebliche Entscheidung, keine Rechtspflicht.** (Eine vollständige Prüfung des GoBD-BMF-Schreibens im Fließtext war wegen Bot-Schutzes auf der BMF-Webseite nicht möglich — die spezifischeren, hier zitierten Normen aus AO und DSFinV-K sind für diese Frage aber eindeutig.)
+
 Das DSFinV-K-Kassenabschlussmodul ist das elektronische Äquivalent des Z-Bons (`businesscases.csv`, `payment.csv`, `cash_per_currency.csv`).
+
+**Hinweis (Task #95):** Die interne Organisationsebene „Veranstaltung"
+(zur Trennung von Artikeln/Kassen/Rechnungen bei Server-Verleih zwischen
+Vereinen) hat keinerlei Einfluss auf `invoice.receipt_number` oder
+`daily_closing.z_number` — beide Zähler bleiben zwingend global bzw. pro
+Kasse lückenlos, unabhängig davon, welche Veranstaltung gerade aktiv ist
+oder wie oft gewechselt wird. Ebenso unberührt: der DSFinV-K-Export
+(Abschnitt 6) bleibt vollständig unabhängig von der aktiven Veranstaltung,
+da die GoBD-Vollständigkeit niemals von einer internen UI-Einstellung
+abhängen darf.
 
 ---
 
 ## 6. DSFinV-K-Export
 
 **Quelle für diesen gesamten Abschnitt** (verbatim geprüft August 2026, für
-Prüfungszwecke zitierfähig): *DSFinV-K, Version 2.4*, offizielles PDF unter
-[kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf](https://kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf)
-(130 Seiten). Seitenangaben unten beziehen sich auf dieses Dokument. Für
+Prüfungszwecke zitierfähig): *DSFinV-K, Version 2.4*, offizielles
+Downloadpaket des Bundeszentralamts für Steuern unter
+[bzst.de → Digitale Schnittstelle FinV-K](https://www.bzst.de/DE/Unternehmen/Aussenpruefungen/DigitaleSchnittstelleFinV/digitaleschnittstellefinv.html)
+(130 Seiten; ursprünglich über eine Drittanbieter-Kopie unter
+kassensichv.com geprüft, am 2026-09-08 auf die Behörden-Originalquelle
+umgestellt — siehe AGENTS.md "Compliance-Prüfungen gegen offizielle
+Standards"). Seitenangaben unten beziehen sich auf dieses Dokument. Für
 Details zum genauen CSV-Dateiformat (Feldtrennzeichen, Kopfzeile) verweist die
 DSFinV-K selbst (S. 10) auf ein separates Dokument „Ergänzende Informationen
-zur Datenträgerüberlassung" (Anlage zu den GoBD) — dieses wurde für diese
-Dokumentation **nicht** eingesehen; vor der finalen Implementierung des
-CSV-Schreibens (Trennzeichen etc.) sollte das nachgeholt werden. Branchenüblich
-(nicht als DSFinV-K-Vorgabe zitierfähig, sondern nur als Konvention) ist
-Semikolon-getrennte UTF-8-CSV mit Kopfzeile.
+zur Datenträgerüberlassung" (Anlage zu den GoBD) — **seit Task #122
+(2026-09-08) geprüft**: dieses BMF-Dokument selbst enthält keine
+technischen Details, verweist stattdessen auf eine bei Audicon GmbH
+anzufordernde technische Beschreibung; das offizielle bzst.de-Downloadpaket
+bündelt jedoch selbst die tatsächliche DTD und eine Referenz-`index.xml`,
+siehe Abschnitt 6.7 und BACKLOG-DONE.md Task #122 für den vollständigen
+Befund. Semikolon-getrennte UTF-8-CSV mit Kopfzeile ist damit bestätigt
+korrekt, nicht nur Branchenkonvention.
 
 ### 6.1 Struktur
 
@@ -211,7 +234,7 @@ laut Inhaltsverzeichnis (S. 6)** — FairPOS-Relevanz markiert:
 | `slaves.csv` (Stamm_Terminals) | Terminals einer Master-Kasse | nicht benötigt — FairPOS hat keine Master-Slave-Kassen |
 | `pa.csv` (Stamm_Agenturen) | Agenturgeschäfte (Fremdverkauf) | nicht benötigt |
 | `vat.csv` (Stamm_USt) | Steuersätze mit Schlüssel (UST_SCHLUESSEL) | ✅ siehe Schlüsselschema unten |
-| `tse.csv` (Stamm_TSE) | TSE-Seriennummer, Zertifikat, Signaturalgorithmus, Zeitformat, Public Key | ✅ Seriennummer/Signaturalgorithmus/Zeitformat/Public-Key; **teilweise** — die Zertifikatskette selbst (`TSE_ZERTIFIKAT_I/II`) fehlt noch, siehe Abschnitt 6.7 |
+| `tse.csv` (Stamm_TSE) | TSE-Seriennummer, Zertifikat, Signaturalgorithmus, Zeitformat, Public Key | ✅ alle Felder verdrahtet und an echter Hardware bestätigt (Task #120, abgeschlossen 2026-09-12), siehe Abschnitt 6.7 |
 
 **Kassenabschlussmodul** (S. 80–83)
 
@@ -233,7 +256,7 @@ Vollständiger Wertebereich (verbindlich, keine eigenen Werte erlaubt):
 | `AVBestellung` | „Bestellungen, die im Kassensystem direkt erfasst und als eigenständiger Vorgang behandelt werden" — noch keine Lieferung/Leistung | Bedienungskasse: Bestellung aufnehmen |
 | `AVBelegabbruch` | „Vorgänge, die nach Transaktionsbeginn abgebrochen werden" — keine Zahlung zulässig | **Kein eigener DSFinV-K-`BON_TYP` in unserem Export** — `signTseTransaction` (Task #45) nutzt `AVBelegabbruch` nur als `<Vorgangstyp>` *innerhalb* der `Kassenbeleg-V1`-processData, um einen begonnenen, nie abgeschlossenen TSE-Vorgang zu schließen (nicht als TSE-`processType` selbst, seit der Korrektur in Task #46). Der zugehörige Geschäftsvorgang (Beleg/Bestellung/Storno) entsteht trotzdem ganz normal, nur ohne TSE-Signatur (`TSE_TA_FEHLER` gefüllt) — es gibt daher nie eine `BON_TYP=AVBelegabbruch`-Zeile im Export. |
 | `AVSonstige` | „Alle Vorgänge, die hier nicht näher definiert wurden" — `BON_NAME` zwingend mit individueller Beschreibung zu füllen | Storno einer offenen Bestellposition (vor dem Kassieren) |
-| `AVTraining` | Übungs-/Trainingsvorgänge, keine echte Zahlung, kein Einfluss auf den Kassenabschluss | Für `invoice.receipt_type='training'` vorgesehen (falls genutzt) |
+| `AVTraining` | Übungs-/Trainingsvorgänge, keine echte Zahlung, kein Einfluss auf den Kassenabschluss | **Umgesetzt (Task #130, 2026-09-12):** Trainingsmodus als Flag auf `register.is_training`. Ein als Trainingskasse markiertes Register bucht weiterhin ganz normal über `Kassenbeleg-V1`/`Bestellung-V1`/`SonstigerVorgang` gegen die TSE (recherchiert und bestätigt gegen AEAO zu §146a Nr. 2.2.3.5/2.2.3.6: `AVTraining` braucht keinen eigenen TSE-`processType`) — die Kennzeichnung passiert ausschließlich im DSFinV-K-Export (`exports/dsfinvk/load.ts`), abgeleitet vom `is_training`-Flag der zugehörigen Kasse, nicht vom einzelnen Vorgang. Ein Trainingsvorgang erscheint vollständig in `transactions.csv`/`lines.csv`/`lines_vat.csv`/`transactions_vat.csv` (Dokumentationspflicht bleibt bestehen), wird aber aus den `Z_`-Aggregaten (`businesscases.csv`/Z_GV_TYP, `payment.csv`/Z_Zahlart, `cash_per_currency.csv`) ausgeschlossen — sonst würde Trainingsumsatz in die gelieferten Kassenabschluss-Summen einfließen. Das `is_training`-Flag ist gesperrt (kann nicht mehr umgeschaltet werden), sobald die Kasse eine erste Buchung hat. |
 | `AVBelegstorno` | **Achtung, S. 45f.:** „Sobald eine TSE an einer Kasse eingesetzt wird, ist es technisch nicht mehr möglich, den Vorgangstyp 'AVBelegstorno' korrekt zu verwenden, da jeder Beleg schon vor dem Setzen des Storno-Kennzeichens bereits durch die TSE signiert wurde... Hierfür muss weiterhin der Vorgangstyp 'Beleg' mit umgekehrten Vorzeichen und ohne Storno-Kennzeichen genutzt werden." | **Bestätigt unser bestehendes Bonstorno-Design:** `cancels_invoice_id`-Referenz + `receipt_type='cancellation'` als eigener `Beleg`-Vorgang mit `Kassenbeleg-V1`-Signatur — exakt das von der Spezifikation für TSE-Systeme vorgeschriebene Verfahren, nicht `AVBelegstorno`. |
 | `AVRechnung`, `AVTransfer`, `AVSachbezug` | Lieferschein-/Rechnungs-Entkopplung, Sachbezüge von Mitarbeitern | nicht genutzt — kein Anwendungsfall bei FairPOS |
 
@@ -335,8 +358,9 @@ Public Key) liest `native/tse-cli`s `info`-Kommando jetzt aus
 (`worm_signatureAlgorithm`/`worm_logTimeFormat`/`worm_info_tsePublicKey`) und
 cacht sie prozessweit (fix pro TSE/Firmware, nicht pro Vorgang). Die volle
 Zertifikatskette (`worm_getLogMessageCertificate`, nur für `tse.csv`s
-`TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung) bleibt ein
-kleinerer, nicht blockierender Rest — siehe Abschnitt 6.7.
+`TSE_ZERTIFIKAT_I/II` relevant, nicht für die QR-Code-Prüfung) ist seit
+Task #120 auslesbar, aber noch nicht in die beiden Export-Spalten
+verdrahtet — siehe Abschnitt 6.7.
 
 ### 6.6 Kundendaten
 
@@ -363,24 +387,104 @@ bereits am Export-Zeitpunkt lösbar herausgestellt — **keine Migration nötig*
    `Pfand`/`PfandRueckzahlung`-Zeile für das Pfand — beides aus denselben
    zwei Spalten ableitbar, keine neue `order_item`-Spalte nötig.
 
-**Bewusste Vereinfachung (dokumentiert, nicht "gelöst"):** `service_order`/
-`order_cancellation` haben keine `daily_closing_id`-Referenz (anders als
-`invoice`) und werden daher über Kasse + Kalendertag (`business_date`)
-angenähert, nicht über eine exakte Zuordnung zum Kassenabschluss. Bei mehreren
-Abschlüssen desselben Tages und derselben Kasse kann das zu einer falschen
-Zuordnung führen. Siehe `exports/dsfinvk/load.ts` für die genaue Logik.
+**Behoben (Task #123, Migration 0031):** `service_order`/`order_cancellation`
+hatten bis dahin keine `daily_closing_id`-Referenz (anders als `invoice`) und
+wurden über Kasse + Kalendertag (`business_date`) angenähert statt über eine
+exakte Zuordnung zum Kassenabschluss — bei mehreren Abschlüssen desselben
+Tages und derselben Kasse konnte das zu einer falschen Zuordnung führen. Beide
+Tabellen haben jetzt dieselbe `daily_closing_id`-Spalte wie `invoice`, gesetzt
+in `routes/admin/closings.ts` (`closeRegister`) im selben Zug wie bei
+Rechnungen; bereits bestehende Zeilen wurden per Migration anhand der
+bisherigen Näherung befüllt. `exports/dsfinvk/load.ts` filtert seitdem exakt
+über diese Spalte, keine Näherung mehr.
 
-**Ebenfalls noch offen:** die volle TSE-Zertifikatskette (`TSE_ZERTIFIKAT_I/II`)
-bleibt leer — `native/tse-cli` liest sie noch nicht aus
-(`worm_getLogMessageCertificate`, benötigt die CTSS-Schnittstelle; s.
-`docs/TSE-Integration.md` Abschnitt 11). `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/
-`TSE_PUBLIC_KEY` sind seit der processData-Formatkorrektur (Abschnitt 6.5)
-befüllt — diese drei sind auch die für die QR-Code-Prüfung relevanten, die
-Zertifikatskette betrifft nur `tse.csv`s Vollständigkeit, nicht die Prüfbarkeit.
-Das genaue CSV-/index.xml-Dateiformat (Feldtrennzeichen, Kopfzeile) folgt der
-verbreiteten Konvention (Semikolon, UTF-8, CRLF, GDPdU-artige index.xml), ist
-aber nicht gegen die separate GoBD-Anlage "Ergänzende Informationen zur
-Datenträgerüberlassung" verifiziert (siehe Einleitung Abschnitt 6).
+**`TSE_ZERTIFIKAT_I/II` verdrahtet (Task #120, 2026-09-08):** Anhang E
+(S. 78f.) des offiziellen DSFinV-K-2.4-Downloadpakets (bzst.de) klärt, dass
+beide Felder "das Zertifikat der TSE" (Singular — nur das TSE-eigene
+Leaf-Zertifikat, nicht die volle Kette samt Ausstellern) enthalten,
+Base64-kodiert und in zwei 1.000-Zeichen-Blöcke aufgeteilt.
+`exports/dsfinvk/leafCertificate.ts` extrahiert das erste Zertifikat aus der
+per `worm_getLogMessageCertificate` gelesenen PEM-Kette und splittet es
+entsprechend; `rows.ts` verdrahtet das in `tse.csv`. **Live-Hardware-Test
+bestanden (2026-09-12):** ein nach Behebung von D-074 (siehe
+BACKLOG-DONE.md — `tse.csv` fehlte zuvor komplett bei Abschlüssen ohne
+Rechnung) erzeugter echter Export liefert `TSE_ZERTIFIKAT_I` mit genau
+1.000 Zeichen und `TSE_ZERTIFIKAT_II` mit dem Rest; beide Base64-dekodiert
+und aneinandergehängt ergeben ein gültiges, mit `openssl x509 -inform DER`
+parsebares X.509-Zertifikat (`subject CN` = `TSE_SERIAL`, `issuer` =
+TSE-Test-CA Swissbit). `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind
+seit der processData-Formatkorrektur (Abschnitt 6.5) ebenfalls an echter
+Hardware bestätigt — diese drei sind auch die für die QR-Code-Prüfung
+relevanten, die Zertifikatskette betrifft nur `tse.csv`s Vollständigkeit,
+nicht die Prüfbarkeit. Task #120 damit vollständig abgeschlossen.
+
+**CSV-/index.xml-Format gegen die GoBD-Anlage verifiziert (Task #122,
+2026-09-08):** Die BMF-Anlage "Ergänzende Informationen zur
+Datenträgerüberlassung" selbst enthält keine technischen Details, sondern
+verweist auf eine bei Audicon GmbH anzufordernde, nicht behördlich
+veröffentlichte technische Beschreibung. Das offizielle
+DSFinV-K-2.4-Downloadpaket (bzst.de) bündelt jedoch selbst die tatsächliche
+DTD (`gdpdu-01-09-2004.dtd`) und eine vollständige Referenz-`index.xml` —
+die maßgebliche Behörden-Quelle. Der Abgleich ergab einen echten,
+zuvor unentdeckten Fehler: `index-xml.ts` folgte einem selbst erfundenen
+Schema statt der echten DTD (falsche Elementnamen, kein `<UTF8 />` je
+Tabelle — ANSI wäre der DTD-Default gewesen und hätte Umlaute falsch
+interpretiert —, kein explizites `<DecimalSymbol>`, obwohl FairPOS'
+Punkt-Dezimaltrennzeichen vom DTD-Default Komma abweicht, und die per
+`<!DOCTYPE>` referenzierte DTD-Datei fehlte komplett im Export-ZIP).
+Vollständig neu geschrieben und per `xmllint --valid` gegen die echte
+offizielle DTD verifiziert (validiert exakt wie die Behörden-eigene
+Referenz-`index.xml`). Details: BACKLOG-DONE.md Task #122.
+
+**Bonstorno-Vorzeichen neu konzipiert (D-068, 2026-09-12):** Nutzer meldete,
+dass Bonstorno-Buchungen weder im Soll-Kassenstand noch auf dem Z-Bon
+erschienen. Ursache: `order_item.price`/`deposit_price` waren bei einer
+Bonstorno bisher immer **positiv** gespeichert, das Vorzeichen lebte
+ausschließlich in `invoice.receipt_type='cancellation'` — jede
+Aggregationsstelle musste das eigenständig abfragen und umdrehen. Bei der
+Fehlersuche fanden sich **vier unabhängige, jeweils separat implementierte**
+Vorzeichen-Umkehrungen (`closing/totals.ts`, `tse/processData.ts`,
+`exports/dsfinvk/rows.ts`, `receipt/data.ts`) — zwei davon korrekt, zwei
+fehlend/vergessen (Soll-Kassenstand, Steuertöpfe/Kostenfrei-Zeile), was
+genau das gemeldete Symptom erklärte.
+
+**Bewusst revidierte Designentscheidung (Nutzervorgabe 2026-09-12):**
+`order_item.price`/`deposit_price` werden bei einer Bonstorno jetzt direkt
+**negiert** gespeichert (die Umkehrung des aktuellen Artikel-Stammpreises,
+unabhängig von dessen eigenem Vorzeichen) — jede Aggregation ist seitdem ein
+einfaches `SUM()`, keine `receipt_type`-Fallunterscheidung mehr nötig. Deckt
+sich mit Anhang I's eigenem "Warenrücknahme"-Beispiel (S. 115): eine Storno
+bleibt im selben Umsatz-Topf, nur mit umgekehrtem Vorzeichen aufsummiert —
+keine eigene Kategorie. **Wichtige Nebenbedingung (Nutzerhinweis):** Das
+Vorzeichen darf **niemals** zur Erkennung "ist das ein Storno" verwendet
+werden — ein Artikel mit `deposit_price < 0` (Leergutrückgabe) ist bereits
+unabhängig von jeder Storno-Buchung negativ; Klassifikation läuft immer über
+`receipt_type`/`status`, nie über das Vorzeichen selbst.
+
+Zusätzlich wurden die bisherige `total_cancellations`-Sammelzeile in drei
+fachlich unterschiedliche Fälle aufgeteilt (Nutzervorgabe): "Stornierte
+Rechnungen" (Bonstorno, tatsächlich zurückgezahltes Geld), "Kostenfreie
+Warenabgabe" (Ware ging raus, wurde nie berechnet) und "Stornierte
+Bestellungen" (Ware ging nie raus, wurde folglich nie berechnet). Für die
+elektronische Kassenabschluss-Datei (`businesscases.csv`/Z_GV_TYP) verlangt
+die Spezifikation dafür **keine** gesonderte Kategorie — Anhang C's
+vollständige `GV_TYP`-Werteliste (Abschnitt 6.3) kennt keinen eigenen
+Storno-Wert; ein Bonstorno bleibt dort `GV_TYP=Umsatz`, negativ. Die
+Drei-Zeilen-Aufteilung ist daher eine freiwillige, zusätzliche Transparenz
+auf dem **gedruckten** Z-Bon, keine Compliance-Pflicht — §146 AO/GoBD/§239
+HGB verlangen nur allgemein, dass Stornobuchungen/Retouren irgendwie
+dokumentiert sind (Abschnitt 5), ohne eine bestimmte Zeilenzahl
+vorzuschreiben.
+
+**Geklärt (D-069, 2026-09-12):** Die `GV_TYP`-Einstufung `Pfand`/
+`PfandRueckzahlung` einer Bonstorno-Pfandzeile richtet sich nach dem
+*ursprünglichen* Charakter des Artikels (Pfand-erhebend vs. -rückzahlend),
+nicht nach dem *resultierenden* Vorzeichen nach der Umkehrung — analog zur
+Warenrücknahme: Kategorie bleibt gleich, nur das Vorzeichen dreht.
+`exports/dsfinvk/rows.ts` rekonstruiert dafür das ursprüngliche Vorzeichen
+anhand des (bereits vorhandenen) `invoice.receipt_type='cancellation'`-Flags,
+ausschließlich für diese Einstufungsentscheidung — der tatsächliche Betrag
+bleibt unverändert der echte, gebuchte Wert. Details: BACKLOG-DONE.md D-069.
 
 ---
 
@@ -456,7 +560,7 @@ Ein gemeinnütziger Verein ist in vier steuerliche Bereiche aufgeteilt:
 ## 10. Checkliste: Inbetriebnahme FairPOS
 
 - [ ] Swissbit USB-TSE beschaffen und aktivieren
-- [ ] TSE-CLI-Binary bauen (`native/tse-cli/build.sh`) und Mount-Pfad/Client-ID konfigurieren (Systemeinstellungen → System, siehe docs/TSE-Integration.md)
+- [ ] TSE-CLI-Binary bauen (`native/tse-cli/build.sh`) und Mount-Pfad/Client-ID konfigurieren (Einstellungen → TSE, siehe docs/TSE-Integration.md)
 - [ ] FairPOS-Seriennummer und Softwareversion dokumentieren
 - [ ] Unternehmensdaten und Steuernummer im System hinterlegen
 - [ ] Alle Steuersätze korrekt konfigurieren
@@ -473,7 +577,8 @@ Ein gemeinnütziger Verein ist in vier steuerliche Bereiche aufgeteilt:
 - KassenSichV: gesetze-im-internet.de/kassensichv
 - § 146a AO: gesetze-im-internet.de/ao_1977/__146a.html
 - § 147 AO (Aufbewahrung): gesetze-im-internet.de/ao_1977/__147.html
-- DSFinV-K v2.4 (verbatim geprüft, konkretes PDF für Abschnitt 6 zitiert): kassensichv.com/downloads/DSFinV-K-Vers-2-4.pdf — offizielle Fassung auch über bzst.de (Digitale Schnittstelle der Finanzverwaltung) auffindbar
+- DSFinV-K v2.4 (verbatim geprüft, konkretes PDF für Abschnitt 6 zitiert): bzst.de/DE/Unternehmen/Aussenpruefungen/DigitaleSchnittstelleFinV (offizielles Downloadpaket des Bundeszentralamts für Steuern, enthält auch die `index.xml`-DTD und eine Referenz-`index.xml`, siehe Abschnitt 6.7/Task #122)
 - AEAO zu § 146a AO, Neufassung 30.06.2023 (verbatim geprüft, Abschnitt 3.3): bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Weitere_Steuerthemen/Abgabenordnung/AO-Anwendungserlass/2023-06-30-AEAO-Par-146-AO.pdf
 - GoBD BMF-Schreiben 28.11.2019: bundesfinanzministerium.de
+- GoBD-Anlage "Ergänzende Informationen zur Datenträgerüberlassung", 28.11.2019 (verbatim geprüft, Task #122): bundesfinanzministerium.de/Content/DE/Standardartikel/Themen/Steuern/Weitere_Steuerthemen/Abgabeordnung/2019-11-28-GoBD-Ergaenzende-Informationen-zur-Datentraegerueberlassung.pdf
 - ELSTER Kassenmeldung: elster.de/eportal/formulare-leistungen/alleformulare/aufzeichnung146a

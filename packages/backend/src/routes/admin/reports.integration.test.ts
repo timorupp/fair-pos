@@ -5,6 +5,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import {
@@ -51,12 +52,13 @@ async function insertPaidInvoice(
      VALUES ($1, $2, 'sales_receipt', $3, now() - interval '1 hour', $4) RETURNING id`,
     [registerId, receiptNumber, payment, `tok-${receiptNumber}`],
   );
+  const taxCategory = taxRate === 19 ? 'standard' : taxRate === 7 ? 'reduced' : 'zero';
   await pool.query(
     `INSERT INTO order_item (
        invoice_id, register_id, article_name, article_category_name,
-       tax_rate, price, status, created_at
-     ) VALUES ($1, $2, 'Bier', 'Getränke', $3, $4, $5, now() - interval '1 hour')`,
-    [inv.rows[0]!.id, registerId, taxRate, gross, status],
+       tax_rate, tax_category, price, status, created_at
+     ) VALUES ($1, $2, 'Bier', 'Getränke', $3, $4, $5, $6, now() - interval '1 hour')`,
+    [inv.rows[0]!.id, registerId, taxRate, taxCategory, gross, status],
   );
   return inv.rows[0]!.id;
 }
@@ -79,6 +81,9 @@ describe('GET /api/admin/reports/invoices', () => {
 
   it('returns an empty list when no event is configured', async () => {
     const app = await getTestApp();
+    // Task #95: register.event_id is a NOT NULL FK to event — the register
+    // fixture must go first, or deleting every event violates that constraint.
+    await pool.query(`DELETE FROM register`);
     await pool.query(`DELETE FROM event`);
     const response = await app.inject({
       method: 'GET', url: '/api/admin/reports/invoices',
@@ -86,60 +91,6 @@ describe('GET /api/admin/reports/invoices', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().invoices).toEqual([]);
-  });
-});
-
-describe('GET /api/admin/reports/cash-balance', () => {
-  it('counts cash receipts but not card receipts toward the balance', async () => {
-    const app = await getTestApp();
-    await insertPaidInvoice(1, 10, 19, 'cash');
-    await insertPaidInvoice(2, 50, 19, 'card');
-    const response = await app.inject({
-      method: 'GET', url: `/api/admin/reports/cash-balance?event_id=${eventId}`,
-      headers: { cookie: adminCookie },
-    });
-    expect(response.statusCode).toBe(200);
-    const row = response.json().registers.find((r: { id: string }) => r.id === registerId);
-    expect(row.cash_takings).toBe(10);
-    expect(row.balance).toBe(10);
-  });
-
-  it('ignores cancelled and free items', async () => {
-    const app = await getTestApp();
-    await insertPaidInvoice(1, 10, 19, 'cash', 'paid');
-    await insertPaidInvoice(2, 100, 19, 'cash', 'cancelled');
-    await insertPaidInvoice(3, 50, 19, 'cash', 'free');
-    const response = await app.inject({
-      method: 'GET', url: `/api/admin/reports/cash-balance?event_id=${eventId}`,
-      headers: { cookie: adminCookie },
-    });
-    const row = response.json().registers.find((r: { id: string }) => r.id === registerId);
-    expect(row.cash_takings).toBe(10);
-  });
-
-  it('includes deposit transactions in the balance', async () => {
-    const app = await getTestApp();
-    const user = await createTestUser({ isAdmin: true });
-    await pool.query(
-      `INSERT INTO cash_transaction (register_id, user_id, type, amount, created_at)
-       VALUES ($1, $2, 'deposit', 100, now() - interval '1 hour')`,
-      [registerId, user.id],
-    );
-    await pool.query(
-      `INSERT INTO cash_transaction (register_id, user_id, type, amount, created_at)
-       VALUES ($1, $2, 'withdrawal', 30, now() - interval '30 minutes')`,
-      [registerId, user.id],
-    );
-    await insertPaidInvoice(1, 20, 19, 'cash');
-    const response = await app.inject({
-      method: 'GET', url: `/api/admin/reports/cash-balance?event_id=${eventId}`,
-      headers: { cookie: adminCookie },
-    });
-    const row = response.json().registers.find((r: { id: string }) => r.id === registerId);
-    expect(row.deposits).toBe(100);
-    expect(row.withdrawals).toBe(30);
-    expect(row.cash_takings).toBe(20);
-    expect(row.balance).toBe(90);
   });
 });
 
@@ -170,6 +121,32 @@ describe('GET /api/admin/reports/today-revenue', () => {
     });
     expect(response.json().total).toBe(0);
   });
+
+  it('excludes a different event\'s invoice booked today (D-067)', async () => {
+    const app = await getTestApp();
+    await insertPaidInvoice(1, 10, 19, 'cash', 'paid');
+
+    const otherEvent = await pool.query<{ id: string }>(
+      `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,
+    );
+    const foreignRegister = await createTestRegister({ type: 'receipt_register', eventId: otherEvent.rows[0]!.id });
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, 99, 'sales_receipt', 'cash', now()) RETURNING id`,
+      [foreignRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', 500, 'paid', now())`,
+      [inv.rows[0]!.id, foreignRegister.id],
+    );
+
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/reports/today-revenue',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().total).toBe(10); // only the active event's own invoice, not the foreign event's 500
+  });
 });
 
 describe('GET /api/admin/reports/cancellations', () => {
@@ -178,7 +155,8 @@ describe('GET /api/admin/reports/cancellations', () => {
     const user = await createTestUser({ isAdmin: false });
     // Insert two cancelled items
     const reason = await pool.query<{ id: string }>(
-      `INSERT INTO cancellation_reason (name, booking_type) VALUES ('X', 'cancellation') RETURNING id`,
+      `INSERT INTO cancellation_reason (name, booking_type, event_id) VALUES ('X', 'cancellation', $1) RETURNING id`,
+      [config.activeEventId],
     );
     const inv = await pool.query<{ id: string }>(
       `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
@@ -189,9 +167,9 @@ describe('GET /api/admin/reports/cancellations', () => {
       await pool.query(
         `INSERT INTO order_item (
            invoice_id, register_id, article_name, article_category_name,
-           tax_rate, price, status, cancellation_reason_id, cancelled_by, cancelled_at, created_at
-         ) VALUES ($1, $2, 'X', 'Y', 19, 5, 'cancelled', $3, $4, now() - interval '30 minutes', now() - interval '1 hour')`,
-        [inv.rows[0]!.id, registerId, reason.rows[0]!.id, user.id],
+           tax_rate, tax_category, price, status, cancellation_reason_id, cancelled_by_name, cancelled_at, created_at
+         ) VALUES ($1, $2, 'X', 'Y', 19, 'standard', 5, 'cancelled', $3, $4, now() - interval '30 minutes', now() - interval '1 hour')`,
+        [inv.rows[0]!.id, registerId, reason.rows[0]!.id, user.name],
       );
     }
     const response = await app.inject({
@@ -210,17 +188,18 @@ describe('GET /api/admin/reports/cancellations', () => {
 describe('GET /api/admin/reports/open-positions', () => {
   it('groups open items by table', async () => {
     const app = await getTestApp();
-    await pool.query(`INSERT INTO floor_plan_column (label, col_order) VALUES ('A', 0)`);
-    await pool.query(`INSERT INTO floor_plan_row    (label, row_order) VALUES ('1', 0)`);
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
     const t = await pool.query<{ id: string }>(
-      `INSERT INTO dining_table (name, col_label, row_label, status)
-       VALUES ('A1', 'A', '1', 'active') RETURNING id`,
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('A1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
     );
     await pool.query(
       `INSERT INTO order_item (
          dining_table_id, register_id, article_name, article_category_name,
-         tax_rate, price, status, created_at
-       ) VALUES ($1, $2, 'Bier', 'Getränke', 19, 5, 'open', now())`,
+         tax_rate, tax_category, price, status, created_at
+       ) VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', 5, 'open', now())`,
       [t.rows[0]!.id, registerId],
     );
     const response = await app.inject({
@@ -275,10 +254,8 @@ describe('Authentication required', () => {
     const app = await getTestApp();
     for (const url of [
       '/api/admin/reports/invoices',
-      '/api/admin/reports/cash-balance',
       '/api/admin/reports/cancellations',
       '/api/admin/reports/open-positions',
-      '/api/admin/reports/events',
       '/api/admin/reports/tse-outages',
     ]) {
       const r = await app.inject({ method: 'GET', url });

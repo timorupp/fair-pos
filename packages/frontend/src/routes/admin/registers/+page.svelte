@@ -14,10 +14,6 @@
   let loading = $state(true);
   let error = $state('');
 
-  let closingAll = $state(false);
-  let closeAllError = $state('');
-  let closeAllResult: { closings: { z_number: number; is_zero_closing: boolean }[] } | null = $state(null);
-
   let modalOpen = $state(false);
   let editing: RegisterRow | null = $state(null);
   let formName = $state('');
@@ -25,6 +21,9 @@
   let formPrinterId = $state('');
   let formLayoutId = $state('');
   let formActive = $state(true);
+  let formTraining = $state(false);
+  /** Whether the register being edited already has a booking — locks `formTraining` (Task #130). */
+  let trainingLocked = $state(false);
   let formError = $state('');
   let saving = $state(false);
   let deleting = $state(false);
@@ -55,15 +54,27 @@
 
   function openCreate() {
     editing = null; formName = ''; formType = 'receipt_register'; formPrinterId = ''; formLayoutId = '';
-    formActive = true; formError = '';
+    formActive = true; formTraining = false; trainingLocked = false; formError = '';
     modalOpen = true;
   }
 
-  function openEdit(r: RegisterRow) {
+  /**
+   * Opens the edit modal for a register — fetches the full detail (Task #130:
+   * `has_bookings`) first so the "Trainingskasse" checkbox can be correctly
+   * disabled/locked, rather than trusting the list row alone.
+   */
+  async function openEdit(r: RegisterRow) {
     editing = r; formName = r.name; formType = r.type;
     formPrinterId = r.printer_id ?? ''; formLayoutId = r.layout_id ?? '';
-    formActive = r.is_active; formError = '';
+    formActive = r.is_active; formTraining = r.is_training; trainingLocked = false; formError = '';
     modalOpen = true;
+    try {
+      const detail = await api.admin.registers.get(r.id);
+      trainingLocked = detail.has_bookings;
+    } catch {
+      // Non-fatal — the checkbox just stays unlocked-looking; the PUT itself
+      // still enforces the lock server-side regardless.
+    }
   }
 
   async function save() {
@@ -74,6 +85,7 @@
         printer_id: formPrinterId || null,
         layout_id: formLayoutId || null,
         is_active: formActive,
+        is_training: formTraining,
       };
       if (editing) { await api.admin.registers.update(editing.id, data); }
       else { await api.admin.registers.create(data); }
@@ -93,41 +105,15 @@
   }
 
   const typeLabel = (t: string) => t === 'receipt_register' ? 'Bonkasse' : 'Bedienungskasse';
-
-  /**
-   * Runs the system-wide "close all registers" shortcut. Shows the count of
-   * issued Z-Bons (regular + zero closings) on success.
-   */
-  async function closeAll() {
-    if (!confirm('Wirklich alle Kassen jetzt abschließen?')) return;
-    closingAll = true; closeAllError = ''; closeAllResult = null;
-    try {
-      closeAllResult = await api.admin.closings.closeAll();
-    } catch (e) {
-      closeAllError = e instanceof Error ? e.message : 'Fehler';
-    } finally {
-      closingAll = false;
-    }
-  }
 </script>
 
 <div class="page">
   <div class="page-header">
     <h1>Kassen</h1>
     <div class="header-actions">
-      <button class="btn-ghost" onclick={closeAll} disabled={closingAll}>
-        {closingAll ? 'Schließe ab…' : 'Alle Kassen abschließen'}
-      </button>
       <button class="btn-primary" onclick={openCreate}>+ Neu</button>
     </div>
   </div>
-  {#if closeAllResult}
-    <p class="success-text">
-      ✓ {closeAllResult.closings.length} Z-Bon{closeAllResult.closings.length === 1 ? '' : 's'} erstellt
-      ({closeAllResult.closings.filter((c) => c.is_zero_closing).length} Nullabschlüsse).
-    </p>
-  {/if}
-  {#if closeAllError}<p class="error-text">{closeAllError}</p>{/if}
 
   {#if loading}
     <p class="muted">Lade…</p>
@@ -155,6 +141,9 @@
                 </span>
               {:else}
                 <span class="muted small">aktiv</span>
+              {/if}
+              {#if r.is_training}
+                <span class="training-badge">Training</span>
               {/if}
             </td>
             <td class="actions">
@@ -208,6 +197,19 @@
     {#if editing && !formActive}
       <p class="hint">Archivierte Kassen verschwinden aus dem Kassen-Login, bleiben aber in Auswertungen und Exporten sichtbar.</p>
     {/if}
+    <div class="field-check">
+      <input
+        type="checkbox" id="reg-training" bind:checked={formTraining}
+        disabled={saving || deleting || trainingLocked}
+        title={trainingLocked ? 'Diese Kasse hat bereits Buchungen — der Trainingsmodus kann nicht mehr umgeschaltet werden.' : ''}
+      />
+      <label for="reg-training">Trainingskasse</label>
+    </div>
+    {#if trainingLocked}
+      <p class="hint">Diese Kasse hat bereits Buchungen — der Trainingsmodus ist gesperrt und kann nicht mehr umgeschaltet werden.</p>
+    {:else}
+      <p class="hint">Buchungen auf einer Trainingskasse werden weiterhin TSE-signiert und protokolliert (DSFinV-K BON_TYP=AVTraining), zählen aber nicht in Kassenabschluss/Umsatz. Sobald die Kasse eine erste Buchung hat, ist dieses Feld gesperrt.</p>
+    {/if}
     {#if formError}<p class="error-text">{formError}</p>{/if}
     <div class="modal-actions">
       {#if editing}
@@ -225,7 +227,6 @@
 <style>
   .spacer { flex: 1; }
   .header-actions { display: flex; gap: 0.5rem; align-items: center; }
-  .success-text { color: #4caf7d; font-size: 0.875rem; margin: 0.5rem 0; }
   .lock-badge { color: #c87a00; font-weight: 600; font-size: 0.85rem; }
   .small { font-size: 0.85rem; }
   tr.locked-row { background: #f59e0b11; }
@@ -235,6 +236,13 @@
     color: var(--color-text-muted);
     background: var(--color-surface-2);
     border: 1px solid var(--color-border);
+  }
+  .training-badge {
+    display: inline-block; margin-left: 0.4rem;
+    font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px;
+    color: #dc2626;
+    background: #dc262622;
+    border: 1px solid #dc262688;
   }
   .hint { font-size: 0.85rem; color: var(--color-text-muted); margin: 0 0 0.75rem 0; }
 </style>

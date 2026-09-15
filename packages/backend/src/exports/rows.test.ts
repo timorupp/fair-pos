@@ -14,6 +14,10 @@ const row = (overrides: Partial<ExportSourceRow> = {}): ExportSourceRow => ({
   price: 5,
   deposit_price: null,
   tax_rate: 19,
+  deposit_tax_rate: null,
+  receipt_type: 'sales_receipt',
+  closing_z_number: null,
+  article_category_name: 'Getränke',
   ...overrides,
 });
 
@@ -72,6 +76,19 @@ describe('buildExportRows', () => {
     expect(out[0]!.line_total).toBe(13);
   });
 
+  it('carries the deposit tax rate separately from the article tax rate (Task #113 — Pfand ist immer Regelsteuersatz)', () => {
+    const out = buildExportRows([
+      row({ article_name: 'Essen im Pfandglas', price: 4, tax_rate: 7, deposit_price: 2, deposit_tax_rate: 19 }),
+    ]);
+    expect(out[0]!.tax_rate).toBe(7);
+    expect(out[0]!.deposit_tax_rate).toBe(19);
+  });
+
+  it('leaves deposit_tax_rate null when there is no deposit', () => {
+    const out = buildExportRows([row({ deposit_price: null, deposit_tax_rate: null })]);
+    expect(out[0]!.deposit_tax_rate).toBeNull();
+  });
+
   it('handles negative deposits (Leergutrückgabe) cent-precisely', () => {
     const out = buildExportRows([
       row({ article_name: 'Flasche zurück', price: 0, deposit_price: -1 }),
@@ -82,17 +99,57 @@ describe('buildExportRows', () => {
 
   it('coerces pg-decimal-strings to numbers', () => {
     const out = buildExportRows([
-      row({ price: '4.50', tax_rate: '19.00', deposit_price: '2.00' }),
+      row({ price: '4.50', tax_rate: '19.00', deposit_price: '2.00', deposit_tax_rate: '19.00' }),
     ]);
     expect(out[0]!.unit_price).toBe(4.5);
     expect(out[0]!.tax_rate).toBe(19);
     expect(out[0]!.unit_deposit).toBe(2);
+    expect(out[0]!.deposit_tax_rate).toBe(19);
   });
 
   it('uses empty strings for missing table and user', () => {
     const out = buildExportRows([row({ table_name: null, ordering_user_name: null })]);
     expect(out[0]!.table_name).toBe('');
     expect(out[0]!.ordering_user_name).toBe('');
+  });
+
+  it('leaves unit_deposit null when there is no Pfand at all, instead of 0 (Task #138)', () => {
+    const out = buildExportRows([row({ deposit_price: null })]);
+    expect(out[0]!.unit_deposit).toBeNull();
+  });
+
+  it('keeps a real (non-null) deposit as a number, including a zero-magnitude one', () => {
+    const out = buildExportRows([row({ deposit_price: 0 })]);
+    expect(out[0]!.unit_deposit).toBe(0);
+  });
+
+  it('negates quantity for a Bonstorno row and flags is_cancellation, while unit_price/line_total keep their own already-negative sign (Task #138)', () => {
+    const out = buildExportRows([
+      row({ receipt_type: 'cancellation', price: -5 }),
+      row({ receipt_type: 'cancellation', price: -5 }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.quantity).toBe(-2);
+    expect(out[0]!.line_total).toBe(-10);
+    expect(out[0]!.is_cancellation).toBe(true);
+  });
+
+  it('carries the invoice\'s daily_closing z_number through, or null while not yet closed (Task #142)', () => {
+    const closed = buildExportRows([row({ closing_z_number: 5 })]);
+    expect(closed[0]!.closing_z_number).toBe(5);
+
+    const open = buildExportRows([row({ closing_z_number: null })]);
+    expect(open[0]!.closing_z_number).toBeNull();
+  });
+
+  it('carries the article category through (Task #145)', () => {
+    const out = buildExportRows([row({ article_category_name: 'Speisen' })]);
+    expect(out[0]!.article_category_name).toBe('Speisen');
+  });
+
+  it('does not flag is_cancellation for a normal sale', () => {
+    const out = buildExportRows([row({ receipt_type: 'sales_receipt' })]);
+    expect(out[0]!.is_cancellation).toBe(false);
   });
 
   it('keeps the position order stable: invoice order outer, first-occurrence inner', () => {

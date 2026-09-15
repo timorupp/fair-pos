@@ -16,12 +16,15 @@ function baseSource(vorgaenge: SourceVorgang[]): DsfinvkSource {
     systemSerial: 'FairPOS-2026-AAAAAAAAAA',
     tseClientId: 'FairPOS-1',
     tseSerial: 'aabbcc',
-    tseCertificate: { signatureAlgorithm: 'ecdsa-plain-SHA384', logTimeFormat: 'unixTime', publicKeyBase64: 'AAA=' },
+    tseCertificate: {
+      signatureAlgorithm: 'ecdsa-plain-SHA384', logTimeFormat: 'unixTime',
+      publicKeyBase64: 'AAA=', certificateChainBase64: '',
+    },
     company: {
       name: 'Testverein e.V.', street: 'Hauptstr. 1', postalCode: '12345', city: 'Musterstadt',
       taxNumber: '12/345/67890', vatId: null,
     },
-    taxRates: [{ rate: 19, description: 'Allgemeiner Steuersatz' }],
+    taxRates: [{ category: 'standard', rate: 19, description: 'Allgemeiner Steuersatz' }],
     vorgaenge,
   };
 }
@@ -33,7 +36,7 @@ function beleg(overrides: Partial<SourceVorgang> = {}): SourceVorgang {
     bonName: null,
     receiptNumber: 42,
     createdAt: new Date('2026-08-05T18:00:00.000Z'),
-    isStornoBeleg: false,
+    isBonstorno: false,
     diningTableName: null,
     operatorUserId: 'u-1',
     operatorUserName: 'Anna',
@@ -42,7 +45,7 @@ function beleg(overrides: Partial<SourceVorgang> = {}): SourceVorgang {
       transactionNumber: 7, signatureCounter: 3, signatureHex: 'aa',
       startTime: new Date('2026-08-05T18:00:00.000Z'), endTime: new Date('2026-08-05T18:00:01.000Z'),
     },
-    items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, priceEuros: 5, depositPriceEuros: null }],
+    items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: null, depositTaxRate: null }],
     ...overrides,
   };
 }
@@ -73,29 +76,90 @@ describe('buildDsfinvkExport', () => {
 
   it('splits into Umsatz + Pfand lines when a position carries a positive deposit', () => {
     const v = beleg({
-      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, priceEuros: 5, depositPriceEuros: 2 }],
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     expect(out['lines.csv']).toHaveLength(2);
-    expect(out['lines.csv'][0]).toMatchObject({ GV_TYP: 'Umsatz', STK_BR: '5.00', POS_ZEILE: '1' });
-    expect(out['lines.csv'][1]).toMatchObject({ GV_TYP: 'Pfand', STK_BR: '2.00', POS_ZEILE: '2' });
+    expect(out['lines.csv'][0]).toMatchObject({ GV_TYP: 'Umsatz', STK_BR: '5.00000', POS_ZEILE: '1' });
+    expect(out['lines.csv'][1]).toMatchObject({ GV_TYP: 'Pfand', STK_BR: '2.00000', POS_ZEILE: '2' });
   });
 
   it('uses PfandRueckzahlung for a negative deposit (Leergutrückgabe)', () => {
     const v = beleg({
-      items: [{ articleId: 'art-1', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, priceEuros: 0, depositPriceEuros: -2 }],
+      items: [{ articleId: 'art-1', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 0, depositPriceEuros: -2, depositTaxRate: 19 }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
-    expect(pfandLine).toMatchObject({ GV_TYP: 'PfandRueckzahlung', STK_BR: '2.00' });
+    expect(pfandLine).toMatchObject({ GV_TYP: 'PfandRueckzahlung', STK_BR: '2.00000' });
   });
 
-  it('negates amounts for a Bonstorno (isStornoBeleg)', () => {
-    const v = beleg({ isStornoBeleg: true });
+  it('taxes the Pfand line at UST_SCHLUESSEL 1 (Regelsteuersatz) even when the article itself is reduced-rate (Task #113)', () => {
+    const v = beleg({
+      items: [{ articleId: 'art-1', articleName: 'Essen im Pfandglas', categoryName: 'Speisen', taxRate: 7, taxCategory: 'reduced', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+    });
+    const out = buildDsfinvkExport(baseSource([v]));
+    const articleVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === '1');
+    const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === '2');
+    expect(articleVat!.UST_SCHLUESSEL).toBe(2); // reduced
+    expect(pfandVat!.UST_SCHLUESSEL).toBe(1);   // standard, independent of the article
+  });
+
+  it('avoids a rounding mismatch between summed per-line and aggregate net/tax amounts by using 5 decimal places (D-065)', () => {
+    // 3× 1.99 € gross at 19% USt: at 2 decimal places, POS_NETTO/POS_UST
+    // would round to 1.67/0.32 per line (summing to 5.01/0.96 by hand),
+    // while BON_NETTO/BON_UST — summed internally at full precision, then
+    // rounded once — would print 5.02/0.95, a genuine 1-cent mismatch an
+    // auditor re-summing the printed lines would hit. At 5 decimals both
+    // paths agree exactly.
+    const item = { articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard' as const, priceEuros: 1.99, depositPriceEuros: null, depositTaxRate: null };
+    const v = beleg({ items: [item, item, item] });
+    const out = buildDsfinvkExport(baseSource([v]));
+
+    expect(out['lines_vat.csv'].map((r) => r.POS_NETTO)).toEqual(['1.67227', '1.67227', '1.67227']);
+    expect(out['lines_vat.csv'].map((r) => r.POS_UST)).toEqual(['0.31773', '0.31773', '0.31773']);
+    expect(out['transactions_vat.csv'][0]).toMatchObject({ BON_NETTO: '5.01681', BON_UST: '0.95319' });
+
+    const lineNettoSum = out['lines_vat.csv'].reduce((s, r) => s + Number(r.POS_NETTO), 0);
+    const lineUstSum = out['lines_vat.csv'].reduce((s, r) => s + Number(r.POS_UST), 0);
+    expect(lineNettoSum).toBeCloseTo(Number(out['transactions_vat.csv'][0]!.BON_NETTO), 5);
+    expect(lineUstSum).toBeCloseTo(Number(out['transactions_vat.csv'][0]!.BON_UST), 5);
+  });
+
+  it('reflects a Bonstorno\'s already-negative priceEuros (D-068) without any storno-flag-based flip', () => {
+    // Bonstorno rows arrive here with a negative priceEuros already baked in
+    // (routes/admin/cancellations.ts negates at creation time) — this
+    // function must not flip it a second time.
+    const v = beleg({
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: -5, depositPriceEuros: null, depositTaxRate: null }],
+    });
     const out = buildDsfinvkExport(baseSource([v]));
     expect(out['transactions.csv'][0]!.UMS_BRUTTO).toBe('-5.00');
-    expect(out['lines.csv'][0]!.STK_BR).toBe('5.00'); // STK_BR is the unsigned base price
-    expect(out['lines_vat.csv'][0]!.POS_BRUTTO).toBe('-5.00');
+    expect(out['lines.csv'][0]!.STK_BR).toBe('5.00000'); // STK_BR is the unsigned base price
+    expect(out['lines_vat.csv'][0]!.POS_BRUTTO).toBe('-5.00000');
+  });
+
+  it('keeps GV_TYP=Pfand for a Bonstorno reversing a normal (deposit-charging) article, even though the stored amount is now negative (D-069)', () => {
+    const v = beleg({
+      isBonstorno: true,
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: -5, depositPriceEuros: -2, depositTaxRate: 19 }],
+    });
+    const out = buildDsfinvkExport(baseSource([v]));
+    const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
+    expect(pfandLine).toMatchObject({ GV_TYP: 'Pfand', STK_BR: '2.00000' });
+    const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === pfandLine!.POS_ZEILE);
+    expect(pfandVat!.POS_BRUTTO).toBe('-2.00000'); // the real amount stays negative — only the label is "undone"
+  });
+
+  it('keeps GV_TYP=PfandRueckzahlung for a Bonstorno reversing a Leergutrückgabe article, even though the stored amount is now positive (D-069)', () => {
+    const v = beleg({
+      isBonstorno: true,
+      items: [{ articleId: 'art-2', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 0, depositPriceEuros: 2, depositTaxRate: 19 }],
+    });
+    const out = buildDsfinvkExport(baseSource([v]));
+    const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
+    expect(pfandLine).toMatchObject({ GV_TYP: 'PfandRueckzahlung', STK_BR: '2.00000' });
+    const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === pfandLine!.POS_ZEILE);
+    expect(pfandVat!.POS_BRUTTO).toBe('2.00000'); // the real amount stays positive — only the label is "undone"
   });
 
   it('does not emit a datapayment.csv row for AVBestellung/AVSonstige (no payment yet)', () => {
@@ -151,6 +215,18 @@ describe('buildDsfinvkExport', () => {
     expect(out['tse.csv'][0]).toMatchObject({ TSE_SIG_ALGO: '', TSE_ZEITFORMAT: '', TSE_PUBLIC_KEY: '' });
   });
 
+  it('fills TSE_ZERTIFIKAT_I/II from the leaf certificate in the PEM chain (Task #120/#122)', () => {
+    const leafBody = 'A'.repeat(1200);
+    const pem = `-----BEGIN CERTIFICATE-----\n${leafBody}\n-----END CERTIFICATE-----\n`;
+    const source = baseSource([beleg()]);
+    source.tseCertificate!.certificateChainBase64 = Buffer.from(pem, 'utf-8').toString('base64');
+    const out = buildDsfinvkExport(source);
+    expect(out['tse.csv'][0]).toMatchObject({
+      TSE_ZERTIFIKAT_I: leafBody.slice(0, 1000),
+      TSE_ZERTIFIKAT_II: leafBody.slice(1000, 1200),
+    });
+  });
+
   it('marks TSE_TA_FEHLER when no TSE signature is present, without throwing', () => {
     const out = buildDsfinvkExport(baseSource([beleg({ tse: null })]));
     expect(out['transactions_tse.csv'][0]!.TSE_TA_FEHLER).toMatch(/TSE-Ausfall/);
@@ -185,16 +261,74 @@ describe('buildDsfinvkExport', () => {
     ]);
   });
 
-  it('maps the standard/reduced/zero tax rates to UST_SCHLUESSEL 1/2/5', () => {
+  it('maps the standard/reduced/zero tax categories to UST_SCHLUESSEL 1/2/5', () => {
     const v = beleg({
       items: [
-        { articleId: 'a', articleName: 'A', categoryName: 'C', taxRate: 19, priceEuros: 10, depositPriceEuros: null },
-        { articleId: 'b', articleName: 'B', categoryName: 'C', taxRate: 7, priceEuros: 10, depositPriceEuros: null },
-        { articleId: 'c', articleName: 'C', categoryName: 'C', taxRate: 0, priceEuros: 10, depositPriceEuros: null },
+        { articleId: 'a', articleName: 'A', categoryName: 'C', taxRate: 19, taxCategory: 'standard', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null },
+        { articleId: 'b', articleName: 'B', categoryName: 'C', taxRate: 7, taxCategory: 'reduced', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null },
+        { articleId: 'c', articleName: 'C', categoryName: 'C', taxRate: 0, taxCategory: 'zero', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null },
       ],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const schluessel = out['lines_vat.csv'].map((r) => r.UST_SCHLUESSEL);
     expect(schluessel).toEqual([1, 2, 5]);
+  });
+
+  describe('AVTraining (Task #130)', () => {
+    it('signs AVTraining as Kassenbeleg-V1, same as Beleg (AEAO zu §146a Nr. 2.2.3.5/2.2.3.6 — no dedicated TSE processType needed)', () => {
+      const v = beleg({ bonTyp: 'AVTraining' });
+      const out = buildDsfinvkExport(baseSource([v]));
+      expect(out['transactions.csv'][0]).toMatchObject({ BON_TYP: 'AVTraining' });
+      expect(out['transactions_tse.csv'][0]!.TSE_TA_VORGANGSART).toBe('Kassenbeleg-V1');
+    });
+
+    it('still emits full transactions.csv/lines.csv/lines_vat.csv/transactions_vat.csv rows for a training Vorgang', () => {
+      const v = beleg({
+        bonTyp: 'AVTraining',
+        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+      });
+      const out = buildDsfinvkExport(baseSource([v]));
+      expect(out['transactions.csv']).toHaveLength(1);
+      expect(out['transactions.csv'][0]).toMatchObject({ UMS_BRUTTO: '7.00' });
+      expect(out['lines.csv']).toHaveLength(2); // article + Pfand
+      expect(out['lines_vat.csv']).toHaveLength(2);
+      expect(out['transactions_vat.csv']).toHaveLength(1);
+    });
+
+    it('excludes a training Vorgang\'s article AND deposit amounts from businesscases.csv (Z_GV_TYP) — the single most important correctness detail (D-130)', () => {
+      const trainingV = beleg({
+        id: 'v-training',
+        bonTyp: 'AVTraining',
+        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+      });
+      const realV = beleg({
+        id: 'v-real',
+        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 3, depositPriceEuros: null, depositTaxRate: null }],
+      });
+      const out = buildDsfinvkExport(baseSource([trainingV, realV]));
+      // Only the real Vorgang's 3.00 € Umsatz reaches the Z_GV_TYP aggregate —
+      // the training Vorgang's 5.00 €/2.00 € (Umsatz/Pfand) never appear here.
+      const umsatz = out['businesscases.csv'].find((b) => b.GV_TYP === 'Umsatz');
+      expect(umsatz).toMatchObject({ Z_UMS_BRUTTO: '3.00000' });
+      expect(out['businesscases.csv'].some((b) => b.GV_TYP === 'Pfand')).toBe(false);
+    });
+
+    it('excludes a training Vorgang\'s payment from payment.csv/cash_per_currency.csv (Z_-level aggregates) while still documenting it in datapayment.csv', () => {
+      const trainingV = beleg({ id: 'v-training', bonTyp: 'AVTraining', paymentMethod: 'cash' });
+      const realV = beleg({ id: 'v-real', paymentMethod: 'cash', items: [{ ...beleg().items[0]!, priceEuros: 3 }] });
+      const out = buildDsfinvkExport(baseSource([trainingV, realV]));
+      expect(out['datapayment.csv']).toHaveLength(2); // both Vorgänge documented per-Vorgang
+      expect(out['payment.csv']).toEqual([
+        expect.objectContaining({ ZAHLART_TYP: 'Bar', Z_ZAHLART_BETRAG: '3.00' }), // only the real one
+      ]);
+      expect(out['cash_per_currency.csv'][0]).toMatchObject({ ZAHLART_BETRAG_WAEH: '3.00' });
+    });
+
+    it('does not require the training Vorgang to be a Beleg — AVBestellung/AVSonstige also carry AVTraining once the register is flagged', () => {
+      const order: SourceVorgang = { ...beleg(), id: 'so-1', bonTyp: 'AVTraining', receiptNumber: null, paymentMethod: null };
+      const out = buildDsfinvkExport(baseSource([order]));
+      expect(out['transactions.csv'][0]).toMatchObject({ BON_TYP: 'AVTraining' });
+      expect(out['transactions_tse.csv'][0]!.TSE_TA_VORGANGSART).toBe('Kassenbeleg-V1');
+    });
   });
 });

@@ -1,0 +1,6324 @@
+# Backlog — Erledigt
+
+Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unverändert. Wird ausschließlich durch Verschieben aus `BACKLOG.md` befüllt, nie direkt neu angelegt.
+
+---
+
+## Tasks
+
+- [Task] **#1** Saalplan-Editor implementieren
+
+- [Task] **#2** Print Worker implementieren
+
+- [Task] **#3** Kassenbon-PDF-Endpunkt implementieren
+
+- [Task] **#4** TSE-Integration implementieren
+
+- [Task] **#5** Bonkasse-UI implementieren
+
+- [Task] **#6** Bedienungskasse-UI implementieren
+
+- [Task] **#7** Tagesabschluss (Z-Bon) implementieren
+
+- [Task] **#8** Bonstorno-Maske implementieren (Admin)
+
+- [Task] **#9** Auswertungen implementieren
+
+- [Task] **#10** Excel-Export implementieren
+
+- [Task] **#11** System-Einstellungen implementieren
+
+- [Task] **#12** Test-Infrastruktur einrichten
+
+- [Task] **#13** DSFinV-K-Export implementieren
+
+- [Task] **#14** Tagesabschluss-Lücken erkennen + Kassieren sperren
+
+- [Task] **#15** D-013: Admin- und Kassen-Sessions trennen
+
+- [Task] **#16** D-001 + D-002: Saalplan-Datenmodell + Migrations-Konsolidierung
+
+- [Task] **#17** D-014: Belegnummer atomar per Counter-Row statt App-Lock
+
+- [Task] **#18** D-015: Admin-Reprint in Auswertung „Erstellte Rechnungen"
+
+- [Task] **#19** T-019: Test-DB-Infrastruktur (testcontainers)
+
+- [Task] **#20** DOC-001: JSDoc-Nachzug Pure-Helpers
+
+- [Task] **#21** T-Reihe: Integration-Tests für Bestands-Endpoints
+
+- [Task] **#22** User-Test-Liste 1: QR-Code-Grafik im Token-Dialog
+
+- [Task] **#23** User-Test 4: Touch-Buttons in Kassen-UIs vergrößern
+
+- [Task] **#24** User-Test 5: Druckerwarteschlange als eigene Settings-Seite
+
+- [Task] **#25** Backup-Dienst implementieren
+  **Erledigt (August 2026):** Nur manueller Download-Backup, kein Timer/Cron-Job, kein
+  impliziter Trigger am Tagesabschluss (siehe docs/Anforderungen.md "Backup-Konzept").
+  `backup/dump.ts` (`createDatabaseDump`/`parseDatabaseUrl`) ruft `pg_dump` auf — Passwort
+  über `PGPASSWORD`-Env-Var, nicht als Kommandozeilenargument (sonst über `ps` auf dem
+  Server sichtbar); `backup/zip.ts` verpackt das Ergebnis mit einer Wiederherstellungs-
+  `README.txt` als ZIP. Neue Route `GET /api/admin/backup`. Admin-UI:
+  "Backup herunterladen"-Button in Systemeinstellungen → System (ersetzt die entfernte,
+  bisher folgenlose `backup_directory`-Einstellung). `pg_dump` kommt automatisch mit
+  `postgresql-16` (PGDG-Paket, siehe `docs/Installationsanleitung.md`), kein zusätzlicher
+  Installationsschritt. Unit-Tests (`backup/dump.test.ts`, URL-Parsing) und
+  Integrationstests (`backup.integration.test.ts`, 4 Tests: ZIP-Inhalt, PGPASSWORD statt
+  Klartext-Argument, Fehlerfall, Auth-Gate) über einen `pg_dump`-Stub
+  (`test/fixtures/pgDumpStub.sh`) — der echte `pg_dump` ist in dieser Sandbox nicht
+  installierbar (kein passwortloses sudo), daher gegen echten `pg_dump` **nicht**
+  verifiziert.
+
+- [Task] **#26** Produktoptionen-UI im Artikel-Modal
+
+- [Task] **#27** Standarddrucker: Invariante + UI-Umbau
+
+- [Task] **#28** Bonkasse: Selbstabholerbons je Artikel-Einheit am Kassendrucker
+
+- [Task] **#29** Admin: PDF einer Rechnung — 404 Not Found beheben
+
+- [Task] **#30** Pfandbon-Verhalten am Selbstabholerbon implementieren
+
+- [Task] **#31** Konfigurierbares Logo auf Bons und Rechnungen
+
+- [Task] **#32** Batch-Export aller Rechnungen als ZIP (PDF je Rechnung)
+  **Erledigt (August 2026):** Skalierung wie beim Excel-Export gelöst — zwei Modi, Tag
+  ODER Veranstaltung, kein Entweder-oder-Entscheidungsbedarf mehr. Neue Routen
+  `GET /api/admin/exports/invoices/day` und `.../invoices/event` in `routes/admin/exports.ts`
+  (`loadInvoiceIdsInRange` + `buildInvoicesZip`, wiederverwendet `loadReceiptById`/
+  `renderReceiptPdf` aus dem bestehenden Einzel-PDF-Endpunkt). Bewusst **alle**
+  Belegtypen (sales_receipt, cancellation, training) enthalten, nicht nur Verkäufe wie
+  beim Excel-Export — Zweck ist ein vollständiges Archiv, keine Geschäftsauswertung.
+  Dateiname je Eintrag = formatierte Belegnummer. Neue Admin-Seite
+  `/admin/exports/invoices` (dritter Nav-Punkt unter "Exporte"), gleiches
+  Tag/Veranstaltung-UI-Muster wie der Excel-Export. 6 neue Integrationstests
+  (`exports.invoices-zip.integration.test.ts`).
+
+- [Task] **#34** Z-Bon-Sperre / Standarddrucker-Fallback fixen
+
+- [Task] **#35** Datenmodell für AVBestellung + AVSonstige (TSE-Vorbereitung)
+
+- [Task] **#36** TSE: Vendor-Verzeichnis + Platzhalter + .gitignore
+
+- [Task] **#37** TSE: Minimaler CLI-Wrapper (tseCli.cpp) + build.sh
+
+- [Task] **#38** TSE: Node-Client-Modul (queue.ts, client.ts, types.ts)
+
+- [Task] **#39** TSE: Unit-Tests für queue.ts + client.ts (gemockter Subprozess)
+
+- [Task] **#40** TSE: Signierung in Bonkasse-Checkout integrieren (Referenzimplementierung)
+
+- [Task] **#41** TSE: Signierung in Bedienungskasse-Flows integrieren
+
+- [Task] **#42** TSE: Setup + Status-UI in Systemeinstellungen (Mount-Pfad, PINs, Testfunktion mit Statusanzeige)
+
+- [Task] **#43** TSE: SETUP.md + docker-compose + .env.example korrigieren
+
+- [Task] **#44** TSE: Automatisiertes Ausfall-Log (Start/Ende/Grund)
+
+- [Task] **#45** TSE: AVBelegabbruch bei Fehlschlag zwischen start und finish
+
+- [Task] **#46** TSE: processData-Format für Kassenbeleg-V1 auf DSFinV-K-Vorgabe umstellen
+
+- [Task] **#48** Docker-Cleanup: Produktions-Deployment auf native Ubuntu-Installation umstellen
+  **Erledigt:** `docker-compose.yml` auf reines Dev-Postgres reduziert (Backend-Service,
+  TSE-Volume-Kommentare entfernt); `docker-compose.dev.yml` und
+  `packages/backend/Dockerfile` gelöscht (Override nicht mehr nötig, da die Basis-Datei
+  jetzt selbst nur noch Postgres enthält — Dev-Verhalten unverändert: Docker nur für
+  Postgres, nie für die TSE). `.env.example`, `README.md`, `docs/SETUP.md`,
+  `docs/Anforderungen.md`, `docs/Manueller-Testplan.md` von Docker-Produktions-Framing
+  bereinigt (`DATABASE_URL` zeigt jetzt auf `localhost` statt des Compose-Servicenamens
+  `postgres`). `TSE_MOUNT_POINT`/`TSE_CLIENT_ID`-Env-Vars bleiben als optionaler
+  initialer Seed-Wert erhalten (nützlich für systemd `EnvironmentFile`), nicht mehr als
+  "container-seitiger Pfad" dokumentiert.
+
+- [Task] **#49** Ausführliche Installationsanleitung für native Ubuntu-Installation schreiben
+  **Erledigt:** `docs/Installationsanleitung.md` — Voraussetzungen, Postgres 16 via
+  PGDG-APT-Repo, Node.js via NodeSource, Build (`npm run build` + Kopie nach
+  `packages/backend/public/`), Migrationen, TSE-Einrichtung (`tseCli` bauen,
+  `usbmount` fürs generische Automount auf einem Headless-Server, Berechtigungen),
+  systemd-Unit-Vorlage, Smoke-Test, Update-Ablauf. TSE-Mount-Abschnitt (7.2) explizit
+  als **nicht gegen echte Hardware verifiziert** markiert (noch keine Hardware
+  verfügbar, siehe docs/TSE-Integration.md Abschnitt 9) — zu prüfen, sobald die
+  bestellte Swissbit-Testhardware da ist.
+
+- [Task] **#50** Setup-Automatisierungsskripte für native Installation bauen
+  **Erledigt:** `scripts/install/01-system.sh` (Node.js + Postgres + Build-Tools),
+  `02-database.sh` (Rolle + DB aus `.env` anlegen), `03-build.sh` (npm ci, Build,
+  Frontend-Kopie), `04-systemd.sh` (Unit-Datei schreiben + aktivieren),
+  `smoke-test.sh` (systemd-Status, `/api/health`, `pg_isready`, TSE-Mountpunkt
+  informativ). Alle idempotent, Bash-Syntax geprüft (`bash -n`) — **nicht** gegen
+  einen echten Ubuntu-Server ausgeführt/verifiziert, da hier keiner zur Verfügung
+  steht.
+
+- [Task] **#51** TSE: Auto-Detect-Button + Dropdown für Mount-Pfad in der Admin-UI
+  **Erledigt:** Backend — `tse/detect.ts` (`listTseMountCandidates` via `lsblk -J`,
+  Baum-Traversal mit `tran`/`rm`-Vererbung an Partitionen; `detectTse` probiert jeden
+  Kandidaten über `getTseInfoAt` — neue, config-freie Variante von `getTseInfo` in
+  `tse/client.ts`, die einen beliebigen Mountpunkt statt `config.tseMountPoint` testet).
+  Neue Routen `GET /api/admin/tse/candidates`, `POST /api/admin/tse/detect`. Unit-Tests
+  (`tse/detect.test.ts`, 10 Tests: Baum-Traversal mit synthetischen lsblk-Fixtures, echter
+  `lsblk`-Aufruf, `detectTse` mit injizierter Kandidatenliste + Stub-CLI) und
+  Integrationstests (`tse.integration.test.ts`, 3 neue Tests: Route-Verdrahtung,
+  Auth-Gate). Frontend — Dropdown + "Auto-erkennen"-Button bei Mount-Pfad in
+  `system/+page.svelte`, füllt das Feld, speichert aber nicht automatisch (Admin bestätigt
+  weiterhin über den bestehenden "Speichern"-Button).
+
+- [Task] **#52** TSE-Status-Anzeige vereinheitlichen: alle Felder in `<dt>`/`<dd>` statt JSON-Fallback
+  **Erledigt:** Signaturalgorithmus/Zeitformat/Public-Key (aus Task #46) in die
+  bestehende `<dt>`/`<dd>`-Tabelle aufgenommen (waren zuvor nur im rohen JSON-Fallback
+  sichtbar); `TseInfo`-Typ im Frontend (`lib/api.ts`) um die drei Felder ergänzt (war
+  hinter dem Backend-Typ zurückgeblieben). Zusätzliche Unternehmensdaten-Felder
+  (Anschaffungsdatum etc.) bewusst **nicht** ergänzt. Nebenbei behoben: veraltete
+  Doku-Referenz "Docker-/Linux-Konfiguration" bei der Zeitzonen-Anzeige (Docker-Cleanup
+  #48 hatte diese eine `.svelte`-Datei übersehen, da der ursprüngliche Grep nur
+  `.md`/`.yml`/`.ts`/`.json` abdeckte).
+
+- [Task] **#53** Automatisierte API-Level End-to-End-Tests gegen eine echte Installation
+  **Erledigt (August 2026):** Nur Backend, kein Browser/Frontend-Automatisierung.
+  Neue, dritte Vitest-Konfiguration `vitest.e2e.config.ts` (`*.e2e.test.ts`, `npm run
+  test:e2e`) — startet nichts selbst (kein Server, keine DB), sondern spricht per
+  echtem `fetch()` eine bereits laufende, echte Instanz an (`E2E_BASE_URL`, Standard
+  `http://localhost:3000`). `src/e2e/client.ts` — minimaler Cookie-Jar-HTTP-Client
+  (getrennt für Admin-/Register-Session, wie `routes/auth.ts` es verlangt).
+  `src/e2e/full-flow.e2e.test.ts` bildet den zentralen Ablauf aus
+  `docs/Manueller-Testplan.md` ab: Health-Check → Admin-Login → Artikel/Kasse/
+  Kassierer anlegen → QR-Token-Login → Bonkasse-Checkout (TSE-Signierung wird
+  mitgeprüft, aber nur als Hard-Fail behandelt, wenn `/tse/status` vorher
+  `configured+erreichbar` meldete — sonst ist ein Warnhinweis der korrekte, tolerierte
+  Zustand) → Tagesabschluss → DSFinV-K-Export-ZIP (Inhalt verifiziert) →
+  Rechnungs-PDF-ZIP-Export (Task #32). Jeder Lauf erzeugt eindeutig benannte,
+  zeitstempel-präfixte Fixtures — kein automatisches Aufräumen (dokumentiert in
+  `src/e2e/README.md`). **Echt verifiziert:** gegen die lokale Dev-Instanz laufen
+  lassen (echter Postgres-Container, echter `npm run dev`-Server, dedizierter
+  `e2e-admin`-Seed-User) — alle 9 Tests grün. Nebenbei eine echte Lücke in
+  `docs/Installationsanleitung.md` gefunden und behoben: Abschnitt 6 erwähnte
+  `npm run db:seed` nicht — ohne diesen Schritt wäre eine frische Installation gar
+  nicht nutzbar gewesen (kein Login möglich).
+  **Nachträglich um weitere Low-Hanging-Fruit-Checks ergänzt** (zweite `describe`,
+  14 Tests insgesamt, ebenfalls echt gegen die Dev-Instanz verifiziert): falsches
+  Admin-Passwort → 401, unauthentifizierter Zugriff auf einen Admin-Endpunkt → 401,
+  Admin-Bonstorno (Task #8) auf dem gecheckten Artikel, Excel-Tages- und
+  -Veranstaltungsexport (Task #10), manueller Backup-Download (Task #25) — toleriert
+  dabei einen 500 als einzige Alternative zu 200 (falls `pg_dump` auf dem
+  Zielsystem fehlt), niemals einen anderen Status. **Bewusst noch nicht abgedeckt**
+  (siehe Diskussion): Bedienungskasse (Tische, Split-Checkout, Mehrfach-Bestellrunden),
+  Storno offener Tisch-Positionen (AVSonstige), mehrere Steuersätze, Pfand/Leergut,
+  aktiv provozierter TSE-Ausfall (`tse_outage`) — bleibt bei Bedarf als
+  Erweiterung offen, ansonsten weiterhin Teil des manuellen Regressionstests (#47).
+
+- [Task] **#54** `DELETE /api/admin/registers/:id` — verständliche Fehlermeldung bei
+  vorhandenen Transaktionen
+  **Erledigt (2026-08-05):** `23503` (Fremdschlüssel-Verletzung) abgefangen, 409 mit
+  Klartext-Fehlermeldung ("Kasse hat bereits Transaktionen und kann nicht gelöscht
+  werden") statt rohem 500 — analog zum bestehenden `23505`-Handling in
+  `categories.ts`/`articles.ts`. 3 neue Integrationstests
+  (`registers.integration.test.ts`, vorher gab es keine): unbenutzte Kasse löschen
+  (204), nicht existierende Kasse (404), Kasse mit Rechnung (409 + Meldung, Kasse
+  und Rechnung bleiben unverändert bestehen).
+
+- [Task] **#55** Kassen (`register`): Archivieren/Deaktivieren statt dauerhaft
+  blockierter Löschung
+  **Erledigt (2026-08-06):** Migration `0007_register_is_active.sql` —
+  `register.is_active BOOLEAN NOT NULL DEFAULT true`. `registers.ts` GET/POST/PUT
+  geben/setzen `is_active` mit; DELETE unverändert (bleibt harter Löschversuch
+  analog #54). `register-session.ts`: `GET /me` filtert `AND r.is_active = true`
+  (archivierte Kasse verschwindet aus dem Kassen-Login-Picker); `GET /registers/:id`
+  behandelt eine archivierte Kasse wie eine gelöschte (404), auch wenn der Benutzer
+  noch per `user_register` zugewiesen ist. Admin-UI (`registers/+page.svelte`):
+  „Aktiv"-Checkbox im Bearbeiten-Formular (Löschen-Button bleibt dort, siehe
+  [[feedback_delete_button_placement]]), „Archiviert"-Badge + abgedunkelte Zeile in
+  der Übersicht. 2 neue Integrationstests (`registers.integration.test.ts`) + 2 neue
+  (`register-session.integration.test.ts`: `GET /me`-Filterung, 404 bei archivierter
+  Kasse).
+
+- [Task] **#56** Benutzer (`user`): Archivieren/Deaktivieren statt dauerhaft
+  blockierter Löschung
+  **Erledigt (2026-08-06):** Migration `0008_user_is_active.sql` —
+  `"user".is_active BOOLEAN NOT NULL DEFAULT true`. `users.ts`: DELETE bleibt ein
+  echter Hard-Delete-Versuch — gelingt für Benutzer ohne Referenzen, fängt sonst
+  `23503` ab und liefert 409 mit Hinweis auf die Deaktivierung statt rohem 500
+  (analog #54); PUT setzt `is_active`, verweigert aber die Selbstdeaktivierung
+  (400, analog zum bestehenden Selbstlöschschutz). `auth.ts`: Admin-Login und
+  QR-Token-Tausch prüfen zusätzlich `is_active` (derselbe generische 401 wie bei
+  falschem Passwort/unbekanntem Token — kein Enumerieren deaktivierter Accounts).
+  `middleware/authenticate.ts`: beide PreHandler fragen `is_active` bei **jedem**
+  Request erneut ab — eine Deaktivierung beendet eine bereits offene Kassen-Session
+  sofort, nicht erst beim nächsten Login. Admin-UI (`users/+page.svelte`):
+  „Aktiv"-Checkbox (deaktiviert für den eigenen Account), Status-Spalte
+  „Deaktiviert"/„aktiv" in der Übersicht, Kassenzuweisungsliste blendet archivierte
+  Kassen aus (außer bereits zugewiesene). Getestet: 4 neue Tests in
+  `admin-routes.integration.test.ts` (Hard-Delete, 409+Bestand, Selbstschutz,
+  Toggle), 2 neue in `auth.integration.test.ts` (deaktivierter Admin-Login,
+  deaktivierter Token-Tausch), 1 neues in `register-session.integration.test.ts`
+  (sofortiger Logout einer offenen Session).
+
+- [Task] **#57** `DELETE /api/admin/printers/:id` — verständliche Fehlermeldung bei
+  vorhandenem Gerät in Verwendung
+  **Erledigt (2026-08-06):** `23503` abgefangen, 409 mit Klartext-Fehlermeldung
+  („Drucker wird noch verwendet und kann nicht gelöscht werden") statt rohem 500 —
+  analog #54, kein Archivieren nötig (Drucker müssen im Gegensatz zu
+  Kassen/Benutzern nicht dauerhaft historisch nachweisbar bleiben). 3 neue
+  Integrationstests (`printers.integration.test.ts`, vorher gab es keine):
+  unbenutzten Drucker löschen (204), nicht existierenden Drucker (404), Drucker mit
+  zugeordneter Kasse (409 + Meldung, Drucker bleibt bestehen). FK-Referenzen auf
+  `printer(id)`: `register.printer_id`, `article.printer_id`, `print_job.printer_id`
+  (NOT NULL).
+
+- [Task] **#58** TSE-Zeitsynchronisation + Self-Test (`maintainTse`) tatsächlich aufrufen
+  Gefunden bei der Live-Installation (2026-08-24), als die Frage aufkam, wofür
+  die TimeAdmin-PIN in den Systemeinstellungen eigentlich gebraucht wird:
+  `tse/client.ts` hat eine fertige `maintainTse(timeAdminPin)`-Funktion, die
+  aber **nirgends aufgerufen wird** — kein Cronjob, kein Scheduler, kein
+  Button in der Admin-UI. Die UI zeigt nur an, wie viele Tage bis zur
+  nächsten fälligen Zeitsync bzw. zum nächsten Self-Test bleiben
+  (`GET /api/admin/tse/status` → `timeUntilNextTimeSynchronization` /
+  `timeUntilNextSelfTest`), tut aber nichts, wenn eines davon fällig wird.
+  **Deckt beides in einem Schritt ab:** Das zugrundeliegende CLI-Kommando
+  `maintain <clientId> <timeAdminPin>` (`native/tse-cli/src/tseCli.cpp`,
+  `cmdMaintain`) führt Self-Test und Zeitsync bereits bewusst in einer
+  Operation aus (Self-Test muss laut Kommentar dort sogar vor dem Zeitsync
+  laufen, weil er die TSE-Zeit invalidiert) — kein separater Task für den
+  Self-Test nötig, `maintainTse()` deckt automatisch beides ab, sobald sie
+  aufgerufen wird.
+  **Zusammengeführt in Task #64 (2026-08-24):** Kein eigenständiger Task
+  mehr — der `maintainTse()`-Aufruf wird als einer der automatischen
+  Health-Checks in #64 umgesetzt (dort auch der endgültig festgelegte
+  Auslösepunkt: Backend-Start, siehe #64).
+
+- [Task] **#59** TSE-Status-Karte: Public-Key-Zeile läuft über den Kartenrahmen hinaus
+  **Erledigt (2026-08-24):** Ursache bestätigt (Grid-Item-Default
+  `min-width: auto` verhindert das Schrumpfen der `1fr`-Spalte trotz
+  `word-break`). Fix in `admin/settings/system/+page.svelte`:
+  `grid-template-columns: max-content minmax(0, 1fr)` (statt `1fr`) +
+  `min-width: 0` auf `.kv dd` + zusätzlich `overflow-wrap: anywhere` neben
+  dem bestehenden `word-break: break-all` auf `.pubkey`.
+
+- [Task] **#60** Systemzeit des Servers anzeigen + manuell setzen können
+  Aufgekommen bei der Live-Installation (2026-08-24) im Zusammenhang mit
+  Task #58: die TSE-Zeitsynchronisation gleicht die TSE-Uhr gegen die
+  **Systemzeit des `fairpos`-Servers** ab — wenn die falsch steht, synchronisiert
+  die TSE gegen eine falsche Zeit. Aktuell zeigt die Admin-UI
+  (`admin/settings/system/+page.svelte`) nur eine live tickende
+  "Serverzeit" (rein lesend, aus `GET /api/admin/system/status`) — keine
+  Möglichkeit, sie zu **setzen**. Gewünscht: manuelle Eingabe reicht (keine
+  NTP-Anbindung nötig — die Kasse kann auch ganz ohne Internet laufen, siehe
+  `docs/Anforderungen.md` "Datum und Uhrzeit" — dort bisher nur als
+  Anforderung notiert, nie umgesetzt). Nebenbei nützlich für die Entwicklung,
+  um mit einer zurückgedrehten Uhr eine eigentlich schon abgelaufene
+  Dev-TSE weiter benutzen zu können.
+  **Technischer Haken:** Der Backend-Prozess läuft absichtlich als
+  unprivilegierter `fairpos`-User (siehe Abschnitt 4 der
+  Installationsanleitung) — kann die Systemuhr nicht selbst stellen
+  (`CAP_SYS_TIME`/root nötig). Lösung vermutlich eine eng zugeschnittene
+  `sudoers`-Regel, die `fairpos` **ausschließlich** den Aufruf von
+  `sudo timedatectl set-time '<wert>'` ohne Passwort erlaubt (kein
+  Full-Sudo!) — vom Backend per `execFile` aufgerufen. Sicherheitsaspekt
+  beachten: eine Manipulationsmöglichkeit der Systemzeit aus der Web-UI
+  heraus ist grundsätzlich sensibel (Admin-only, wie schon alle anderen
+  Settings-Endpoints — aber ggf. zusätzliches Logging erwägen). Dieselbe
+  Sudoers-Mechanik lässt sich vermutlich für Task #61 (Shutdown-Button)
+  wiederverwenden.
+  **Ergänzt (2026-08-24):** Warnung auf der Administrator-Startseite, wenn
+  Server- und Browserzeit um mehr als 30 Sekunden voneinander abweichen
+  (Vergleich clientseitig: Browser-`Date.now()` gegen `server_time` aus
+  `GET /api/admin/system/status`, ähnliches Muster wie der bestehende
+  globale Tagesabschluss-Banner in `admin/+layout.svelte`). Zusätzlich bei
+  der manuellen Zeiteinstellung selbst ein Button „Aktuelle Browserzeit
+  übernehmen" — übernimmt `new Date()` des Browsers als Vorschlagswert statt
+  manueller Eingabe von Hand.
+  **Erledigt (2026-08-24):** Vollständig umgesetzt. Backend:
+  `system/time.ts` (`setSystemTime`/`setSystemTimezone`, letztere validiert
+  gegen `Intl.supportedValuesOf('timeZone')` bevor `sudo` überhaupt
+  aufgerufen wird), Routen `PUT /api/admin/system/time` +
+  `PUT /api/admin/system/timezone`, `config.sudoPath` als Test-Override
+  (Muster wie `pgDumpPath`/`tseCliPath`) mit neuem
+  `test/fixtures/sudoStub.sh`. Frontend: Zeitzone jetzt ein `<select>`
+  (befüllt aus `Intl.supportedValuesOf('timeZone')`, kein extra
+  Backend-Roundtrip nötig) statt reiner Anzeige, „Aktuelle Browserzeit
+  übernehmen"-Button, Abweichungs-Warnung auf der Admin-Startseite
+  (`admin/+page.svelte`, >30s Differenz Browser/Server). Sudoers-Doku in
+  `docs/Installationsanleitung.md` Abschnitt 13 (inkl. Fund: `set-time`
+  funktioniert gar nicht, solange NTP aktiv ist — Abschnitt 13.1 lässt es
+  vorher deaktivieren). Unit- + Integrationstests für beide Routen/Funktionen.
+  **Erledigt (2026-09-06):** `sudoers`-Datei ist auf dem Produktivserver
+  angelegt, beide Endpunkte funktionieren live.
+
+- [Task] **#61** Shutdown-Button in der Admin-UI
+  Gewünscht, damit ein normaler Vereins-Nutzer den Server kontrolliert
+  herunterfahren kann, ohne auf die Shell zu müssen. Gleiches technisches
+  Muster wie Task #60: `fairpos` braucht dafür eine eng zugeschnittene
+  `sudoers`-Regel (z.B. ausschließlich `sudo systemctl poweroff` ohne
+  Passwort erlaubt, kein Full-Sudo), vom Backend per `execFile` aufgerufen.
+  UI-seitig unbedingt mit deutlicher Sicherheitsabfrage (analog zu anderen
+  destruktiven Aktionen in der App, z.B. Backup-Restore/Reset-Diskussionen)
+  — ein versehentlicher Klick legt sofort den laufenden Kassenbetrieb lahm.
+  **Erledigt (2026-08-24):** `system/shutdown.ts` (`shutdownServer`, ruft
+  `sudo systemctl poweroff` — fixer Befehl, keine Nutzereingabe, daher keine
+  Validierung nötig), Route `POST /api/admin/system/shutdown`, neue Karte
+  „Server herunterfahren" in `admin/settings/system/+page.svelte` mit
+  `confirm()`-Sicherheitsabfrage. Gleiche `sudoers`-Regel wie #60 (ein
+  gemeinsamer Abschnitt 13 in der Installationsanleitung), gleiches
+  Test-Stub-Muster. **Noch offen:** wie bei #60 — `sudoers`-Datei muss noch
+  live auf dem Server angelegt werden.
+
+- [Task] **#62** Open-Source-Lizenz für das Repo hinzufügen
+  **Erledigt (2026-08-24):** Lizenzen verglichen (MIT, Apache-2.0, GPL-3.0,
+  AGPL-3.0) — Abhängigkeiten (`license-checker`-Scan über das ganze Monorepo)
+  erzwingen keine bestimmte Wahl (fast ausschließlich MIT/ISC/BSD/Apache-2.0,
+  ein paar LGPL-3.0 als reine npm-Abhängigkeit unproblematisch). Entscheidung:
+  **AGPL-3.0-or-later** — die Netzwerk-Klausel (§13) greift genau beim schon
+  geplanten Szenario "Verein A leiht den Server mit FairPOS an Verein B"
+  (reine Netzwerknutzung ohne klassische Weitergabe, wo GPL-3.0 nicht
+  greifen würde) und verhindert, dass ein kommerzieller Anbieter FairPOS als
+  geschlossene SaaS-Lösung anbietet. Copyright-Halter bewusst generisch:
+  "FairPOS Contributors". Kanonischer Lizenztext direkt von
+  `www.gnu.org/licenses/agpl-3.0.txt` übernommen (kein Fabrizieren von
+  Rechtstext) → `LICENSE` (Repo-Root). `license`-Feld in allen vier
+  `package.json`-Dateien ergänzt. Neue "Lizenz"-Sektion in `README.md`,
+  Kurznotiz in `CLAUDE.md`. Swissbit-TSE-SDK explizit als lizenzrechtlich
+  getrennt dokumentiert (eigener Swissbit-Vertrag, nie Teil des Repos).
+  Nebenbei: prominenter Hinweis auf die benötigte, separat zu beschaffende
+  Swissbit-SDK ergänzt — in `README.md` direkt am Anfang und am Kopf von
+  `docs/Installationsanleitung.md` (vor Abschnitt 1), damit das nicht erst
+  nach vielen Installationsschritten auffällt (Abschnitt 8.1 braucht es
+  zum Bauen von `tseCli`).
+
+- [Task] **#63** Admin-Startseite zu einem echten Dashboard ausbauen
+  Aktuell (`admin/+page.svelte`) nur ein Platzhalter ("Willkommen, {Name}.
+  Wähle links einen Bereich aus.") plus die schon umgesetzte Uhrzeit-
+  Abweichungs-Warnung aus Task #60. Idee: Übersicht über Fehler und
+  Systemzustand direkt beim Einloggen.
+
+  **Konzept geprüft und final (2026-08-29):** Fokus in diesem Schritt
+  bewusst nur auf Systemzustand/Fehler, keine Geschäftszahlen (Tagesumsatz
+  o.Ä.) — dafür eigene Folgeaufgabe, siehe Task #93. Datenquellen, alle
+  ohne neue Backend-Arbeit aus bestehenden Endpoints ableitbar:
+  - **TSE-Zustand** — letzter `system_log`-Eintrag der Kategorie
+    `tse_health` über `GET /api/admin/logs?category=tse_health`
+    (geschrieben von `tse/healthJob.ts`, dessen Kommentar ausdrücklich auf
+    dieses Dashboard verweist). **Bewusst nicht** `GET /api/admin/tse/status`
+    verwenden — der ruft laut eigenem Kommentar echte TSE-Hardware auf
+    ("deliberately not part of the cheap status endpoint") und darf nicht
+    bei jedem Dashboard-Aufruf laufen.
+  - **Offener TSE-Ausfall** — `GET /api/admin/reports/tse-outages`, oberste
+    Zeile mit `ended_at = null`.
+  - **Druckwarteschlange** — `GET /api/admin/print-jobs?status=failed`
+    (Anzahl), optional zusätzlich `pending`-Anzahl.
+  - **Ausstehende Tagesabschlüsse** — `GET /api/admin/closings/pending`
+    (bereits als globaler Banner in `admin/+layout.svelte` genutzt) — auf
+    dem Dashboard als eigene Karte mit mehr Detail (welche Kassen/Tage)
+    statt nur des knappen Banners, beide verlinken auf `/admin/registers`.
+  - **Aktive Sitzungen** — `GET /api/admin/sessions`, Anzahl.
+  - **Aktive IP-Sperren + Reset** (aus #90) — **Entscheidung (2026-08-29):**
+    zieht komplett von der Systemseite hierher um, inkl. Reset-Button
+    (`POST /api/admin/system/reset-ip-lockouts`) — nicht auf beiden Seiten,
+    nur noch auf dem Dashboard. `admin/settings/system/+page.svelte`
+    verliert diese Anzeige entsprechend.
+
+  **Layout-Idee:** oben eine Warnzeile (nur sichtbar, wenn tatsächlich etwas
+  ansteht: offener TSE-Ausfall, TSE laut letztem Health-Log ungesund,
+  fehlgeschlagene Druckaufträge, aktive IP-Sperren), darunter ruhige
+  Kennzahlen-Kacheln für den Rest. Jede Karte verlinkt auf die zugehörige
+  bestehende Seite statt Funktionalität zu duplizieren.
+
+  **Erledigt (2026-08-29):** `admin/+page.svelte` komplett neu — Warnzeile
+  (Zeitabweichung, offener TSE-Ausfall, aktive IP-Sperren inkl.
+  Reset-Button) plus vier Kennzahlen-Kacheln (TSE-Zustand aus dem letzten
+  `system_log`-Eintrag Kategorie `tse_health`, ausstehende Tagesabschlüsse
+  mit Registerliste, Druckwarteschlange fehlgeschlagen/wartend, aktive
+  Sitzungen). IP-Sperren-Anzeige + Reset-Button aus
+  `admin/settings/system/+page.svelte` entfernt (nur noch aufs Dashboard,
+  wie entschieden). Keine neuen Backend-Endpoints nötig — alles aus
+  bestehenden, günstigen Routen zusammengesetzt. Gegen die echte Dev-DB
+  verifiziert (offener TSE-Ausfall + mehrere ausstehende Tagesabschlüsse
+  lösten die Warnzustände korrekt aus). Geschäftszahlen bewusst nicht
+  enthalten, siehe Task #93.
+  **Nachbesserung (2026-08-29, Nutzerbericht "Einstellungen-Menü wird immer
+  größer"):** neuer Hauptmenüpunkt „Monitoring" in `admin/+layout.svelte`,
+  dahin verschoben: Aktive Sessions, Druckwarteschlange, Systemprotokoll
+  (vorher alle drei unter „Einstellungen").
+  **Nachbesserung (2026-08-29):** "Willkommen, {Name}."-Zeile wieder
+  entfernt (überflüssig neben den Kacheln). Außerdem eine echte Lücke
+  behoben: es gab keinen Weg zurück zur Kassenauswahl aus dem
+  Adminbereich heraus, nur "Abmelden" — neuer Button "Zur Kassenauswahl"
+  im `sidebar-footer` neben "Abmelden" (`goto('/register')`, keine
+  erneute Passwort-Eingabe nötig beim späteren Zurückwechseln, da
+  `admin_verified` an der Session hängt, nicht am Navigationsweg).
+  **Bug gefunden und behoben (Nutzerbericht: "IP-Sperren-Funktion
+  komplett aus der Admin-UI verschwunden"):** die IP-Sperren-Karte lebte
+  nur in der Warnzeile, die komplett ausgeblendet wird sobald keine
+  Sperre aktiv ist (Normalfall) — der Reset-Button war dadurch faktisch
+  unerreichbar, nicht nur unauffällig. Jetzt eigene, immer sichtbare
+  Kachel ("PIN-Login: IP-Sperren", ✓/⚠ + Reset-Button nur wenn nötig),
+  aus der Warnzeile entfernt, analog zu den anderen vier Kacheln.
+  **Bug gefunden und behoben (Nutzerbericht: "Druckwarteschlange zeigt
+  keine Fehler trotz fehlgeschlagenem Auftrag"):** `failed`-Status ist
+  laut `print-worker.ts` der *endgültige* Aufgabe-Zustand erst nach
+  MAX_ATTEMPTS — betrifft in der Praxis meist alte, nicht mehr relevante
+  Aufträge. Ein Auftrag, der gerade wirklich Probleme macht, steht
+  stattdessen weiterhin auf `pending` (wird noch automatisch erneut
+  versucht) mit gesetztem `error_message` aus dem letzten Versuch — genau
+  das ist jetzt das Kriterium (`status = 'pending' AND error_message IS
+  NOT NULL`) statt `status = 'failed'`. Variable umbenannt
+  (`failedPrintJobs` → `erroringPrintJobs`) und Kachel-Text angepasst
+  ("X mit Fehler" statt "X fehlgeschlagen"), um nicht weiter den Eindruck
+  zu erwecken, es ginge um den `failed`-Status.
+  **Nachbesserungen Systemeinstellungen (2026-08-29):** „Aktuelle
+  Browserzeit übernehmen" speichert jetzt direkt (statt nur das Feld zu
+  befüllen und ein zweites, zeitkritisches Klicken auf „Setzen" zu
+  verlangen — Nutzerbericht: "muss sehr schnell auf Setzen klicken, das
+  macht keinen Sinn"). Button-Beschriftung „Setzen"/„Setze…" bei
+  Systemzeit und Zeitzone zu „Speichern"/„Speichere…" vereinheitlicht.
+  **Erweiterung (2026-08-29, Nutzerwunsch):** zwei weitere Kacheln —
+  „Tagesumsatz" (alle heute gebuchten Einnahmen, beide Zahlungsarten,
+  Stornos/kostenfrei ausgeschlossen, neuer Endpoint
+  `GET /api/admin/reports/today-revenue` — kalendertäglich, bewusst nicht
+  veranstaltungsgebunden wie die übrigen Auswertungen, „heute" löst
+  Postgres selbst per `CURRENT_DATE` auf) und „Offene Rechnungen" (Summe
+  aller offenen Tisch-Positionen, wiederverwendet den bestehenden
+  `/open-positions`-Endpoint, keine Backend-Änderung nötig). Beide
+  verlinken auf die jeweils bestehende Auswertungsseite
+  (Soll-Kassenstand/Offene Positionen). Damit ist ein Teil von Task #93
+  bereits vorgezogen umgesetzt — dort verbleibt der Rest.
+  **Auto-Refresh (2026-08-29, Nutzerwunsch):** alle 30 Sekunden werden
+  sämtliche Kacheln im Hintergrund neu geladen (kein "Lade…"-Flackern,
+  nur die Werte aktualisieren sich still).
+  **Textkürzungen (2026-08-29, Nutzerwunsch):** `tse/healthJob.ts`s
+  Erfolgsmeldung „Automatischer Self-Test + Zeitsync erfolgreich." zu
+  „Selbsttest erfolgreich" gekürzt (wirkt sich auch auf den Log-Viewer
+  aus, da derselbe `system_log`-Eintrag beide Stellen speist) — die
+  Fehlermeldung mit der eingebetteten TSE-Fehlerursache blieb bewusst
+  unverändert. Kachel-Detailtext „Angemeldete Geräte (Kasse +
+  Verwaltung)" zu „Derzeit angemeldete Geräte" gekürzt.
+
+- [Task] **#64** System-Health-Check (Sammlung technischer Prüfungen, automatisch beim Start)
+  Eine Sammelstelle für technische Systemprüfungen, unabhängig von
+  Business-Zuständen (die deckt eher Task #63 ab) — z.B. genug freier
+  Festplattenspeicher auf allen Volumes, Datenbank fehlerfrei (keine
+  korrupten Tabellen/Indizes etc.). Verhältnis zu Task #63 (Dashboard) und
+  `scripts/install/smoke-test.sh` (einmaliger Check bei/nach der
+  Installation) noch zu klären — vermutlich ergänzen sich alle drei:
+  Health-Check als wiederverwendbare Prüf-Logik, die sowohl vom
+  Smoke-Test-Skript als auch von einer Dashboard-Kachel (#63) konsumiert
+  werden kann. Noch nicht analysiert, welche konkreten Prüfungen sinnvoll
+  und mit vertretbarem Aufwand umsetzbar sind (z.B. Festplattenspeicher via
+  `statvfs`/`df`, DB-Integrität via `pg_catalog`-Abfragen oder `VACUUM`/
+  `ANALYZE`-Fehlerstatus).
+
+  **Ergänzt (2026-08-24):**
+  - **Task #58 ist Teil dieses Tasks:** der `maintainTse()`-Aufruf
+    (Self-Test + Zeitsync der TSE, siehe #58) läuft als einer der
+    Health-Checks hier mit, nicht als eigenständiger Mechanismus.
+  - Die Checks sollen **automatisch beim Systemstart** laufen (Backend-Boot,
+    analog zu `runMigrations()` in `index.ts`), nicht nur auf Abruf.
+  - `maintainTse()` zusätzlich **manuell auslösbar** im TSE-Bereich der
+    Admin-UI (Systemeinstellungen → System, künftig ggf. eigene Seite siehe
+    Task #65) — eigener Button neben "TSE testen", nicht nur automatisch
+    beim Start.
+  - ~~Ergebnisse jedes Laufs in ein Protokoll schreiben (Format/Ablageort
+    noch offen — eigene DB-Tabelle vs. Logdatei; ggf. an das bestehende
+    `tse_outage`-Muster anlehnen, das für TSE-Ausfälle schon eine Art
+    Protokollierung macht).~~ **Won't do (Nutzerentscheidung 2026-09-06).**
+  - Fehlerhafte Checks sollen sich im Dashboard (Task #63) zeigen.
+
+  **Teilweise vorgezogen (2026-08-26):** Der manuelle Button (dritter Punkt
+  oben) wurde live beim ersten Hardware-Test dringend — eine frisch
+  eingerichtete TSE hatte nie eine gültige Uhrzeit, jede Signierung schlug
+  mit `WORM_ERROR_NO_TIME_SET` fehl (siehe D-038-Fortsetzung).
+  `POST /api/admin/tse/maintain` + „Zeit synchronisieren"-Button in
+  `settings/tse/+page.svelte` sind fertig, getestet und **live bestätigt**
+  (2026-08-26: TSE signiert seitdem fehlerfrei in Bonkasse und
+  Bedienungskasse). **Weiterhin offen:**
+  automatischer Aufruf beim Backend-Start, Protokollierung der Läufe,
+  Anzeige fehlerhafter Checks im Dashboard (#63) — der Rest dieses Tasks.
+
+  **Verhalten beim automatischen Start-Check präzisiert (2026-08-26):**
+  Schlägt der automatische `maintainTse()`-Aufruf beim Backend-Start fehl
+  (TSE nicht erreichbar/noch nicht initialisiert), soll das **nicht** den
+  Start blockieren oder als harter Fehler erscheinen — stattdessen eine
+  Meldung „TSE noch initialisiert" im Dashboard (Task #63), die der Admin
+  sieht und daraufhin den Zeitsync manuell nachholt (Button existiert
+  bereits, siehe oben). Deckt sich mit dem bereits bestehenden
+  AEAO-zu-§146a-Nr.1.14.3-Prinzip in `tse/signing.ts` — Betrieb ohne
+  funktionierende TSE ist zulässig, muss nur sichtbar/behebbar sein, nicht
+  den Betrieb blockieren.
+
+  **Lücke gefunden (2026-08-26):** ein "nur beim Backend-Start"-Check deckt
+  nicht den Fall ab, dass die TSE danach zwischenzeitlich die Verbindung
+  verliert (USB-Stick gezogen/wackelt, kurzer Stromausfall o.ä.) — nach dem
+  erneuten Verbinden braucht sie vermutlich wieder Self-Test + Zeitsync,
+  bevor sie erneut signieren kann (noch nicht verifiziert, ob das SDK das
+  tatsächlich so verlangt, aber plausibel angesichts `WORM_ERROR_NO_TIME_SET`
+  bei der ursprünglichen frischen Einrichtung). Ein einmaliger Start-Check
+  bildet das nicht ab. **Nutzervorschlag: Konzept nochmal grundsätzlich
+  überdenken** — statt (oder zusätzlich zu) dem Start-Check ein
+  wiederkehrender Hintergrund-Job, der die TSE regelmäßig prüft und bei
+  Bedarf automatisch nachsynchronisiert, statt nur einmal beim Boot und
+  sonst rein manuell über den Button.
+
+  **Präzisiert nach echtem Test auf der Hardware (2026-08-26):** Nutzer hat
+  den Self-Test direkt ausprobiert — läuft in der Praxis sehr schnell und
+  ressourcenarm, blockiert die TSE nur kurz. Vorschlag für den
+  Hintergrund-Job: nicht blind im festen Intervall `maintainTse()` (voller
+  Self-Test + Zeitsync) aufrufen, sondern zweistufig arbeiten — zyklisch nur
+  den günstigen `info`-Aufruf (`getTseInfo()`) machen, dessen Ergebnis
+  bereits `hasValidTime`/`hasPassedSelfTest` enthält (siehe `TseInfo` in
+  `tse/types.ts`, auch schon in der Status-Karte der Admin-UI sichtbar), und
+  den vollen, aufwendigeren `maintainTse()`-Aufruf nur auslösen, wenn dieser
+  günstige Check tatsächlich Bedarf anzeigt. Noch zu klären: sinnvolles
+  Polling-Intervall für den `info`-Check, und ob `hasPassedSelfTest`
+  überhaupt zwischen zwei erfolgreichen `maintain`-Läufen wieder auf
+  „nicht bestanden" zurückfällt (z. B. nach einem Verbindungsverlust) oder
+  ob dafür ein anderes Signal nötig ist.
+
+  **Nutzerentscheidungen (2026-08-26):**
+  - Umfang nur TSE — Festplatte/DB-Integrität wird eigener, manuell
+    auslösbarer Task (noch nicht als eigener Eintrag angelegt).
+  - Polling-Intervall: jede volle Minute.
+  - `hasPassedSelfTest`/`hasValidTime` fallen nach Verbindungsverlust
+    tatsächlich zurück auf „nicht bestanden" — live verifiziert.
+  - Protokollierung in eigener DB-Tabelle, bewusst generisch angelegt
+    (`created_at`, `severity`, `category`, `message`), damit künftige
+    weitere Prüfungen dieselbe Tabelle mitnutzen können.
+  - Log-Viewer als eigenständiges neues Modul in der Admin-UI, unabhängig
+    von Task #63.
+
+  **Erledigt (2026-08-26):**
+  - Migration `0009_system_log.sql` (Tabelle `system_log`).
+  - `system/log.ts` (`logSystemEvent()`).
+  - `tse/healthJob.ts`: zweistufiger Hintergrund-Job (`tick()`, `setInterval`
+    alle 60s über `startTseHealthJob()`, aufgerufen aus `index.ts` nach
+    `startPrintWorker()`) — pollt den günstigen `info`-Aufruf, löst
+    `maintainTse()` nur bei tatsächlichem Bedarf aus. Loggt nur bei
+    Zustandswechsel (gesund→ungesund, ungesund→gesund, oder ein
+    `maintain`-Versuch), nicht bei jedem Tick.
+  - Sowohl der automatische Hintergrund-Job als auch der manuelle „Zeit
+    synchronisieren"-Button (`POST /api/admin/tse/maintain`) erzeugen bei
+    Erfolg einen INFO-Log-Eintrag (Nutzervorgabe).
+  - Neues Admin-Modul „Systemprotokoll" (`admin/settings/logs/+page.svelte`,
+    Backend `GET /api/admin/logs` + `/categories` in `routes/admin/logs.ts`)
+    mit Schweregrad-/Kategorie-Filter, automatischer Aktualisierung alle 10s,
+    auf 500 neueste Einträge begrenzt. Nav-Punkt unter „Einstellungen".
+  - Unit-/Integrationstests für `healthJob.ts`, `system/log.ts` und die
+    neuen/geänderten Routen (`tse.ts`, `logs.ts`) — alle grün, ebenso
+    Typecheck und Build für Backend und Frontend.
+  **Live bestätigt (2026-08-26):** Systemprotokoll-Seite öffnet und zeigt
+  Einträge; Verbindungsverlust/-wiederherstellung wird korrekt geloggt;
+  manuelles „Zeit synchronisieren" erzeugt den INFO-Eintrag; Filter
+  funktionieren. Sofort-Tick beim Backend-Start läuft wie vorgesehen — bei
+  bereits gesunder TSE bewusst **ohne** sichtbaren Log-Eintrag (nur
+  Zustandswechsel werden geloggt), das anfangs wie eine verzögerte erste
+  Prüfung wirkte, war aber erwartetes Verhalten und keine Verzögerung.
+
+  **Erledigt (2026-08-29):** Anzeige fehlerhafter Checks im Dashboard —
+  die „TSE-Zustand"-Kachel auf `admin/+page.svelte` (Task #63) liest genau
+  den letzten `system_log`-Eintrag der Kategorie `tse_health`. Damit sind
+  alle drei ursprünglich offenen Punkte abgedeckt; der einzig verbleibende
+  Teil des ursprünglichen Umfangs (Festplatten-/DB-Integritätscheck) war
+  bereits vorher bewusst als eigener Task #87 abgetrennt.
+
+- [Task] **#65** TSE-Einstellungen auf eine eigene Settings-Seite auslagern
+  **Erledigt (2026-08-24):** Neue Seite `admin/settings/tse/+page.svelte`
+  mit den beiden Karten „TSE-Verbindung" und „TSE-Status" (inkl. eigenem
+  Speichern-Button, der nur noch `tse_mount_point`/`tse_client_id`/
+  `tse_time_admin_pin` sendet — das Backend-PUT war schon immer ein
+  partielles Upsert, kein Problem). `admin/settings/system/+page.svelte`
+  bereinigt (nur noch Seriennummer/Zeitzone/Server-Adresse/Backup, eigener
+  Speichern-Button nur für `server_address`). Neuer Nav-Punkt „TSE" in
+  `admin/+layout.svelte`. Der CSS-Fix aus Task #59 ist mit umgezogen.
+
+- [Task] **#66** SSL/HTTPS-Einrichtung dokumentieren
+  Die Installationsanleitung deckt aktuell nur reines HTTP ab
+  (`http://<server-ip>:3000`) — genau das hat D-030 (kaputte
+  Kopieren-Buttons, weil `navigator.clipboard` einen Secure Context
+  braucht) live zutage gefördert. Ein LAN-Server ohne öffentlichen
+  DNS-Namen bekommt kein Let's-Encrypt-Zertifikat — vermutlich
+  selbstsigniertes Zertifikat oder eine lokale CA als praktikabler Weg für
+  dieses Deployment-Modell. Zu klären/dokumentieren: Reverse-Proxy (z.B.
+  nginx/Caddy) vor dem Node-Prozess vs. TLS direkt in Fastify terminieren;
+  wie Nutzer im LAN dem selbstsignierten Zertifikat vertrauen (Browser-
+  Warnung, CA-Import); ob/wie sich das mit der bestehenden
+  „kein Docker, alles nativ"-Architekturentscheidung (`docs/SETUP.md` →
+  „Production-Deployment") verträgt. Ergebnis gehört in
+  `docs/Installationsanleitung.md` als neuer Abschnitt.
+
+  **Bevorzugtes Konzept, noch nicht final entschieden (2026-08-24):**
+  Eigene lokale CA (z.B. via `mkcert`) statt Let's Encrypt (keine Domain
+  nötig, kein Internet-Zwang — passt zum Offline-fähigen Charakter von
+  FairPOS) und statt reinem Klick-weg-Selbstsigniert (schlechte UX, trainiert
+  Nutzer:innen darauf, Sicherheitswarnungen wegzuklicken). Verteilung des
+  öffentlichen CA-Zertifikats (nicht der private Key!) über einen bewusst
+  **unverschlüsselten** Download-Endpunkt (z.B. `http://<server-ip>/ca.crt`
+  — muss HTTP sein, sonst Henne-Ei-Problem: ein Gerät ohne CA-Vertrauen kann
+  die Datei nicht warnungsfrei über HTTPS laden), plus Onboarding-Seite mit
+  QR-Code + Schritt-für-Schritt-Anleitung je Plattform (Android/iOS/Windows/
+  macOS).
+  **Offene Hürde:** Das Installieren eines CA-Zertifikats in den
+  Geräte-Trust-Store braucht auf den meisten Plattformen Admin-/Geräte-
+  Besitzrechte — bei privaten/dienstlich verwalteten Geräten von Helfer:innen
+  ggf. nicht ohne Weiteres möglich. Kein Web-Standard kann das automatisieren
+  (wäre sonst ein Sicherheitsloch). Muss bei der endgültigen Entscheidung
+  berücksichtigt werden — evtl. bleibt der einfache Klick-weg-Selbstsignierte
+  Weg für Geräte ohne Admin-Zugriff als Fallback nötig.
+
+  **Ergänzung/Architektur-Konzept (2026-08-29):** Nutzervorschlag — ein
+  Reverse-Proxy (z. B. Apache, nur als Beispiel genannt, kein fester
+  Produktentscheid) terminiert TLS, nicht Fastify selbst. Der App-Server
+  ist von außen **gar nicht** direkt erreichbar, ausschließlich über den
+  Reverse-Proxy. Upload-Funktion im Adminbereich (Systemeinstellungen) für
+  das Zertifikat; landet an der vom Reverse-Proxy referenzierten Stelle,
+  anschließend Neustart von dessen Webserver-Dienst — analog zum
+  bestehenden Muster bei anderen privilegierten Aktionen
+  (`system/time.ts`/`system/shutdown.ts`: sudoers-Regel + gezielter, eng
+  begrenzter Befehl statt allgemeiner Rechte).
+
+  **Eigentliches Ziel des Uploads, präzisiert:** nicht primär für
+  selbstsignierte/eigene-CA-Zertifikate gedacht (die dürfen weiterhin
+  hochgeladen werden, wer will) — Kernidee ist, den Bedienungen mit
+  eigenen Geräten das Installieren eines eigenen CA-Zertifikats komplett zu
+  **ersparen**. Weg dafür: **Split-Horizon-/Split-Brain-DNS mit einer
+  echten, öffentlich validierten Domain — siehe Task #92** (dort das
+  DNS-Masquerading-Konzept inkl. der dafür nötigen Backend-Einstellungen).
+  Die Upload-Funktion hier ist dabei nur der Verteilweg für das
+  (typischerweise alle ~90 Tage erneuerte) Zertifikat, unabhängig davon, ob
+  es über Task #92s DNS-01-Weg oder eine lokale CA entstand.
+
+  **Noch zu klären (dieser Task, unabhängig von #92):** welcher
+  Reverse-Proxy konkret (Apache/nginx/Caddy/…), Zertifikatsformat/
+  -validierung beim Upload (PEM? Kette inkl. Intermediate-Zertifikat
+  nötig?), fester Dateipfad, den der Upload überschreibt, vs. Config-Datei
+  anpassen, genaue sudoers-Regel für den Neustart.
+
+  **Konzept im Detail besprochen und entschieden (2026-08-29):** nginx
+  (Standard-Ubuntu-Paket, gegen Caddy/Apache abgewogen — Caddys
+  automatisches ACME-HTTPS bringt hier nichts, da FairPOS für den
+  lokalen-CA-Weg bewusst kein Let's Encrypt nutzt). Umfang dieses Tasks:
+  Proxy-Infrastruktur **inklusive** Zertifikat-Upload + Neustart-Button
+  (nicht getrennt). Zwei Dateifelder (Zertifikat, privater Schlüssel),
+  keine separate Kettendatei nötig (eine bereits verkettete Fullchain-PEM
+  funktioniert als "Zertifikat"-Feld genauso). `server_name` bleibt
+  dauerhaft Catch-all (`_`) — nur ein einziger vHost, eine Einschränkung
+  brächte nichts. Bei der Gelegenheit einen echten, bisher unbemerkten
+  Fund korrigiert: `AGENTS.md` (vormals `CLAUDE.md`, siehe unten)
+  behauptete SSE als Architekturentscheidung — im Code gibt es dafür
+  **keine einzige Verwendung**, alle Echtzeit-Updates laufen über simples
+  Client-Polling. Korrigiert, kein SSE-Timeout-Tuning in der
+  nginx-Config nötig.
+
+  **Erledigt (2026-08-29):**
+  - **Netzwerk:** neue `HOST`-Env-Variable (`config.ts`, Default
+    `0.0.0.0` — bestehende Installationen ohne Proxy unverändert
+    funktionsfähig), `index.ts` nutzt sie statt des bisher fest
+    codierten `'0.0.0.0'`. Installationsanleitung empfiehlt
+    `HOST=127.0.0.1`, sobald nginx davor läuft, damit der App-Server
+    nicht mehr parallel unverschlüsselt erreichbar ist.
+  - **Validierung (`system/tlsCert.ts`, `validateCertKeyPair`):** rein
+    in-memory, vor jeder privilegierten Aktion — Node-`crypto`
+    (`X509Certificate`, `createPrivateKey`, `checkPrivateKey()`) prüft
+    Format, dass Schlüssel zum Zertifikat passt, und dass es noch nicht
+    abgelaufen ist. Klare deutsche Fehlermeldungen statt roher
+    OpenSSL-Fehler.
+  - **Installation (`installCert`):** schreibt validiertes Paar in ein
+    für `fairpos` beschreibbares Staging-Verzeichnis
+    (`config.tlsStagingDir`), ruft dann ein **parameterloses**
+    Sudo-Skript auf (strenger als das `timedatectl set-time *`-Muster
+    aus Abschnitt 13 — kein Wildcard nötig, da immer derselbe feste
+    Pfad). Das Skript (Inhalt in
+    `docs/Installationsanleitung.md` Abschnitt 14.4, nicht als
+    Repo-Datei — analog zum bestehenden Sudoers-Muster) sichert das
+    alte Zertifikat, installiert das neue, prüft mit `nginx -t`, rollt
+    bei Fehler automatisch zurück (Proxy bleibt so immer erreichbar),
+    lädt sonst neu.
+  - **Anzeige (`readInstalledCertInfo`):** liest das aktuell installierte
+    (world-readable, `0644`) Zertifikat direkt von der Festplatte,
+    keine separate DB-Speicherung — keine Drift-Gefahr zwischen
+    Anzeige und Realität.
+  - **Backend-Route** `GET`/`POST /api/admin/tls-cert`
+    (`routes/admin/tlsCert.ts`), reines JSON (kein Multipart — PEM ist
+    Text, kein Binärformat, spart eine Anpassung des globalen
+    `@fastify/multipart`-`files: 1`-Limits).
+  - **Neue eigenständige Admin-Seite** „SSL-Zertifikat" unter
+    Einstellungen (`admin/settings/tls-cert/+page.svelte`) — bewusst
+    nicht in „System"/„TSE" integriert (Nutzervorgabe: bestehende Seiten
+    sollen nicht zu umfangreich werden). Zeigt aktuelles Zertifikat
+    (Aussteller, gültig von/bis) + Upload-Formular mit
+    Sicherheitsabfrage vor dem Ersetzen.
+  - **Doku:** `docs/Installationsanleitung.md` Abschnitt 14
+    (nginx-Installation, Platzhalter-Zertifikat, Config, Sudoers-Regel)
+    — als "optional, aber empfohlen" eingestuft wie Abschnitt 13, mit
+    Copy-Paste-Heredocs statt einem neuen nummerierten Skript unter
+    `scripts/install/`.
+  - Unit-Tests (`system/tlsCert.test.ts`, 5 Tests, Fixtures in
+    `test/fixtures/testCert.ts`: gültiges Paar, kaputtes
+    Zertifikat/Schlüssel, nicht-passender Schlüssel, abgelaufen via
+    `vi.setSystemTime`) und Integrationstests
+    (`routes/admin/tlsCert.integration.test.ts`, 7 Tests, Sudo-Stub-Muster
+    wie bei Task #60/#61). Backend-Unit (274/274), Backend-Integration,
+    Frontend-Unit (70/70), Typecheck grün.
+
+  **Nebenbei erledigt (im Zuge der Konzept-Diskussion):** `CLAUDE.md` zu
+  `AGENTS.md` umbenannt (Toolneutralität, Nutzerwunsch) — `git mv` erhält
+  die Historie. `CLAUDE.md` existiert weiterhin als winzige Datei mit
+  Claude Codes eigenem, dokumentiert bestätigtem `@AGENTS.md`-Import
+  (kein Symlink — wäre auf dem WSL/Windows-Setup fragil gewesen).
+  Aktive Code-Referenz in `auth/rateLimit.ts` mitaktualisiert; historische
+  Verweise in `TASKS.md`/`DANGER.md` bewusst unverändert (datierte
+  Journal-Einträge, kein aktueller Zustand).
+
+  **Weiterhin offen (siehe Task #92):** lokale CA + Onboarding-Seite mit
+  QR-Code, Split-Horizon-DNS. Der Upload hier akzeptiert schon jetzt jedes
+  beliebige Zertifikat, unabhängig davon, wie es entstanden ist.
+
+  **Live bestätigt (2026-08-30):** kompletter Abschnitt 14 auf dem echten
+  Produktionsserver durchgeführt — nginx installiert, Platzhalter-Zertifikat
+  erzeugt, Proxy funktionsfähig (`https://<server-ip>` erreichbar), `HOST=
+  127.0.0.1` gesetzt (Port 3000 danach nicht mehr direkt erreichbar),
+  Sudoers-Regel + Staging-Verzeichnis angelegt, echtes Zertifikat über die
+  Admin-UI hochgeladen und installiert.
+  **Dabei gefunden und behoben:** der neue `HOST`-Umgebungsvariable-Schritt
+  wirkte zunächst nicht — Ursache war ein vergessener `git push` vor dem
+  Server-seitigen `update.sh` (Server zog dadurch keine neuen Commits,
+  lief weiter mit dem alten, `HOST` nicht unterstützenden Build). Kein
+  FairPOS-Bug, aber als Lehre für die Doku aufgenommen: Abschnitt 14
+  weist jetzt explizit darauf hin, vor dem `HOST`-Schritt Abschnitt 12
+  (Updates) durchlaufen zu haben.
+  **Nutzerbericht behoben:** copy-paste-anfälliger Codeblock in Abschnitt
+  14.3 (`sudo -u fairpos bash` … `exit` … `sudo systemctl restart
+  fairpos` in einem zusammenhängenden Block) — bei Shell-Wechsel mitten im
+  Block funktioniert Copy-Paste nicht zuverlässig. In drei sichtbar
+  getrennte Blöcke aufgeteilt, mit explizitem Hinweis im Text.
+
+- [Task] **#67** Produktbeschreibung + Haftungsausschluss (README/Repo-weit)
+  **Erledigt (2026-08-24):** `README.md` um eine ausführlichere
+  Produktbeschreibung (was FairPOS ist, für wen, welches Problem es löst,
+  Kernfunktionen) sowie eine neue "Haftungsausschluss"-Sektion ergänzt —
+  Nutzung auf eigenes Risiko, keine Garantie der Konformität mit KassenSichV/
+  GoBD/AO (mit Verweis auf die entsprechenden Klauseln in `LICENSE`
+  Abschnitte 15/16), aber die Software orientiert sich generell an
+  deutschem Recht und versucht ernsthaft, die einschlägigen Vorgaben
+  abzubilden — für die ehrliche Detailaufstellung, was konkret umgesetzt
+  wurde und wo Vereinfachungen getroffen wurden, Verweis auf
+  `docs/Rechtliche-Anforderungen.md` (dort schon vorhanden, kein zusätzlicher
+  Verweis in der Datei selbst nötig, da sie bereits das maßgebliche Dokument
+  ist, auf das README verweist).
+
+- [Task] **#68** npm-Vulnerabilities + veraltete Pakete aufräumen
+  Aufgekommen beim Server-Update (2026-08-25): `npm ci` meldet 24
+  Vulnerabilities (1 niedrig, 13 mittel, 10 hoch) sowie mehrere
+  deprecated-Warnungen (`inflight`, `rimraf@2`, `lodash.isequal`,
+  `glob@7/10/11`, `whatwg-encoding`, `fstream`, `uuid@8/10`). Nicht blind
+  `npm audit fix --force` verwenden — kann unkontrolliert Major-Versionen
+  ziehen. Stattdessen bei der Umsetzung: `npm audit` im Detail durchgehen,
+  je Fund unterscheiden zwischen (a) Produktions-Abhängigkeiten (laufen im
+  Backend/Frontend mit) und (b) reinem Build-/Test-Tooling (`vite`,
+  `svelte-kit`, `testcontainers`, `vitest` — nie in Produktion aktiv, geringere
+  Priorität), gezielt einzeln aktualisieren statt pauschal, danach volle
+  Testsuite + Build gegenprüfen. Bei kassenrelevanter Software lieber
+  gründlich als schnell.
+  **Erledigt (2026-08-25):** Alle 24 Findings einzeln nachverfolgt (installierte
+  Version, tatsächliche Codenutzung, Upgrade-Pfad, Breaking Changes) und in
+  sechs Kategorien zerlegt:
+  - **Gefahrlos, umgesetzt:** `npm audit fix` (ohne `--force`) — behebt 9
+    Findings rein innerhalb bestehender SemVer-Ranges (`@sveltejs/kit`
+    2.67.0→2.70.3, `brace-expansion`, `concurrently` 9.2.3→9.2.4, `fast-uri`,
+    `find-my-way`, `nanoid`, `postcss`, `protobufjs`, `shell-quote`).
+  - **Produktions-Abhängigkeit, Major-Bump, verifiziert unschädlich:**
+    `@fastify/static` 8.3.0→10.1.3 (high, Path-Traversal/Auth-Bypass). Einzige
+    dokumentierte Breaking Change zwischen 8→10 ist die `setHeaders`-Signatur
+    (Node-`Response`→`FastifyReply`) — `app.ts` nutzt `setHeaders` nirgends
+    (nur `root`/`prefix`), also gezielt gezogen.
+  - Danach volle Testsuite + Build gegengeprüft: Backend-Unit (235/235),
+    Frontend-Unit (49/49), Backend-Integration inkl. Static-File-Pfad
+    (144/144), `npm run build` — alles grün, keine Regression.
+  - **Test-only Tooling mit Node-Versionskonflikt, Framework-Migrationskette
+    ohne isolierten Fix:** ausgelagert in eigene Tasks #70 (testcontainers
+    12.x verlangt Node ≥22.22) und #71 (Svelte-5-Migration nötig, um
+    vite/esbuild/svelte-hmr/vitefu zu fixen).
+  - **Kein Upstream-Fix verfügbar, als Restrisiko dokumentiert:** siehe
+    D-033 (exceljs/uuid) und D-034 (cookie via SvelteKit).
+  16 der ursprünglich 24 Findings bleiben offen — vollständig aufgeschlüsselt
+  in #70/#71, kein Fund wurde stillschweigend fallengelassen.
+
+- [Task] **#69** Wording „Kategorie" → „Artikelgruppe" vereinheitlichen
+  **Erledigt (2026-08-25):** Gefunden beim Live-Testen — UI/Fehlermeldungen
+  benutzten uneinheitlich „Kategorie"/„Artikelkategorie"/„Artikelgruppe" für
+  dasselbe (`article_category`). Alle Vorkommen auf „Artikelgruppe"
+  vereinheitlicht: `articles/+page.svelte`, `settings/categories/+page.svelte`
+  (inkl. Seitentitel, Modal-Titel, Lösch-Bestätigung), `routes/admin/articles.ts`,
+  `routes/admin/categories.ts` (alle Fehlermeldungen), `docs/Anforderungen.md`.
+  `docs/Dictionary.md` als maßgebliche Referenz korrigiert (führte bisher
+  „Artikelgruppe / Artikelkategorie" als gleichwertige Alternativen —
+  jetzt eindeutig „Artikelgruppe" mit Hinweis auf die frühere
+  Uneinheitlichkeit). `docs/Rechtliche-Anforderungen.md:67` bewusst
+  unverändert gelassen — dortiges „Kategorie" bezeichnet etwas anderes
+  (Gruppierung der ELSTER-Meldepflichtangaben, nicht `article_category`).
+
+- [Task] **#70** Test-Tooling: `testcontainers` auf 12.x heben (Node-≥22.22-Frage klären)
+  Bei der Analyse zu Task #68 gefunden: `testcontainers`/
+  `@testcontainers/postgresql` 10.28.0→12.0.4 würde die moderate/high
+  Vulnerabilities in `dockerode`/`undici` beheben (reine `devDependencies`,
+  laufen nie in Produktion). Zwei Breaking Changes recherchiert: (a) Node-
+  Mindestversion springt in v12 auf `>=22.22` — aktuell läuft überall (lokale
+  Dev-Maschinen, vermutlich CI) Node 20.x, genau die auch in
+  `docs/Installationsanleitung.md` für die **Produktion** dokumentierte
+  Version (Produktion selbst bräuchte kein Node 22, `testcontainers` läuft
+  dort nie — aber jede Maschine, die `npm run test:integration` ausführen
+  will, müsste umsteigen). (b) Default-Wartestrategie für Container ändert
+  sich (Docker-Healthcheck statt reinem Port-Listening) — gegen
+  `src/test/global-setup.ts` zu prüfen. Bewusst nicht in #68 mitgezogen, da
+  die Node-Versionsfrage das ganze Team/CI betrifft und eine eigene
+  Entscheidung verdient.
+  **Erledigt (2026-08-25):** Beide Sorgen aus der #68-Analyse vertieft geprüft:
+  - **Wartestrategie:** Quellcode von `@testcontainers/postgresql@10.28.0` vs.
+    `12.0.4` direkt verglichen (`npm pack` + `grep`) — beide Versionen setzen in
+    `PostgreSqlContainer` identisch `Wait.forAll([Wait.forHealthCheck(),
+    Wait.forListeningPorts()])` und legen bei Bedarf selbst einen
+    `pg_isready`-Healthcheck an. Die in den Release Notes erwähnte
+    Default-Änderung betrifft nur `GenericContainer`/`DockerComposeEnvironment`
+    ohne explizite Strategie — für uns folgenlos, da `global-setup.ts`
+    ausschließlich `PostgreSqlContainer` nutzt.
+  - **Node-Version:** präziser als angenommen — `testcontainers@12.0.4` selbst
+    hat kein `engines`-Feld; erst `@testcontainers/postgresql`s `^12.0.4`-Range
+    löst standardmäßig auf `12.1.0`+ auf, die `>=22.22` deklarieren. Da
+    `engine-strict` in diesem Repo nicht gesetzt ist (npm-Default `false`),
+    wäre das nur eine `EBADENGINE`-Warnung, kein Install-Fehler. Kein
+    CI-Workflow im Repo gefunden (`.github/workflows` existiert nicht) —
+    „betrifft CI" aus der ursprünglichen Formulierung trifft nicht zu, nur
+    lokale Dev-Maschinen sind betroffen.
+  - **Größerer, unabhängiger Fund:** Node 20 ("Iron") ist laut offiziellem
+    Node-Release-Schedule bereits seit 2026-04-30 EOL — keine
+    Security-Patches vom Node-Projekt mehr, betrifft direkt die dokumentierte
+    Produktionsinstallation (`setup_20.x`). Dem Nutzer vorgelegt: Node-Baseline
+    komplett anheben statt nur testcontainers isoliert zu betrachten.
+    Entscheidung: **Node 24 LTS** (aktuelle Active-LTS seit 2025-10-28, Support
+    bis 2028-04-30) statt Node 22 (bereits in reiner Maintenance-Phase).
+  - Umgesetzt: `testcontainers`/`@testcontainers/postgresql` auf `^12.0.4`
+    (`packages/backend/package.json`); `engines.node` in `package.json`
+    (Repo-Root) auf `>=24.0.0`; `docs/Installationsanleitung.md` Abschnitt 3
+    auf `setup_24.x` umgestellt. Dev-Rechner selbst per NodeSource-Befehl auf
+    Node 24.19.0 gehoben (vom Nutzer ausgeführt, da diese Session keine
+    `sudo`-Rechte hat) — danach `npm ci` + volle Suite unter echtem Node 24
+    gegengeprüft: Build ✓, Backend-Unit 235/235 ✓, Frontend-Unit 49/49 ✓,
+    Backend-Integration 144/144 ✓ (testcontainers 12.x + Postgres-Container
+    real getestet, keine `EBADENGINE`-Warnung mehr). npm-Vulnerabilities damit
+    von 16 auf 12 gesunken (nur noch Kategorie D/E/F aus der #68-Analyse
+    offen, siehe #71).
+  **Noch offen:** die Produktions-Node-Version muss noch manuell auf dem
+  echten Server umgestellt werden (SSH-Zugriff nötig, hat niemand aus dieser
+  Session heraus — gleiches Muster wie die `sudoers`-Einrichtung bei #60/#61).
+
+- [Task] **#71** Frontend: Svelte-4→5-Migration (einziger Weg, um vite/esbuild/svelte-hmr/vitefu-CVEs zu schließen)
+  Bei der Analyse zu Task #68 gefunden: die Vulnerabilities in `vite`,
+  `esbuild` (transitiv über vite), `svelte-hmr`, `vitefu` und
+  `@sveltejs/vite-plugin-svelte` selbst hängen zusammen — per
+  `npm view <pkg> peerDependencies` verifiziert, dass bereits die niedrigste
+  Version von `@sveltejs/vite-plugin-svelte`, die den Fix enthält (5.0.0),
+  `svelte: ^5.0.0` verlangt. Das Projekt läuft aber auf Svelte 4.2.20. Diese
+  CVEs lassen sich also nicht isoliert patchen, nur über eine vollständige
+  Migration (Runes-Umstellung, kein reines Dependency-Update). Praktisches
+  Risiko niedriger als der Schweregrad vermuten lässt: Frontend läuft im
+  SPA-Modus (`adapter-static`, siehe `CLAUDE.md`) — die SSR-bezogenen
+  Svelte-CVEs (XSS via SSR-Spread-Attribute etc.) greifen nur bei aktivem
+  SSR, nicht im ausgelieferten statischen Build; die Vite/esbuild-CVEs
+  betreffen primär den Dev-Server. Bewusst nicht in #68 mitgezogen — eigene
+  Framework-Migration mit vollem Regressionstest, keine Bereinigung.
+  **Erledigt (2026-08-25):** Auf Nutzerentscheidung hin vollständig auf
+  Runes migriert statt im Svelte-5-Legacy-Kompatibilitätsmodus zu bleiben —
+  Begründung: nichts ist live, die volle QA-Runde ist wegen des
+  Dependency-Bumps ohnehin fällig, ein zweiter Migrationsaufwand später
+  (Legacy-Modus ist als Übergangshilfe angekündigt, keine Dauerlösung)
+  wäre teurer als jetzt einmal gründlich.
+  - Toolchain gehoben: `svelte@5.56.10`, `@sveltejs/vite-plugin-svelte@7.3.0`,
+    `vite@8.2.2`, `svelte-check@4.7.6` (`packages/frontend/package.json`).
+    Erster gezielter Install ließ eine doppelte alte/neue Paketkopie im Baum
+    stehen (npm hatte den bestehenden Lockfile-Graphen nur erweitert statt
+    neu aufgelöst) — behoben durch vollständiges Neuaufsetzen
+    (`rm -rf node_modules package-lock.json && npm install`), danach
+    durchgängig eine Version pro Paket.
+  - Migration mit dem offiziellen Codemod (`npx sv migrate svelte-5`, v1.10.3)
+    über alle 36 `.svelte`-Dateien laufen lassen. Das Tool ist rein interaktiv
+    (kein Non-Interactive-Flag) und reagiert nicht auf simples Stdin-Piping
+    (Checkbox-Prompts brauchen ein echtes TTY) — mit einem kleinen
+    `pexpect`-Skript (isolierte venv) über eine echte Pseudo-TTY gesteuert.
+  - Codemod-Ergebnis stichprobenartig geprüft (`Modal.svelte`,
+    `EventSelector.svelte`, Saalplan-Editor, Kassieren-Seite): durchgängig
+    korrekte, mechanische Übersetzung — `export let` → `$props()`
+    (inkl. korrekt erkannter `$bindable()` bei `bind:`-Nutzung im Aufrufer),
+    `let x = y` → `$state(y)`, reine `$:`-Ableitungen → `$derived(...)`,
+    `$:`-Statements mit Zuweisungen → `run()` aus `svelte/legacy`,
+    `on:click` → `onclick`, `<slot />` → `{@render children?.()}`.
+  - 3 durch die Migration aufgedeckte Typfehler behoben (`svelte-check`
+    0→3 Fehler, danach wieder 0): `settings/company/+page.svelte` —
+    `bind:this`-Ref brauchte das Svelte-5-Idiom `$state()!` statt
+    unmöglichem `$state()` mit nicht-optionalem Typ;
+    `settings/layouts/[id]/+page.svelte` — redundantes
+    `stopPropagation(...)`-Wrapper aus `svelte/legacy` entfernt (die
+    aufgerufene Funktion ruft `e.stopPropagation()` bereits selbst auf, der
+    Wrapper typisierte das Event nur unnötig auf das generische `Event`
+    herunter); `settings/system/+page.svelte` — `$derived(ternary)` durch
+    `$derived.by(() => ...)` ersetzt (bekannte TS-Einschränkung: Narrowing
+    in einer `$derived`-Ausdrucksposition funktioniert nicht zuverlässig,
+    in einem Callback-Body schon).
+  - Verifiziert: `svelte-check` 431 Dateien/0 Fehler (nur 2 vorbestehende
+    a11y-Warnungen), `npm run build` (Root, alle drei Packages) grün,
+    Backend-Unit 235/235 + Frontend-Unit 49/49 grün, `vite preview` gegen den
+    Static-Build gestartet und `/`, `/login`, `/admin` per `curl` auf 200 +
+    korrekt gerendertes SSR-HTML geprüft (Login-Formular mit deutschen
+    Labels, Hydration-Bootstrap referenziert die neuen Bundle-Dateien).
+  - npm-Vulnerabilities: 12 → 5 (nur noch die bereits dokumentierten
+    Restrisiken D-033/D-034 offen — kein Fund mehr aus Kategorie D der
+    #68-Analyse).
+  **Noch offen — von dieser Session nicht leistbar:** echtes interaktives
+  Browser-Testing (Klickpfade: Bonkasse-Checkout, Bedienungskasse mit
+  Tischen/Split-Checkout, Saalplan-Editor Drag-and-Drop, alle Formulare) —
+  diese Session hat keinen Browser, nur HTTP-Ebene wurde geprüft. Laut
+  `CLAUDE.md`-Konvention für Frontend-Änderungen vor Produktivsetzung
+  zwingend nachzuholen, siehe auch `docs/Manueller-Testplan.md`.
+
+- [Task] **#72** TSE-Ausfall-Log als eigene Auswertungsseite in der Admin-UI
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): `signTseTransaction()`
+  zeigte bisher nur die generische Meldung „TSE nicht erreichbar" in der
+  Bedienungskasse-UI (`tseWarning`), ohne den tatsächlichen Grund — der wird
+  zwar bereits in `tse_outage.reason` geloggt (siehe `tse/outage.ts`), ist
+  aber nirgends in der Admin-UI einsehbar. Nutzerwunsch: eine echte
+  Log-Ansicht für Admins (Liste vergangener/offener Ausfälle mit Zeitpunkt +
+  Fehlergrund), analog zu den bestehenden Auswertungsseiten
+  (`admin/reports/*`) — dann muss die Detailmeldung nicht mehr im
+  Bedienungsfrontend erscheinen, das für Nicht-Admin-Bedienpersonal gedacht
+  ist.
+  **Abgrenzung zu #63** (Dashboard-Ausbau): #63 ist eher eine
+  Zusammenfassungs-/Alarm-Kachel auf der Startseite („N Ausfälle in der
+  letzten Stunde"); dieser Task ist die dazugehörige **Detail-Log-Seite**
+  zum Durchklicken/Nachschlagen — beide ergänzen sich, #63 könnte später auf
+  diese Seite verlinken. Absichtlich getrennt gehalten, damit dieser Task
+  auch unabhängig von der (noch unklar terminierten) vollen
+  Dashboard-Überarbeitung umgesetzt werden kann.
+  **Zwischenzeitliche Übergangslösung (2026-08-26):** Bis diese Seite
+  existiert, zeigt `signTseTransaction()`s `warning` bewusst den echten
+  Fehlergrund inline (`TSE nicht erreichbar (<Grund>) — ...`) — sonst wäre
+  während des laufenden Hardware-Tests kein Fehlergrund ohne direkten
+  DB-Zugriff sichtbar gewesen. Sobald dieser Task umgesetzt ist: erneut
+  abwägen, ob die Bedienungskasse-Meldung wieder auf die generische Variante
+  zurückgestellt wird (Nutzerpräferenz) oder der Grund als hilfreicher
+  Sofort-Hinweis bestehen bleibt — bewusst nicht vorab entschieden.
+
+  **Erledigt (2026-08-27):**
+  - Neue Auswertungsseite `admin/reports/tse-outages/+page.svelte`
+    (Backend `GET /api/admin/reports/tse-outages` in `routes/admin/
+    reports.ts`) — listet alle `tse_outage`-Zeilen, neueste zuerst, auf 500
+    begrenzt, laufende Ausfälle mit Badge „läuft noch" + Dauer-Anzeige,
+    automatische Aktualisierung alle 30s. Nav-Punkt unter „Auswertungen".
+  - **Übergangslösung zurückgebaut (Nutzerentscheidung):** die
+    Bedienungskasse-Meldung ist wieder generisch — und zwar mit neuem,
+    einheitlichem Text für beide Fälle (nicht konfiguriert UND nicht
+    erreichbar): „TSE nicht verfügbar. Bitte informieren Sie den
+    Systemverwalter." (`TSE_UNAVAILABLE_WARNING` in `tse/signing.ts`).
+    Begründung: Sicherheitsaspekt — Bedien-/Kassenpersonal soll keine
+    technischen Details sehen. Der echte Grund (inkl. Swissbit-Fehlercode)
+    landet weiterhin in `tse_outage.reason` und ist jetzt über die neue
+    Admin-Seite einsehbar.
+  - Bestehende Tests angepasst (`signing.integration.test.ts`,
+    `register-session.integration.test.ts`) auf den neuen Text, neuer
+    Integrationstest für `/tse-outages` in `reports.integration.test.ts`.
+    Alle Suiten (Unit + Integration) sowie Typecheck/Build grün. **Noch
+    nicht live durch den Nutzer bestätigt.**
+
+- [Task] **#73** Server-Adresse-Einstellung: Beschreibung verbessern + Testfunktion
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): unklar, ob das
+  Feld „Server-Adresse (QR-Code)" mit oder ohne `http://`-Präfix befüllt
+  werden muss — Hinweistext und Placeholder erwähnten das Protokoll gar
+  nicht. Nutzerwunsch: mit Protokoll angeben lassen (der Admin weiß am
+  besten, welches gilt), dazu ein Test-Button, der QR-Code + Link zum
+  direkten Ausprobieren zeigt. Der zugehörige echte Bug (Backend hängte
+  `http://` unbedingt vor den Wert, unabhängig von einem evtl. schon
+  angegebenen Protokoll) ist separat in D-041 dokumentiert.
+  **Erledigt (2026-08-26):** Hinweistext + Placeholder überarbeitet (Protokoll
+  erwähnt, Beispiel mit `http://`/`https://`). Neuer „Testen"-Button neben
+  dem Feld öffnet ein Modal mit QR-Code + Link zur konfigurierten
+  Serveradresse (analog zum bestehenden „QR-Login-Link"-Muster in
+  `users/+page.svelte`, reine Frontend-Vorschau — normalisiert das Protokoll
+  clientseitig nach derselben Regel wie `buildReceiptQrUrl()` im Backend,
+  Kommentar verweist auf beide Stellen). Admin kann mit dem eigenen Handy im
+  WLAN sofort verifizieren, ohne erst eine echte Rechnung anzulegen.
+  **Konzeptionell unzureichend (2026-08-26, Nutzer-Review):** die
+  Testfunktion prüft aktuell die Erreichbarkeit von `/` (Login-Seite) — die
+  `server_address`-Einstellung wird aber ausschließlich für den öffentlichen,
+  nicht-authentifizierten Rechnungs-Endpunkt `/receipt/:token` verwendet
+  (siehe `buildReceiptQrUrl()` in `receipt/qr.ts`). Ob das Erreichen von `/`
+  tatsächlich verlässlich dasselbe testet oder ob Admins dadurch etwas
+  anderes bestätigt bekommen, als sie eigentlich prüfen wollen, ist nicht
+  geklärt — dafür siehe Task #80.
+
+- [Task] **#74** Bedienungskasse-Header: „Kasse wechseln" + „Abmelden" durch ein Icon ersetzen
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): die beiden
+  Text-Buttons im Header nehmen auf den kleinen Touch-Bildschirmen der
+  Zielhardware unnötig viel Platz weg. Nutzervorgabe: nur noch ein Home-/
+  Exit-Icon, das auf den „Kasse wechseln"-Screen führt — dort gibt es
+  bereits die Kassenliste, ein „Abmelden"-Button zieht ebenfalls dorthin um.
+  **Erledigt (2026-08-26):** `register/+layout.svelte` — beide Text-Buttons
+  durch einen einzelnen Icon-Button (⌂, `aria-label`/`title` „Kasse
+  wechseln") ersetzt, bleibt wie zuvor auf der Kassen-Auswahl-Seite selbst
+  ausgeblendet (nichts, wohin man von dort wechseln könnte). Die jetzt tote
+  `logout()`-Funktion aus dem Layout entfernt. `register/+page.svelte`
+  (Kassen-Auswahl) — neue Kopfzeile mit „Abmelden"-Button, `logout()`-Logik
+  von dort übernommen (identisches Verhalten: löscht nur die
+  Register-Session, eine evtl. offene Admin-Session bleibt unangetastet).
+  **Icon-Button live bestätigt (2026-08-26).** Nutzer-Feedback dazu: der
+  „Abmelden"-Button auf der Kassen-Auswahl-Seite saß zu prominent direkt in
+  der Überschrift. **Nachgebessert (2026-08-26):** von der Kopfzeile ans
+  Ende der Seite verschoben, unter die Kassenliste, mittig, als klar
+  untergeordnete Aktion. **Live bestätigt (2026-08-26).**
+
+- [Task] **#75** Brand-Icon vor „FairPOS"-Schriftzug in Admin- und Kassen-UI ergänzen
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): der Login-Screen
+  zeigt bereits ein Platzhalter-Icon (⊕) vor „FairPOS", die Admin- und
+  Kassen-Header zeigen bisher nur den nackten Schriftzug. Nutzerwunsch: das
+  gleiche Platzhalter-Icon überall ergänzen, damit die Marke konsistent
+  auftritt — das eigentliche Icon wird ggf. später durch ein echtes Logo
+  ersetzt, aber die Stelle soll schon jetzt überall vorgesehen sein.
+  **Erledigt (2026-08-26):** `⊕` (dasselbe Zeichen wie auf dem Login-Screen)
+  vor „FairPOS" ergänzt in `admin/+layout.svelte` (Sidebar-Header) und
+  `register/+layout.svelte` (Kassen-Header, in kleinerer Form passend zur
+  Topbar-Höhe). Keine weiteren Fundstellen — Login-Screen selbst hatte es
+  schon. **Live bestätigt (2026-08-26).**
+
+- [Task] **#76** Bonkasse: Artikel-Grid verschiebt sich beim Antippen (Buttons wandern unter dem Finger weg)
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
+  „hier müssen wir uns Gedanken über eine gute Lösung machen" — bewusst nur
+  als Task angelegt, kein Fix in dieser Session. Beobachtung: In der
+  Bonkasse (`register/[id]/+page.svelte`) wächst die Bestellpositions-Liste
+  (`.order-section`) bei jedem angetippten Artikel, bis sie ihre Kappung
+  erreicht — dabei rutscht das Artikel-Grid (`.grid-section`) darunter jedes
+  Mal ein Stück nach unten. Bei schnellem Nacheinander-Antippen (typischer
+  Bonkasse-Anwendungsfall: mehrere Getränke direkt hintereinander) landet
+  der nächste Fingertipp dadurch nicht mehr auf dem beabsichtigten Button.
+  **Mögliche Ursache identifiziert (nicht als fertige Lösung zu verstehen):**
+  `.order-section` nutzt hier `max-height: 40vh` statt einer festen `height`
+  — die Sektion wächst also erst bis zur Kappung mit jedem neuen Artikel
+  natürlich mit, statt von Anfang an eine feste Höhe zu belegen und intern
+  zu scrollen. Die strukturell sehr ähnliche Bestellansicht der
+  Bedienungskasse (`register/[id]/tables/[tableId]/order/+page.svelte`)
+  nutzt für dieselbe Sektion bereits `height: 35vh; min-height: 220px;`
+  (feste Höhe) und zeigt das Problem vermutlich deshalb nicht — als
+  möglicher Ansatzpunkt (durch die unten dokumentierte finale Lösung
+  überholt, siehe dort).
+
+  **Design festgelegt und umgesetzt (2026-08-26):** Nutzervorgabe — echtes
+  responsives Verhalten statt nur eine feste Höhe: auf schmalen Bildschirmen
+  (Handheld) Artikel-Grid **über** der Liste, beide wachsen frei mit ihrem
+  Inhalt, keine interne Höhenbegrenzung mehr — die ganze Seite scrollt. Ab
+  einer Tablet-Breite (z. B. iPad) wird die Bestellliste stattdessen eine
+  Seitenleiste rechts (~30 % Breite) neben dem Grid, die selbst scrollt
+  (`position: sticky`) und beim Scrollen durchs Grid sichtbar bleibt.
+  Ausdrücklicher Wunsch: **eine** Implementierung statt zwei separat
+  gepflegter Layouts — machbar über CSS Grid mit `grid-template-areas`,
+  reines CSS über einen Media-Query-Breakpoint (768px), keine
+  Doppel-Komponente, keine JS-Logik nötig, identische DOM-Reihenfolge in
+  beiden Ansichten.
+  **Erledigt (2026-08-26):** Neue `.pos-layout`-Grid-Umschließung in
+  `register/[id]/+page.svelte` (Bonkasse) und `.../order/+page.svelte`
+  (Bedienungskasse-Bestellansicht) — beide identisch aufgebaut. Alte feste
+  Höhen/interne Scrollbereiche (`max-height: 40vh` bzw. `height: 35vh` +
+  `overflow-y: auto` auf `.order-section`, `flex:1; overflow:auto` auf
+  `.grid-section`) entfernt; Sidebar-Verhalten (`position: sticky` +
+  `max-height`/`overflow-y: auto`) nur innerhalb des Media Querys aktiv.
+  **Live bestätigt (2026-08-26).** **Erneut bestätigt (2026-09-06):**
+  Nutzer bestätigt, aktuelle Lösung (Artikel-Grid oben, Bestellliste
+  darunter auf schmalen Bildschirmen) funktioniert weiterhin, Problem
+  bleibt gelöst.
+
+- [Task] **#77** Button-Style app-weit überarbeiten (Kontrast aktuell sehr stark: weiß auf dunkelblau)
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26), Nutzerwunsch:
+  „Ggf. den Button-Style optimieren für alle Buttons". Technischer Fund als
+  Ausgangspunkt: `admin/+layout.svelte:322-336`, `:global(.btn-primary)`/
+  `:global(.btn-ghost)`, ist die Stelle, von der Admin **und** Kassen-UI
+  ihre Button-Farben erben (obwohl konzeptionell getrennte Bereiche) —
+  Korrektur zur ursprünglichen Notiz: die Login-Seite hat eine **zweite,
+  eigenständige** lokale `.btn-primary`-Definition (`login/+page.svelte`,
+  da außerhalb von Admin-/Register-Layout), nicht mitbetroffen von der einen
+  globalen Stelle. Beide angepasst. Aktuell vorher: `.btn-primary` =
+  `background: var(--color-primary)` (`#4f7cff`) + `color: #fff` — reines
+  Weiß auf vollgesättigtem Blau direkt gegen den fast schwarzen
+  Seitenhintergrund (`--color-bg: #0f1117`) wirkte hart/grell.
+  **Erledigt (2026-08-26):** Ruhezustand über `color-mix(in srgb,
+  var(--color-primary) 78%, black)` bewusst abgedunkelt/gedämpft (aus dem
+  bestehenden Token abgeleitet, kein neuer Hex-Wert), Text von `#fff` auf
+  `#eef1fb` leicht gedämpft, Schriftgewicht 500→600 zum Ausgleich der
+  reduzierten Rohhelligkeit. Hover geht zurück auf den ursprünglichen
+  `var(--color-primary)`, Press/Active auf das schon vorhandene
+  `var(--color-primary-hover)` — der Button „aktiviert" sich sichtbar bei
+  Interaktion, statt durchgehend in voller Intensität dazustehen.
+  `.btn-ghost` bewusst unverändert gelassen — die gemeldete Härte betraf nur
+  `.btn-primary` (weiß auf blau), `.btn-ghost` ist bereits gedämpft
+  (transparenter Hintergrund, `--color-text-muted`).
+
+  **Nachbesserung (2026-08-26):** Nutzer meldete, die Änderung sei nur im
+  Adminbereich sichtbar gewesen. Ursache: Admin und Kassen-UI sind getrennte
+  Top-Level-Routen mit eigenem code-gesplitteten CSS-Chunk (bestätigt über
+  den Build-Output/Vite-Manifest) — `register/+layout.svelte` hatte für
+  `.btn-primary`/`.btn-ghost` bisher **nie** eigene Farbregeln, nur die
+  Touch-Größen-Overrides. Farbregeln 1:1 aus `admin/+layout.svelte` dorthin
+  dupliziert (mit Kommentar, warum die Duplizierung nötig ist statt
+  eine geteilte Stelle). Über den Build-Output verifiziert: die neue Farbe
+  landet jetzt auch im `register`-Chunk. **Live bestätigt (2026-08-26).**
+
+- [Task] **#78** (aufgegangen in #101/#105) QR-Code auch auf den Bondrucker-Ausdruck bringen
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26): der PDF-Beleg
+  zeigt einen QR-Code (DSFinV-K Anhang I, `receipt/qr.ts`), der physische
+  Bon-Ausdruck über den Thermodrucker (`escpos-receipt.ts`) nicht — kein
+  Compliance-Problem (siehe `docs/Rechtliche-Anforderungen.md` Abschnitt 2:
+  „✅ Geprüft (August 2026)" — alle 11 Pflichtangaben stehen auf beiden
+  Ausgaben als Klartext, kein Feld fehlt), aber inkonsistent zwischen den
+  beiden Ausgabekanälen. Nutzer-Einschätzung: niedrige Priorität. Technisch
+  machbar über ESC/POS-QR-Druckbefehle (`GS ( k ...`, von den meisten
+  modernen Thermodruckern unterstützt), aber druckerabhängig und noch nicht
+  untersucht, ob/wie zuverlässig das über alle in der Zielumgebung
+  eingesetzten Druckermodelle funktioniert.
+  **Nachtrag 2026-09-01:** dieser Punkt ist Teil 1 der breiteren
+  PDF/Ausdruck-Abgleichs-Entscheidung in Task #101 — dort mit den übrigen
+  Detailabweichungen gebündelt. Diese Ursprungs-Einschätzung (kein
+  Compliance-Problem, niedrige Priorität) blieb für die Entscheidung in
+  #101 relevant. **Entschieden und aufgegangen:** #101 hat entschieden, den
+  QR-Code doch zu ergänzen; die technische Umsetzung läuft über Task #105
+  (gemeinsames Belegformat, QR wird dort einfach ein Bild-Block für beide
+  Renderer). Kein eigener Umsetzungsaufwand über #105 hinaus.
+
+- [Task] **#79** Druckauftrag „Abbrechen" soll auf Status „abgebrochen" statt Löschen umstellen
+  Aufgekommen beim ersten echten Hardware-Test (2026-08-26). Aktuell löscht
+  „Abbrechen" den `print_job`-Datensatz komplett (`DELETE FROM print_job
+  WHERE id = $1`, an zwei Stellen: `routes/admin/printers.ts` und
+  `routes/admin/print-jobs.ts` — evtl. dabei auch klären, ob beide Routen
+  noch gebraucht werden oder eine davon veraltet ist). Nutzervorgabe:
+  stattdessen einen neuen Status setzen (z.B. `cancelled`), der über den
+  bestehenden Status-Filter der Druckwarteschlangen-Seite
+  (`admin/settings/print-queue/+page.svelte`, aktuell `pending`/`printing`/
+  `failed`/`done`) sichtbar bleibt — für Transparenz, was abgebrochen wurde,
+  statt es spurlos verschwinden zu lassen.
+  **Technischer Umfang:** Migration für den neuen `status`-Wert (aktuell
+  `CHECK (status IN ('pending', 'printing', 'done', 'failed'))` in
+  `0001_initial.sql` — laut Konvention als neue nummerierte Migration, nicht
+  rückwirkend ändern); beide Backend-Endpunkte von `DELETE` auf ein `UPDATE
+  ... SET status = 'cancelled'` umstellen; Frontend-Status-Filter um den
+  neuen Wert ergänzen.
+
+  **Erledigt (2026-08-26):**
+  - Geprüft, welche der beiden Routen noch gebraucht wird: `GET
+    /api/admin/printers/:id/jobs` + `DELETE
+    /api/admin/printers/:printerId/jobs/:jobId` (`routes/admin/printers.ts`)
+    waren toter Code — weder im Frontend (`api.ts` `listJobs`/`deleteJob`)
+    noch in Tests referenziert. Nutzerentscheidung: entfernt, statt auch
+    umzustellen. Einzig aktiver Pfad ist `routes/admin/print-jobs.ts` (treibt
+    die Druckwarteschlangen-Seite).
+  - Migration `0010_print_job_cancelled.sql`: `print_job_status_check` um
+    `'cancelled'` erweitert.
+  - `DELETE /api/admin/print-jobs/:id` setzt jetzt `status = 'cancelled'`
+    statt den Datensatz zu löschen (Sperre für `status = 'printing'`
+    unverändert). `GET /api/admin/print-jobs` filtert `cancelled` standardmäßig
+    aus der Nicht-Terminal-Ansicht heraus, ist aber über `?status=cancelled`
+    oder `?status=all` sichtbar, dort neueste zuerst.
+  - `admin/settings/print-queue/+page.svelte`: neue Filter-Option
+    „Abgebrochen", Status-Label + Farbe, „Abbrechen"-Button nicht mehr bei
+    bereits abgebrochenen Jobs sichtbar, Bestätigungstext von „löschen" auf
+    „abbrechen" korrigiert.
+  - Neue Integrationstests (`print-jobs.integration.test.ts`, 6 Tests) +
+    Typecheck/Build für Backend und Frontend — alle grün.
+
+  **Live bestätigt (2026-08-26):** Abbrechen setzt Status statt zu löschen,
+  Filter „Abgebrochen"/„Alle" zeigen den Job weiterhin, Button verschwindet
+  bei bereits abgebrochenen Jobs. Die 409-Sperre für einen gerade druckenden
+  Job wurde bewusst **nicht** live getestet (Zeitfenster zu knapp, seltener
+  Fall) — Nutzerentscheidung, auf die bestehende automatisierte Testabdeckung
+  zu vertrauen.
+
+- [Task] **#80** (aufgelöst durch #100) Server-Adresse-Testfunktion (Task #73) prüft die falsche Sache — Konzept überarbeiten
+  Beim Nutzer-Review von Task #73 aufgefallen (2026-08-26): der neue
+  „Testen"-Button in den Systemeinstellungen zeigt einen QR-Code + Link zu
+  `<server_address>/` — das ist die Login-Seite des Backends. Die
+  `server_address`-Einstellung wird aber ausschließlich für den öffentlichen,
+  nicht-authentifizierten Rechnungs-Endpunkt `/receipt/:token`
+  verwendet — genau der Pfad, den ein Kunde nach dem Bezahlen scannt, um
+  seine PDF-Rechnung zu sehen, ganz ohne Login. Ob das Backend unter der
+  konfigurierten Adresse erreichbar ist, muss nicht zwingend heißen, dass
+  auch der öffentliche Rechnungs-Pfad im selben Sinne „funktioniert" (und
+  umgekehrt), auch wenn beide vom selben Fastify-Prozess bedient werden —
+  ungeklärt, ob Admins durch den Test etwas anderes bestätigt bekommen, als
+  sie eigentlich prüfen wollen.
+
+  **Aufgelöst durch Entscheidung, nicht durch Fix (2026-09-01):** Task #100
+  entfernt die gesamte digitale Gästebeleg-Funktion inkl. der
+  `server_address`-Einstellung und ihres Test-Buttons — damit erübrigt sich
+  die Frage, ob der Test das Richtige prüft, weil es die zu testende
+  Funktion nach Umsetzung von #100 gar nicht mehr gibt. Kein eigener
+  Umsetzungsaufwand über #100 hinaus.
+
+- [Task] **#81** Checkout-/Bestell-Tabellen-Overflow (D-039) — Nachbesserung
+  Der erste Fix (`.line-name` mit `min-width: 0` + Ellipsis auf der
+  Bestellansicht, `table-layout: fixed` mit festen Spaltenbreiten auf der
+  Checkout-Tabelle — siehe D-039) war beim erneuten Live-Test
+  nicht ausreichend: „teilweise gelöst aber passt noch nicht ganz" (Nutzer,
+  2026-08-26). Präzisiert per Screenshot: auf einem iPhone (schmaler
+  Bildschirm) verschwand der Artikelname jetzt **komplett** — die
+  Ellipsis-Lösung konnte zwar schrumpfen, aber die übrigen Spalten (farbiger
+  Punkt, Einzelpreis, +/−-Stepper, Gesamtpreis) beanspruchten so viel Platz,
+  dass für den Namen praktisch nichts mehr übrig blieb. Nutzervorgabe:
+  Platz sparen statt nur schrumpfen lassen — farbigen Punkt vor jeder Zeile
+  entfernen, +/−-Buttons verkleinern, Gesamtpreis-Spalte (ganz rechts)
+  komplett weglassen.
+  **Erledigt (2026-08-26)**, auf beiden betroffenen Screens
+  (`register/[id]/+page.svelte` Bonkasse, `.../order/+page.svelte`
+  Bedienungskasse-Bestellansicht — identisches Layout-Muster, konsistent
+  behandelt; die zuvor nur auf der Bestellansicht vorhandene
+  Ellipsis-Behandlung fehlte in der Bonkasse ganz und wurde dabei ergänzt):
+  `.line-dot` (Punkt) und `.line-total` (Gesamtpreis je Zeile) aus Markup und
+  Grid-Spalten entfernt (`grid-template-columns` von `12px 1fr 4em auto 5em`
+  auf `1fr 4em auto`), jetzt tote `colorOf()`-Helper mit entfernt. Stepper-
+  Buttons (`.qty-btn`) von 44px (aus dem app-weiten Touch-Target-Minimum in
+  `register/+layout.svelte`, per `!important`) auf 32px verkleinert — bewusst
+  nur für diese Zeilen per höherer Selektor-Spezifität überschrieben, statt
+  das app-weite Minimum überall aufzuweichen. Die Gesamtsumme über alle
+  Positionen (`.total-row`, unterhalb der Liste) bleibt unverändert
+  bestehen — nur die Zeilen-Einzelsumme fiel weg, kein Informationsverlust
+  bei „was kostet das insgesamt". **Live bestätigt (2026-08-26).**
+
+- [Task] **#82** Update-Ablauf als Skript (`scripts/install/update.sh`)
+  Aufgekommen beim Hardware-Test (2026-08-26) — der Update-Ablauf aus
+  Abschnitt 12 der Installationsanleitung wurde an diesem Tag mehrfach von
+  Hand wiederholt. Nutzervorgabe: von einem beliebigen Account per `sudo`
+  startbar, das Skript soll selbst prüfen, ob es Root-Rechte hat, und intern
+  mit dem richtigen (Service-)User arbeiten.
+  **Erledigt (2026-08-26):** `scripts/install/update.sh` — bricht ab, wenn
+  nicht als root gestartet; ermittelt den Service-User nicht per Annahme,
+  sondern liest ihn aus der bereits installierten systemd-Unit
+  (`/etc/systemd/system/fairpos.service`, `User=`-Zeile) zurück, Fallback
+  `fairpos` falls die Unit noch nicht existiert. `git pull`/`npm ci`/Build/
+  Migration laufen über `sudo -u <service-user>`, damit im Checkout nichts
+  root-owned zurückbleibt — nur `systemctl restart` läuft tatsächlich als
+  root. Schließt mit einem Aufruf von `smoke-test.sh` ab. Ausführbar-Bit
+  gesetzt (`git update-index --chmod=+x`, siehe D-028 zur WSL-Falle).
+  In Abschnitt 9 (Skript-Tabelle) und Abschnitt 12 (Updates) der
+  Installationsanleitung referenziert, alte manuelle Befehlsfolge bleibt als
+  Fallback dokumentiert.
+  **Erste Live-Ausführung (2026-08-26):** Alle Schritte (Pull, Build,
+  Migration, Neustart) liefen als `fairpos` erfolgreich durch — der
+  abschließende Smoke-Test schlug allerdings beim Health-Check fehl, weil
+  der Backend-Prozess nach dem Neustart noch nicht ganz hochgefahren war
+  (`systemctl restart` gilt schon als „aktiv", bevor der Port gebunden ist)
+  — behoben in `smoke-test.sh` selbst, siehe D-045 (Retry statt
+  Einzelversuch).
+  **Vollständig live bestätigt (2026-08-26):** zweiter `update.sh`-Lauf mit
+  dem Retry-Fix lief komplett durch, alle Smoke-Test-Checks inkl.
+  Health-Check grün.
+
+- [Task] **#83** Label „Gesamt" vor dem Summenbetrag entfernen (Bonkasse + Bedienungskasse-Bestellansicht)
+  Aufgekommen beim Hardware-Test (2026-08-26), Nutzervorgabe: ergibt sich aus
+  dem Kontext (großer Betrag direkt neben dem „Kassieren"/„Bestellen"-Button),
+  braucht kein eigenes Label.
+  **Erledigt (2026-08-26):** `<span class="total-label">Gesamt</span>` aus
+  `register/[id]/+page.svelte` (Bonkasse) und `.../order/+page.svelte`
+  (Bedienungskasse-Bestellansicht) entfernt, jetzt tote `.total-label`-CSS-
+  Regel in beiden Dateien mit entfernt. `checkout/+page.svelte` bewusst
+  unverändert — dort steht „Summe" als Tabellen-Zellwert unter einer
+  gleichnamigen Spaltenüberschrift, ein anderer, nicht vom Nutzer
+  angesprochener Kontext. **Noch nicht live durch den Nutzer bestätigt.**
+
+- [Task] **#84** (Low Prio) Artikel löschen, das bereits verkauft wurde → „Internal Server Error" statt klarer Fehlermeldung
+  Aufgekommen beim Hardware-Test (2026-08-26). Bestätigt: `DELETE
+  /api/admin/articles/:id` (`routes/admin/articles.ts`) fängt anders als die
+  Endpunkte für Kassen/Benutzer/Drucker (Task #54/#56/#57) keine
+  `23503`-Fremdschlüsselverletzung ab — `order_item.article_id` ist `NOT
+  NULL REFERENCES article(id)` ohne `ON DELETE CASCADE`
+  (`0001_initial.sql`), ein bereits verkaufter Artikel kann also nie
+  gelöscht werden, der rohe Postgres-Fehler geht aber ungefangen als 500 an
+  den Client durch. Nutzervorgabe: Artikel müssen irgendwie entfernbar
+  bleiben (sonst sammeln sie sich endlos an), Vorschlag: nur logisch löschen
+  (im UI ausblenden) statt hart aus der DB zu entfernen.
+  **Guter Ausgangspunkt für die Umsetzung:** `article.is_active` existiert
+  bereits (im Gegensatz zu Task #55/#56, wo das Feld erst per Migration
+  ergänzt werden musste) — Admin-UI hat auch schon eine vollständige
+  „Aktiv"-Checkbox samt Listen-Spalte (`admin/articles/+page.svelte`). Es
+  fehlt nur die Backend-Fehlerbehandlung selbst — vermutlich reicht, dem
+  `DELETE`-Handler denselben `23503`→409-Fang wie bei #54/#57 zu geben
+  (Fehlermeldung verweist auf die „Aktiv"-Checkbox statt nur generisch
+  „wird noch verwendet"), kein Migrations- oder Frontend-Aufwand absehbar.
+  Nicht in dieser Session umgesetzt, nur als Task angelegt wie gewünscht.
+
+  **Entschieden (2026-09-01):** benutzerfreundliche Fehlermeldung
+  implementieren (wie oben skizziert: `23503`→409-Fang analog #54/#57,
+  Meldung verweist auf die „Aktiv"-Checkbox) — keine Änderung an
+  `is_active`/Migration/Frontend nötig, bleibt ein kleiner Task.
+
+  **Erledigt (2026-09-01):** `DELETE /api/admin/articles/:id` fängt jetzt
+  `23503` ab (409, „Artikel wurde bereits verkauft und kann nicht gelöscht
+  werden — stattdessen über die 'Aktiv'-Checkbox deaktivieren."). Dabei
+  gleich die Reihenfolge korrigiert: der Artikel-Löschversuch läuft jetzt
+  **vor** dem `DELETE FROM product_option` — vorher wurden die Optionen
+  schon gelöscht, bevor der (dann fehlschlagende) Artikel-Löschversuch kam,
+  was bei einem blockierten Löschen einen verwaisten Zustand hinterlassen
+  hätte (Artikel bleibt, Optionen weg). Neue Datei
+  `articles.integration.test.ts` (gab es vorher gar nicht für diese Route):
+  3 Tests — unbenutzten Artikel löschen, 404 bei nicht existentem Artikel,
+  409 bei bereits verkauftem Artikel inkl. Prüfung, dass nichts teilweise
+  gelöscht wurde. Kleine Korrektur nebenbei: die ursprüngliche
+  Task-Beschreibung oben behauptete `order_item.article_id` sei `NOT NULL`
+  — tatsächlich ist die Spalte nullable (nur die FK-Referenz ohne `ON
+  DELETE CASCADE` ist relevant, `NOT NULL` war nie der Fall).
+
+- [Task] **#85** „Halten statt Tippen" (Long-Press) für kritische Kassieren-/Bestellen-Buttons
+  Aufgekommen beim Hardware-Test (2026-08-26): versehentliches Antippen von
+  „Kassieren"/„Bestellen" sollte verhindert werden. Nutzerfrage: sowas wie
+  der iPhone-Slide-to-Answer, gibt's das im Framework? Antwort: nein (reine
+  Svelte-5-App ohne UI-Kit wie Ionic/Material, das sowas mitbringt), ein
+  Swipe-Slider wäre eine komplette Eigenentwicklung. Alternativen
+  vorgeschlagen (Bestätigungsdialog / Swipe-Slider / Long-Press) —
+  Nutzerentscheidung: Long-Press, da deutlich einfacher als ein Slider
+  (kein Drag-Tracking nötig) und wirksamer gegen Fehlklicks als ein
+  zusätzlicher Bestätigungsdialog. Betroffen: Bonkasse „Kassieren",
+  Bedienungskasse „Bestellen" (Bestellansicht) und „Kassieren"
+  (Checkout-Screen). Buttons sollen erkennbar gekennzeichnet sein, damit
+  klar ist, dass sie gehalten statt getippt werden müssen.
+  **Erledigt (2026-08-26):** Neue, wiederverwendbare Svelte-Action
+  `$lib/longpress.ts` (`use:longpress={{ onHold, durationMs? }}`, Default
+  600ms) — feuert `onHold` erst nach durchgehendem Halten, bricht bei
+  vorzeitigem Loslassen/Verlassen des Elements sauber ab. Ein
+  `setTimeout` ist die alleinige Quelle der Wahrheit dafür, ob die Aktion
+  auslöst; eine `holding`-CSS-Klasse treibt zusätzlich eine rein
+  kosmetische Füllanimation (`.hold-btn`/`.hold-fill`, links nach rechts,
+  Transition-Dauer an `durationMs` angeglichen). Kennzeichnung: ⏱-Symbol
+  + „(halten)"-Zusatz im Button-Text, `aria-label` mit vollständiger
+  Erklärung für Screenreader. An allen drei genannten Stellen verdrahtet
+  (`register/[id]/+page.svelte`, `.../order/+page.svelte`,
+  `.../checkout/+page.svelte`) — CSS dort jeweils dupliziert (gleicher
+  Grund wie bei den Button-Grundfarben: separate code-gesplittete
+  Layout-Bäume, siehe Task #77-Nachbesserung). 8 neue Unit-Tests
+  (`longpress.test.ts`, jsdom + Fake-Timer): löst nach voller Haltedauer
+  aus, löst bei vorzeitigem Loslassen/Verlassen nicht aus, ignoriert
+  Nicht-Primärtasten (Rechtsklick), `holding`-Klasse korrekt gesetzt/
+  entfernt, `destroy()` entfernt alle Listener, konfigurierbare Dauer.
+
+  **Nachgebessert (2026-08-26):** Nutzer meldete, die Füllanimation liefe
+  auch bei deaktivierten Buttons — tatsächlich prüfte die Aktion `disabled`
+  gar nicht, hätte also nach voller Haltedauer sogar `onHold` ausgelöst,
+  falls der Browser auf einem deaktivierten Button doch Pointer-Events
+  feuert (uneinheitliches Verhalten je nach Browser/Gerät, kein reines
+  Kosmetik-Risiko). Zwei neue Prüfpunkte in `longpress.ts`: `disabled` wird
+  sowohl beim Start des Haltevorgangs als auch erneut beim Erreichen der
+  vollen Dauer geprüft (falls sich der Zustand währenddessen ändert). 2
+  weitere Unit-Tests (jetzt 10 insgesamt): kein Halte-Start bei bereits
+  deaktiviertem Button, kein `onHold`-Aufruf, wenn der Button erst während
+  des Haltens deaktiviert wird. **Live bestätigt (2026-08-26).**
+
+- [Task] **#86** Freitext pro Artikel in der Bedienungskasse (zusätzlich zu den vordefinierten Optionen)
+  Nutzerwunsch (2026-08-26): die Bedienung soll zu jedem bestellten Artikel
+  einen Freitext eingeben können (z. B. Sonderwünsche, die keine der
+  vordefinierten Optionen abdeckt). UI-Gestaltung zum Zeitpunkt dieser
+  Notiz noch offen — durch die weiter unten dokumentierte Umsetzung und
+  Nutzerentscheidungen überholt.
+  **Backend-seitig bereits verifiziert, kein Handlungsbedarf dort:**
+  `order_item.options` ist eine reine `TEXT`-Spalte (`0001_initial.sql`,
+  keine FK/Länge/Check-Constraint gegen `product_option`);
+  `POST /register-session/.../order` (`routes/register-session.ts`,
+  Body-Typ `{ article_id, quantity, options?: string | null }`) nimmt für
+  `options` bereits jeden beliebigen String entgegen (`pos.options?.trim()`,
+  keine Validierung gegen die konfigurierten Optionsnamen). Ein Freitext
+  ließe sich also technisch schon heute über denselben String transportieren
+  wie die Checkbox-Auswahl — reine Frontend-Aufgabe.
+  **Offene UI-Fragen für die Gestaltung:**
+  - Aktuell öffnet sich der Options-Dialog (`optionsOpen`/`availableOptions`
+    in `.../order/+page.svelte`) nur, wenn der Artikel überhaupt
+    vordefinierte Optionen hat (`tapSlot()` — bei null Optionen wird direkt
+    ohne Dialog hinzugefügt). Soll der Dialog künftig **immer** erscheinen
+    (auch bei Artikeln ohne vordefinierte Optionen), damit Freitext
+    grundsätzlich verfügbar ist?
+  - Freitext und Checkbox-Auswahl kombinieren — wie werden beide im
+    gespeicherten `options`-String zusammengeführt (`confirmOptions()`
+    baut aktuell `[...selectedOptionNames].sort().join(', ')`)? Trennzeichen,
+    Reihenfolge, Längenbegrenzung in der UI (Spalte selbst ist unbegrenzt)?
+  - Wirkt sich das auf die Gruppierung gleicher Positionen aus (Checkout/
+    Bonliste gruppieren aktuell nach `(article_id, options)` — bei
+    Freitext würde jede leicht unterschiedliche Formulierung eine eigene
+    Gruppe erzeugen, das ist bei vordefinierten Optionen bisher nie
+    passiert)?
+
+  **Nutzerentscheidungen (2026-08-27):**
+  - Umfang **nur** Artikel, die bereits vordefinierte Optionen haben — der
+    Dialog öffnet weiterhin wie bisher nur dann. Freitext für Artikel ganz
+    ohne Optionen ist als eigener Task ausgelagert, siehe #88.
+  - Freitextfeld wird in den bestehenden Options-Dialog eingebaut, hinter
+    einem „+ Freitext"-Link eingeklappt (nicht permanent sichtbar), damit
+    der Standardfall ohne Sonderwunsch genauso schnell bleibt wie heute.
+    Einzeiliges Eingabefeld im bestehenden Modal, max. 50 Zeichen.
+  - Zusammenführung: erst alle ausgewählten Optionen, danach der Freitext.
+    Als Trennzeichen sowohl zwischen mehreren Optionen als auch zwischen
+    letzter Option und Freitext ursprünglich Linefeed (`\n`) angedacht —
+    nach Recherche verworfen: `\n` würde in der Anzeige (5 Stellen: Bonliste,
+    Checkout, Tisch-Ansicht, Admin-Reports „Offene Positionen"/„Stornos")
+    ohne `white-space: pre-line`-Ergänzung an allen 5 Stellen unsichtbar
+    kollabieren, im Druck hätte es dagegen korrekt funktioniert. Nutzer hat
+    sich für die einfachere Variante entschieden: **bleibt bei `, '`** wie
+    bisher, keine CSS-Änderungen nötig.
+  - Gruppierung bleibt unverändert (exakter String-Vergleich) — wird
+    bewusst nicht sonderbehandelt, auch wenn dadurch bei identischem
+    Freitext + identischen Optionen weiterhin korrekt gruppiert wird, bei
+    abweichender Formulierung aber nicht.
+
+  **Erledigt (2026-08-27):** `register/[id]/tables/[tableId]/order/+page.svelte`
+  — Options-Dialog um „+ Freitext"-Link erweitert, der ein einzeiliges
+  Eingabefeld (`maxlength=50`) einblendet; `confirmOptions()` hängt den
+  getrimmten Freitext (falls nicht leer) hinter die sortierten Optionsnamen
+  an, gemeinsam mit `, '` verbunden. Zustand wird bei jedem `tapSlot()`-Aufruf
+  zurückgesetzt. Typecheck und Build grün. Reine Frontend-Änderung ohne
+  eigene Komponenten-Testsuite in diesem Projekt (wie die übrigen Funktionen
+  in dieser Datei bisher auch) — **noch nicht in echtem Browser/live getestet.**
+
+  **Nachgebessert (2026-08-27):** „+ Freitext"-Button wurde nicht als
+  klickbar wahrgenommen — lag daran, dass er innerhalb von `<Modal>`
+  außerhalb von `.modal-actions` liegt und damit weder von der
+  app-weiten 48px-Touch-Target-Regel (`.order-page .btn-ghost`, greift
+  nicht, weil `Modal` als Geschwisterelement von `.order-page` gerendert
+  wird, nicht darin verschachtelt) noch von der `.modal-actions
+  .btn-ghost`-Regel erfasst wurde — blieb dadurch klein und dünn umrandet.
+  Jetzt mit expliziter Größe (volle Breite, 48px Mindesthöhe, größere
+  Schrift) statt sich auf die (hier nicht greifende) globale Regel zu
+  verlassen.
+
+  **Nachträglich gegen den Code verifiziert (2026-08-29):** alle oben
+  beschriebenen Bestandteile (`freetextOpen`/`freetextValue`,
+  `OPTIONS_MAX_LENGTH`, `optionsCombinedLabel`/`optionsTooLong`,
+  `.freetext-link`-Styling) existieren exakt wie dokumentiert.
+  **Live bestätigt (2026-09-06):** vom Nutzer als umgesetzt und getestet
+  bestätigt.
+
+  **Nachgebessert (2026-08-27, im Zuge von #88):** bisher war nur das
+  Freitextfeld selbst auf 50 Zeichen begrenzt (`maxlength`), nicht die
+  **Summe** aus ausgewählten Optionen + Freitext — bei mehreren/langen
+  Optionsnamen hätte der kombinierte String trotzdem über 50 Zeichen kommen
+  können. Neue `$derived`-Prüfung (`optionsCombinedLabel`/`optionsTooLong`)
+  deaktiviert „Hinzufügen" mit Hinweistext, sobald die Summe 50 Zeichen
+  überschreitet. `OPTIONS_MAX_LENGTH`-Konstante (vormals
+  `FREETEXT_MAX_LENGTH`) wird jetzt von beiden Dialogen (#86 und #88)
+  gemeinsam genutzt — Klarstellung: 50 Zeichen ist eine reine UI-Konvention,
+  `order_item.options` selbst ist eine unbegrenzte `TEXT`-Spalte.
+
+- [Task] **#87** Festplatten-/DB-Integritätscheck (manuell auslösbar)
+  Bei der Konzeption des TSE-Health-Checks (#64) bewusst abgetrennt —
+  Nutzerentscheidung (2026-08-26): eigener Task, **nicht** automatisch im
+  Hintergrund-Job, sondern manuell getriggert (z. B. Button in der
+  Admin-UI). Prüfungen noch nicht analysiert — Kandidaten aus der
+  ursprünglichen #64-Beschreibung: genug freier Festplattenspeicher auf
+  allen relevanten Volumes (`statvfs`/`df`), Datenbank fehlerfrei (keine
+  korrupten Tabellen/Indizes, z. B. via `pg_catalog`-Abfragen oder
+  `VACUUM`/`ANALYZE`-Fehlerstatus). Ergebnis vermutlich über dieselbe
+  `system_log`-Tabelle protokollierbar, die #64 dafür bereits generisch
+  angelegt hat.
+
+  **Nutzerentscheidungen (2026-08-30):** neuer Menüpunkt "Health-Check"
+  unter "Monitoring" (nicht in eine bestehende Seite integriert). Bewusst
+  **live-only** — keine Protokollierung in `system_log` (anders als
+  ursprünglich angedacht), da ein manuell getriggerter Check ohne
+  Hintergrund-Job keine Historie braucht. Architektur bewusst erweiterbar:
+  eine Registry-Liste in `system/healthChecks.ts`
+  (`HEALTH_CHECKS: HealthCheckDefinition[]`), die der Runner und die
+  Admin-UI generisch durchlaufen — ein neuer Check ist nur ein neuer
+  Eintrag, keine sonstige Verdrahtung nötig.
+
+  **Erledigt (2026-08-30):**
+  - **Festplattenspeicher** (`checkDiskSpace`): `fs.statfs('/')` (Node-Bordmittel,
+    kein `df`-Subprozess nötig). Absolute GB-Schwellwerte statt Prozent
+    (Nutzervorgabe — ein Prozentwert liest sich auf einer 32-GB- und einer
+    2-TB-Platte völlig unterschiedlich): Warnung <10 GB, Fehler <2 GB
+    (zweiter Wert von mir sinnvoll ergänzt, erste Zahl war explizit
+    vorgegeben).
+  - **Datenbank-Integrität** (`checkDatabaseIntegrity`): Erreichbarkeit
+    (`SELECT 1`) + Suche nach als `invalid` markierten Indizes
+    (`pg_index.indisvalid = false` — passiert z. B. bei einem
+    abgebrochenen `CREATE INDEX CONCURRENTLY`; die Abfrage läuft dann
+    lautlos ohne den Index weiter, statt laut zu scheitern).
+  - **SMART-Festplattenstatus** (`checkSmartHealth`, Nutzervorschlag,
+    gleich mit umgesetzt statt nur vorgemerkt): `lsblk -d` listet
+    physische Datenträger (Partitionen/LVM-Mapper-Geräte ausgeschlossen,
+    da `smartctl` die nicht direkt abfragen kann), `smartctl -H` je
+    Datenträger. Text-Erkennung (`classifySmartOutput`, eigens
+    unit-testbar) statt Exit-Code, da ATA ("... PASSED") und SCSI/NVMe
+    ("... OK") unterschiedlich formulieren. Braucht `smartmontools` +
+    eigene Sudoers-Regel (`smartctl -H /dev/*`, Geräte-Wildcard nötig, da
+    der Festplattenname je Server variiert) — fehlt beides, meldet der
+    Check **Warnung**, nicht Fehler (optionale Infrastruktur, kein Zeichen
+    einer wirklich kaputten Platte).
+  - Neue Route `GET /api/admin/health-checks`, neue eigenständige
+    Admin-Seite unter Monitoring (Button "Jetzt prüfen", läuft nicht
+    automatisch beim Seitenaufruf).
+  - Doku: `docs/Installationsanleitung.md` Abschnitt 15 (smartmontools +
+    Sudoers-Regel) — optional/empfohlen wie Abschnitt 13/14.
+  - Tests: 4 Unit-Tests für `classifySmartOutput`, 2 Integrationstests für
+    die Route (im Sandbox-Testlauf bestätigt: `smartctl` fehlt dort
+    absichtlich nicht installiert — Check meldet korrekt "Warnung", genau
+    der vorgesehene Graceful-Degradation-Pfad). Backend-Unit (278/278),
+    Frontend-Unit (70/70), Typecheck grün.
+
+  **Live gefunden und behoben (2026-08-30):** die ursprüngliche
+  Sudoers-Regel `smartctl -H /dev/*` (Geräte-Wildcard direkt im Argument)
+  scheiterte live an `visudo -c -f` mit "syntax error: wildcards are not
+  allowed in command arguments" — auf dem Ubuntu-Stand des Servers sind
+  Wildcards in Sudoers-Befehlsargumenten strenger reglementiert als
+  angenommen. Der eingebaute `visudo -c -f`-Sicherheitscheck hat genau
+  das verhindert, wofür er da ist: die kaputte Regel wurde nie
+  installiert. Umgebaut auf dasselbe parameterlose-Skript-Muster wie
+  beim nginx-Zertifikat (Task #66, Abschnitt 14.4) — neues
+  `/opt/fairpos/scripts/smart-check.sh` (zählt Datenträger selbst per
+  `lsblk` auf, `smartctl -H` je Datenträger mit `|| true` gegen
+  vorzeitigen Abbruch durch `set -e` bei einem echt fehlerhaften
+  Datenträger), Sudoers-Regel jetzt ohne jede Wildcard
+  (`.../smart-check.sh`, keine Argumente). `system/healthChecks.ts`s
+  `checkSmartHealth()` ruft nur noch dieses eine Skript auf und parst
+  dessen kombinierte Ausgabe (`parseSmartCheckOutput`, neu unit-testbar).
+  `config.lsblkPath` (nicht mehr gebraucht, `lsblk` läuft jetzt nur noch
+  innerhalb des Skripts) wieder entfernt. Doku Abschnitt 15.2
+  entsprechend aktualisiert. 2 zusätzliche Unit-Tests für
+  `parseSmartCheckOutput`, alle Suiten weiterhin grün.
+
+  **Live gefunden und behoben (2026-08-30, zweite Runde):** ein
+  Datenträger hinter einer USB-Bridge meldete sich `smartctl` gegenüber
+  mit "Unknown USB bridge ... Please specify device type" statt
+  PASSED/FAILED/OK — korrekt als "unklar" klassifiziert (keine
+  Erkennungslücke), aber wenig hilfreich. **Nutzerentscheidung:**
+  USB-Datenträger werden künftig einfach übersprungen statt mit
+  wechselnden `-d`-Typen durchprobiert — `smart-check.sh` filtert jetzt
+  per `lsblk -o NAME,TYPE,TRAN` gezielt `TRAN != usb`. Reine
+  Skript-Änderung (nur in der Doku als Heredoc, kein Repo-Code) — betrifft
+  keine der Node-seitigen Unit-Tests, da das Ausgabeformat
+  (`=== /dev/X ===` + smartctl-Text) unverändert bleibt.
+
+  **Erweiterung (2026-08-30, Nutzervorschlag):** vierter Check
+  "SSD-Abnutzung" — Nutzer hat live `smartctl -a` gegen eine echte ADATA
+  SU800NS38 laufen lassen: `ID 177 Wear_Leveling_Count`, VALUE 100 (per
+  SMART-Konvention = Lebensdauer verbleibend, nicht die vom Hersteller
+  abweichend befüllte RAW_VALUE). SATA/ATA-Hersteller sind dabei nicht
+  einheitlich (anders als NVMe mit dem standardisierten Feld
+  "Percentage Used") — `parseSsdWearPercent()` probiert deshalb eine
+  Liste bekannter Attributnamen (`Wear_Leveling_Count`,
+  `Media_Wearout_Indicator`, `SSD_Life_Left`, `Percent_Lifetime_Remain`)
+  und zusätzlich das NVMe-Feld (invertiert: "Percentage Used" → "Prozent
+  verbleibend"). `smart-check.sh` läuft jetzt mit `-a` statt nur `-H` —
+  liefert damit sowohl den Gesundheitsstatus als auch die volle
+  Attributtabelle in einem einzigen `smartctl`-Aufruf pro Datenträger,
+  den beide Checks unabhängig voneinander auswerten (dieselbe
+  Sudoers-Regel/dasselbe Skript, keine weitere Berechtigung nötig).
+  Kein bekanntes Attribut gefunden (reine HDD, oder Hersteller nicht in
+  der Liste) → `ok` mit neutralem Hinweis, kein Fehler. 3 neue
+  Unit-Tests, davon einer direkt gegen die echte ADATA-Ausgabe.
+
+  **Live gefunden und behoben (2026-08-30, dritte Runde):** durch die
+  Umstellung von `-H` auf `-a` meldete "SMART-Festplattenstatus" plötzlich
+  für jede gesunde Platte "FEHLER" — `classifySmartOutput()` suchte
+  ungeschützt nach dem Teilstring "FAILED" irgendwo im Text, und die
+  Attributtabellen-Spaltenüberschrift **"WHEN_FAILED"** enthält genau
+  diesen Teilstring. Bei `-H` (nur die Statuszeile, keine Attributtabelle)
+  war das nie aufgefallen. Fix: `\bFAILED\b`/`\bPASSED\b` mit
+  Wortgrenzen — `_` zählt als Wortzeichen in Regex, „WHEN_FAILED" hat
+  daher keine Wortgrenze vor „FAILED". Regressionstest ergänzt (echte
+  ADATA-Attributtabelle + Erfolgszeile kombiniert, muss `ok` liefern).
+
+- [Task] **#88** Nachträglich Hinweis zu einer bereits platzierten Position hinzufügen (auch für Artikel ohne vordefinierte Optionen)
+  Aus #86 ausgelagert (2026-08-27): dort wurde der Umfang bewusst auf
+  Artikel mit bereits vorhandenen Optionen beschränkt (Dialog öffnet dort
+  ohnehin schon). Dieser Task deckt den restlichen Fall ab — ein Artikel
+  ganz ohne konfigurierte Optionen ruft aktuell (`tapSlot()` in
+  `register/[id]/tables/[tableId]/order/+page.svelte`) gar keinen Dialog
+  auf, sondern fügt die Position direkt hinzu.
+
+  **Konzept-Diskussion (2026-08-27):** Ausgangsfrage: seltener Anwendungsfall,
+  darf den normalen Bestell-Workflow (schneller Tap zum Hinzufügen) nicht
+  stören. Erster Vorschlag (verworfen): kleines Icon direkt an jeder Zeile
+  der Bestellliste, das einen Freitext-only-Dialog öffnet, nur für Artikel
+  ohne Optionen. Nutzer-Einwand: die Bestellliste ist ohnehin schon eng,
+  keine zusätzliche UI dort einbauen.
+
+  **Nutzervorschlag, umgesetzt:** ein neuer Button „Hinweis hinzufügen"
+  unterhalb der kompletten Bestellliste-Karte (inkl. Summe/Bestellen-Zeile,
+  nicht dazwischen — damit nichts mit der primären „Bestellen"-Aktion
+  konkurriert). Öffnet einen zweistufigen Dialog:
+  1. Positionsauswahl — zeigt die Bestellliste (Menge + Name + bisherige
+     Optionen) zur Auswahl, mit Abbrechen-Button.
+  2. Bearbeitung — zeigt den gewählten Artikelnamen, einen Mengen-Stepper
+     (Default 1, Min 1, Max = Menge der Position — für wie viele Einheiten
+     der Hinweis gelten soll) und ein einzeiliges Textfeld, vorbefüllt mit
+     dem bisherigen Optionstext der Position. Speichern splittet die
+     Position bei Bedarf (gewählte Menge < Gesamtmenge): der Rest behält
+     seinen bisherigen Text, der abgespaltene Teil bekommt den neuen.
+
+  **Nutzerentscheidungen (2026-08-27):**
+  - Gilt generisch für **jede** Position, nicht nur für Artikel ohne
+    vordefinierte Optionen — kein Mehraufwand, da der Mechanismus (Text
+    direkt im vorbefüllten Feld bearbeiten) ohnehin nicht unterscheidet.
+  - Ergibt der neue Text nach dem Split exakt den **aktuellen** Optionstext
+    der bearbeiteten Position (keine echte Änderung), bleibt der OK-Button
+    deaktiviert — ein Split ohne inhaltliche Änderung wäre ohnehin sinnlos.
+    Stimmt der neue Text stattdessen zufällig mit einer **anderen** bereits
+    existierenden Position überein, wird automatisch zusammengeführt (wie
+    beim normalen Hinzufügen) — kein Sonderfall, keine Nachfrage.
+  - Abbrechen in Schritt 2 schließt den kompletten Dialog (kein „Zurück" zu
+    Schritt 1).
+  - Zeichenlimit: dieselben 50 Zeichen wie bei #86, da `order_item.options`
+    ohnehin nur eine UI-Konvention dafür hat (unbegrenzte `TEXT`-Spalte) —
+    gemeinsame `OPTIONS_MAX_LENGTH`-Konstante mit #86.
+
+  **Erledigt (2026-08-27):** `register/[id]/tables/[tableId]/order/+page.svelte`
+  — `.order-section` in `.order-card` (Liste + Summe + Bestellen, bisheriges
+  Card-Styling) und einen neuen `.note-btn` außerhalb der Karte aufgeteilt;
+  neuer zweistufiger `Modal`-Dialog (`noteStep: 'select' | 'edit'`) mit
+  `openNoteDialog()`/`selectNoteLine()`/`changeNoteQuantity()`/
+  `applyNoteEdit()`; `mergeOrInsertLine()` als gemeinsame Merge-Logik
+  (identisch zum Verhalten von `addLine()`) für sowohl den unveränderten
+  Rest als auch den abgespaltenen Teil. Typecheck und Build grün. Reine
+  Frontend-Änderung ohne eigene Komponenten-Testsuite in diesem Projekt
+  (wie die übrigen Funktionen in dieser Datei) — **noch nicht in echtem
+  Browser/live getestet.**
+
+  **Nachgebessert (2026-08-27):** Nutzer bemängelte an Screenshots, dass im
+  „Position wählen"-Schritt nicht erkennbar war, dass die Zeilen anklickbar
+  sind — bisher nur dünne Trennlinien ohne visuelle Button-Anmutung.
+  Umgestellt auf dasselbe „klickbare Karte"-Muster wie `.register-item` in
+  `admin/users/+page.svelte` (Hintergrund + Rahmen + Hover), plus
+  Chevron („›") am Zeilenende als zusätzlicher Hinweis auf den nächsten
+  Schritt.
+
+  **Nachträglich gegen den Code verifiziert (2026-08-29):** alle oben
+  beschriebenen Bestandteile (`noteStep`, `openNoteDialog()`/
+  `selectNoteLine()`/`changeNoteQuantity()`/`applyNoteEdit()`,
+  `mergeOrInsertLine()`, `.note-select-item`-Kartenstil) existieren exakt
+  wie dokumentiert.
+
+- [Task] **#89** Fehlende PWA-Artefakte nachrüsten (iOS + Android)
+  Aufgekommen bei der Diskussion um den QR-Login (2026-08-27): geprüft,
+  aktuell existiert **keine** echte PWA-Infrastruktur — kein
+  `manifest.json`, kein Service Worker, keine Icons (selbst der in
+  `app.html` referenzierte `favicon.png` existiert nicht im Quellbaum),
+  keine `apple-touch-icon`/`apple-mobile-web-app-capable`-Meta-Tags. Was
+  auf den Geräten als „App" gespeichert wird, ist bisher nur reines
+  Browser-„Zum Home-Bildschirm hinzufügen" ohne echten Standalone-Modus.
+  **Umfang (grob, noch nicht im Detail geplant):** `manifest.json` +
+  Icon-Set in mehreren Auflösungen, `apple-touch-icon`/
+  `apple-mobile-web-app-capable`/`apple-mobile-web-app-status-bar-style`
+  in `app.html`, echten `favicon.png` anlegen. Service Worker nur falls
+  Offline-Fähigkeit gewünscht ist — noch zu klären, ob das für diesen
+  Anwendungsfall (Kassensystem braucht ohnehin Backend-Verbindung)
+  überhaupt sinnvoll ist oder nur unnötige Komplexität wäre.
+  **Bekanntes Risiko:** iOS Safaris „Intelligent Tracking Prevention" räumt
+  Storage/Cookies bei länger nicht besuchten Seiten unter Umständen
+  eigenständig auf — könnte auch mit korrekt gesetztem `maxAge`
+  (siehe #90) zu unvorhersehbaren Zwangs-Logouts auf iPads führen,
+  unabhängig von der PWA-Nachrüstung. Vorab nicht zuverlässig ausschließbar.
+  **Vorbereitung (2026-08-29):** Nutzer hat ein Icon-SVG in
+  `tmp-pwa-artifacts/` vorbereitet (Original in Teal/Grün) — auf Wunsch auf
+  die tatsächliche App-Palette umgefärbt (`--color-primary`/`--color-bg`/
+  `--color-text` aus `routes/+layout.svelte`) und als
+  `fairpos-icon-app-theme.svg` gespeichert; die alten PNGs (aus dem
+  Teal-Original gerendert) wurden vom Nutzer gelöscht, da veraltet.
+
+  **Erledigt (2026-08-29):** PNG-Icon-Set (48–512px, `rsvg-convert`) aus dem
+  neu eingefärbten SVG gerendert, `packages/frontend/static/` angelegt:
+  `manifest.json` (Name/Farben/Icons, `display: fullscreen` wie vom Nutzer
+  vorgegeben, Beschreibung auf Deutsch lokalisiert), `favicon.png` (behebt
+  die bisher kaputte Referenz in `app.html`), `apple-touch-icon.png`
+  (180×180), `icons/icon-{48…512}x{n}.png`. `app.html` bekommt
+  `<link rel="manifest">`, `<link rel="apple-touch-icon">`,
+  `apple-mobile-web-app-capable`/`-status-bar-style`/`-title` — iOS liest
+  `manifest.json` für "Zum Home-Bildschirm" ohnehin nicht, nur diese
+  Meta-Tags zählen dort. `theme-color` dabei von `#1a1a2e` auf das
+  tatsächliche `--color-bg` (`#0f1117`) korrigiert (vorher inkonsistent).
+  Service Worker bewusst **nicht** umgesetzt — Kassensystem braucht ohnehin
+  eine Backend-Verbindung, ein Offline-Modus wäre unnötige Komplexität ohne
+  echten Nutzen.
+
+  Das SVG selbst dauerhaft unter `packages/frontend/static/fairpos-icon.svg`
+  gesichert (nicht nur in `tmp-pwa-artifacts/`, das später gelöscht wird) —
+  Nutzerwunsch: Quelle behalten, um bei künftigen Farbschema-Änderungen
+  jederzeit neue Pixelgrafiken erzeugen zu können. Gleichzeitig das
+  bisherige Platzhalter-Icon (⊕-Zeichen) in der UI ersetzt — `login/+page.svelte`
+  (großes Icon im Anmelde-Screen), `admin/+layout.svelte` und
+  `register/+layout.svelte` (kleines Icon in der jeweiligen Kopfzeile).
+
+  **Zusätzlich (2026-08-29, Nutzerwunsch):** Hinweis „Zum Home-Bildschirm
+  hinzufügen" auf dem PIN-Login-Screen — relevant für Bedienungen, die ihr
+  eigenes Gerät nutzen (nicht für feste Kassen-Tablets). Zeigt
+  plattformspezifische Anleitung (iOS: Teilen-Symbol; Android: Menü),
+  erkennt per `display-mode`-Media-Query + `navigator.standalone` (iOS-
+  Altlast) ob bereits installiert, per User-Agent-Sniffing die Plattform
+  (inkl. iPadOS-13+-Sonderfall, meldet sich als „MacIntel" mit Touch-Punkten
+  statt als iPad). Bewusst **nur** auf dem Login-Screen — nach dem Einloggen
+  keine weitere Störung, auch nicht im normalen Browser-Tab (Nutzervorgabe).
+  Bewusst **nicht** dauerhaft abschaltbar — kein „×", keine
+  localStorage-Merkstelle; wird immer angezeigt, solange die App nicht
+  standalone läuft (Nutzervorgabe, 2026-08-29, nachträgliche Korrektur:
+  ursprünglich mit „×"/localStorage-Dismiss umgesetzt, dann wieder entfernt).
+  Neues Modul `lib/pwaInstallHint.ts` mit Unit-Tests (jsdom).
+
+  Kein automatischer Install-Prompt möglich — iOS bietet dafür grundsätzlich
+  keine API, und Chromes automatischer Banner (`beforeinstallprompt`)
+  braucht einen sicheren Kontext (HTTPS/localhost), den FairPOS im
+  Standard-LAN-Betrieb über HTTP nicht hat (siehe Task #66).
+
+  Typecheck, Build (inkl. Kontrolle, dass `manifest.json`/Icons/Meta-Tags im
+  Build-Output ankommen) und volle Testsuite grün. **Noch nicht live durch
+  den Nutzer bestätigt** (insbesondere: echtes "Zum Home-Bildschirm
+  hinzufügen" auf einem echten iOS-/Android-Gerät noch nicht ausprobiert).
+  `tmp-pwa-artifacts/` noch nicht gelöscht — enthält weiterhin beide SVG-
+  Versionen (Original + neu eingefärbt) und den ursprünglichen
+  `manifest-draft.json`, kann nach Bestätigung entfernt werden.
+
+  **Stand 2026-08-30:** Implementierung vollständig, es fehlt nur noch
+  der reale Gerätetest. Der hängt an Task #92 — ohne zertifikatsfreies
+  HTTPS (Split-Horizon-DNS + offiziell validiertes Zertifikat) zeigen iOS/
+  Android beim „Zum Home-Bildschirm hinzufügen" sonst weiterhin
+  Zertifikatswarnungen bzw. verweigern den Standalone-Modus. Wartet auf
+  #92s finalen Live-Test (dieser wiederum auf neue Router-Hardware beim
+  Nutzer, siehe dort).
+
+  **Live bestätigt und geschlossen (2026-09-01):** Nutzer hat „Zum
+  Home-Bildschirm hinzufügen" real auf **iOS** getestet — funktioniert gut
+  genug, Task auf Nutzerwunsch geschlossen. **Android nicht separat
+  getestet** — falls dort künftig Probleme auffallen (z. B. abweichendes
+  Verhalten von Chrome/`beforeinstallprompt` gegenüber Safari), neuen
+  Task anlegen statt hier wieder zu öffnen.
+
+- [Task] **#90** Login-Neukonzeption: PIN-Login statt QR-Einmaltoken, serverseitige Sessions, vereinheitlichtes Admin/Kassen-Login
+
+  **Ausgangsproblem (2026-08-27):** Das heutige QR-Einmaltoken-Login
+  (`register_access_token`, 10 Min. gültig, `POST /api/auth/register/token`)
+  ist unhandlich, sobald die App als PWA/Homescreen-Bookmark gespeichert
+  wird — das Icon zeigt immer auf eine feste URL, nicht auf den Einmallink
+  mit Token, und eine installierte PWA hat meist keine Adressleiste, um
+  einen neu erzeugten Link von Hand zu öffnen. Zusätzlich gefunden: das
+  Session-Cookie (`packages/backend/src/auth/session.ts`,
+  `COOKIE_OPTIONS`) hat gar kein `maxAge`/`expires` gesetzt — technisch ein
+  reines Browser-Session-Cookie, das beim Schließen verschwindet, obwohl
+  `docs/Anforderungen.md` „Sessions sind persistent" verlangt. Das ist ein
+  eigenständiger Bug, unabhängig vom Redesign.
+
+  **Konzept-Diskussion, Ergebnis:**
+  - **Ein einziges Login-Formular für alle** (kein separates Admin- vs.
+    Kassen-Login mehr) — passt zum Datenmodell, `user.is_admin` ist schon
+    heute nur ein Flag auf derselben Tabelle, keine getrennte Entität. Löst
+    nebenbei die Frage „was zeigt die Root-URL standardmäßig" komplett auf,
+    da es nur noch einen Login-Bildschirm gibt.
+  - **PIN identifiziert und autorisiert gleichzeitig** — kein
+    Benutzernamen-Dropdown (ursprünglich vorgeschlagen, dann verworfen: ein
+    sichtbarer Benutzername hätte gezieltes Sperren einer bekannten Person
+    durch absichtliche Falscheingaben ermöglicht). Format: `XXX-XXX-XXX`,
+    Zeichen A–Z + 0–9 abzüglich verwechselbarer Zeichen (`0`/`O`, `1`/`I`/`l`
+    ausschließen), maskiertes Eingabefeld, Paste mit und ohne Bindestriche
+    unterstützt. Landet nach Erfolg auf der Kassenauswahl (bestehende
+    Weiterleitungslogik in `register/+page.svelte` weitgehend
+    wiederverwendbar, im Detail bei Umsetzung zu prüfen).
+  - **Admin-Zugriff über Stufenauthentifizierung, nicht eigenes Login:**
+    Admin-Benutzer melden sich genau wie alle anderen per PIN an und landen
+    auf derselben Kassenauswahl. Zwischen Kassenliste und Logout-Button
+    erscheint zusätzlich ein „Systemverwaltung"-Button (nur bei
+    `is_admin = true`). Klick darauf fragt einmalig pro Session das
+    bestehende Passwort ab (Flag `admin_verified` auf der Session, kein
+    erneutes Abfragen bei jedem weiteren Klick). Vorteil: die PIN selbst
+    muss für Admin-Konten nicht stärker sein als für alle anderen — der
+    eigentliche Schutz für den sensiblen Adminbereich bleibt das Passwort.
+  - **PIN-Verwaltung im Adminbereich:** `admin/users/+page.svelte`
+    bekommt statt des heutigen QR-Generieren-Buttons ein PIN-Feld
+    („PIN generieren" erzeugt eine Zufalls-PIN, manuelle Eingabe ebenfalls
+    möglich). Eindeutigkeit wird beim Speichern serverseitig geprüft.
+  - **Rate-Limiting statt Pro-Konto-Sperre:** die ursprünglich angedachte
+    „3 Fehlversuche sperren dieses Konto" + Benutzerliste-Spalte
+    „PIN-Fehler" passt nicht mehr zum PIN-only-Modell — eine falsche
+    Eingabe lässt sich keinem Konto zuordnen, wenn der PIN selbst schon die
+    Identifikation ist. Ersetzt durch ein klassisches IP-basiertes
+    Rate-Limit auf den Login-Endpunkt: 3 Fehlversuche → 15 Minuten Sperre
+    dieser IP. Rechnerisch mehr als ausreichend (s.u.), eher Serverlast-/
+    Spam-Schutz als sicherheitsentscheidend, da der PIN-Raum selbst (siehe
+    unten) schon praktisch nicht durchprobierbar ist.
+    **Admin braucht eine Möglichkeit, aktive IP-Sperren manuell
+    zurückzusetzen** (falls ein Gerät sich versehentlich selbst aussperrt
+    und der Betrieb dadurch blockiert wäre) — einfacher Button „Alle
+    aktiven IP-Sperren zurücksetzen" genügt, keine Liste einzelner
+    Sperren nötig. Siehe auch Ergänzung bei Task #63 (Dashboard könnte die
+    Anzahl aktiver Sperren + denselben Reset-Button zusätzlich zeigen).
+
+  **Sicherheitsbetrachtung:**
+  - PIN-Raum: 9 Zeichen aus A–Z+0–9 abzüglich verwechselbarer Zeichen ≈
+    3–3,5×10¹³ Kombinationen. Bei 3 Versuchen/15 Min. pro IP käme ein
+    Angreifer auf ca. 10⁵ Versuche/Jahr — selbst mit 10.000 parallelen
+    IP-Adressen wären das rechnerisch tausende Jahre bis zum Durchprobieren
+    des gesamten Raums. Die Sperre ist hier eher Serverlast-Schutz, der
+    Raum selbst macht Online-Raten praktisch aussichtslos.
+  - Realistische Bedrohung ist stattdessen **Diebstahl eines DB-Backups**
+    und anschließendes **Offline-Cracken** der PIN-Hashes. Ein Hash ohne
+    Salt oder mit konstantem Salt (z. B. Kassen-Seriennummer, die ohnehin
+    in derselben DB steht) ließe sich einmalig offline für den gesamten
+    Zeichenraum vorberechnen (auf aktueller GPU-Hardware im Bereich von
+    Minuten bis einer Stunde) — eine wiederverwendbare Tabelle gegen jede
+    gestohlene DB-Kopie.
+  - **Wichtige technische Korrektur während der Konzeption:** ein
+    zeilen-gesalzener, langsamer Hash wie bcrypt (wie bei Passwörtern
+    verwendet) verhindert zwar Offline-Vorberechnung, macht aber die
+    **Login-Suche selbst unpraktikabel** — ohne bekannten Benutzernamen
+    müsste bei jedem Login-Versuch gegen **jeden** Benutzer einzeln
+    geprüft werden (bcrypt ist absichtlich langsam, ~100ms/Vergleich),
+    im Fehlerfall (keine Übereinstimmung) sogar gegen alle. Bei
+    realistischen Nutzerzahlen spürbar langsam.
+    **Lösung:** `pin_hash` = `HMAC-SHA256(SERVER_SECRET, normalisierte PIN)`
+    — deterministisch (gleiche PIN → gleicher Hash), erlaubt eine normale
+    indizierte SQL-Abfrage (`WHERE pin_hash = $1`) sowohl beim Login als
+    auch bei der Eindeutigkeitsprüfung, bleibt aber offline-resistent,
+    **solange** `SERVER_SECRET` getrennt von der Datenbank aufbewahrt wird
+    (eigene Env-Variable, nicht Teil des DB-Backups — analog zum
+    bestehenden `SESSION_SECRET`-Muster in `config.ts`). Passwörter
+    (Admin-Stufenauth) bleiben unverändert bei bcrypt — dort ist die
+    Zeilen-Salt-Eigenschaft kein Problem, da immer gegen einen schon
+    bekannten Benutzer geprüft wird.
+
+  **Technischer Umfang (grob, Detailplanung folgt bei Umsetzung):**
+  - **DB:** `user` bekommt `pin_hash` (nullable, bis Admin eine PIN
+    vergibt); `register_access_token`-Tabelle + zugehöriger Code entfällt
+    komplett (obsolet). Neue `session`-Tabelle (`id`, `user_id`, `token`,
+    `admin_verified`, `created_at`, `last_activity_at`, optional
+    `user_agent`) ersetzt die bisherigen zwei getrennten, zustandslosen
+    signierten Cookies (`adminUser`/`registerUser`) durch ein einziges,
+    serverseitig nachverfolgtes Modell — Voraussetzung für
+    Session-Liste + gezieltes Beenden im Adminbereich.
+  - **Backend:** neuer Endpunkt `POST /api/auth/pin`; neuer
+    Stufenauth-Endpunkt (Passwortprüfung, setzt `admin_verified` auf der
+    bestehenden Session statt eine neue zu erzeugen); `POST
+    /api/admin/users/:id/token` und `POST /api/auth/register/token`
+    entfallen; `authenticateAdmin`/`authenticateRegister`-Middlewares
+    verschmelzen zu einer gemeinsamen Session-Prüfung (+ zusätzlicher
+    `admin_verified`-Check für admin-only-Routen); In-Memory-Rate-Limiter
+    pro IP auf `POST /api/auth/pin`; Reset-Endpunkt für alle aktiven
+    IP-Sperren; `last_activity_at` wird bei jedem authentifizierten
+    Request aktualisiert (gleitende Verlängerung), Session gilt nach 4h
+    Inaktivität als abgelaufen.
+  - **Frontend:** `login/+page.svelte` komplett neu (maskiertes
+    PIN-Eingabefeld statt Formular-Umschaltung); `adminUser`/`registerUser`-
+    Stores verschmelzen zu einem gemeinsamen Nutzer-Store +
+    `isAdminVerified`-Flag; „Systemverwaltung"-Button + Passwort-Stufenauth-
+    Dialog auf der Kassenauswahl; `admin/users/+page.svelte`: QR-Generieren
+    durch PIN-Verwaltung (Anzeige/Generieren/manuell ändern) ersetzen; neue
+    Admin-Seite „Aktive Sessions" (Liste + Beenden-Button pro Zeile).
+
+  **Größter struktureller Aufwand — umgangen durch kompatibilitätswahrenden
+  Zuschnitt:** `authenticateAdmin`/`authenticateRegister` und die Felder
+  `request.adminUser`/`request.registerUser` (in praktisch jeder
+  admin-/registerseitigen Route verwendet) bleiben namentlich unverändert —
+  beide lesen jetzt intern dieselbe `session`-Tabelle über **ein** Cookie,
+  statt zwei komplett getrennte Cookies zu pflegen. `authenticateRegister`
+  akzeptiert jede gültige Session; `authenticateAdmin` verlangt zusätzlich
+  `is_admin` **und** `admin_verified`. Dadurch musste kein einziger
+  bestehender Routen-Handler inhaltlich angefasst werden — die
+  Vereinheitlichung passierte ausschließlich in der Session-/Login-Schicht.
+  Dasselbe Muster auf der Frontend-Seite: `adminUser`/`registerUser`
+  bleiben zwei Stores, beide werden nur noch von einem gemeinsamen
+  Login-Fluss befüllt.
+
+  **Erledigt (2026-08-27):**
+  - Migration `0011_pin_login_sessions.sql`: `user.pin_hash`, neue
+    `session`-Tabelle (`user_id`, `token`, `admin_verified`, `created_at`,
+    `last_activity_at`, `user_agent`), `register_access_token` entfernt.
+  - `config.pinHashSecret` (`PIN_HASH_SECRET`-Env-Var, getrennt von
+    `SESSION_SECRET`) — `.env.example`, `docs/SETUP.md`,
+    `docs/Installationsanleitung.md` aktualisiert, inkl. Warnung, dass
+    dieser Schlüssel nicht ins DB-Backup gehört.
+  - `auth/pin.ts`: Normalisieren/Formatieren/Hashen (`HMAC-SHA256`,
+    deterministisch für schnelle Lookup-Abfrage statt bcrypt-Schleife über
+    alle Benutzer — Korrektur eines eigenen Fehlvorschlags während der
+    Konzeption, siehe Diskussion oben)/Zufalls-PIN ohne `0`/`O`/`1`/`I`.
+  - `auth/rateLimit.ts`: In-Memory-IP-Sperre (3 Versuche/15 Min.),
+    `countActiveLockouts()`/`resetAllLockouts()`.
+  - `auth/session.ts` komplett umgebaut auf die `session`-Tabelle (ein
+    Cookie, gleitende 4h-Inaktivitätsgrenze, `admin_verified`-Flag).
+  - `middleware/authenticate.ts` wie oben beschrieben umgebaut, ohne
+    Signatur-/Feldnamenänderung nach außen.
+  - `routes/auth.ts`: `POST /api/auth/pin`, `POST /api/auth/admin/verify`
+    (Stufenauth, setzt `admin_verified` auf der bestehenden Session), ein
+    gemeinsames `POST /api/auth/logout`; altes Login/Token entfernt.
+  - `admin/users.ts`: PIN-Generieren (`POST .../pin/generate`, liefert nur
+    einen Vorschlag, noch nicht gespeichert) + Speichern
+    (`PUT .../pin`, Eindeutigkeitsprüfung), `has_pin` in der Benutzerliste
+    statt des Hash selbst.
+  - Neue `admin/sessions.ts` (Liste + gezieltes Beenden) und
+    IP-Sperren-Reset-Endpunkt in `admin/system.ts` (+ `ip_lockout_count`
+    in `/status`).
+  - Frontend: neue Login-Seite (maskiertes PIN-Feld, Paste mit/ohne
+    Bindestriche), Kassenauswahl mit „Systemverwaltung"-Button + Passwort-
+    Stufenauth-Dialog (unterdrückt außerdem den Single-Register-Autoskip
+    für Admins, damit sie den Button überhaupt sehen), PIN-Verwaltung in
+    `admin/users/+page.svelte` statt QR-Code, neue Seite „Aktive Sessions",
+    IP-Sperren-Anzeige+Reset in den Systemeinstellungen.
+  - `db/seed.ts` vergibt jetzt ebenfalls eine PIN (sonst könnte sich der
+    erste Admin nach frischer Installation gar nicht anmelden) und gibt
+    sie einmalig auf der Konsole aus.
+  - E2E-Suite (`full-flow.e2e.test.ts`) und ihr README auf
+    `E2E_ADMIN_PIN` + PIN-Vergabe für den Testkassierer umgestellt.
+  - `docs/Anforderungen.md` (Authentifizierungs-Entscheidung),
+    `docs/Manueller-Testplan.md` (Abschnitt 1 + Benutzerverwaltung),
+    `docs/Dictionary.md` (PIN/Sitzung statt Zugangscode) aktualisiert.
+  - Neue Unit-Tests (`auth/pin.test.ts`, `auth/rateLimit.test.ts`) und
+    Integrationstests (`auth.integration.test.ts` neu geschrieben,
+    `admin/sessions.integration.test.ts` neu, PIN-Verwaltung +
+    IP-Sperren-Tests in `admin-routes.integration.test.ts` ergänzt);
+    bestehende Login-Hilfsfunktionen (`loginAsAdmin`/`loginAsRegisterUser`
+    in `test/app-helpers.ts`) auf PIN umgestellt — dadurch automatisch
+    alle ~14 bestehenden Testdateien mit angepasst, ohne deren eigentliche
+    Testlogik zu ändern. Volle Unit- (262 Tests) und Integrationssuite
+    grün, Typecheck (Backend+Frontend) und Build sauber.
+  - **Live bestätigt (durchgehend seit 2026-08-29):** produktiv im Einsatz,
+    mehrere Runden Live-Test-Feedback eingearbeitet (siehe
+    Nachbesserungen unten), zwei Produktions-Migrationsvorfälle (D-049
+    fehlender `PIN_HASH_SECRET`, D-050 Bestandsadmin ohne PIN) gefunden
+    und behoben.
+
+  **Weiterhin offen / noch nicht entschieden (nicht blockierend):** genaue
+  PIN-Länge falls von 3×3 abgewichen werden soll (bisher nicht in Frage
+  gestellt, aktuell beibehalten); ob ein Mindestabstand zwischen zwei
+  PIN-Neuvergaben für denselben Benutzer nötig ist (bisher nicht
+  thematisiert, vermutlich nicht nötig); Task #89 (PWA-Artefakte)
+  weiterhin unabhängig offen.
+
+  **Nachbesserungen (2026-08-29):**
+  - Manuelle PIN-Eingabe erlaubt jetzt auch verwechselbare Zeichen
+    (`0`/`O`/`1`/`I`) — nur der Zufallsgenerator vermeidet sie weiterhin.
+    `auth/pin.ts` unterscheidet jetzt `VALID_ALPHABET` (36 Zeichen, für
+    `isValidPinFormat`) von `GENERATOR_ALPHABET` (32 Zeichen, für
+    `generateRandomPin`).
+  - „PIN ändern"-Dialog öffnet jetzt mit **leerem** Feld statt automatisch
+    eine neue PIN vorzuschlagen — sonst könnte der Anwender denken, die
+    angezeigte PIN sei die bereits bestehende (Verwechslungsgefahr, da die
+    echte PIN nie aus dem Hash rekonstruierbar ist). Vorschlag erscheint
+    erst nach explizitem Klick auf „Neu erzeugen".
+  - Neue Funktion „PIN drucken" im PIN-Dialog: druckt Benutzername + PIN
+    über den Standarddrucker aus (`print_job`-Typ `pin_slip`, Migration
+    `0012_print_job_pin_slip.sql`, `buildPinSlip()` in `print/escpos.ts`,
+    `POST /api/admin/users/:id/pin/print`), mit Bestätigungsdialog „Achtung,
+    die PIN wird am Standarddrucker ausgedruckt." vorher. Funktioniert auf
+    dem aktuell angezeigten Feldinhalt, unabhängig davon ob schon
+    gespeichert.
+  - **Bug gefunden und behoben:** die neue „PIN drucken"-Funktion machte aus
+    dem Dialog-Aktionen-Bereich fünf Buttons in einer einzigen, nicht
+    umbrechenden Zeile (`.modal-actions`) — lief auf schmaleren Bildschirmen
+    über den sichtbaren Dialogrand hinaus (Nutzerbericht: „Buttons sind zu
+    groß und außerhalb des sichtbaren Bereichs"). Behoben durch Aufteilung
+    in zwei Zeilen (Hilfsaktionen „Neu erzeugen"/„Kopieren"/„PIN drucken"
+    getrennt von „Abbrechen"/„Speichern") plus `flex-wrap: wrap` als
+    generelles Sicherheitsnetz für `.modal-actions` in jedem Admin-Dialog.
+    Die zusätzlich gemeldete Beobachtung „im ganzen Adminbereich sind die
+    Buttons größer geworden" ließ sich **nicht** bestätigen — Code-Splitting
+    zwischen Admin/Register-Bereich per Vite-Manifest geprüft (keine
+    Überschneidung der CSS-Chunks), Basis-Button-Stile in
+    `admin/+layout.svelte` per Git-Historie auf Unverändertheit geprüft.
+    Falls das Problem weiterhin auftritt, brauchen wir einen Screenshot/
+    genaueren Kontext (Gerät, Browser, welche konkrete Seite).
+  - Bei der Gelegenheit einen echten Bug in `api.ts`s `request()` gefunden
+    und behoben: `Object.assign(error, data)` (für Task #90s
+    `needs_admin_verification`-Weiterleitung) überschrieb `error.message`,
+    falls die Fehlerantwort zufällig ein `message`-Feld enthielt — jetzt
+    werden `error`/`message` beim Kopieren der Zusatzfelder ausgeschlossen.
+    Von der bestehenden Testsuite aufgefangen, bevor es committet wurde.
+  - **Lücke gefunden und behoben (Nutzerbericht):** Setzen der
+    Administrator-Checkbox bei einem bestehenden Benutzer ohne Passwort
+    (`PUT /api/admin/users/:id`) wurde bisher nicht geprüft — der Benutzer
+    wäre Administrator geworden, ohne die Systemverwaltung je per
+    Passwort-Step-up erreichen zu können. `password_hash` ist jetzt
+    nullable (Migration `0013_admin_password_required.sql`, Non-Admins
+    hatten ohnehin nur einen zufälligen, nie herausgegebenen Platzhalter-
+    Hash — dieser wird für alle Bestandsbenutzer mit `is_admin = false`
+    auf `NULL` zurückgesetzt), `POST`/`PUT` in `admin/users.ts` verlangen
+    ein Passwort, sobald `is_admin: true` gesetzt wird und weder ein neues
+    Passwort mitgeschickt wird noch bereits eines existiert. Analoge
+    Prüfung im Frontend-Formular (`admin/users/+page.svelte`) für
+    sofortiges Feedback ohne Round-Trip.
+
+- [Task] **#91** Artikel-Button-Beschriftung bricht je nach Bildschirmbreite unterschiedlich um
+  Aufgekommen beim Live-Test (2026-08-29): `.grid-btn` (Artikel-Kacheln in
+  Bonkasse `register/[id]/+page.svelte` und Bedienungskasse
+  `.../order/+page.svelte`) hat nur `min-height: 70px` und
+  `overflow-wrap: anywhere`, keine feste Höhe. Beispiel „Weizenbier": auf
+  einem schmalen Bildschirm bricht der Text automatisch zweizeilig um und
+  sieht gut aus, auf einem breiten Bildschirm ist die Kachel breit genug
+  für eine Zeile — dieselbe Beschriftung wirkt je nach Gerät
+  unterschiedlich, weil der automatische Umbruch nicht kontrollierbar ist.
+  Aktuell zeigen die Buttons direkt `article.name` (`nameOf()` in beiden
+  Dateien) — dasselbe Feld, das auch auf Rechnungen/im DSFinV-K-Export
+  erscheint.
+  **Zwei Lösungsansätze, noch nicht entschieden:**
+  1. Beschriftung mit manuellen Zeilenumbrüchen eingebbar machen (Admin
+     steuert selbst, wo umgebrochen wird), gerendert mit
+     `white-space: pre-line`, damit der Umbruch auf jedem Bildschirm gleich
+     aussieht. **Wichtig:** darf nicht `article.name` selbst überschreiben
+     (das würde mehrzeilige Namen in Rechnungen/Export/Berichten
+     einschleppen) — bräuchte ein eigenes Feld, z. B. `label` auf
+     `register_layout_slot` (dort gibt es mit `color` schon ein
+     Pro-Slot-Override neben dem Artikel selbst, exakt das gleiche Muster),
+     nullable, fällt ohne gesetzten Wert auf `article.name` zurück.
+  2. Button-Höhe im Kassenlayout-Editor fest einstellbar machen (statt nur
+     `min-height`), damit alle Buttons einheitlich hoch sind, mit
+     `overflow: hidden` bei zu langem Text abschneiden statt umzubrechen.
+  Beide Ansätze schließen sich nicht zwingend aus (feste Höhe + optionale
+  manuelle Umbrüche) — durch die unten dokumentierte Entscheidung (Lösung 1)
+  überholt.
+
+  **Konzept korrigiert (2026-08-29):** Annahme oben ("dasselbe Feld, das
+  auch auf Rechnungen/DSFinV-K erscheint") war falsch — geprüft anhand
+  des Codes: `article.name` wurde schon vorher **ausschließlich** für die
+  Kassentaste verwendet (`nameOf()`), Rechnungen/DSFinV-K lasen
+  `article.receipt_text ?? article.name` (Bontext). Root Cause der
+  Inkonsistenz zusätzlich bestätigt: `grid-template-columns:
+  repeat(var(--cols), minmax(80px, 1fr))` — Spaltenbreite ist proportional
+  zur Bildschirmbreite, daher unterschiedliche Umbruchpunkte je Gerät.
+  Lösung 2 (feste Höhe + Abschneiden) hätte das eigentliche Problem nicht
+  behoben, nur verschoben (abgeschnittener Text statt anders umgebrochen
+  — Informationsverlust statt nur anderer Optik), daher **Lösung 1**
+  umgesetzt.
+
+  **Erledigt (2026-08-29):**
+  - Migration `0014_layout_slot_label_hidden.sql`: `register_layout_slot`
+    bekommt `label VARCHAR(200) NULL` (Fallback auf Artikelname) und
+    `hidden BOOLEAN NOT NULL DEFAULT false`.
+  - Migration `0015_article_name_only.sql`: da die Tastenbeschriftung jetzt
+    pro Slot lebt, braucht `article` kein separates Kurzname/Bontext-Paar
+    mehr — `name` auf VARCHAR(200) verbreitert (Bontext erlaubte bis zu
+    200 Zeichen, Kurzname nur 100 — sonst hätte die Migration bei langen
+    Bontexten mit einem Fehler abgebrochen, Postgres kürzt VARCHAR nicht
+    still), `receipt_text`-Werte wo gesetzt nach `name` übernommen, Spalte
+    danach gedroppt. Betroffen: `admin/articles.ts`, `register-session.ts`
+    (drei Stellen `article.receipt_text ?? article.name` → `article.name`),
+    `admin/cancellations.ts`, `shared/types.ts`, `admin/articles/+page.svelte`
+    (Bontext-Feld raus, Kurzname-Label → „Name"). Nebenbei entfernt: toter
+    Code `lib/order.ts`s `articleLabel()` — nie aufgerufen, Kommentar log
+    zudem veraltet (behauptete receipt_text-Fallback, Body machte nur
+    `return a.name`).
+  - Layout-Editor (`admin/settings/layouts/[id]/+page.svelte`): Popover pro
+    Slot um 3-zeiliges Textfeld ("Tastenbeschriftung", leer = Artikelname)
+    und Checkbox ("Vorübergehend verstecken") erweitert. "Entfernen"-Button
+    entfernt (redundant zu Zurückziehen in die Ablage per Drag&Drop).
+  - **Bug gefunden und behoben (Nutzerbericht: Farbe geht beim Verschieben
+    verloren):** `onDrop()` schlug die alte Farbe erst nach dem Entfernen
+    des Slots aus dem Array nach (`slotAt()` fand also immer nichts mehr,
+    Fallback auf `DEFAULT_COLOR` bei jedem Verschieben). Fix: die komplette
+    Slot-Instanz vor dem Entfernen greifen und als Ganzes an die neue
+    Position spreaden — nimmt automatisch auch `label`/`hidden` mit.
+  - "Verstecken" filtert serverseitig (`register-session.ts`s Slot-Query:
+    `AND hidden = false`), nicht clientseitig — ein versteckter Slot kommt
+    an der Kasse gar nicht erst an, sieht exakt wie eine leere Zelle aus,
+    genau wie beim bestehenden `is_active`-Muster für Artikel/Kassen.
+    Dadurch war an den beiden Kassen-Views selbst keine Änderung für das
+    "Unsichtbar"-Verhalten nötig.
+  - Beide Kassen-Views (`register/[id]/+page.svelte`,
+    `.../tables/[tableId]/order/+page.svelte`): Taste zeigt
+    `slot.label || nameOf(slot.article_id)`, zusätzlich `white-space:
+    pre-line` auf `.grid-btn` für manuelle Umbrüche. Bestellliste/
+    Notiz-Dialog-Titel zeigen weiterhin den echten Artikelnamen (nicht das
+    Slot-Label) — bewusste Nutzerentscheidung. **Live bestätigt
+    (2026-09-06):** manuell vorgegebener Zeilenumbruch funktioniert.
+  - Neue Tests: `admin-routes.integration.test.ts` (Label/Hidden werden
+    beim Speichern und Duplizieren übernommen),
+    `register-session.integration.test.ts` (versteckter Slot fehlt in der
+    Antwort komplett, sichtbarer Slot liefert sein Label). Backend-Unit
+    (269/269), Backend-Integration, Frontend-Unit (70/70) und Typecheck
+    grün.
+  - **Nebenbei gefunden:** `docs/Datenmodell.dbml` hat für
+    `register_layout`/`register_layout_slot` deutlich mehr Drift zum realen
+    Schema als hier korrigiert (z. B. `register_layout.register_id`/
+    `is_default` existieren im echten Schema gar nicht) — nur die für
+    diese Änderung direkt relevanten Felder (`label`, `hidden`) ergänzt,
+    größere Doku-Bereinigung als eigenständige Aufgabe noch offen.
+
+- [Task] **#92** DNS-Masquerading für Split-Horizon-DNS (aus Task #66 ausgelagert)
+  Herausgelöst aus Task #66 (2026-08-29, Nutzerwunsch: eigener Task). Ziel:
+  Bedienungen mit eigenen Geräten das Installieren eines eigenen
+  CA-Zertifikats ersparen, indem FairPOS ein öffentlich validiertes
+  Zertifikat (z. B. Let's Encrypt) für eine echte, dem Verein gehörende
+  Domain nutzt, deren Namensauflösung am Veranstaltungsort per lokalem DNS
+  auf die LAN-IP des FairPOS-Servers "umgebogen" wird — jeder
+  Standard-Browser vertraut der offiziellen CA ganz normal, kein manueller
+  Vertrauensschritt auf irgendeinem Gerät nötig. Details/Ablauf (DNS-01-
+  Challenge, DHCP-Verteilung am Vereins-Router, reale Einschränkungen ohne
+  eigene Domain/ohne Router-Zugriff): siehe Task #66s bisherige Notizen
+  (Versionsgeschichte dieser Datei) — hier nur noch das Backend-seitige
+  DNS-Masquerading selbst.
+
+  **Backend-Einstellungen (Nutzervorschlag + Ergänzungen, 2026-08-29):**
+  - **Eigene Domain** — die Domain, die am Veranstaltungsort auf die
+    lokale IP zeigen soll (z. B. `kasse.mein-verein.de`). Muss zum
+    Zertifikat aus Task #66 passen (gleicher Hostname).
+  - **Vorgelagerte/Upstream-DNS-Server** (primär + optional sekundär) —
+    wohin alle Anfragen weitergeleitet werden, die **nicht** die eigene
+    Domain betreffen. Ohne das würde jedes Gerät, das den FairPOS-Server
+    als DNS nutzt, für alles andere (normales Internet, andere Apps auf
+    demselben Gerät) die Namensauflösung verlieren — der Server muss also
+    für alles außer der eigenen Domain ein normaler Forwarder bleiben,
+    nicht nur ein Ein-Domain-Resolver.
+  - **Eigene IP** — die Ziel-IP, auf die die Domain zeigen soll (LAN-IP
+    des FairPOS-Servers selbst). Manuell änderbar (z. B. bei mehreren
+    Netzwerkschnittstellen, oder wenn Auto-Detect die falsche erwischt)
+    + Auto-Detect-Button (analog zum bestehenden Muster „TSE-Status prüfen"
+    o. Ä. — Button löst Server-seitige Erkennung aus, z. B. über die
+    Standard-Ausgangsroute, und trägt das Ergebnis ins Feld ein).
+  - **An/Aus-Schalter für die gesamte Funktion** — nicht jedes Deployment
+    will einen lokalen DNS-Server laufen haben; per Default aus.
+  - **TTL für den DNS-Eintrag** — wie lange Geräte die Auflösung cachen,
+    bevor sie erneut anfragen. Relevant falls sich die eigene IP mal
+    ändert (z. B. Server-Hardware-Wechsel zwischen Veranstaltungen) —
+    kurze TTL vermeidet, dass Geräte danach noch die alte IP aus dem Cache
+    verwenden.
+  - **„Auflösung testen"-Aktion** — schickt eine echte DNS-Anfrage gegen
+    den eigenen laufenden Resolver und zeigt, ob die konfigurierte Domain
+    tatsächlich auf die konfigurierte IP auflöst, statt dass der erste
+    echte Test ein Gerät am Einlass ist.
+
+  **Architekturfragen (durch die unten dokumentierte Umsetzung überholt):**
+  - Welche DNS-Server-Software läuft im Hintergrund. `dnsmasq` naheliegend
+    (leichtgewichtig, Standard-Ubuntu-Paket, kann Forwarder + einzelne
+    Host-Overrides gleichzeitig, passt zum bisherigen „native Ubuntu, kein
+    Docker"-Ansatz).
+  - DNS braucht Port 53 — Node/Fastify läuft nicht privilegiert. Vermutlich
+    dasselbe Muster wie `system/time.ts`/`system/shutdown.ts`: `dnsmasq`
+    als eigener systemd-Dienst, Backend schreibt nur dessen Konfigdatei und
+    stößt einen eng begrenzten Neustart per sudoers-Regel an, statt selbst
+    auf Port 53 zu lauschen.
+  - Geräte im WLAN müssen diesen DNS-Server tatsächlich **nutzen** —
+    braucht entweder eigenen Router/AP mit passender DHCP-Option 6, oder
+    manuelle Konfiguration pro Gerät. Kein FairPOS-seitiges Setting kann
+    das erzwingen, nur dokumentieren/Onboarding-Hinweis dafür.
+  - Verhältnis zu Task #66s Zertifikats-Upload: DNS-Masquerading allein
+    bringt nichts ohne ein zur Domain passendes Zertifikat — beide Tasks
+    hängen zusammen, aber technisch unabhängig umsetzbar (Zertifikat auch
+    ohne diesen DNS-Server per DNS-01-Challenge extern beziehbar und
+    manuell hochladbar).
+
+  **Implementiert (2026-08-30):** `dnsmasq` als Hintergrunddienst, exakt
+  nach dem oben skizzierten Muster. Backend: `system/dnsConfig.ts`
+  (Validierung, Konfig-Rendering, Staging + privilegiertes
+  `dns-config.sh`-Skript mit `dnsmasq --test`-Validierung und
+  automatischem Rollback, IP-Auto-Erkennung über `ip route get`,
+  Auflösungstest per direkter Abfrage an `127.0.0.1`), Route
+  `routes/admin/dnsConfig.ts` (`GET`/`POST`/`DELETE` +
+  `/detect-ip`/`/test`), Einstellungen in `system_setting`
+  (`dns_domain`/`dns_upstream_primary`/`dns_upstream_secondary`/
+  `dns_target_ip`/`dns_ttl`) — kein neues Migrations-File nötig.
+  **Kein An/Aus-Schalter** (Nutzerentscheidung, 2026-08-30, siehe oben
+  „An/Aus-Schalter" — verworfen zugunsten reiner Präsenz-basierter
+  Aktivierung, analog zum SSL-Zertifikat: „konfiguriert" = eine Domain ist
+  gespeichert; „Deaktivieren"-Button entfernt die Konfiguration
+  vollständig). Frontend: eigene Seite Einstellungen → DNS-Masquerading
+  (`admin/settings/dns-config`), Upstream-DNS-Server dort mit
+  konfigurierbar. Doku: Installationsanleitung Abschnitt 16. Unit- +
+  Integrationstests vorhanden (`system/dnsConfig.test.ts`,
+  `routes/admin/dnsConfig.integration.test.ts`).
+
+  **Live gefunden und behoben (2026-08-30):** "Auflösung testen" fragte
+  hartcodiert `127.0.0.1` ab — dnsmasq lauscht dort aber bewusst nicht
+  (`listen-address=<eigene IP>` + `bind-interfaces`, s. o.), daher
+  `ECONNREFUSED`. Fix: die Testfunktion fragt jetzt die konfigurierte
+  eigene IP ab statt `127.0.0.1` — bildet damit auch genauer nach, was ein
+  echtes Gerät am Veranstaltungsort tut (dieselbe IP, die per DHCP verteilt
+  würde).
+
+  **Live gefunden und behoben (2026-08-30):** zweiter Speichervorgang
+  schlug beim `systemctl restart dnsmasq` fehl
+  (`illegal repeated keyword at line 5 of /etc/dnsmasq.d/fairpos.conf.bak`).
+  Ursache: `dns-config.sh`s eigenes Rollback-Backup lag als
+  `fairpos.conf.bak` direkt in `/etc/dnsmasq.d/` — Ubuntus Standard-
+  `conf-dir`-Regel schließt aber nur `.dpkg-dist`/`.dpkg-old`/`.dpkg-new`
+  aus, nicht `.bak`, sodass dnsmasq das eigene Backup beim Neustart als
+  zweite, echte Konfigurationsdatei mit denselben Direktiven einliest.
+  Fix: Backup liegt jetzt außerhalb von `/etc/dnsmasq.d/`
+  (`/var/lib/fairpos/dns-staging/fairpos.conf.bak`); zusätzlich rollt das
+  Skript jetzt auch zurück, wenn `systemctl restart` selbst fehlschlägt
+  (vorher nur bei fehlgeschlagenem `dnsmasq --test`) — sonst hätte ein
+  Neustart-Fehler dnsmasq mit der neuen, kaputten Config stehen lassen
+  statt beim alten funktionierenden Zustand zu bleiben.
+
+  **Live bestätigt und geschlossen (2026-09-01):** finaler Live-Test mit
+  neuem Router/Access-Point durchgeführt — DHCP-Option 6 verteilt die
+  eigene IP als DNS-Server, Geräte lösen die konfigurierte Domain korrekt
+  auf. Der zuvor einzige offene Punkt (fehlende passende Router-Hardware)
+  ist damit erledigt.
+
+  **Gegen `docs/Installationsanleitung.md` Abschnitt 16 geprüft
+  (2026-09-06):** Code und Setup-Anleitung stimmen exakt überein —
+  Skriptpfad (`/opt/fairpos/scripts/dns-config.sh`, parameterlos),
+  Staging-Verzeichnis/-Dateiname (`config.dnsStagingDir`/`fairpos.conf`,
+  Default `/var/lib/fairpos/dns-staging`, wie in 16.2 angelegt),
+  Sudoers-Regel (`fairpos ALL=(root) NOPASSWD:
+  /opt/fairpos/scripts/dns-config.sh`, exakt wie `execFile('sudo', […])`
+  im Code aufruft) und der Auflösungstest (fragt die konfigurierte eigene
+  IP ab, nicht `127.0.0.1` — passend zum in 16.1 dokumentierten
+  `bind-interfaces`-Grund). Keine Abweichung gefunden.
+
+- [Task] **#93** Geschäftszahlen auf der Admin-Startseite (Folgeaufgabe aus #63)
+  Herausgelöst aus Task #63 (2026-08-29, Nutzerentscheidung: Fokus dort
+  zunächst nur auf Systemzustand/Fehler). Idee: zusätzliche Kennzahlen-
+  Kacheln auf dem Dashboard, die tatsächliche Geschäftszahlen statt
+  Systemgesundheit zeigen — z.B. Tagesumsatz, Anzahl offener/besetzter
+  Tische, Bestellungen der laufenden Veranstaltung. **Noch nicht
+  analysiert:** welche Kennzahlen wirklich aussagekräftig sind, welche
+  bestehenden Endpoints/Queries sie günstig liefern können (vermutlich
+  Overlap mit den bestehenden Berichten unter `admin/reports.ts`), und ob
+  eine Live-Aktualisierung (SSE, analog zu anderen Echtzeit-Ansichten) oder
+  ein einfacher Reload beim Seitenaufruf reicht. Erst nach Abschluss von
+  Task #63 angehen.
+
+  **Teilweise vorgezogen (2026-08-29, Nutzerwunsch, direkt in Task #63
+  umgesetzt):** „Tagesumsatz" (neuer Endpoint `/api/admin/reports/
+  today-revenue`) und „Offene Rechnungen" (bestehender `/open-positions`-
+  Endpoint) sind bereits da, inkl. 30-Sekunden-Auto-Refresh fürs ganze
+  Dashboard (Intervall-Reload statt SSE — passt zum bereits bestehenden
+  Client-Polling-Muster der Anwendung, siehe `AGENTS.md`).
+
+  **Bewusst nicht umgesetzt (2026-08-30, Nutzerentscheidung):** „Anzahl
+  offener/besetzter Tische" und „Bestellungen der laufenden Veranstaltung"
+  — aktuell nicht wichtig genug, kein aktiver Bedarf. Task damit
+  abgeschlossen; bei Bedarf später als neuer Task wieder aufgreifen statt
+  hier weiter offen zu halten.
+
+- [Task] **#94** Zwei-Stufen-Admin (System-Administrator / Veranstaltungs-Administrator)
+  Aufgekommen beim Verleih-Konzept (2026-08-30): beim Verleih des Servers
+  an einen anderen Verein sollen bestimmte Einstellungen geschützt und alte
+  Daten nicht offengelegt werden. Erster Baustein dafür: zwei
+  Admin-Berechtigungsstufen statt der aktuellen einzelnen `is_admin`-Stufe.
+
+  **Konzept (Nutzervorgabe, 2026-08-30):**
+  - Zwei Checkboxen beim Benutzer statt einer: **System-Administrator**
+    (darf alles, wie heutiges `is_admin`) und **Veranstaltungs-Administrator**
+    (darf nur das für die laufende Veranstaltung Notwendige; **kein
+    Wechsel der aktiven Veranstaltung** — siehe Task #95, dort ist die
+    aktive Veranstaltung eine globale, nur vom System-Administrator
+    änderbare Server-Einstellung, keine Benutzer-Zuordnung nötig). Die
+    ursprünglich hier als Beispiele genannten Sperren (SSL-Zertifikat,
+    DNS-Konfiguration, Systemeinstellungen) wurden beim Ausfüllen der
+    Adminstufen-Matrix teils bewusst wieder aufgehoben — siehe dort für
+    den finalen Stand pro Route, dieser Aufzählung hier kommt keine
+    Bindungswirkung mehr zu.
+
+  **Wichtige Begriffsklärung (2026-08-30, beim Review gefunden):**
+  "Global" vs. "Kind der Veranstaltung" (Task #95) ist eine Aussage über
+  das **Datenmodell** — betrifft nur, ob ein Objekt einer Veranstaltung
+  zugeordnet ist oder nicht. Das trifft **keine** Aussage darüber, welche
+  Adminstufe (Task #94) das Objekt verwalten darf — beide Achsen sind
+  unabhängig voneinander. Beispiel: Drucker bleiben global (Task #95,
+  kein `event_id`), dürfen aber trotzdem vollständig vom
+  Veranstaltungs-Administrator verwaltet werden (Adminstufen-Matrix,
+  Nutzerentscheidung: lokale Netzwerkeinrichtung muss ohne anwesenden
+  System-Administrator möglich sein).
+
+  **Ist-Zustand analysiert (siehe Task #95 für die volle Analyse,
+  gemeinsam mit der Datenmodell-Hierarchie erarbeitet):** aktuell exakt
+  eine Berechtigungsstufe (`user.is_admin BOOLEAN`), geprüft durch eine
+  einzige `authenticateAdmin`-Middleware
+  (`middleware/authenticate.ts`), die **in jeder der 27
+  Admin-Routendateien einzeln** als Fastify-Hook eingehängt wird (kein
+  zentrales Gate in `app.ts`). Keine feingranulare Rechteprüfung
+  existiert bisher.
+
+  **Noch zu erarbeiten:** Umsetzungskonzept — Middleware-Erweiterung
+  (z. B. `authenticateAdmin(requiredLevel)`), Durchgehen aller 27
+  Routendateien zur Einstufung (System- vs.
+  Veranstaltungs-Administrator), Frontend-Anpassungen (Navigation blendet
+  nicht erlaubte Bereiche aus, Benutzerverwaltung bekommt zweite
+  Checkbox). Wird als nächstes gemeinsam ausgearbeitet.
+
+  **Umsetzungskonzept (2026-08-30, ausgearbeitet auf Basis der fertigen
+  Adminstufen-Matrix, noch nicht implementiert — Task #94 wird erst nach
+  dem Konzept für Task #95 umgesetzt, siehe dort):**
+
+  Wichtige Beobachtung aus der Matrix: `V` ist der überwältigende
+  Regelfall (~80 von ~90 Routen), `S`-exklusiv die Ausnahme (`events.ts`
+  komplett, `backup.ts`, `logs.ts`, plus einzelne Felder in
+  `users.ts`/`settings.ts`). Das dreht die naheliegende Umsetzung um: die
+  meisten der 27 Routendateien brauchen gar keine Änderung.
+
+  1. **Datenmodell:** neue Migration, `ALTER TABLE "user" ADD COLUMN
+     is_event_admin BOOLEAN NOT NULL DEFAULT false`. `is_admin` bleibt
+     unverändert (weiterhin "System-Administrator", kein Rename — spart
+     ein riskantes Rename einer an vielen Stellen referenzierten Spalte).
+  2. **Middleware** (`middleware/authenticate.ts`): zwei preHandler statt
+     einem. `authenticateAdmin` (bestehender Name, neue Bedeutung) lässt
+     `is_admin` **oder** `is_event_admin` durch — bleibt Default für alle
+     `V`-Routen, keine Änderung in diesen Dateien nötig.
+     `authenticateSystemAdmin` (neu) verlangt strikt `is_admin`, nur in
+     `events.ts`, `backup.ts`, `logs.ts` die Hook-Zeile darauf umstellen
+     (3 Dateien statt 27). Step-up-Passwortprüfung (`admin_verified`)
+     gilt unverändert für beide Stufen gleich.
+  3. **Feld-Ebene** (`users.ts`, `settings.ts`) — die zwei Fälle, wo eine
+     Route insgesamt `V` ist, aber ein Teil davon `S`-exklusiv bleiben
+     muss: `users.ts` bekommt einen Guard vor dem Schreiben von `is_admin`
+     (POST mit `is_admin: true`, PUT das `is_admin` ändert, DELETE eines
+     `is_admin`-Nutzers) — nur `request.adminUser.is_admin` darf das.
+     `settings.ts`s `PUT /` bekommt eine Whitelist, welche Keys `V`
+     schreiben darf — ähnlich der bestehenden `ALLOWED_KEYS`-Logik dort.
+
+     **Konkrete Aufteilung (2026-08-30):** `S`-exklusiv: `receipt_prefix`,
+     `receipt_counter_start`, `vat_rate_deposit`, `server_address`.
+     `V`-erlaubt: `company_name`/`company_street`/`company_postal_code`/
+     `company_city`/`company_tax_number`/`company_vat_id` (Nutzerentscheidung:
+     ein mietender Verein braucht seine eigenen Daten auf den Bons, nicht
+     die des Vorgänger-Vereins), `logo_on_*`/`logo_zoom_percent`,
+     `TSE_SETTING_KEYS`. `default_layout_receipt_register`/
+     `default_layout_service_register` entfallen komplett aus
+     `system_setting` — wandern zu Task #95 in zwei neue Spalten direkt auf
+     `event` (Nutzerentscheidung: gehört zur Veranstaltung, da die Layouts
+     selbst ja auch event-gebunden werden, siehe dort).
+  4. **Frontend:** zweite Checkbox in der Benutzerverwaltung
+     (System-Administrator-Checkbox nur für `S` bearbeitbar/sichtbar),
+     Navigation blendet die drei `S`-exklusiven Bereiche (Veranstaltungen,
+     Backup, Systemprotokoll) für reine `V`-Nutzer aus.
+  5. **Wichtige Randbemerkung:** Bis Task #95 umgesetzt ist, sieht ein
+     `V`-Nutzer trotzdem **alle** Artikel/Kassen/Rechnungen usw., nicht
+     nur die der aktiven Veranstaltung — das volle Datenschutz-Ziel des
+     Verleihs greift erst, wenn beide Tasks zusammen fertig sind.
+  6. **Tests:** `createTestUser`-Fixture um `isEventAdmin` erweitern, neue
+     Integrationstests je `S`-exklusiver Datei (`V` bekommt 403) plus die
+     beiden Feld-Ebenen-Guards.
+
+  **Offener Punkt, mittlerweile gelöst — siehe Task #97 (2026-08-30,
+  beim Review der Adminstufen-Matrix gefunden):**
+  Veranstaltungs-Administrator soll seine eigenen Bedienungen verwalten
+  können (`users.ts` komplett `V`, siehe Adminstufen-Matrix). Idee war,
+  Accounts der vorherigen Veranstaltung nach deren Ende zu löschen, um sie
+  vor dem nächsten Verleih-Kunden zu verbergen — das scheiterte zunächst
+  daran, dass `DELETE /users/:id` mit 409 ablehnt, sobald der Benutzer
+  irgendetwas gebucht hat. Von zwei denkbaren Lösungswegen (Bedienungen
+  innerhalb der Veranstaltung anlegen vs. Buchungen speichern den Namen
+  als Text-Snapshot statt Fremdschlüssel) wurde Weg 2 gewählt — Details
+  und Fremdschlüssel-Liste siehe Task #97.
+
+  **Adminstufen-Matrix (2026-08-30):** vollständige Liste aller
+  `/api/admin/*`-Routen mit Zuordnungsvorschlag je Route liegt in
+  `docs/Adminstufen-Matrix.txt` (bewusst reines Textformat statt Tabelle,
+  einfacher manuell zu bearbeiten) — Grundlage für die
+  Middleware-Erweiterung.
+
+  **Umsetzungsplan (2026-08-30):** ausführlicher, schrittweise abhakbarer
+  Plan für #94 und #95 gemeinsam liegt in
+  `docs/Umsetzungsplan-94-95.txt` — dort weitermachen, nicht hier neu
+  planen.
+
+  **Erledigt (2026-08-30, Phase 0 des Umsetzungsplans vollständig):**
+  Migration `0018_event_admin_role.sql` (`user.is_event_admin`).
+  `middleware/authenticate.ts`: `authenticateAdmin` lässt jetzt `is_admin`
+  ODER `is_event_admin` durch, neues `authenticateSystemAdmin` verlangt
+  strikt `is_admin` — nur `events.ts`/`backup.ts`/`logs.ts` darauf
+  umgestellt. `users.ts`: Feld-Ebenen-Guards für `is_admin`-Vergabe/-Änderung/
+  -Löschung, PIN-Verwaltung und Passwortänderung eines
+  System-Administrators — jeweils nur durch einen System-Administrator
+  selbst. `settings.ts`: `PUT /` filtert `S`-exklusive Keys
+  (`receipt_prefix`, `receipt_counter_start`, `vat_rate_deposit`,
+  `server_address`) für einen Veranstaltungs-Administrator still heraus.
+  Frontend: zweite Checkbox in der Benutzerverwaltung, Navigation blendet
+  Veranstaltungen/Systemprotokoll aus, Settings-Seiten (Unternehmensdaten,
+  System) blenden die S-exklusiven Abschnitte für `V` aus.
+
+  **Live gefunden und behoben, nicht im ursprünglichen Plan (2026-08-30):**
+  `POST /api/auth/admin/verify` (die "Systemverwaltung"-Passwort-Stufe)
+  prüfte bisher nur `is_admin` — ein reiner Veranstaltungs-Administrator
+  hätte diese Stufe nie passieren und dadurch **keinen** `V`-Endpoint je
+  erreichen können, egal wie die Middleware sonst konfiguriert ist. Jetzt
+  `is_admin ODER is_event_admin`. Ebenso musste die Passwort-Pflicht beim
+  Anlegen/Bearbeiten eines Benutzers (`users.ts`) von "nur bei `is_admin`"
+  auf "bei `is_admin` ODER `is_event_admin`" erweitert werden — sonst
+  hätte ein reiner Veranstaltungs-Administrator ganz ohne Passwort angelegt
+  werden können und wäre dann aus demselben Grund für immer ausgesperrt
+  gewesen. `auth.ts`s `UserResponse`/`PinUserRow` um `is_event_admin`
+  ergänzt (Frontend braucht das für Navigation/Checkbox-Sichtbarkeit).
+
+  Backend-Unit- (298), Backend-Integrations- (236, +15 neue) und
+  Frontend-Tests (70) grün, beide Typechecks + `svelte-check` sauber.
+
+  **Nachtrag (2026-08-31):** `logs.ts` (Systemprotokoll) war ursprünglich
+  eines der drei System-exklusiven Bereiche (neben `events.ts`/`backup.ts`)
+  — live gefunden: die für **beide** Adminstufen sichtbare Dashboard-Kachel
+  „TSE-Zustand" liest ihre Daten aus genau diesem Endpoint
+  (`system_log`, Kategorie `tse_health`), wodurch eine
+  Veranstaltungs-Administratorin dort nie den echten TSE-Status sah. Auf
+  `authenticateAdmin` (V+S) umgestellt, Nav-Gating im Frontend entfernt.
+  Vertretbar, weil `system_log` aktuell ausschließlich die Kategorie
+  `tse_health` führt — keine faktische Cross-Tenant-Datenpreisgabe im
+  heutigen Stand, siehe `docs/Adminstufen-Matrix.txt` für die volle
+  Begründung inkl. der ursprünglichen Sorge (potenziell sensiblere
+  künftige Log-Kategorien).
+
+- [Task] **#95** Veranstaltung als Hierarchieebene im Datenmodell
+  Aufgekommen beim Verleih-Konzept (2026-08-30), gemeinsam mit Task #94:
+  aktuell ist eine Veranstaltung (`event`-Tabelle: `id`, `name`,
+  `start_time`, `end_time`) nicht mehr als ein gespeicherter Datumsfilter
+  für Reports/Exporte — keine andere Tabelle hat einen Bezug dazu. Idee:
+  Veranstaltung wird zur echten Hierarchieebene, der bestimmte Objekte
+  untergeordnet sind, sodass immer nur die Objekte der aktuell aktiven
+  Veranstaltung sichtbar sind. Löst nebenbei auch das Problem, dass sich
+  das System mit der Zeit mit alten Artikeln/Kassen/etc. füllt und
+  unübersichtlich wird.
+
+  **Objekte, die Kinder der Veranstaltung werden sollen (Nutzervorgabe):**
+  Artikel, Kassen, Kassenlayouts, Saalplan, Rechnungen, Bestellungen.
+  **Weiterhin global:** Systemeinstellungen, Drucker, Benutzer.
+
+  **Kritische Leitplanke (bei der Analyse gefunden, 2026-08-30):** die
+  Rechnungsnummer (`receipt_number`, global, lückenlos —
+  `receipt/sequence.ts`) und die Z-Bon-Nummer (`daily_closing.z_number`,
+  lückenlos pro Kasse — `docs/Rechtliche-Anforderungen.md`) sind
+  gesetzlich fixierte, fortlaufende Zähler (KassenSichV). Sie dürfen
+  **niemals** pro Veranstaltung zurückgesetzt oder pro Veranstaltung neu
+  gezählt werden — Rechnungen/Kassen dürfen einer Veranstaltung nur zur
+  Anzeige/Filterung zugeordnet werden, die Zähler selbst bleiben zwingend
+  global bzw. pro physischer Kasse.
+
+  **Aktive Veranstaltung (Nutzervorgabe, 2026-08-30):** genau eine
+  Veranstaltung gilt global auf dem Server als aktiv — eine
+  Server-Einstellung (vermutlich `system_setting`), persistent über
+  Neustarts hinweg. Nur der System-Administrator kann sie ändern; der
+  Veranstaltungs-Administrator (Task #94) sieht immer die gerade aktive
+  Veranstaltung, ohne selbst wechseln zu können. Keine Zuordnung
+  Benutzer↔Veranstaltung nötig — das ist über die eine globale aktive
+  Veranstaltung bereits gelöst.
+
+  **Altdatenmigration (Nutzervorgabe, 2026-08-30):** Migrationsskript legt
+  automatisch ein Dummy-/Altbestand-Event an und ordnet alle bestehenden
+  Artikel/Kassen/Layouts/Tische/Rechnungen/Bestellungen diesem zu, statt
+  `event_id` nullable zu lassen oder eine manuelle Zuordnung zu verlangen.
+  **Praezisiert (Nutzervorgabe, 2026-08-31):** nur wenn tatsaechlich
+  Altdaten vorliegen — eine frische, leere Datenbank (Neuinstallation)
+  bekommt **kein** Dummy-Event, `active_event_id` bleibt dort schlicht
+  unbesetzt, bis der erste System-Administrator selbst eine echte
+  Veranstaltung anlegt und aktiviert. Migration `0019_active_event.sql`
+  prueft dafuer vorab per `DO $$ ... $$`-Block, ob eine der spaeter
+  event-gescopten Tabellen bereits Zeilen enthaelt.
+
+  **Geklärt beim Ausfüllen der Adminstufen-Matrix (2026-08-30):**
+  `article_category` und `cancellation_reason` werden beide Kind der
+  Veranstaltung, nicht mehr global (Nutzerbegründung: „wird später ein
+  Kind-Objekt der Veranstaltung, daher nicht mehr global").
+
+  **Weitere Erkenntnis (2026-08-30):** die Event-Auswahl-Dropdowns in
+  Reports/Exporten (`EventSelector.svelte`, `reports.ts GET /events`)
+  werden mit dieser Task **überflüssig** — sobald es genau eine global
+  festgelegte aktive Veranstaltung gibt, muss niemand mehr manuell
+  auswählen, welche Veranstaltung ein Report/Export betrifft. Dieser
+  gesamte Auswahl-Mechanismus (Frontend-Komponente + Endpoint) kann dann
+  vermutlich entfernt werden statt mit einer Adminstufe versehen zu
+  werden.
+
+  **Geklärt (2026-08-30):**
+  - Saalplan-Grid-Achsen (`floor_plan_column`/`floor_plan_row`) werden
+    ebenfalls Kind der Veranstaltung, nicht nur `dining_table` — "alles
+    was zum Saalplan gehört soll der Veranstaltung untergeordnet sein"
+    (unterschiedliche Veranstaltungen finden oft in unterschiedlichen
+    Räumlichkeiten statt, ein wiederverwendetes Grid ergibt inhaltlich
+    wenig Sinn).
+  - Referenzielle Konsistenz `register_layout_slot.article_id` ↔
+    Layout-Event: anwendungsseitige Prüfung beim Speichern eines Slots,
+    kein DB-Constraint (zu komplex für den Nutzen).
+  - Benutzer und Drucker bleiben global — brauchen aber eine eigene
+    Lösung für die Löschbarkeits-/Sichtbarkeitsfrage, siehe Task #96.
+
+  **Umsetzungskonzept (2026-08-30):**
+  1. Neuer `system_setting`-Key `active_event_id`, geladen in `config`
+     beim Start (Muster wie `tse/settings.ts`). Eigener Endpoint zum
+     Wechseln, `S`-exklusiv (Task #94).
+  2. Empfohlene Migrationsreihenfolge (steigendes Risiko, jede Tabelle
+     einzeln testbar): (1) `article_category` → `article` (+
+     `product_option` erbt über `article_id`), (2) `register_layout` (+
+     `register_layout_slot` erbt über `register_layout_id`), (3)
+     `register`, (4) `floor_plan_column`/`floor_plan_row` + `dining_table`,
+     (5) `cancellation_reason`, (6) `invoice`/`order_item` zuletzt und am
+     vorsichtigsten (nur Sichtbarkeits-Filter, gesetzliche Zähler bleiben
+     unangetastet).
+  3. Jede Migration: Spalte hinzufügen, Dummy-„Altbestand"-Event
+     automatisch im Migrationsskript anlegen, bestehende Zeilen per
+     `UPDATE ... SET event_id = <dummy-id> WHERE event_id IS NULL`
+     zuordnen, danach `NOT NULL` setzen.
+  4. **Kombinierter Umsetzungsplan mit Task #94** (Nutzerwunsch,
+     2026-08-30): fast jede Route, die #94 einer Adminstufe zuordnet, ist
+     genau die Route, die hier einen `event_id`-Filter braucht (Artikel,
+     Kassen, Layouts, Saalplan, Rechnungen, Reports/Exporte). Getrennt
+     umgesetzt hieße dieselben ~15 Dateien zweimal anfassen — stattdessen
+     pro Tabelle/Routendatei in einem Rutsch: `event_id`-Spalte +
+     gefilterte Query + richtige Adminstufe + Tests, bevor die nächste
+     Tabelle beginnt.
+  5. **Frontend:** betrifft ausschließlich die Admin-UI. Der bisherige
+     lokale `EventSelector` auf den 5 Report-/Export-Seiten entfällt
+     komplett (ersetzt durch den globalen "aktive Veranstaltung"-Kontext,
+     `S` kann wechseln, `V` nur lesen) — die eigentliche Kassen-/
+     Bedienungs-Oberfläche (Bonkasse/Bedienungskasse) braucht dagegen
+     **keine** Änderungen.
+
+  **Größenordnung/Reihenfolge:** realistisch 6 Arbeitspakete (je
+  Migrationsschritt aus Punkt 2), jedes für sich abgeschlossen mit
+  Migration + Backend-Filter + Adminstufe + Tests + kurzer
+  Live-Verifikation, bevor das nächste beginnt. Nicht als ein großes
+  Vorhaben umsetzen, sondern schrittweise, und erst
+  nach Task #94. Task #94 wird zuerst umgesetzt.
+
+  **Umsetzungsplan:** ausführlicher, schrittweise abhakbarer Plan (7
+  Migrationsschritte statt der ursprünglich geschätzten 6 — Saalplan und
+  register wurden getrennt) liegt in `docs/Umsetzungsplan-94-95.txt`,
+  jeder Schritt dort mit eigener Erledigt-Notiz inkl. live gefundener
+  Abweichungen vom ursprünglichen Konzept.
+
+  **Erledigt (2026-08-31, vollständig):** aktive Veranstaltung als globale
+  `system_setting`/`config.activeEventId`-Einstellung (Muster wie
+  `tse/settings.ts`), S-exklusiv wechselbar
+  (`PUT /admin/system/active-event`), für S+V lesbar. Sieben Tabellen
+  nacheinander event-gescoped, jede mit eigener Migration
+  (Spalte + Backfill aufs automatisch angelegte "Altbestand"-Event +
+  `NOT NULL`) und eigenen Tests: `article_category`, `article` (+
+  `product_option` transitiv), `register_layout` (+ `register_layout_slot`
+  transitiv), `register`, `floor_plan_column`/`floor_plan_row`/
+  `dining_table`, `cancellation_reason`. `invoice`/`order_item` brauchten
+  **keine** eigene `event_id`-Spalte — beide referenzieren bereits
+  `register_id`, und ein Register wechselt nie sein Event, daher genügt
+  ein `JOIN register` beim Filtern; die fiskalisch kritischen Zähler
+  (`receipt_number`, `daily_closing.z_number`) blieben dadurch komplett
+  unangetastet, wie in der kritischen Leitplanke gefordert.
+  Anwendungsseitige Konsistenzprüfungen (kein DB-Constraint, siehe oben)
+  überall ergänzt, wo ein Objekt auf ein anderes Event-gebundenes Objekt
+  verweist: `article.category_id`, `register_layout_slot.article_id`,
+  `register.layout_id`. `admin/closings.ts` (Kassenabschluss-Mechanik:
+  close-all, pending, Z-Bon-Liste) und `exports/dsfinvk/*`
+  (GoBD-Vollständigkeits-Export) bewusst **komplett unangetastet** — beide
+  müssen unabhängig von der aktiven Veranstaltung immer alles erfassen.
+  `EventSelector.svelte` + `GET /admin/reports/events` +
+  die alte `pickDefaultEventId`-Auswahlheuristik vollständig entfernt
+  (Punkt 5 oben) — Reports/Exporte nutzen jetzt ausnahmslos die aktive
+  Veranstaltung. `truncateAllTables()` (Testinfrastruktur) seedet seither
+  automatisch ein Test-Event, sonst hätte praktisch jeder Fixture-Helper
+  einzeln angepasst werden müssen.
+  Alle Unit- und Integrationstests grün (298 Unit-, 261 Integrationstests,
+  bis auf den bereits vorher bekannten, unabhängigen Zeitstempel-Flake
+  D-052), beide Typechecks + `svelte-check` + Produktionsbuild sauber.
+
+  **Noch offen (nicht im Rahmen dieser Session durchführbar):** Punkt 3.3
+  des Umsetzungsplans — Live-Verifikation auf dem Produktivserver (neue
+  Veranstaltung anlegen/aktivieren, prüfen dass Artikel/Kassen/Saalplan/
+  Layouts leer starten, zurück auf „Altbestand" wechseln und prüfen dass
+  alle Altdaten wieder sichtbar sind) — erfordert Zugriff auf den
+  laufenden Produktivserver, muss vom Nutzer selbst durchgeführt werden.
+
+- [Task] **#96** Drucker löschbar machen (Folgeaufgabe aus Task #94/#95)
+  Beim Review der Adminstufen-Matrix (2026-08-30) aufgefallen: Drucker
+  bleiben laut Task #94/#95 bewusst global — aber `DELETE
+  /api/admin/printers/:id` ist aktuell ein Hard-Delete ohne
+  FK-Fehlerbehandlung. Ein bereits verwendeter Drucker lässt sich schon
+  heute nicht löschen (Postgres lehnt mit `23503` ab, unbehandelt), und
+  im Gegensatz zu Benutzern (`is_active`) gibt es nicht mal eine
+  Deaktivieren-Ausweichoption.
+
+  **Fremdschlüssel auf `printer` (ermittelt 2026-08-30, keine `ON
+  DELETE`-Klausel vorhanden, Standard-Verhalten `RESTRICT`):**
+  - `register.printer_id` — nullable
+  - `article.printer_id` — nullable
+  - `print_job.printer_id` — **NOT NULL**
+
+  **Konzept (Nutzervorgabe, 2026-08-30):**
+  - Warnung beim Löschen in der UI: aktive Druckaufträge werden
+    abgebrochen, betroffene Artikel verlieren ihren Standarddrucker.
+  - Laufende Druckaufträge für den zu löschenden Drucker abbrechen — wie
+    ein Job, der nach zu vielen Versuchen nicht gedruckt werden konnte
+    (`status = 'failed'`, `attempts = MAX_ATTEMPTS` (500, siehe
+    `print/worker.helpers.ts`), passender `error_message`-Text).
+  - `print_job.printer_id` anschließend auf `NULL` setzen (Spalte muss
+    dafür erst nullable werden, aktuell `NOT NULL`) — mit
+    UI-Erweiterung: Druckwarteschlangen-Ansicht zeigt "Drucker gelöscht"
+    statt des Namens, falls das Feld dort angezeigt wird.
+    **Konkret gefunden:** `routes/admin/print-jobs.ts`s Liste nutzt aktuell
+    ein `JOIN printer p ON p.id = j.printer_id` (kein `LEFT JOIN`) — muss
+    zu `LEFT JOIN` werden, sonst verschwindet der Job nach dem Nullen
+    komplett aus der Warteschlangen-Ansicht statt "Drucker gelöscht" zu
+    zeigen.
+  - `article.printer_id` ebenfalls auf `NULL` setzen — Artikel hat dann
+    keinen zugeordneten Drucker mehr. Kein zusätzlicher UI-Aufwand nötig:
+    die Artikel-Bearbeitungsseite zeigt den Drucker ohnehin nur über ein
+    `<select>` aus der aktuellen Druckerliste, ein `NULL`-Wert erscheint
+    dort einfach als "kein Drucker ausgewählt".
+
+  **Geklärt (2026-08-30):** `register.printer_id` wird beim Löschen
+  ebenfalls auf `NULL` gesetzt — gleiches Muster wie `article.printer_id`.
+
+  **Verwandtes, separates Problem — siehe Task #97:** dieselbe
+  Löschbarkeits-/Sichtbarkeitsfrage besteht auch für Benutzer, dort aber
+  mit einer anderen Lösung (Text-Snapshot statt `NULL`, siehe dort), weil
+  bei Benutzern die Buchungshistorie den Namen dauerhaft erhalten soll.
+
+  **Erledigt (2026-08-30):** Migration `0016_printer_deletable.sql` stellt
+  `register.printer_id`/`article.printer_id`/`print_job.printer_id` auf
+  `ON DELETE SET NULL` um (`print_job.printer_id` dafür zuerst nullable
+  gemacht). `DELETE /api/admin/printers/:id` (`routes/admin/printers.ts`)
+  setzt noch offene Druckaufträge (`pending`/`printing`) vorher terminal auf
+  `failed` (inkl. `attempts = MAX_ATTEMPTS`, Fehlertext "Drucker wurde
+  gelöscht") — sonst würde der Print-Worker sie nie mehr aufgreifen und
+  auch nie fehlschlagen lassen, da seine Claim-Query zwingend einen
+  passenden Drucker braucht. `print-jobs.ts`s Liste nutzt jetzt `LEFT
+  JOIN` statt `JOIN` und zeigt "Drucker gelöscht" statt den Job
+  verschwinden zu lassen; `/retry` verweigert sich explizit mit klarer
+  Fehlermeldung, wenn der Drucker eines fehlgeschlagenen Jobs gelöscht
+  wurde (würde sonst für immer als "pending" hängen bleiben). Frontend:
+  Lösch-Bestätigung warnt jetzt vor den Konsequenzen. Backend-Unit-,
+  Integrations- und Frontend-Typecheck grün.
+
+- [Task] **#97** Benutzer löschbar machen (Folgeaufgabe aus Task #94/#95)
+  Wie Task #96, aber für Benutzer statt Drucker — beim Review der
+  Adminstufen-Matrix aufgefallen (2026-08-30): Benutzer bleiben laut
+  Task #94/#95 bewusst global, aber `DELETE /api/admin/users/:id` ist ein
+  Hard-Delete, der mit 409 ablehnt, sobald der Benutzer schon irgendetwas
+  gebucht hat. Praktisch jede echte Bedienung bucht etwas, kann also nie
+  wieder gelöscht werden — nur deaktivieren (`is_active`), was den Account
+  aber nicht aus der Liste verschwinden lässt. Fürs Verleih-Ziel („alte
+  Daten nicht offenlegen") unbefriedigend, siehe Task #94, „Offener Punkt".
+
+  **Fremdschlüssel auf `user` in historischen/prüfungsrelevanten Tabellen
+  (ermittelt 2026-08-30 — `user_register` und `session` sind reine
+  Betriebsdaten ohne Audit-Wert, räumen sich aber NICHT von selbst auf,
+  siehe unten):**
+  - `daily_closing.created_by` — nullable
+  - `order_item.user_id` — nullable
+  - `order_item.cancelled_by` — nullable
+  - `cash_transaction.user_id` — nullable
+  - `service_order.user_id` — nullable
+  - `order_cancellation.cancelled_by` — nullable
+
+  Historischer Kontext (gefunden beim Review, 2026-08-30): die aktuelle
+  FK-RESTRICT-Sperre war eine bewusste Design-Entscheidung aus Task #56
+  (dokumentiert im Docstring von `DELETE /users/:id`) — dieser Task kehrt
+  das für den Verleih-Fall bewusst um.
+
+  **Konzept (Nutzervorgabe, 2026-08-30):** anders als bei Druckern (Task
+  #96, dort einfach `NULL`) diese Fremdschlüssel durch reine Textfelder
+  ersetzen, die den Benutzernamen zum Buchungszeitpunkt speichern — analog
+  zum bereits bestehenden Muster bei `order_item.article_name`/
+  `article_category_name`, die den Artikelnamen genauso denormalisiert
+  halten. Damit bleibt die Historie vollständig lesbar erhalten, ohne dass
+  das Benutzerobjekt selbst je vorgehalten werden muss — der
+  Benutzer-Datensatz wird nach dem Ersetzen frei löschbar.
+
+  **Konkret gefunden, muss mit angepasst werden (2026-08-30, vollständig
+  durchsucht — nichts widerspricht dem Konzept):**
+  - `exports/dsfinvk/load.ts` joint aktuell aktiv gegen `"user"`
+    (`LEFT JOIN "user" u ON u.id = oi.user_id`), um `user_name` für den
+    DSFinV-K-Export zu ermitteln — nach der Umstellung direkt aus der
+    neuen Text-Snapshot-Spalte lesen, kein Join mehr nötig. Da DSFinV-K
+    ein GoBD-Exportformat ist, hier besonders sorgfältig prüfen, dass sich
+    am exportierten Inhalt nichts ändert, nur die Datenquelle.
+  - `routes/admin/reports.ts`s Storno-Report (`GET /cancellations`)
+    gruppiert aktuell `GROUP BY oi.cancelled_by, u.name` mit Live-Join —
+    muss auf die neue Text-Spalte umgestellt werden (Join entfällt, nur
+    noch nach der Text-Spalte gruppieren).
+  - `routes/admin/closings.ts` und `routes/admin/registers.ts` lesen
+    `created_by_name`/`user_name` bereits über einen Live-Join
+    (`LEFT JOIN "user" u ON ...`) — trivial umzustellen, einfach direkt
+    die neue Spalte lesen statt zu joinen.
+  - Schreib-Stellen (`routes/register-session.ts` — Anlage von
+    `order_item`/`service_order`/`order_cancellation`,
+    `routes/admin/cancellations.ts`, `routes/admin/closings.ts`,
+    `routes/admin/registers.ts` — Anlage von `cash_transaction`) haben den
+    Namen der handelnden Person bereits im Request verfügbar
+    (`request.registerUser.name`/`request.adminUser.name`), keine
+    zusätzliche Query nötig.
+  - TSE-Signaturprozess (`tse/processData.ts`) referenziert `user_id`
+    nirgends — keine fiskalische Signatur-Altlast zu beachten.
+  - Betroffene Felder sind in `@fairpos/shared`s Typen (`OrderItem`,
+    `CashTransaction`) bereits als `string | null` typisiert — keine
+    TypeScript-Typumbauten nötig, nur semantische Neuinterpretation
+    (bisher UUID, künftig Name).
+
+  **Migration:** neue Text-Spalten (`_name`-Suffix wie beim bestehenden
+  Muster, z. B. `order_item.user_name` statt `user_id`) neben den
+  bisherigen Fremdschlüsseln anlegen, bestehende Zeilen per
+  `UPDATE ... SET x_name = u.name FROM "user" u WHERE u.id = x.user_id`
+  befüllen, danach die alten Fremdschlüssel-Spalten entfernen.
+
+  **Korrektur einer eigenen früheren Annahme (2026-08-30):**
+  `user_register` und `session` räumen sich **nicht** von selbst auf —
+  abgelaufene Sessions werden nie automatisch gelöscht, nur per
+  Zeitstempel-Vergleich als ungültig behandelt (`auth/session.ts`,
+  `SESSION_INACTIVITY_INTERVAL`), die Zeile bleibt für immer stehen.
+  `DELETE /users/:id` muss also explizit `DELETE FROM session WHERE
+  user_id = $1` und `DELETE FROM user_register WHERE user_id = $1` vor dem
+  eigentlichen Löschen ausführen (in derselben Transaktion), sonst
+  blockiert eine längst abgelaufene Session die Löschung für immer.
+
+  **Geklärt (aus Task #94 übernommen):** ob Bedienungen stattdessen doch
+  innerhalb der Veranstaltung angelegt werden sollen (Alternative 1 aus
+  Task #94) ist damit vom Tisch — Alternative 2 (diese hier) wurde
+  umgesetzt, beide schlossen sich gegenseitig aus.
+
+  **Erledigt (2026-08-30):** Migration `0017_user_deletable.sql` fügt
+  `user_name`/`cancelled_by_name`/`created_by_name`-Textspalten zu
+  `order_item`, `daily_closing`, `cash_transaction`, `service_order`,
+  `order_cancellation` hinzu, befüllt sie aus den bisherigen
+  Fremdschlüsseln und entfernt diese danach. Alle Schreib-Stellen
+  (`register-session.ts`, `admin/cancellations.ts`, `admin/closings.ts`,
+  `admin/registers.ts`) schreiben jetzt direkt den Namen aus der Session
+  (`request.registerUser.name`/`request.adminUser.name`), keine
+  zusätzliche Query nötig. Alle Lese-Stellen mit Live-Join
+  (`admin/reports.ts`s Storno-Report, `admin/closings.ts`,
+  `admin/registers.ts`, `admin/exports.ts`, `exports/dsfinvk/load.ts`)
+  entsprechend umgestellt. `DELETE /api/admin/users/:id` löscht jetzt
+  vorher explizit `session`- und `user_register`-Zeilen des Benutzers in
+  derselben Transaktion, statt auf natürliches Aufräumen zu hoffen.
+
+  **Nebenbei mit erledigt:** Login (`auth/session.ts`,
+  `createSession()`) räumt jetzt bei jedem Anmeldevorgang abgelaufene
+  Sessions server-weit auf (`DELETE FROM session WHERE last_activity_at
+  <= now() - interval '4 hours'`) — vorher blieben abgelaufene Sessions für
+  immer als Zeile stehen, kein anderer Mechanismus hätte sie je entfernt.
+
+  **Bewusste Entscheidung zu DSFinV-K (GoBD-Export):** `BEDIENER_ID`
+  (`exports/dsfinvk/rows.ts`) bekommt ab jetzt immer `null` statt einer
+  UUID, da nach dieser Umstellung keine stabile ID mehr existiert, nur noch
+  ein Namens-Snapshot — bewusst nicht der Name in das ID-Feld dupliziert,
+  um das Feld nicht mit Namens-Inhalt zu verfälschen. `BEDIENER_NAME`
+  bleibt unverändert befüllt. Betrifft nur zukünftige Exporte ab dieser
+  Umstellung.
+
+  Backend-Unit- (298), Backend-Integrations- (221) und Frontend-Tests (70)
+  grün, beide Typechecks sauber.
+
+- [Task] **#98** Aktualität aller `docs/`-Dateien prüfen und nachziehen
+  Aufgekommen 2026-08-30 während der Umsetzung von Task #96/#97: der Nutzer
+  ist sich nicht sicher, ob die Dokumente unter `docs/` (siehe Liste
+  „Kerndokumente" in AGENTS.md) bei jedem erledigten Task konsequent
+  mitgepflegt wurden. Bekanntes Beispiel für bereits vorhandene Drift:
+  `docs/Datenmodell.dbml` fehlt komplett die `event`-Tabelle und hat
+  weitere Abweichungen zum echten Schema (siehe Task #91s Notiz in der
+  Versionsgeschichte dieser Datei). Zu prüfen: `Anforderungen.md`,
+  `Datenmodell.dbml`, `Dictionary.md`, `SETUP.md`,
+  `Installationsanleitung.md`, `TSE-Integration.md`,
+  `Rechtliche-Anforderungen.md`, `Organisatorische-Anleitung.md`,
+  `Manueller-Testplan.md` — jeweils gegen den aktuellen Code-/Feature-Stand
+  abgleichen und Lücken schließen.
+
+  **Erledigt (2026-08-31):** Alle 9 Dokumente einzeln gegen den echten
+  aktuellen Code abgeglichen (Migrationen, Routen, Frontend-Seiten), nicht
+  nur gegen die Aufgabenbeschreibung. Wesentliche Funde und Korrekturen:
+  - `Datenmodell.dbml`: umfassendste Korrektur — 4 fehlende Tabellen
+    (`cash_transaction`, `company_logo`, `system_log`, `session`), eine
+    zu entfernende (`register_access_token`, in Task #90 abgelöst),
+    `register_layout` hatte eine erfundene, nie existierende Struktur
+    (`register_id`/`is_default` statt der echten `event_id`/`grid_cols`/
+    `grid_rows`), die komplette Task-#97-Umstellung auf `*_name`-Text-
+    Snapshots fehlte, ebenso alle `event_id`-Spalten aus Task #95 inkl.
+    der zusammengesetzten Schlüssel von Migration 0025.
+  - `Anforderungen.md`: Benutzerrollen-Abschnitt beschrieb noch
+    Benutzername+Passwort-Login statt PIN-Login (Task #90) und kannte nur
+    eine Adminstufe statt zwei (Task #94); Veranstaltungsverwaltung-Abschnitt
+    beschrieb Veranstaltungen noch als reinen Auswertungszeitraum ohne
+    Einfluss auf den Betrieb — das genaue Gegenteil von Task #95; die
+    Navigationsstruktur war komplett veraltet (alte 7-Gruppen-Struktur
+    statt der aktuellen 5 Gruppen); eine dokumentierte
+    "Buchungsdaten löschen"-Funktion existiert im Code gar nicht (retired,
+    ersetzt durch das Veranstaltungsmodell).
+  - `Manueller-Testplan.md`: **live gefundener echter Bug, nicht nur
+    Doku-Drift** — `GET /register-session/me` gab nur `is_admin` zurück,
+    nie `is_event_admin`; eine reine Veranstaltungs-Administratorin mit
+    genau einer zugewiesenen Kasse wurde dadurch automatisch an der
+    Kassenauswahl vorbei direkt in die Kasse geleitet und konnte den
+    „Systemverwaltung"-Button nie sehen — faktisch dauerhaft ausgesperrt
+    von `/admin/*`. Behoben (`register-session.ts`, `register/+page.svelte`,
+    `hasAdminAccess = is_admin || is_event_admin`), Regressionstest ergänzt.
+    Testplan zusätzlich um Task #94/#95/#96/#97-Testfälle erweitert, die
+    komplett fehlten (Zwei-Stufen-Admin-Verhalten, Veranstaltungs-Lebenszyklus,
+    erfolgreiches Löschen von Drucker/Benutzer statt nur der Fehlerfälle).
+  - `SETUP.md`: behauptete fälschlich SSE/Server-Sent-Events für Echtzeit-
+    Updates (tatsächlich reines Polling, stand schon korrekt in AGENTS.md);
+    Repository-Struktur-Baum fehlten 11 Backend-Verzeichnisse und 4 von 9
+    `docs/`-Dateien; Umgebungsvariablen-Tabelle behauptete vollständig zu
+    sein, ließ aber 6 reale Variablen aus; drei neue Architekturentscheidungs-
+    Abschnitte ergänzt (PIN-Login, Zwei-Stufen-Admin, Veranstaltungs-Hierarchie).
+  - `Installationsanleitung.md`: fehlender Schritt „erste Veranstaltung
+    anlegen und aktivieren" (ohne den ist eine frische Installation nach
+    Migration 0019's Praezisierung funktional blockiert, siehe Task #95);
+    durchgängig falsche Navigationsangabe „Systemeinstellungen → System"
+    statt „Einstellungen → System" (Gruppe wurde in dieser Session umbenannt).
+  - `TSE-Integration.md`: veraltete "vier Aufrufer"-Zählung (tatsächlich
+    fünf, Bedienungskasse-Storno fehlte), `tse/healthJob.ts` (Task #64,
+    60s-Poll mit bedingtem `maintain`-Trigger) war komplett undokumentiert,
+    Abschnitt 9 war seit dem erfolgreichen Hardware-Test (2026-08-26)
+    nicht aktualisiert worden.
+  - `Rechtliche-Anforderungen.md`, `Organisatorische-Anleitung.md`,
+    `Dictionary.md`: kleinere gezielte Ergänzungen (Task #95-Klarstellung
+    zu den unberührten Zählern, fehlender Inbetriebnahme-Schritt, neue
+    Begriffspaare für beide Adminstufen/aktive Veranstaltung/Text-Snapshot-
+    Spalten).
+  Zusätzlich alle verbleibenden `Systemeinstellungen`-Navigationsverweise
+  über alle Dokumente hinweg auf die echten aktuellen Bezeichnungen
+  korrigiert (`Einstellungen → System`/`TSE`), inkl. eines verschobenen
+  Features (IP-Sperren-Reset lebt jetzt auf dem Dashboard, nicht mehr in
+  den Systemeinstellungen).
+
+  **Bewusst zurückgestellt (vor Erledigung):** erst angehen, wenn alle aktuell geplanten
+  Refactorings (#94, #95, #96, #97) abgeschlossen sind — sonst müsste
+  dieselbe Doku-Prüfung später für die durch diese Tasks neu entstandenen
+  Änderungen wiederholt werden.
+
+- [Task] **#99** "Herunterfahren"-Funktion an prominentere Stelle verschieben
+  Aufgekommen 2026-08-30: die Herunterfahren-Funktion (Task #61,
+  `POST /api/admin/system/shutdown`) lag unter Einstellungen → System
+  (`admin/settings/system/+page.svelte`), zusammen mit Systemzeit/Zeitzone/
+  IP-Lockout-Reset — für eine vergleichsweise häufig gebrauchte Funktion
+  (Veranstaltungsende) musste man sie dort erst suchen.
+
+  **Erledigt (2026-09-01):** Button "Server herunterfahren" jetzt oben
+  rechts im Dashboard-Seitenkopf (`admin/+page.svelte`, `.header-actions`
+  neben dem "Dashboard"-Titel) — Nutzerentscheidung, gefallen im Zuge der
+  Dashboard-Kacheln-Neustrukturierung (siehe unten). Aus Einstellungen →
+  System vollständig entfernt (Bestätigungsdialog/Fehlerbehandlung 1:1
+  übernommen). `api.admin.system.shutdown()` unverändert.
+
+  **Live bestätigt (2026-09-01):** Smoke-Test durch den Nutzer — Button
+  funktioniert an der neuen Stelle.
+
+- [Task] **#100** Digitalen Kundenbeleg (QR-Code/PDF) für Gäste entfernen (Entscheidung: verwerfen)
+  Aufgekommen 2026-08-31 aus einer Nutzerfrage zum bestehenden
+  `GET /receipt/:token`-Mechanismus (Anforderungen.md, Entscheidung Punkt 2):
+  der digitale Beleg wurde ursprünglich eingeführt, damit unter der
+  Belegausgabepflicht (§ 146a Abs. 1/2 AO, § 6 KassenSichV — siehe
+  `Rechtliche-Anforderungen.md` Abschnitt 2) nicht bei jeder Transaktion
+  zwingend gedruckt werden muss ("Ausgabeform: Papier, QR-Code oder
+  elektronisch zulässig"). Der Mechanismus setzt voraus, dass das
+  Kundengerät im selben lokalen Netz wie der Server ist — der Nutzer
+  möchte Gäste aber nicht in sein eigenes WLAN lassen.
+
+  **Netzwerktechnisches Kernproblem (Nutzerbefund, 2026-08-31):** eine
+  saubere Lösung bräuchte einen eigenen Gast-Access-Point oder einen
+  teureren Router mit zwei echt getrennten WLAN-Netzen (separate
+  IP-Pools/Subnetze). Normale Haushaltsrouter mit "Gast-WLAN"-Funktion
+  vergeben Haupt- und Gastnetz meist aus demselben IP-Pool — Geräte lassen
+  sich dadurch nicht zuverlässig unterscheiden, wodurch sich sensible
+  Bereiche des Systems auch nicht zuverlässig vor Gästen abschotten lassen.
+
+  **Bereits diskutierte Optionen:**
+  1. **Eigenes isoliertes Gäste-Funknetz** (eigener AP oder Router mit
+     getrennten IP-Pools) — sauberste Lösung, aber zusätzliche Hardware-
+     Anschaffung/Einrichtung nötig.
+  2. **PDF-Upload in einen Cloud-Speicher (Nutzeridee: Azure Blob
+     Storage), QR-Code zeigt auf die öffentliche Cloud-URL** — löst das
+     Netzwerkproblem vollständig (Gast erreicht die Cloud über eigene
+     Mobildaten, muss gar nicht ins lokale Netz), bringt aber eigene
+     Probleme mit: (a) **Verstößt aller Voraussicht nach gegen die
+     Organisationsvorgabe „keine API Keys erlauben"** — ein Azure-Blob-
+     Upload aus dem Backend würde einen Storage-Account-Key oder ein
+     SAS-Token erfordern; das müsste vor jeder Umsetzung explizit
+     abgeklärt werden, nicht nur technisch gelöst. (b) Widerspricht der
+     bisherigen Projekt-Prämisse „kein Internet nötig, keine laufenden
+     Cloud-Kosten" (siehe `AGENTS.md`/`Anforderungen.md` Rahmenbedingungen).
+     (c) Lädt Rechnungsdaten (Firmendaten, Beträge, Steuersätze — keine
+     personenbezogenen Kundendaten, aber dennoch betriebliche Daten) auf
+     einen Server eines Drittanbieters hoch, der aktuell nirgends im
+     Datenschutz-/Backup-Konzept vorgesehen ist.
+  3. **Funktion für Gäste ohne lösbaren Netzzugang schlicht nicht
+     anbieten**, stattdessen aktiv (unaufgefordert) nach jedem Verkauf
+     fragen, ob ein Papierbon gewünscht ist — rechtlich ausreichend
+     (Belegausgabepflicht verlangt aktives Anbieten in nutzbarer Form,
+     keine bestimmte Ausgabeform), kein zusätzlicher technischer Aufwand.
+
+  **Entschieden (2026-09-01): Option 3 — Funktion entfernen, Papierbon
+  bleibt die einzige Ausgabeform.** Belegausgabepflicht wird künftig
+  ausschließlich über aktives Anbieten des Papierbons erfüllt — rechtlich
+  bereits ausreichend (`Rechtliche-Anforderungen.md` Abschnitt 2 verlangt
+  aktives Anbieten in nutzbarer Form, keine bestimmte Ausgabeform).
+  **PDF-Rechnungen bleiben erhalten** — nur nicht mehr für Gäste per
+  QR-Code/eigenes Gerät, sondern weiterhin als Admin-Funktion zum Download
+  (Reprint/Export, siehe unten). Noch nicht umgesetzt — Umsetzung gebündelt
+  mit den übrigen Entscheidungen dieser Session (siehe Task-Historie
+  2026-09-01), Nutzervorgabe: "Zuerst alle Entscheidungen dokumentieren.
+  Umsetzung dann später am Stück."
+
+  **Umsetzungsplan (recherchiert, noch nicht umgesetzt) — sauber getrennt
+  von der TSE-Signatur-QR-Funktion auf dem Bon (Task #78/#101), die von
+  dieser Änderung überhaupt nicht betroffen ist:**
+
+  *Entfernen:*
+  - `packages/backend/src/routes/receipt.ts` — komplette Datei (`GET
+    /receipt/:token`, der öffentliche, nicht-authentifizierte
+    PDF-Endpunkt).
+  - `receipt/qr.ts`s `buildReceiptQrUrl()` — **nur diese eine Funktion**,
+    nicht die Datei. `buildQrPayload()`/`renderQrPng()` (TSE-Signatur-QR,
+    Task #78/#101) bleiben unverändert; `renderQrPng()` wird auch vom
+    Admin-QR-Renderer weiterverwendet (s.u.), bleibt daher als Funktion
+    bestehen.
+  - `register-session.ts`s `GET /invoices/:id/qr.png` (nutzt
+    `buildReceiptQrUrl`) — der benachbarte `POST /invoices/:id/print`
+    (physischer Druckerpfad, nutzt zwar auch `receipt_token`/
+    `loadReceiptByToken`, aber für den Bondrucker) **bleibt unverändert**.
+  - `server_address`-Einstellung komplett: Allow-List-Einträge in
+    `routes/admin/settings.ts`, die komplette Karte "Server-Adresse
+    (QR-Code)" samt Test-Modal in `admin/settings/system/+page.svelte`
+    (löst damit Task #80 durch Wegfall, nicht durch Konzept-Fix).
+  - `routes/admin/qr.ts` (`GET /api/admin/qr.png`) — verifiziert einziger
+    verbleibender Aufrufer ist das Server-Adresse-Test-Modal (das alte
+    QR-Login-Link-Muster auf der Benutzerseite wurde bereits durch Task #90
+    PIN-Login ersetzt) → wird mit entfernbar.
+  - `packages/frontend/src/lib/api.ts`: `qrUrl()` und die zugehörigen
+    `receipt_token`-Typfelder, die nur für die QR-Anzeige im
+    Bedienungskasse-UI existieren.
+
+  **Nutzervorgabe (2026-09-01) zu den zwei Rechnungs-Bestätigungsseiten**
+  (`register/[id]/receipt/+page.svelte` — Bonkasse, `register/[id]/tables/
+  [tableId]/checkout/receipt/+page.svelte` — Bedienung; identisches Muster
+  in beiden): `.qr-wrap`-Block (QR-Bild via `api.registerSession.qrUrl()` +
+  Hinweistext „Vom Kunden mit dem Smartphone scannen") entfernen. Der
+  Button „Rechnung per QR Code gescannt" (ruft nur `finish()` auf — Bon
+  ohne Druck abschließen, `onclick={finish}` bleibt unverändert) wird
+  **nicht ersatzlos gestrichen**, sondern umbenannt zu „Kunde wünscht
+  keinen Beleg" — der Button wird weiterhin gebraucht, um den Vorgang ohne
+  Belegdruck abzuschließen, nur der bisherige Anlass (QR gescannt) entfällt.
+  Gilt identisch für beide Seiten.
+
+  *Bleibt unverändert (bewusst, nicht Teil dieser Entfernung):*
+  - `invoice.receipt_token`-Spalte (Migration 0001) und
+    `receipt/data.ts`s `loadReceiptByToken()` — werden intern von
+    `admin/invoices.ts` (`POST /:id/reprint`), `admin/reports.ts`,
+    `admin/cancellations.ts` weiterverwendet, sind nicht gästeexklusiv.
+  - PDF-Erzeugung selbst (`receipt/pdf.ts`) — bleibt vollständig für den
+    Admin-Reprint/-Download nutzbar.
+
+  *Docs zu aktualisieren:* `docs/Anforderungen.md` (Navigationsbaum +
+  Feature-Beschreibung, inkl. der bestehenden "Entschieden: URL zum lokalen
+  FairPOS-Server"-Passage, die die jetzige Kehrtwende dokumentieren muss),
+  `docs/Manueller-Testplan.md` (drei Stellen zu Server-Adresse/QR-Kundenbeleg),
+  `docs/TSE-Integration.md` (eine beiläufige `server_address`-Erwähnung).
+  `docs/Rechtliche-Anforderungen.md` Abschnitt 2 bleibt inhaltlich korrekt
+  (Papier/QR/elektronisch weiterhin als rechtlich gleichwertig beschrieben)
+  — keine Änderung nötig, stützt im Gegenteil die jetzige
+  Papierbon-Entscheidung. `docs/Dictionary.md` auf ein
+  `receipt_token`/Server-Adresse-Begriffspaar prüfen (noch nicht
+  verifiziert).
+
+  *Tests, die berührt werden könnten (noch nicht im Detail geprüft):*
+  `register-session.integration.test.ts`, `admin-routes.integration.test.ts`,
+  `exports.invoices-zip.integration.test.ts`, `reports.integration.test.ts`
+  — referenzieren `receipt_token` als Daten, nicht die entfernten Routen
+  selbst; vermutlich nur minimale Anpassungen nötig.
+
+  **Erledigt (2026-09-01) — Umsetzung folgte exakt dem obigen Plan:**
+  - `routes/receipt.ts` gelöscht, Registrierung + Import in `app.ts`
+    entfernt.
+  - `receipt/qr.ts`s `buildReceiptQrUrl()` entfernt (samt zugehörigem
+    `describe`-Block in `qr.test.ts`); `buildQrPayload()`/`renderQrPng()`
+    unverändert.
+  - `register-session.ts`s `GET /invoices/:id/qr.png` entfernt (Route +
+    ungenutzt gewordener `renderQrPng`/`buildReceiptQrUrl`-Import);
+    zugehöriger `describe`-Block in `register-session.integration.test.ts`
+    entfernt. `POST /invoices/:id/print` unverändert.
+  - `server_address` aus `ALLOWED_KEYS`/`SYSTEM_ONLY_KEYS` in
+    `routes/admin/settings.ts` entfernt.
+  - `routes/admin/qr.ts` (`GET /api/admin/qr.png`) komplett gelöscht —
+    verifiziert einziger Aufrufer war das jetzt ebenfalls entfernte
+    Server-Adresse-Test-Modal.
+  - `admin/settings/system/+page.svelte`: komplette "Server-Adresse
+    (QR-Code)"-Karte + Test-Modal entfernt: das machte auch den
+    generischen `settings.get()`/`.save()`-Speicherpfad dieser Seite
+    (`loadSettings`/`save`/den "Speichern"-Footer-Button) obsolet, da
+    `server_address` die einzige über diese Seite editierbare Einstellung
+    war — mit entfernt, inkl. toter CSS-Klassen (`.token-box`/`.token-qr`/
+    `.token-url`/`.form-footer`) und des jetzt ungenutzten `Modal`-Imports.
+  - `frontend/src/lib/api.ts`: `qrUrl()` entfernt. Die reinen
+    `receipt_token`-Typfelder in anderen Response-Typen (Checkout,
+    Stornierung, …) bewusst **nicht** angefasst — die beschreiben weiterhin
+    akkurat, was das Backend tatsächlich zurückgibt (die Spalte existiert
+    ja weiter), waren nur nie von echtem Frontend-Code gelesen worden;
+    Entfernen hätte Risiko/Umfang erhöht ohne funktionalen Nutzen.
+  - Beide Rechnungs-Bestätigungsseiten (`register/[id]/receipt/+page.svelte`
+    — Bonkasse, `.../tables/[tableId]/checkout/receipt/+page.svelte` —
+    Bedienung): `.qr-wrap`-Block + zugehörige CSS entfernt, Button „Rechnung
+    per QR Code gescannt" → „Kunde wünscht keinen Beleg" (gleiches
+    `onclick={finish}`, wie vom Nutzer vorgegeben).
+  - Neue Integrationstest-Datei `articles.integration.test.ts` (Task #84,
+    im selben Zug entstanden) unberührt von #100.
+  - Doku aktualisiert: `docs/Anforderungen.md` (Navigationsbaum,
+    Systemeinstellungen-Liste, PDF-Endpunkt-Abschnitt neu gefasst,
+    Kassieren-Button-Beschreibung, „Entschieden"-Passage um eine
+    „Revidiert"-Ergänzung erweitert statt gelöscht), `docs/Manueller-
+    Testplan.md` (3 Stellen entfernt/angepasst, ganze Sektion „12.
+    Kundenansicht (Rechnung online)" gestrichen, Folgesektionen 13/14 auf
+    12/13 umnummeriert), `docs/TSE-Integration.md` und
+    `docs/Datenmodell.dbml` (je ein stehengebliebenes `server_address`-
+    Beispiel in einem Kommentar korrigiert), `admin/invoices.ts`s
+    Docstrings (zwei Stellen, verwiesen noch auf den entfernten
+    öffentlichen Endpunkt bzw. den alten Button-Namen). `docs/Dictionary.md`
+    geprüft — enthielt gar keinen `receipt_token`/Server-Adresse-Eintrag,
+    nichts zu tun.
+  - Bewusst **nicht** angefasst: `invoice.receipt_token`-Spalte,
+    `receipt/data.ts`s `loadReceiptByToken()`, `receipt/pdf.ts` — wie
+    geplant weiterhin intern von `admin/invoices.ts`
+    (`POST /:id/reprint`, `GET /:id/pdf`), `admin/reports.ts`,
+    `admin/cancellations.ts` genutzt.
+  - Backend-Typecheck, Frontend-Typecheck (`svelte-check`, 450 Dateien,
+    0 Fehler), volle Backend-Unit-Testsuite (285 Tests) und voller
+    Integrationstest-Lauf (28 Dateien, 270 Tests) grün.
+
+  **Live bestätigt (2026-09-01):** Smoke-Test durch den Nutzer — neue
+  Rechnungs-Bestätigungsseite ("Kunde wünscht keinen Beleg" statt QR-Code)
+  passt und funktioniert.
+
+- [Task] **#101** Entscheidung: PDF-Rechnung und Kassenbon-Ausdruck optisch/inhaltlich angleichen
+  Aufgekommen 2026-09-01 aus einer Nutzerbeobachtung. **Bündelt/erweitert
+  Task #78** (dort bereits als "kein Compliance-Problem, niedrige
+  Priorität" eingeschätzt) um die weiteren gefundenen Detailabweichungen.
+  Die PDF-Rechnung
+  (`receipt/pdf.ts`) und der physische ESC/POS-Ausdruck (`receipt/escpos-
+  receipt.ts`) sind nicht identisch, obwohl sie denselben Vorgang abbilden.
+
+  **Konkrete Abweichungen (per Code-Recherche bestätigt):**
+  1. **TSE-Block:** beide drucken dieselben Klartext-Felder (Kassen-
+     Seriennr., TSE-Seriennr., Transaktionsnr., Signaturzähler, Start/Ende,
+     Signatur — `pdf.ts:140-153`, `escpos-receipt.ts:98-110`). Die PDF
+     zeigt **zusätzlich** einen QR-Code (`pdf.ts:156-159`, über
+     `buildQrPayload`/`renderQrPng` aus `qr.ts`). Der Ausdruck hat **gar
+     keinen QR-Code** (kein `qr`/`QR`-Verweis, kein Raster-Kommando in
+     `print/` oder `escpos-receipt.ts`) — also nicht "einmal QR, einmal
+     Text", sondern "PDF hat QR+Text, Ausdruck nur Text".
+  2. ~~Zeichensatz: PDF nutzt Helvetica/WinAnsi (volle Umlaut-Unterstützung),
+     der Ausdruck bewusst ASCII-only mit Ersatzdarstellung für Umlaute —
+     dokumentiert in `escpos-receipt.ts:33-36`.~~ **Korrektur (2026-09-01):
+     falsch recherchiert.** Der tatsächliche Code importiert
+     `SELECT_CP858`/`escposLine` aus `print/escpos-encoding.ts` und druckt
+     echte Umlaute über CP858 — identisch zu Z-Bon/Bestellzettel. Nur der
+     Kommentar direkt über `buildReceiptEscPos()` war veraltet (Rest einer
+     früheren ASCII-only-Version) und wurde korrigiert. **Keine Abweichung
+     an dieser Stelle — beide Formate stellen Umlaute korrekt dar.**
+  3. Layout: A6-Hochformat (PDF) vs. 42-Zeichen-Thermodruck (Ausdruck) —
+     medienbedingt.
+  4. Logo: PNG-Bild (PDF) vs. vorgerendertes ESC/POS-Raster (Ausdruck) —
+     formatbedingt.
+  5. Kleinere Beschriftungsabweichung: „Kassensystem-Seriennr." (PDF) vs.
+     „Kassen-Seriennr." (Ausdruck).
+  6. Storno-/Fehlerdarstellung: PDF nutzt rote Schrift (`#a00`) für
+     „STORNOBELEG"/TSE-Fehler; Ausdruck (keine Farbe möglich) nutzt
+     überdimensionierten Fettdruck und „! TSE Fehler !".
+
+  **Bewertung:** Punkte 2-6 sind medienbedingt oder ausdrücklich
+  dokumentierte Entscheidungen. **Der fehlende QR-Code auf dem Ausdruck
+  (Punkt 1) hat dagegen keinen Kommentar/keine Begründung im Code** — liest
+  sich wie organisch entstandene Abweichung (zwei getrennte Codepfade, nie
+  synchron gehalten), nicht wie eine bewusste Entscheidung.
+
+  **Entschieden (2026-09-01):**
+  a) QR-Code kommt auch auf den Ausdruck — beide Belegformen sollen
+     gleichwertig scanbar/prüfbar sein (relevant auch für die
+     QR-Prüf-App-Methode aus der TSE-Verifikations-Antwort weiter oben in
+     diesem Gespräch).
+  c) Die Beschriftungsabweichung („Kassensystem-Seriennr." vs.
+     „Kassen-Seriennr.") wird mit vereinheitlicht.
+  **Umsetzungsweg:** nicht als Einzel-Patch, sondern im Rahmen der
+  größeren Architekturentscheidung **Task #105** (gemeinsames
+  Zwischenformat für alle Belege) — dort wird der QR-Code einfach ein
+  Bild-Block, den beide Renderer bekommen, statt eine Einzellösung nur
+  für den Ausdruck zu bauen.
+
+  **Erledigt (2026-09-01) — via Task #105:** QR-Code erscheint jetzt auch
+  auf dem physischen Ausdruck (`receipt/blocks.ts`, siehe #105 für Details).
+  Beschriftung vereinheitlicht: „Kassensystem-Seriennr." auf beiden
+  Formaten. Restliche in Punkt 3-6 identifizierte Abweichungen (Layout,
+  Logo-Format, Storno-/Fehlerdarstellung) sind medienbedingt bzw. bewusste
+  Entscheidungen geblieben, nicht weiter vereinheitlicht.
+
+- [Task] **#102** Wie wird geprüft, dass alle Bestellungen korrekt an die TSE gemeldet und signiert werden
+  Aufgekommen 2026-09-01, Anschluss an D-038-Fortsetzung.
+  **Zunächst umgeordnet (2026-09-01):** als Prüfschritt innerhalb von Task
+  #47 (großer manueller Regressionstest) statt eigenem Task geführt.
+
+  **Gelöst (2026-09-01):** Klärung, was im rohen TAR-Export (Task #103)
+  überhaupt steht — die vendorten SDK-Header (`WormDLL.h`) enthalten keine
+  Formatspezifikation für den signierten Log-Message-Envelope (TR-03153,
+  versioniert v1/v3), nur den C-API-Zugriff. Für die eigentliche Frage
+  ("kamen die richtigen Beträge auf der TSE an") ist das Envelope-Format
+  aber gar nicht nötig: die SDK-Funktion `worm_entry_readProcessData` liefert
+  pro TSE-Eintrag direkt `processData` — FairPOS' eigenes,
+  DSFinV-K-Anhang-I-Klartextformat (siehe `tse/processData.ts`), unabhängig
+  vom Envelope. Neuer `tseCli`-Befehl `dumpProcessData <ausgabedatei>`
+  (`native/tse-cli/src/tseCli.cpp`, `worm_entry_iterate_*` +
+  `worm_entry_readProcessData`) iteriert alle gespeicherten Einträge und
+  schreibt `id`/Typ/`processData` als Tab-getrennte Textdatei — vollständig
+  dokumentiert in `docs/TSE-CLI-Referenz.md` Abschnitt 2/3. **Bewusst nur
+  CLI, kein Backend-/Admin-UI-Anschluss** (Nutzervorgabe): reines
+  Diagnose-/Testing-Werkzeug für den manuellen Regressionstest (Task #47),
+  keine dauerhafte Produktivfunktion. Build erfolgreich gegen die reale
+  (lokal vorhandene, gitignorte) SDK-Bibliothek getestet; mangels
+  physischer Entwickler-TSE nicht mit echter Hardware verifiziert.
+
+  **Live verifiziert und nachgebessert (2026-09-02):** Nutzer hat den
+  Befehl gegen echte Hardware laufen lassen — Inhalte (Kassenbeleg-V1,
+  Bestellung-V1, Kostenfreie-Abgabe-/Storno-Texte aus `SonstigerVorgang`)
+  stimmten mit den tatsächlichen Testbuchungen überein. Dabei außerdem
+  bestätigt: die TSE vergibt Eintrags-IDs ausnahmslos ungerade (17, 19,
+  21 … über alle drei Eintragstypen hinweg, auch `SE_AUDIT_LOG_MESSAGE`)
+  — reine Nummerierungskonvention der Hardware, keine Lücke, keine
+  Bedeutung für die Auswertung. **Gefundener und behobener Bug:**
+  `Bestellung-V1`-Einträge mit mehreren Zeilen (getrennt durch rohes `\r`
+  laut Anhang I) wurden unescaped in die Dump-Datei geschrieben — ein
+  Terminal/Pager interpretiert das `\r` als "Cursor an Zeilenanfang" und
+  überschreibt optisch `id`/Typ/Länge, sieht wie eine korrupte
+  TSE-Aufzeichnung aus, obwohl die TSE-Daten unversehrt waren (reiner
+  Anzeigefehler der Dump-Datei). `writeEscaped()` ergänzt (`\r`/`\n`/`\t`
+  werden jetzt als Literal ausgegeben statt roh geschrieben) — siehe
+  `docs/TSE-CLI-Referenz.md` Abschnitt 2.
+
+- [Task] **#103** `exportTar`-Rohdaten-Export der TSE über die Admin-Oberfläche freigeben
+  Aufgekommen 2026-09-01, ursprünglich als niedrig priorisierter
+  Backlog-Eintrag angelegt (offene Frage: was man mit dem TAR-Inhalt
+  überhaupt anfangen kann) — noch am selben Tag konkretisiert und
+  umgesetzt, nachdem der Nutzer entschieden hat: **genau das, was das CLI
+  schon kann, 1:1 über die Admin-UI erreichbar machen**, keine Interpretation
+  des Inhalts einbauen.
+
+  **Kernfrage vorab geklärt: kein Datumsfilter möglich.** Die dafür
+  vorgesehenen SDK-Funktionen (`worm_export_tar_filtered_time`,
+  `worm_export_tar_filtered_transaction`) sind laut `WormDLL.h` (Zeile
+  256-260) ab TSE-Firmware ≥ 2.0.0 abgeschaltet und schlagen **immer** fehl —
+  SDK-Zitat: "If an ERS requires a filtered export, the ERS must filter the
+  TAR themselves." Es gibt nur noch Vollexport (`worm_export_tar`, das was
+  `native/tse-cli`s `exportTar`-Befehl bereits aufruft) oder inkrementellen
+  Export (`worm_export_tar_incremental`, bräuchte einen persistierten
+  State-Token).
+
+  **Umsetzung (2026-09-01):**
+  - `tse/client.ts`s `exportTar()` existierte bereits (unbenutzt) — bekam nur
+    einen eigenen, großzügigeren Timeout (`EXPORT_TIMEOUT_MS`, 10 Min. statt
+    der 15s-Standardvorgabe, da TSE-Speichergröße/Exportdauer unbekannt).
+  - Neue Route `GET /api/admin/tse/export` (`routes/admin/tse.ts`): schreibt
+    in eine temporäre Datei, liefert sie als TAR-Download aus, löscht sie
+    danach garantiert (`finally`). Protokolliert jeden Export als
+    `system_log`-Eintrag (neue Kategorie `tse_export`).
+  - Neuer Button "TSE-Rohdaten exportieren" auf der TSE-Einstellungsseite
+    (`admin/settings/tse/+page.svelte`), analog zum bestehenden
+    Backup-Download-Link.
+  - Integrationstests (`tse.integration.test.ts`): nicht konfiguriert → 400,
+    Erfolg gegen erweiterten CLI-Stub (liest echte Bytes zurück, prüft
+    Header/Log-Eintrag), V-Administrator hat ebenfalls Zugriff, kein Zugriff
+    ohne Session. `tseCliStub.sh` erweitert (`TSE_STUB_EXPORT_CONTENT`),
+    da `exportTar` seine Daten direkt in die Ausgabedatei schreibt, nicht in
+    die JSON-Hülle.
+
+  **Bewusst nicht ins Backend/die Admin-UI umgesetzt (Nutzerentscheidung):**
+  - Inkrementeller Export — Vollexport reicht für v1.
+  - Löschen der TSE-gespeicherten Rohdaten (`worm_export_deleteStoredData`)
+    — separate, destruktive Funktion mit eigenen Vorbedingungen; erst
+    angehen, wenn TSE-Speicherplatz tatsächlich eng wird.
+
+  **Nachtrag (2026-09-01): `factoryReset`/`deleteStoredData` direkt in
+  `tseCli.cpp` eingebaut, statt nur als Wegwerf-Snippet dokumentiert.**
+  Auf Nutzerwunsch — beide jetzt echte, mitgebaute `tseCli`-Befehle
+  (`factoryReset` ohne Argumente, `deleteStoredData <admin-pin>
+  <ausgabedatei>` mit dem vom SDK vorgeschriebenen Login→Zeit→Export→Löschen-
+  Ablauf), kein Selbstkompilieren gegen das SDK mehr nötig. **Weiterhin nie
+  von FairPOS selbst aufgerufen** — nur über die Kommandozeile erreichbar,
+  bewusst nicht ins Backend/die Admin-UI verdrahtet (s.o.). Build erfolgreich
+  gegen die reale (lokal vorhandene, gitignorte) SDK-Bibliothek getestet;
+  mangels physischer Entwickler-TSE nicht mit echter Hardware verifiziert.
+  Vollständig dokumentiert in `docs/TSE-CLI-Referenz.md` Abschnitt 2.
+
+  **Zugriffsebene (für den `GET /export`-Endpunkt):** V+S (Nutzerbegründung:
+  der TSE-Stick kann einer einzelnen Veranstaltung/einem Veranstalter
+  gehören, nicht nur dem System-Administrator) — siehe
+  `docs/Adminstufen-Matrix.txt`.
+
+  **Weiterhin offen:** was inhaltlich im signierten TAR-Envelope selbst
+  steht (TR-03153-Log-Message-Format), bleibt unbeantwortet — das war nicht
+  Ziel dieser Umsetzung (reine Downloadfunktion, keine Interpretation). Für
+  die eigentliche "wie prüfen wir Vollständigkeit"-Frage siehe **Task #102
+  (gelöst)**: `tseCli dumpProcessData` liest die Beträge direkt von der
+  lebenden TSE, ohne den Envelope zu parsen.
+
+- [Task] **#104** Dashboard-Kacheln in "Veranstaltung"/"System" gruppieren, Zeitfenster-Warnung ergänzen
+  Nutzerwunsch 2026-09-01, direkt umgesetzt.
+
+  **Zeitfenster-Warnung:** die "Aktive Veranstaltung"-Kachel (`admin/+page.svelte`)
+  vergleicht jetzt bei jedem Reload die browserlokale Uhrzeit gegen
+  `activeEvent.startTime`/`endTime` (beide bereits Teil der `ActiveEvent`-
+  API-Antwort, Task #95 — keine Backend-Änderung nötig) und zeigt eine
+  orangene Warnung samt `warn`-Kachelrand, wenn die aktuelle Systemzeit
+  außerhalb des Veranstaltungszeitraums liegt — z. B. wenn eine alte
+  Veranstaltung nach ihrem Ende versehentlich aktiv bleibt.
+
+  **Kachel-Gruppierung:** zwei Abschnitte mit Überschrift statt einem
+  einzigen Grid:
+  - **Veranstaltung** (zuerst): Aktive Veranstaltung, Ausstehende
+    Tagesabschlüsse, Tagesumsatz, Offene Rechnungen.
+  - **System**: TSE-Zustand, Druckwarteschlange, Aktive Sitzungen,
+    PIN-Login: IP-Sperren.
+
+  Keine Backend-Änderung — reine Frontend-Umsortierung + ein zusätzlicher
+  clientseitiger Vergleich.
+
+  **Live bestätigt (2026-09-01):** Smoke-Test durch den Nutzer — Gruppierung
+  passt.
+
+- [Task] **#105** Gemeinsames Zwischenformat für alle Belege (Rechnung, Z-Bon, Bestellzettel, Testdruck, PIN-Zettel)
+  Nutzeridee 2026-09-01 (Anschluss an Task #101): warum nicht jeden Beleg
+  in einem neutralen Format erzeugen und erst am Ende in ESC/POS, PDF oder
+  Bildschirmanzeige umwandeln, statt für jede Kombination aus Belegtyp und
+  Zielformat eigenen Code zu pflegen?
+
+  **Ist-Stand (recherchiert, korrigiert 2026-09-01):** tatsächlich
+  **5 Belegtypen**, nicht 4 wie zuerst recherchiert — `print_job.type`
+  kennt seit Migration `0012_print_job_pin_slip.sql` auch `pin_slip`
+  (PIN-Zettel bei Benutzer-PIN-Vergabe, `admin/users.ts` `POST
+  /:id/pin/print`, Inhalt über `buildPinSlip()`). Zusammen: Rechnung
+  (`receipt/`), Z-Bon (`closing/`), Bestellzettel (`print/order-slip.ts`,
+  nur ESC/POS, internes Dokument), Testdruck (`print/escpos.ts`, nur
+  ESC/POS), PIN-Zettel (nur ESC/POS). Jede Kombination Typ×Ziel ist
+  unabhängig implementiert, einziger geteilter Code sind drei kleine
+  Encoding-Helfer (`print/escpos-encoding.ts`). Die ESC/POS-Konstanten
+  (`ESC`, `GS`, `INIT`, `CUT`, …) sind **mehrfach wortgleich dupliziert**
+  über die Renderer-Dateien hinweg. "Bildschirmanzeige" ist heute kein
+  eigener Renderer, sondern der Browser zeigt schlicht die fertigen
+  PDF-Bytes an (`<embed>`).
+
+  **Nutzervorgabe (2026-09-01): gilt für ALLE Ausdrucke im System** —
+  also ausdrücklich auch Bestellzettel und PIN-Zettel, nicht nur
+  Rechnung/Z-Bon. Löst die zuvor offene Frage "ob/wie `order-slip.ts` ins
+  Modell passt" — es passt hinein wie jeder andere Typ auch.
+
+  **Grundidee bewertet: richtig, etabliertes Muster.** Genau das Prinzip
+  (Dokumentbeschreibung getrennt vom Renderer) nutzen reale
+  Kassen-/Reporting-Systeme (z. B. `node-thermal-printer`/`escpos`-artige
+  Encoder-Bibliotheken, JasperReports). Dass FairPOS aktuell vier
+  unabhängige PDF/ESC-POS-Paare hat, ist der unübliche Zustand, nicht die
+  Idee selbst.
+
+  **Geprüfter und verworfener Alternativweg: "ESC/POS bleibt primäres
+  Format, PDF wird daraus zurückkonvertiert".** Nutzeridee, dafür eine
+  fertige Bibliothek zu nutzen — der dafür vorgelegte Code-Schnipsel
+  (`escpos-buffer` mit `Parser`/`CanvasAdapter`/`toBuffer('application/pdf')`)
+  **existiert nicht** — das reale npm-Paket `escpos-buffer`
+  (github.com/grandchef/escpos-buffer) exportiert nur `Printer`/
+  `InMemory`/`WebUSB`/`Model` und baut ESC/POS-Befehle, liest sie nicht
+  zurück (vermutlich eine KI-Halluzination, egal woher der Schnipsel kam).
+  Recherchierte reale Alternativen für "ESC/POS-Bytes parsen → rendern":
+  - `npos` (github.com/taoyuan/npos) — hat sogar ein Beispiel
+    `receipt-to-pdf.js` (ESC/POS → AST → PDFKit) und beweist damit, dass
+    der Ansatz technisch funktioniert. Aber: letzter Commit 23.08.2017,
+    Version 0.1.19, veraltete Abhängigkeiten (`bluebird`) — praktisch tot,
+    nicht vertretbar als Abhängigkeit für ein KassenSichV-relevantes
+    Dokument.
+  - `escpos-tools` (github.com/receipt-print-hq/escpos-tools) — **PHP**,
+    nicht Node, nicht auf npm, bräuchte Composer/Imagick auf dem Server —
+    passt nicht zum Stack.
+  **Warum der Round-Trip technisch ohnehin die schlechtere Wahl ist,
+  unabhängig von der Bibliotheksfrage:** FairPOS erzeugt die ESC/POS-Bytes
+  selbst aus eigenem Code. Diese Bytes hinterher wieder zurückzuparsen, um
+  daraus ein PDF zu bauen, bedeutet einen Parser für das eigene Format zu
+  schreiben — zusätzlicher Aufwand und Risiko (Encoding-Rückweg,
+  Informationsverlust beim Serialisieren) ohne Vorteil gegenüber der
+  einfacheren Alternative unten.
+
+  **Entschiedene Architektur: gemeinsame Zwischenstruktur, VOR der
+  Serialisierung.** Die vier Beleg-Erzeuger schreiben ihre Inhalte einmal
+  als kleine Liste von Blöcken (Textzeile mit Ausrichtung/Fett/Größe,
+  Trennlinie, zwei-/dreispaltige Zeile mit rechtsbündigen Zahlen, Bild,
+  Schnittmarke) — noch bevor daraus ESC/POS-Bytes oder PDF entstehen. Zwei
+  dünne Renderer (`renderToEscPos(blocks)`, `renderToPdf(blocks)`)
+  konsumieren dieselbe Struktur. Kein Rückweg durch Bytes, keine
+  Fremdbibliothek. Bildschirmvorschau bleibt wie heute (PDF-Bytes via
+  `<embed>`) — kein dritter Renderer nötig, das funktioniert bereits.
+
+  **Nutzervorgabe: PDF soll aussehen wie der Bon, keine Farben nötig.**
+  Vereinfacht das Modell zusätzlich: der PDF-Renderer nutzt dieselbe
+  Spalten-Arithmetik (feste Zeichenbreite, monospace-artige Schrift,
+  z. B. Courier) wie der ESC/POS-Renderer, statt eigener proportionaler
+  Positionierung — beide Renderer werden sich dadurch strukturell
+  ähnlicher. Die bisherige Rot-Schrift/Fettdruck-Unterscheidung
+  (STORNOBELEG/TSE-Fehler) entfällt als Sonderfall, wenn PDF ebenfalls
+  keine Farbe mehr nutzt — eine einzige "Betonung"-Stufe pro Block reicht
+  dann für beide Renderer.
+
+  **Umlaute (Nutzerfrage 2026-09-01): keine Sonderbehandlung nötig.**
+  Klargestellt im Zuge dieser Diskussion: `receipt/escpos-receipt.ts`
+  druckt entgegen einem veralteten, mittlerweile korrigierten Kommentar
+  bereits heute echte Umlaute über CP858 (siehe Korrektur bei Task #101
+  Punkt 2) — identisch zu Z-Bon/Bestellzettel. PDF nutzt ohnehin
+  Helvetica/WinAnsi mit voller Umlaut-Unterstützung. Im Blockmodell tragen
+  Blöcke normale Unicode-Strings, jeder Renderer kodiert selbst passend
+  (CP858 für ESC/POS, native Unicode-Schrift fürs PDF) — keine
+  ASCII-Rücksicht im Modell nötig.
+
+  **Bilder:** PDF will das Original-Bild, ESC/POS braucht ein vorab
+  gerastertes Bild. Lösungsansatz für die Umsetzung: ein Bild-Block trägt
+  beide Repräsentationen (`{ png, escposRaster }`), einmal erzeugt (z. B.
+  beim Logo-Upload), nicht bei jedem Druck neu — noch nicht im Detail
+  ausgearbeitet, ob sich das für den QR-Code (wird zur Druckzeit erzeugt,
+  nicht vorab hochgeladen) genauso handhaben lässt oder dort anders
+  gelöst werden muss.
+
+  **Nebeneffekt, den die Nutzervorgabe ausdrücklich mitnehmen will:** eine
+  PDF-Variante des Z-Bons, die wirklich wie der gedruckte Z-Bon aussieht
+  (zur Archivierung) — `closing/pdf.ts` existiert zwar bereits, wird aber
+  durch denselben Renderer wie die Rechnung automatisch layoutgleich zum
+  Ausdruck, was heute nicht garantiert ist.
+
+  **Timing-Entscheidung: jetzt, vor Release 1 — nicht danach.** Erste
+  Einschätzung (Sub-Agent-Recherche) war, das auf nach Release 1 zu
+  verschieben (Risiko einer Regression genau vor dem großen manuellen
+  Testlauf). Nutzergegenargument, das diese Einschätzung kippt: der große
+  manuelle Testaufwand steht ohnehin an — der Druck-Code wird so oder so
+  Teil davon, ein Umbau jetzt bedeutet also **keinen zusätzlichen
+  Testdurchlauf**, nur einen anderen Code-Stand zum Testzeitpunkt.
+  Zusätzlich werden dabei gleich zwei echte Probleme mitgelöst (Task #101s
+  QR-Divergenz, Z-Bon-PDF-Bildtreue), statt sie separat nachzuziehen.
+
+  **Zusätzliche Anforderung (2026-09-01): PDF-Button + "Erneut drucken"
+  für ALLE Druckaufträge in der Admin-UI (Einstellungen → Monitoring →
+  Druckwarteschlange).** Ist-Stand recherchiert:
+  - `GET /api/admin/print-jobs/:id/pdf` existiert bereits, aber **nur**
+    für `receipt`/`daily_closing` (lädt per `reference_id` die
+    Ursprungsdaten neu und rendert sie — `order_slip`/`test_print`/
+    `pin_slip` liefern 404, laut Kommentar dort ausdrücklich weil "raw
+    ESC/POS bytes... is not a document format and cannot be turned into a
+    PDF generically").
+  - Frontend (`admin/settings/print-queue/+page.svelte`) zeigt den
+    "PDF"-Button aktuell nur `{#if (j.type === 'receipt' || j.type ===
+    'daily_closing') && j.reference_id}` — für alle Typen verfügbar
+    machen heißt, diese Einschränkung fallen zu lassen.
+  - "Erneut drucken" ist etwas anderes als der bestehende
+    "Wiederholen"-Button (nur bei `status === 'failed'`, setzt denselben
+    Job auf `pending` zurück). Vorbild existiert bereits für Rechnungen:
+    `admin/invoices.ts`s `POST /:id/reprint` — lädt die Rechnung neu,
+    rendert frisch, legt einen **neuen** `print_job` an, unabhängig vom
+    Status des alten. Das müsste als generischer
+    `POST /api/admin/print-jobs/:id/reprint`-Endpunkt für alle Typen
+    nachgebaut und der Button in der Druckwarteschlangen-UI ergänzt
+    werden (dort bisher gar nicht vorhanden, nur auf der
+    Rechnungs-Reportseite).
+
+  **Dabei aufgefallenes echtes Problem, das die Architektur klärt:**
+  `receipt`/`daily_closing` können aus einer persistenten Quelle (Rechnung/
+  Z-Bon-Zeile) jederzeit neu gerendert werden — `order_slip`/`test_print`
+  haben aber gar keine `reference_id` (wird beim Anlegen nie gesetzt), und
+  bei `pin_slip` ist eine "Neuladen aus der Quelle"-Logik **grundsätzlich
+  unmöglich**: die PIN wird laut Task #90 nur gehasht gespeichert, der
+  Klartext existiert nirgends außer in den bereits erzeugten Druckbytes.
+  **Lösung:** `print_job` bekommt eine neue Spalte für die erzeugten
+  Blöcke selbst (z. B. `blocks JSONB`), zusätzlich zum bisherigen
+  `content` (weiterhin die daraus vorgerenderten ESC/POS-Bytes, die der
+  Print-Worker unverändert versendet — kein Eingriff in den Sendepfad
+  nötig). PDF-Button und "Erneut drucken" arbeiten dann einheitlich über
+  `renderToPdf(job.blocks)` bzw. `renderToEscPos(job.blocks)` **für jeden
+  Belegtyp gleich**, ganz ohne `reference_id`/Live-Neuladen — löst damit
+  auch das PIN-Zettel-Problem, weil die historischen Blöcke (inkl. der
+  damaligen PIN) im Job selbst erhalten bleiben. Offene Sicherheitsfrage
+  für die Umsetzung: ob "Erneut drucken" für `pin_slip` überhaupt erlaubt
+  sein soll (Klartext-PIN-Wiederholdruck Tage später) — noch nicht
+  entschieden, separat klären.
+
+  **Keine Datenmigration nötig (Nutzervorgabe 2026-09-01):** vor Release 1,
+  bestehende `print_job`-Zeilen müssen nicht ins neue Format migriert
+  werden — die Tabelle kann beim Umstieg auf das neue Format einfach
+  geleert werden (z. B. `TRUNCATE TABLE print_job` in der Migration, statt
+  eines Backfill-Skripts).
+
+  **Erledigt (2026-09-01):**
+
+  **Block-Modell** (`print/blocks.ts`, neu): `PrintBlock` — `text`
+  (Zeile, `align`/`bold`/`size`), `row` (zweispaltig, links/rechts —
+  ersetzt sowohl ESC/POS' `twoColumn` als auch PDFs bisherige eigene
+  Spaltenpositionierung), `hr`, `blank`, `image` (trägt PNG **und**
+  ESC/POS-Raster gleichzeitig, siehe Bild-Frage unten). Zwei Renderer,
+  beide arbeiten auf derselben Blockliste:
+  - `renderBlocksToEscPos()` — eigene, aus den fünf vorherigen Renderern
+    zusammengeführte ESC/POS-Konstanten (`ESC`/`GS`/`CUT`/…, vorher
+    vierfach dupliziert), Größen-Stufen (`normal`/`large`/`xlarge`) über
+    `ESC !`-Modi.
+  - `renderBlocksToPdf()` — `pdfkit`, **Courier (Monospace) statt
+    Helvetica, keine Farbe** (Nutzervorgabe: "PDF soll aussehen wie der
+    Bon") — dieselben Größen-Stufen als Punktgrößen.
+
+  **Bild-Frage gelöst:** `ImageBlock` trägt `pngBase64`+`pngWidth`+
+  `pngHeight` (fürs PDF) **und** `escposRasterBase64` (fertig vorgerendert
+  fürs ESC/POS) gleichzeitig — kein Renderer muss zur Druckzeit konvertieren.
+  Für den Firmen-Logo (bereits vorgerendert beim Upload, `logo/logo.ts`,
+  unverändert) passt das direkt. Für den QR-Code (wird pro Beleg neu
+  erzeugt) neues Modul `print/raster.ts` (`pngToEscposRaster()`, `sharp`-
+  basiert, eigene Kopie der Raster-Pack-Logik aus `logo.ts` — bewusst nicht
+  geteilt, um die beiden Anwendungsfälle nicht zu koppeln).
+
+  **Alle fünf Belegtypen migriert**, jeweils ein `*Blocks()`-Builder +
+  dünner `*EscPos()`-Wrapper (Funktionsnamen/Signaturen an den
+  Aufrufstellen möglichst stabil gehalten, siehe unten für die
+  Ausnahmen):
+  - `receipt/blocks.ts` — **Rechnung bekommt jetzt auch auf dem Ausdruck
+    einen QR-Code** (löst Task #101, siehe dort). `buildReceiptEscPos()`
+    ist jetzt `async` (QR-Rendering) — beide Aufrufstellen
+    (`register-session.ts`, `admin/invoices.ts`) angepasst.
+  - `closing/blocks.ts` — Z-Bon-PDF bekommt dabei zwei bisher fehlende
+    Zeilen (`Geschäftstag: …`, `--- Ende Z-Bon ---`), die vorher nur der
+    Ausdruck hatte. `buildZBonEscPos()`/`renderZBonPdf()` haben jetzt beide
+    dieselbe Signatur (`ctx, totals, businessDate, logo: CompanyLogo|null`)
+    — vorher nahm die ESC/POS-Variante nur `logoEscPos: Buffer|null` ohne
+    `businessDate`. `admin/closings.ts`s Creation-Pfad liest `business_date`
+    jetzt per `RETURNING to_char(business_date, 'YYYY-MM-DD')` aus der
+    INSERT-Query statt es zu approximieren.
+  - `print/order-slip.ts` — alle drei Varianten (Bestellzettel,
+    Selbstabholer, Pfand) migriert; Tisch-Header schrumpft von 3×3
+    (`GS !`-Skalierung) auf 2×2 (`ESC !`-Modus, wie in Abschnitt "large" vs.
+    "xlarge" oben) — kleine, bewusst in Kauf genommene Vereinfachung.
+  - `print/escpos.ts` (Testdruck, PIN-Zettel) — **Nebenbei-Fix:** beide
+    druckten vorher nur ASCII (Kommentar behauptete das sei nötig, war ein
+    Überbleibsel von vor der projektweiten CP858-Umstellung); jetzt wie
+    alle anderen Belegtypen CP858, Umlaute in Drucker-/Benutzernamen gehen
+    nicht mehr verloren.
+
+  **`print_job.blocks`** (Migration `0027_print_job_blocks.sql`, neue
+  `JSONB NOT NULL DEFAULT '[]'`-Spalte) — `enqueuePrintJob()` bekommt einen
+  neuen Pflichtparameter `blocks: PrintBlock[]`, alle neun Aufrufstellen
+  (`register-session.ts` ×4, `admin/closings.ts` ×2, `admin/invoices.ts`,
+  `admin/printers.ts`, `admin/users.ts`) angepasst — jede baut jetzt einmal
+  die Blöcke, leitet `content` per `renderBlocksToEscPos()` lokal davon ab,
+  übergibt beides. **Keine Datenmigration** (Nutzervorgabe): Migration
+  truncatet `print_job` zuerst, da vor Release 1.
+
+  **Admin-Endpunkte generalisiert** (`routes/admin/print-jobs.ts`):
+  - `GET /:id/pdf` — vorher nur `receipt`/`daily_closing` (eigene
+    Nachlade-Logik je Typ), jetzt jeder Typ generisch über
+    `renderBlocksToPdf(job.blocks, …)`.
+  - `POST /:id/reprint` (neu) — legt einen neuen Druckauftrag mit
+    identischen Blöcken auf demselben Drucker an, unabhängig vom Status des
+    Original-Auftrags (anders als das bestehende `/retry`, das nur einen
+    fehlgeschlagenen Auftrag zurücksetzt). Verweigert mit 409, wenn der
+    Original-Drucker inzwischen gelöscht wurde (gleiche Regel wie
+    `/retry`).
+  - **PIN-Zettel explizit gesperrt** (Nutzerentscheidung 2026-09-01,
+    Sicherheit): beide obigen Endpunkte liefern `403` für `type ===
+    'pin_slip'` — einzige Ausnahme von der Generalisierung, weil eine PIN
+    nirgends sonst im Klartext gespeichert ist und eine generische
+    "beliebigen alten Druckauftrag ansehen/erneut drucken"-Funktion sonst
+    zum nachträglichen PIN-Auslesen würde. **Durchsetzung serverseitig**,
+    nicht nur ausgeblendeter Button (Nutzervorgabe: "damit man es auch
+    nicht per URL Parameter umgehen kann").
+  - Frontend (`admin/settings/print-queue/+page.svelte`): PDF-Button ohne
+    Typ-Einschränkung mehr, neuer "Erneut drucken"-Button, beide für
+    `pin_slip`-Zeilen ausgeblendet (reine UX, Durchsetzung ist serverseitig).
+
+  **Tests:** neue Dateien `print/raster.test.ts`, `print/blocks.test.ts`,
+  `print/escpos-encoding.test.ts` (dorthin verschobene, vorher pro Datei
+  duplizierte `twoColumn`-Tests), `closing/pdf.test.ts` (gab es vorher gar
+  nicht). Bestehende Test-Dateien für alle fünf Belegtypen laufen
+  unverändert grün (Byte-Level-Fidelity verifiziert, keine ungewollte
+  Verhaltensänderung durch den Umbau) bis auf die bewusst dokumentierten
+  Abweichungen oben. Neue Integrationstests für `/:id/pdf`/`/:id/reprint`
+  in `print-jobs.integration.test.ts` (alle Typen + PIN-Zettel-Sperre +
+  gelöschter-Drucker-Fall). Backend-Typecheck, Frontend-Typecheck
+  (`svelte-check`), volle Backend-Unit-Testsuite (303 Tests), Frontend-Build
+  und Backend-Build alle grün. **Voller Integrationstest-Lauf grün** (28
+  Dateien, 280 Tests) — hat dabei einen echten Regressionsbug aufgedeckt und
+  sofort behoben, siehe D-053: `GET /api/admin/settings/
+  receipt-preview` baute sein `ReceiptData` manuell zusammen und vergaß
+  `logoEscPos` zu setzen (der neue Block-Builder verlangt für den Logo-Block
+  jetzt beide Bild-Repräsentationen gleichzeitig) — Logo verschwand
+  dadurch komplett aus der Bon-Vorschau, obwohl konfiguriert. Ein-Zeilen-Fix
+  in `routes/admin/settings.ts`, vom bereits vorhandenen Regressionstest
+  sofort aufgedeckt.
+
+  **Bewusst nicht umgesetzt / nicht Teil dieser Änderung:** die generelle
+  Architektur-Beschreibung in `docs/Anforderungen.md` (SSE-Behauptung bei
+  "Echtzeit") war schon vorher veraltet (tatsächlich Client-Polling) —
+  nicht Teil von Task #105, nur am Rand bemerkt.
+
+  **Live bestätigt (2026-09-01):** Smoke-Test durch den Nutzer — Druck von
+  Bons an echter Hardware funktioniert.
+
+- [Task] **#106** "Alle Kassen abschließen"/Sofort-Abschließen stempelt Z-Bon mit falschem Buchungstag bei nachgeholten Rechnungen
+  **Klassifikation: Bug (hoch).** Nutzerbeobachtung 2026-09-02, Ursache per
+  Code-Recherche gefunden — siehe D-054 für die vollständige
+  Analyse.
+
+  **Kurzfassung der Ursache:** `closeRegister()` (`routes/admin/
+  closings.ts`) aggregiert ohne übergebenes `date`-Argument ALLE noch
+  unzugeordneten Rechnungen einer Kasse unabhängig davon, an welchem
+  Kalendertag sie gebucht wurden — stempelt den entstehenden
+  `daily_closing`-Eintrag aber immer mit `business_date = current_date`
+  statt mit dem tatsächlichen Rechnungsdatum. Betroffen: `POST /api/admin/
+  closings/close-all` (Alle-Kassen-Button) **und** `POST /api/admin/
+  registers/:id/closings` (Kasse-jetzt-abschließen-Button) — beide rufen
+  `closeRegister()` ohne `date` auf. **Nicht** betroffen: die dedizierte
+  "Tag nachholen"-Funktion (`close-pending`), die pro offenem Tag ein
+  explizites `date` übergibt und daher korrekt stempelt.
+
+  **Sichtbare/fachliche Folgen:**
+  - Ein eigentlich noch offener Tag zeigt sich danach weiterhin als
+    "offen" — der Pending-Tracker (`findPendingDaysForRegister`) prüft nur,
+    ob für den Kalendertag ein `daily_closing`-Eintrag mit passendem
+    `business_date` existiert, nicht ob die Rechnungen zugeordnet wurden.
+  - Ein späterer "Tag nachholen"-Versuch für genau diesen Tag findet keine
+    Rechnungen mehr (schon einem anderen, falsch datierten Z-Bon
+    zugeordnet) und erzeugt fälschlich einen zusätzlichen echten
+    Nullabschluss.
+  - Schwerwiegender als nur die UI-Anzeige: der tatsächliche Umsatz landet
+    dadurch fiskalisch auf dem falschen Kalendertag statt dem echten
+    Buchungstag — relevant für DSFinV-K-Export und alle
+    tagesbasierten Auswertungen.
+
+  **Reproduktion:** Kasse mit unzugeordneten Rechnungen von einem
+  vergangenen Tag (z. B. weil damals kein Z-Bon gemacht wurde) → "Alle
+  Kassen abschließen" oder "Kasse jetzt abschließen" klicken → Z-Bon wird
+  mit dem heutigen statt dem tatsächlichen Rechnungsdatum erstellt, der
+  ursprüngliche Tag bleibt als "offen" markiert.
+
+  **Entscheidung (2026-09-03, Nutzervorgabe): eigener Z-Bon pro Tag.**
+  "Alle Kassen abschließen"/"Kasse jetzt abschließen" erzeugen künftig
+  automatisch **einen separaten Z-Bon je Kalendertag**, an dem die Kasse
+  unzugeordnete Rechnungen hat — analog zu `close-pending`, aber
+  zusätzlich inklusive des **heutigen** Tages (den `close-pending`
+  bewusst ausklammert, da für reine Backlog-Nachholung gedacht — hier
+  aber ist "heute abschließen" der Hauptzweck der beiden Buttons, nicht
+  nur Nachholen).
+
+  **Umsetzungsskizze (grob, nicht final):** statt `closeRegister(id, name)`
+  einmalig ohne `date` aufzurufen, pro Kasse zuerst die Menge der
+  **tatsächlich vorkommenden** Kalendertage unter den unzugeordneten
+  Rechnungen ermitteln (`DISTINCT created_at::date`), dann chronologisch
+  aufsteigend je einen `closeRegister(id, name, day)`-Aufruf pro Tag.
+  **Sonderfall Nullabschluss bleibt erhalten:** hat eine Kasse gar keine
+  unzugeordneten Rechnungen (komplett inaktiv), entsteht weiterhin
+  genau ein Nullabschluss wie bisher (`closeRegister(id, name)` ohne
+  `date`) — kein Rückwärts-Auffüllen mit Nullabschlüssen für jeden
+  ungenutzten Tag seit der letzten Aktivität, das bleibt Aufgabe von
+  `close-pending`s bestehender Logik, falls dort mal gewünscht.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe).**
+
+- [Task] **#107** Druckerwarteschlange: Button "Alle abbrechen" für wartende Druckaufträge
+  **Klassifikation: Verbesserung.** Nutzerwunsch 2026-09-02.
+
+  **Anforderung:** neuer Button "Alle abbrechen" auf der
+  Druckwarteschlange-Seite (`admin/settings/print-queue`), Position oben
+  neben "Aktualisieren" (im `.page-header`, nicht pro Tabellenzeile).
+  Bricht alle wartenden Druckaufträge ab.
+
+  **Entscheidung (2026-09-03, Nutzervorgabe):**
+  - **Nur `status=pending`**, `failed` bleibt ausgenommen. Zweck des
+    Buttons: verhindern, dass beim Wiedereinschalten eines Druckers eine
+    Flut alter, längst nicht mehr relevanter Aufträge (z. B. aus
+    vorherigen Testläufen) plötzlich losdruckt — dafür zählt nur, was
+    tatsächlich noch losgehen würde (`pending`), nicht was schon
+    fehlgeschlagen ist. `printing` war ohnehin schon durch das bestehende
+    Einzel-Abbrechen ausgeschlossen (409).
+  - **Wirklich alle `pending`-Aufträge systemweit**, unabhängig vom
+    aktuell gesetzten Status-Filter der Seite.
+
+  **Umsetzungsskizze (grob, nicht final):** neuer Bulk-Endpunkt (z. B.
+  `POST /api/admin/print-jobs/cancel-all`), setzt `status = 'cancelled'`
+  für alle Zeilen mit `status = 'pending'` in einer Query statt N
+  Einzel-Requests vom Frontend. Bestätigungsdialog analog zum
+  bestehenden Einzel-Abbrechen sinnvoll, da nicht rückgängig machbar.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe — Komfort fürs Testing, geringes Risiko).**
+
+- [Task] **#108** "Erneut drucken" mit Drucker-Auswahl-Dialog statt fest auf den Original-Drucker
+  **Klassifikation: Verbesserung.** Nutzerwunsch 2026-09-02.
+
+  **Anforderung:** der "Erneut drucken"-Button in der Druckwarteschlange
+  soll vor dem erneuten Drucken einen Dialog zur Druckerauswahl zeigen
+  (z. B. weil der ursprüngliche Drucker offline ist oder der Beleg auf
+  einem anderen Drucker gebraucht wird), mit dem bisherigen Drucker
+  vorausgewählt.
+
+  **Ist-Stand (Code-Recherche):** `POST /api/admin/print-jobs/:id/reprint`
+  (`routes/admin/print-jobs.ts`) druckt aktuell immer fest auf
+  `job.printer_id`, den ursprünglichen Drucker — kein Parameter für einen
+  abweichenden Zieldrucker vorhanden. Liefert sogar `409` ("Der Drucker
+  dieses Auftrags wurde gelöscht — kann nicht erneut gedruckt werden"),
+  wenn der Original-Drucker inzwischen gelöscht wurde — ein
+  Auswahl-Dialog würde diesen Sackgassen-Fall gleich mitlösen (Admin
+  könnte dann einfach einen anderen Drucker wählen statt komplett
+  blockiert zu sein).
+
+  **Umsetzungsskizze (grob, nicht final):** Backend — `reprint`-Route um
+  optionalen Body-Parameter `printer_id` erweitern (fällt ohne Angabe auf
+  `job.printer_id` zurück, abwärtskompatibel zu jedem anderen Aufrufer).
+  Frontend — Klick auf "Erneut drucken" öffnet ein kleines Modal
+  (bestehende `Modal.svelte` wiederverwenden) mit Drucker-Dropdown (aus
+  der bestehenden Drucker-Liste, `api.admin.printers.list()`),
+  vorausgewählt der Drucker aus `j.printer_id`; ein "Drucken"-Button im
+  Dialog löst den eigentlichen Reprint-Call mit der Auswahl aus.
+
+  **Entscheidung (2026-09-03, Nutzervorgabe):** wenn der ursprüngliche
+  Drucker gelöscht wurde (kein `printer_id` mehr), wird stattdessen der
+  aktuelle **Standarddrucker** (`printer.is_default = true`) vorausgewählt
+  — löst damit auch gleich die bisherige harte 409-Ablehnung ab. Gibt es
+  gar keinen Drucker im System (auch keinen Standarddrucker), ist Erneut-
+  Drucken ohnehin nicht möglich — kein Sonderfall nötig, der Dialog zeigt
+  dann schlicht keine Auswahlmöglichkeit.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe — Komfort fürs Testing, geringes Risiko).**
+
+- [Task] **#110** USt-Sätze als Einstellung statt Freitext — schließt die Regelsteuersatz-Änderungslücke
+  **Klassifikation: Bug (Ursache), Umsetzung als Verbesserung/Refactoring.**
+  Nutzerfrage 2026-09-02 ("wie geht das Kassenbeleg-V1-Format mit einer
+  künftigen USt-Erhöhung um"), Ursache gefunden und Lösungsansatz auf
+  Nutzerwunsch geprüft — siehe D-056 für die vollständige
+  Fehleranalyse. **Priorisierung bewusst noch offen**, siehe unten.
+
+  **Gefundenes Problem (Kurzfassung):** drei unabhängige Stellen im Code
+  vergleichen hart gegen die aktuell gültigen Sätze 19/7 und ordnen jeden
+  nicht erkannten Satz stillschweigend "steuerfrei" zu — `tse/
+  processData.ts::taxSlot()` (signierte TSE-`processData`), `exports/
+  dsfinvk/rows.ts::ustSchluessel()` (DSFinV-K-Export), `closing/
+  totals.ts::computeClosingTotals()` (Z-Bon-Summen, hier als
+  Schwellenwert `>= 18.5`/`>= 6.5`, dadurch für eine reine Erhöhung
+  zufällig noch treffsicher). Zusätzlich druckt `closing/blocks.ts` die
+  Z-Bon-Zeilen mit fest einprogrammiertem Text "19 %"/"7 %". `tax_rate`
+  liegt technisch auf `article_category` (Artikelgruppe), nicht auf dem
+  einzelnen Artikel — ein frei editierbares `DECIMAL(5,2)`-Feld, nichts
+  hindert einen Admin heute schon daran, z. B. `20.00` einzutragen.
+
+  **Nutzervorschlag (2026-09-02), geprüft — Ansatz ist tragfähig:** die
+  beiden echten Sätze (Regelsteuersatz, ermäßigter Steuersatz) als
+  Einstellung hinterlegen (analog zum bereits bestehenden Muster
+  `vat_rate_deposit` in `routes/admin/settings.ts`, System-
+  Administrator-exklusiv), Artikelgruppen wählen dann nur noch zwischen
+  drei Kategorien (0 % / ermäßigt / Regelsatz) statt einen freien
+  Prozentwert einzutippen.
+
+  **Wichtige Ergänzung aus der Prüfung, über den ursprünglichen Vorschlag
+  hinaus:** nur die Artikelgruppen-Eingabe auf eine Kategorie-Auswahl
+  umzustellen würde das eigentliche Problem **nicht** vollständig lösen —
+  `order_item.tax_rate` speichert schon heute zu Recht eine
+  **Momentaufnahme** des zum Verkaufszeitpunkt gültigen Prozentsatzes
+  (muss bei einer späteren Satzänderung unverändert bleiben, sonst wären
+  alte Bons/Auswertungen rückwirkend falsch). Die drei oben genannten
+  Funktionen (`taxSlot`, `ustSchluessel`, `computeClosingTotals`) lesen
+  aber genau diesen historischen Prozentwert und raten daraus die
+  Kategorie — das bliebe auch mit Kategorie-Auswahl auf Artikelgruppen-
+  Ebene fragil. Sauberer: zusätzlich zum Prozentwert auch die
+  **Kategorie** (`zero`/`reduced`/`standard`) auf `order_item` mit
+  einfrieren, damit die drei genannten Funktionen direkt nach Kategorie
+  statt nach geratener Zahl verzweigen können — dauerhaft robust gegen
+  jede künftige Satzänderung, nicht nur die nächste.
+
+  **Umsetzungsskizze (grob, nicht final, keine Entscheidung):**
+  - Migration: zwei neue `system_setting`-Schlüssel (z. B.
+    `vat_rate_standard`, `vat_rate_reduced`); `article_category` bekommt
+    eine neue Spalte `tax_category` (`zero`/`reduced`/`standard`),
+    Backfill aus dem bisherigen `tax_rate`-Wert; `order_item` bekommt
+    dieselbe neue Spalte, ebenfalls beim Verkauf mit eingefroren.
+  - `taxSlot()`/`ustSchluessel()`/`computeClosingTotals()` verzweigen
+    nach `tax_category` statt nach Prozentwert-Vergleich.
+  - `closing/blocks.ts`: Zeilenbeschriftung liest den aktuellen Satz aus
+    den Einstellungen statt fest "19 %"/"7 %" zu drucken.
+  - `admin/categories.ts` + zugehöriges Frontend: Freitext-Eingabe durch
+    Drei-Optionen-Auswahl ersetzen; neue Einstellungs-Sektion
+    (vermutlich Unternehmensdaten) für die zwei Prozentsätze.
+
+  **Zugriffsebene-Korrektur (2026-09-03, Nutzervorgabe):** `vat_rate_standard`/
+  `vat_rate_reduced` sind **nicht** System-Administrator-exklusiv, anders
+  als ursprünglich in der Umsetzungsskizze angenommen (das war an
+  `vat_rate_deposit`s altem, jetzt entfallenem Zugriffslevel orientiert).
+  Der Veranstaltungs-Administrator muss beide Sätze selbst anpassen
+  können — nicht in `SYSTEM_ONLY_KEYS` (`routes/admin/settings.ts`)
+  aufnehmen, nur in `ALLOWED_KEYS`. Zugriffsebene damit V+S, siehe
+  `docs/Adminstufen-Matrix.txt`.
+
+  **Backfill-Entscheidung (2026-09-03, Nutzervorgabe):** ein bei der
+  Migration nicht sauber auf eine der drei Kategorien passender
+  `tax_rate`-Wert wird automatisch auf `zero` (steuerfrei) abgebildet,
+  ohne Sonderbehandlung — aktuell nur Testdaten im System, kein
+  Produktivrisiko.
+
+  **Gemeinsame Umsetzung mit Task #113 (2026-09-03, Nutzervorgabe):**
+  beide Tasks werden in einem Zug umgesetzt, nicht nacheinander — Task
+  #113s Pfand-Steuersatz-Fix baut direkt auf diesem Umbau auf
+  (`order_item.tax_category` + `deposit_tax_rate`, siehe dortige
+  Umsetzungsskizze).
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe).** Wird zusammen mit weiteren, noch folgenden, gleich
+  markierten Tasks gesammelt und danach in einem Stück umgesetzt — siehe
+  BACKLOG-DONE.md-weite Suche nach "Umsetzungszeitpunkt: vor dem nächsten
+  QA-Lauf" für die vollständige Sammlung.
+
+- [Task] **#111** Stornogrund-Umbenennung widerspricht der TSE-signierten `processData` im DSFinV-K-Export
+  **Klassifikation: Bug (hoch).** Nutzerauftrag 2026-09-02 ("stelle sicher,
+  dass für Bestellungen und Rechnungen die notwendigen Daten
+  festgeschrieben werden"), Fund per Code-Recherche bestätigt — siehe
+  D-057 für die vollständige Analyse. Von zwei parallelen
+  Audits zum Thema GoBD-Unveränderbarkeit; siehe auch Task #112 für den
+  zweiten Fund.
+
+  **Kurzfassung:** `PUT /api/admin/cancellation-reasons/:id` erlaubt
+  jederzeit ein Umbenennen, ohne zu prüfen, ob der Stornogrund bereits
+  verwendet wurde (`DELETE` prüft das korrekt, `PUT` nicht). Der Name wird
+  aber zum Stornierungszeitpunkt fest in die TSE-signierte
+  `AVSonstige`-`processData` eingebrannt (`register-session.ts`,
+  `buildAvSonstigeProcessData({ cancellationReasonName: reason.name })`)
+  — unveränderlich. Der DSFinV-K-Export liest den Namen für denselben
+  Vorgang aber später live über einen JOIN nach (`exports/dsfinvk/
+  load.ts`). Nach einer Umbenennung zeigen signierter Beleg und
+  Export-Datei für **denselben** Vorgang unterschiedliche Texte — ein bei
+  einer Prüfung auffindbarer Widerspruch.
+
+  **Fehlendes Muster im Vergleich zu Task #97:** `order_cancellation.
+  cancelled_by_name` ist bereits ein Text-Schnappschuss (analog für
+  löschbare Benutzer) — für den Stornogrund-Namen fehlt die exakt
+  gleichwertige Spalte einfach.
+
+  **Backfill-Entscheidung (2026-09-03, Nutzervorgabe):** die
+  Backfill-Ungenauigkeit bei bereits umbenannten Stornogründen ist nicht
+  relevant — aktuell ausschließlich Testdaten im System. Wird jetzt
+  umgesetzt, kein weiterer Aufschub.
+
+  **Zusätzlicher Fund bei erneuter Prüfung (2026-09-03) — korrigiert die
+  ursprüngliche "Redundanz"-Einschätzung:** `admin/reports.ts:274` liest
+  den Stornogrund-Namen ebenfalls live, aber **nicht** redundant zum
+  DSFinV-K-Export, sondern für einen echt anderen Fall. Es gibt zwei
+  komplett getrennte Storno-Mechanismen in FairPOS:
+  1. **Admin-Bonstorno** (`admin/cancellations.ts`) — legt eine normale
+     `invoice`+`order_item`-Zeile an (TSE-signiert als regulärer "Beleg"
+     mit umgekehrtem Vorzeichen, kein `AVSonstige`). Erzeugt **keine**
+     `order_cancellation`-Zeile. Der Stornogrund existiert hier
+     ausschließlich als `order_item.cancellation_reason_id`.
+  2. **Bedienungskasse Stornieren/Kostenfrei** (`register-session.ts`) —
+     legt eine `order_cancellation`-"Vorgangs"-Zeile an (TSE-signiert als
+     `AVSonstige`, siehe Task #111s Kernfund) und verlinkt betroffene
+     `order_item`-Zeilen sowohl über `order_cancellation_id` als auch
+     (parallel) direkt über `cancellation_reason_id`.
+
+  `admin/reports.ts:274` wertet Stornos **über beide Mechanismen
+  hinweg** aus — genau deshalb liest es `order_item.cancellation_reason_id`
+  direkt, das ist der einzige Weg, der bei Admin-Bonstorno-Zeilen
+  überhaupt funktioniert (die haben kein `order_cancellation_id`). Die
+  beiden ID-Spalten sind also **keine echte, auflösbare Redundanz** —
+  `order_item.cancellation_reason_id` bleibt nötig.
+
+  **Entscheidung (2026-09-03, Nutzervorgabe: Empfehlung übernommen).**
+  Nutzer bestätigt die fachliche Unterscheidung: Bedienungskasse-Stornieren/
+  Kostenfrei ist das Storno **einer Bestellung vor der Abrechnung** (noch
+  kein Beleg), Admin-Bonstorno ist das echte **Belegstorno einer bereits
+  erfolgten Abrechnung** — beides fachlich unterschiedliche Vorgänge, die
+  zu Recht unterschiedliche Signatur-Typen und Tabellen verwenden, keine
+  Redundanz. Umsetzung: genau dasselbe, bereits im Schema etablierte Muster wie
+  bei `cancelled_by_name` anwenden (`0017_user_deletable.sql` hat exakt
+  diese Text-Snapshot-Spalte bereits unabhängig auf **beiden** Tabellen
+  ergänzt: `order_item.cancelled_by_name` UND
+  `order_cancellation.cancelled_by_name`). Analog für den Stornogrund:
+  - `order_item.cancellation_reason_name` TEXT (neu) — deckt beide
+    Storno-Mechanismen ab, da beide Schreibpfade (`register-session.ts`,
+    `admin/cancellations.ts`) den Grund-Namen bereits zur Schreibzeit
+    kennen. `admin/reports.ts` liest danach diese Spalte direkt, kein
+    JOIN mehr nötig.
+  - `order_cancellation.cancellation_reason_name` TEXT (neu) — für den
+    `AVSonstige`-Vorgang auf Event-Ebene, deckt `exports/dsfinvk/
+    load.ts`s Bedarf ab (ein Export-Datensatz pro Vorgang, nicht pro
+    Zeile).
+  - Beide bestehenden `cancellation_reason_id`-Spalten bleiben unverändert
+    erhalten (weiterhin nützlich, z. B. für eine mögliche künftige
+    Detailansicht) — es wird nichts entfernt, nur um die fehlenden
+    Snapshot-Spalten ergänzt.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe).**
+
+- [Task] **#113** Pfand wird mit dem falschen USt-Satz verrechnet (Regelsteuersatz statt Artikel-Steuersatz)
+  **Klassifikation: Bug (hoch, fiskalrelevant).** Nutzerhinweis
+  2026-09-02: "Bei Speisen mit ermäßigtem Satz muss Pfand trotzdem mit
+  19% abgerechnet werden." Vollständige Analyse siehe D-060
+  (korrigiert außerdem die ursprüngliche Fehleinschätzung von D-059, das
+  fälschlich als "totes Feld, niedrige Schwere" eingestuft war).
+
+  **Kurzfassung:** Pfand unterliegt in Deutschland immer dem
+  Regelsteuersatz, unabhängig vom Steuersatz des verkauften Artikels.
+  FairPOS verrechnet Pfand aber überall mit dem **Artikel-eigenen**
+  Steuersatz — an vier unabhängigen Stellen: `tse/processData.ts`
+  (TSE-signierte `processData` selbst!), `closing/totals.ts` (Z-Bon-
+  Summen), `receipt/format.ts` (gedruckte USt-Aufschlüsselung auf dem
+  Bon), `exports/dsfinvk/rows.ts` (Pfand-Zeile trägt denselben
+  `UST_SCHLUESSEL` wie die Artikel-Zeile statt fest Schlüssel 1). Bei
+  Speisen (7 %) mit Pfand-Gebinde wird das Pfand also fälschlich mit 7 %
+  statt 19 % gemeldet — signiert, exportiert, gedruckt.
+
+  **Bereits signierte Altdaten nicht mehr korrigierbar:** die TSE-
+  `processData` ist unveränderlich — dieser Fix wirkt nur für zukünftige
+  Verkäufe, nicht rückwirkend.
+
+  **Nutzervorgabe zur Umsetzung (2026-09-02):** keine eigene, frei
+  konfigurierbare Pfand-Steuersatz-Einstellung nötig — Pfand entspricht
+  immer exakt dem Regelsteuersatz. **Eng verzahnt mit Task #110:** sobald
+  dort die Einstellung für den aktuellen Regelsteuersatz existiert, kann
+  Pfand einfach denselben Wert verwenden, statt eine eigene Einstellung
+  zu pflegen (löst `vat_rate_deposit` als eigenständiges Setting ab, statt
+  es nachträglich zu verdrahten). Beide Tasks sollten daher zusammen
+  geplant/umgesetzt werden — Task #110s Snapshot-Umbau
+  (`tax_category` auf `order_item`) müsste ohnehin auch die
+  Pfand-Steuerkategorie mit einfrieren, nicht nur die Artikel-Kategorie.
+
+  **Umsetzungsskizze (grob, nicht final):** `order_item` bekommt (im
+  Rahmen von Task #110s Umbau) ein eigenes Steuersatz-/Kategorie-Feld für
+  den Pfand-Anteil, beim Verkauf fest auf "Regelsteuersatz" gesetzt statt
+  vom Artikel geerbt. Alle vier oben genannten Stellen lesen dann den
+  Pfand-Anteil separat mit diesem Feld statt ihn mit dem Artikelpreis zu
+  vermengen.
+
+  **Gemeinsame Umsetzung mit Task #110, konkretisiertes Konzept
+  (2026-09-03):** `order_item` bekommt konkret die neue Spalte
+  `deposit_tax_rate` (DECIMAL, nullable, nur gesetzt wenn `deposit_price`
+  gesetzt ist) — die zugehörige Kategorie ist per Definition immer
+  `standard`, braucht daher keine eigene Spalte. Keine eigene
+  `vat_rate_deposit`-Einstellung mehr (wird im Zuge von Task #110
+  entfernt) — der Pfand-Betrag verwendet beim Verkauf direkt den
+  aktuellen Wert von `vat_rate_standard`.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe).** Zusammen mit Task #110 und weiteren, noch folgenden,
+  gleich markierten Tasks gesammelt und danach in einem Stück umgesetzt.
+
+- [Task] **#114** Pfandrückgabe-Bon zeigt keine Pfand-Angabe + neue "Selbstabholerbon nicht drucken"-Option
+  **Klassifikation: Bug (Kernfund) + Verbesserung (neue Option).**
+  Nutzerbericht 2026-09-02, konzipiert und entschieden 2026-09-03 — als
+  relevant fürs erste echte Event eingestuft. Vollständige Ursachenanalyse
+  siehe D-061 (dort **präzisiert**, siehe Korrektur unten —
+  der eigentliche Fehler liegt eine Ebene höher als ursprünglich notiert).
+
+  **Kernfund:** Kauf eines Artikels mit positivem Pfand funktioniert
+  korrekt (Selbstabholerbon **und** Rechnung zeigen das Pfand richtig).
+  Für eine Pfandrückgabe (0 € Preis, negativer Pfandbetrag) ist die
+  Modellierung selbst korrekt und bereits vorgesehen (Admin-UI-Label
+  "Pfandbetrag (€, optional; negativ für Leergutrückgabe)";
+  `receipt/types.ts`/`exports/dsfinvk/rows.ts` kennen
+  `GV_TYP=PfandRueckzahlung` explizit) — nur der Ausdruck ist kaputt.
+
+  **Präzisierte Ursache (2026-09-03, korrigiert gegenüber D-061):** der
+  eigentliche Bug sitzt bereits im Bonkasse-Checkout selbst
+  (`register-session.ts`, Zeile ~337-343), **nicht erst** in
+  `print/order-slip.ts`s `buildPickupSlipBlocks()`. Dort wird
+  `depositEuros: depositRaw > 0 ? depositRaw : null` gesetzt — ein
+  negativer Pfandbetrag wird also schon **vor** dem Slip-Aufbau zu `null`
+  verworfen; die spätere `item.depositEuros > 0`-Prüfung in
+  `buildPickupSlipBlocks()` bekommt den negativen Wert nie zu Gesicht.
+  Dieselbe Filterung betrifft auch `separateDepositSlip: depositRaw > 0
+  && article.print_deposit_receipt` — ein für "separater Pfandbon"
+  konfigurierter Artikel würde bei einer Rückgabe trotzdem stillschweigend
+  auf den (dann leeren) Inline-Pfad zurückfallen.
+
+  **Umsetzung Stufe 1 (Pflicht-Fix, behebt den Bug):**
+  - `register-session.ts`: `depositRaw > 0` → `depositRaw !== 0` an
+    beiden Stellen (Zeile ~341 und ~342).
+  - `print/order-slip.ts`s `buildPickupSlipBlocks()`/
+    `buildDepositSlipBlocks()`: Bedingung `> 0` → `!== 0`; Beschriftung
+    vorzeichen-abhängig — positiv weiterhin "+ Pfand: 2,00 €", negativ neu
+    "Pfand-Rückgabe: 2,00 €" (Absolutbetrag, kein verwirrendes doppeltes
+    Minus).
+
+  **Umsetzung Stufe 2 (Verbesserung, mit umgesetzt):** wenn ein Artikel
+  eindeutig als reine Rückgabe erkennbar ist (`priceEuros === 0 &&
+  depositEuros < 0`), druckt der Selbstabholerbon die Überschrift
+  **"PFANDRÜCKGABE"** statt "SELBSTABHOLER" — reine Erkennungsregel
+  anhand vorhandener Werte, kein neues Setting nötig.
+
+  **Neue Funktion (2026-09-03, Nutzervorgabe): Artikel-Checkbox
+  "Selbstabholerbon nicht drucken".** Neue Spalte auf `article` (Vorschlag:
+  `skip_pickup_slip BOOLEAN NOT NULL DEFAULT false`, direkt
+  checkbox-passend, kein Invertieren im Frontend nötig). Admin-UI
+  (`admin/articles/+page.svelte`, neben dem bereits bestehenden
+  `print_deposit_receipt`-Feld): Checkbox mit Label "Selbstabholerbon
+  nicht drucken", Erklärungstext **"Hat nur Auswirkung für die Bonkasse.
+  Verwendung z. B. für Artikel zur Direktmitnahme oder für
+  Pfand-Rückgabe."** (Wortlaut vom Nutzer vorgegeben). Wirkung: in
+  `register-session.ts`s Bonkasse-Checkout wird für eine Artikel-Einheit
+  mit `skip_pickup_slip = true` gar nicht erst in `slipUnits` aufgenommen
+  — kein Druckauftrag für den Selbstabholerbon dieser Einheit, sonst
+  bleibt alles unverändert (Rechnung/Beleg selbst ist unberührt). Bewusst
+  **nur Bonkasse** — Bedienungskasse nutzt einen komplett anderen
+  Druckpfad (`buildOrderSlipBlocks`, Küchenbon), von dieser Option nicht
+  berührt, genau wie vom Nutzer vorgegeben. Ein separat konfigurierter
+  Pfandbon (`print_deposit_receipt=true`) bleibt von dieser Checkbox
+  unberührt und würde weiterhin gedruckt, falls beide Flags gleichzeitig
+  gesetzt sind — eigenständiger, unabhängiger Druckauftrag.
+
+  **Umsetzungszeitpunkt: vor dem nächsten QA-Lauf (2026-09-03,
+  Nutzervorgabe) — als für den Echtbetrieb beim ersten Event relevant
+  eingestuft.**
+
+- [Task] **#115** Kennbuchstaben je Steuersatz auf dem Rechnungsbeleg (Positionen + USt-Aufschlüsselung)
+  **Klassifikation: Verbesserung (rein kosmetisch, keine gesetzliche
+  Pflicht).** Nutzerfrage 2026-09-04: ist eine Position-zu-Steuersatz-
+  Zuordnung auf dem Bon rechtlich erforderlich?
+
+  **Rechtliche Prüfung (2026-09-04):** § 6 KassenSichV verlangt nur
+  *"Entgelt und Steuerbetrag, getrennt nach Steuersatz"* — also eine
+  **Aufschlüsselung je Steuersatz in Summe**, keine Kennzeichnung pro
+  Position. Bereits vollständig umgesetzt: `receipt/blocks.ts` druckt für
+  jeden im Bon vorkommenden Steuersatz eine eigene Zeile (`MwSt <Satz>` /
+  `Netto ... Steuer ...`), siehe auch `docs/Rechtliche-Anforderungen.md`
+  Abschnitt 2 und `docs/Anforderungen.md` „Pflichtangaben auf dem
+  Kassenbon" (beide bereits als ✅ geprüft markiert, Quelle: § 6
+  KassenSichV verbatim). Kein Compliance-Fund, keine Migration/TSE-/
+  DSFinV-K-Änderung nötig — reine Anzeige-Ergänzung auf dem gedruckten
+  Beleg.
+
+  **Nutzerentscheidung (2026-09-04): trotzdem umsetzen, für bessere
+  Nachvollziehbarkeit bei gemischten Warenkörben (z. B. Speisen 7 % +
+  Getränke 19 % im selben Bon).** Kennbuchstabe erscheint an **zwei**
+  Stellen:
+  1. Direkt an jeder Position in der Positionsliste (z. B. „1x Bratwurst
+     3,50 € B").
+  2. An der zugehörigen Aufschlüsselungszeile am Bon-Ende (z. B. „MwSt 7%
+     B — Netto X,XX  Steuer Y,YY").
+
+  **Umsetzungsskizze (grob, noch nicht final):** feste Zuordnung
+  `TaxCategory` → Kennbuchstabe (Vorschlag, analog gängiger
+  Supermarktbon-Konvention: `standard` = A, `reduced` = B, `zero` = C),
+  z. B. als kleine Hilfsfunktion neben den bestehenden
+  `TaxCategory`-Helfern in `tax/rates.ts` oder direkt in
+  `receipt/format.ts`. Betrifft nur die Druckaufbereitung
+  (`receipt/blocks.ts` für Positionszeilen + die bestehende
+  `taxBreakdown`-Schleife) sowie `receipt/pdf.ts` für die
+  PDF-Vorschau/den Download — `ReceiptPosition.taxCategory` ist bereits
+  vorhanden (Task #110/#113), keine neuen Daten nötig. TSE-`processData`,
+  Z-Bon und DSFinV-K-Export bleiben unberührt (reine Druckdarstellung).
+
+  Vor der Umsetzung: konkrete Buchstaben-Zuordnung final bestätigen (oder
+  Nutzervorschlag A/B/C wie oben übernehmen).
+
+  **Umgesetzt (2026-09-06):** Nutzervorschlag A/B/C übernommen, neue
+  Funktion `taxCategoryLetter()` in `receipt/format.ts`. `TaxBreakdownRow`
+  um `category` erweitert (`computeTaxBreakdown()` trackt jetzt neben dem
+  Bruttobetrag auch die Steuerkategorie je Satz-Bucket — Pfand immer
+  `standard`, unabhängig vom Artikel, siehe Task #113). `receipt/blocks.ts`
+  hängt den Buchstaben an die Positionszeile (`right`) und an die
+  `MwSt <Satz>`-Zeile (`left`) an. Rein additive Änderung, betrifft nur
+  `TaxBreakdownRow`/die Druckaufbereitung — keine andere Verwendung
+  existiert (`grep` bestätigt). Neue Unit-Tests in `format.test.ts`
+  (`taxCategoryLetter`, `category`-Feld je Bucket) und `blocks.test.ts`
+  (Buchstabe an Position + passender Aufschlüsselungszeile).
+
+- [Task] **#116** Rechnungsbeleg (Bedienungskasse): Zeitpunkt der ersten Bestellung + Tischnummer drucken; TSE-Klartextblock auf das gesetzlich Nötige reduzieren
+  **Klassifikation: Compliance-Fund + Verbesserung.** Nutzerfrage 2026-09-04
+  zu identischen Start-/Ende-Zeitstempeln auf dem Bedienungskasse-Beleg —
+  vollständige Analyse siehe D-062.
+
+  **Fund 1 (Pflicht):** DSFinV-K v2.4 Tz. 2.7.2 verlangt bei der von FairPOS
+  genutzten "Durchbedienen"-Erleichterung (Kassenbeleg-V1 erst bei Zahlung
+  gestartet/beendet, keine über den Tischbesuch offene Transaktion)
+  zusätzlich den Abdruck des Start-Zeitpunkts der ersten Bestellung.
+
+  **Fund 2 (Verbesserung, im selben Aufwasch geprüft):** § 6 Satz 2 Nr. 2
+  KassenSichV (verbatim geprüft, gesetze-im-internet.de) erlaubt, Teile der
+  Pflichtangaben statt im Klartext nur über den ohnehin vorhandenen QR-Code
+  bereitzustellen — TSE-Seriennr./Transaktionsnr./Signaturzähler/Start/
+  Ende/Signatur sind alle byte-identisch mit bzw. aus dem QR-Code ableitbar.
+
+  **Umgesetzt (2026-09-04):**
+  - Neue Zeile `Tisch <Name> von <erste Bestellung> bis <Zahlung>` unter der
+    Positionsliste (`receipt/blocks.ts`) — nur für Bedienungskasse-Belege
+    mit Tisch, nicht für Bonkasse-Verkäufe. Datenquelle: neue
+    `loadTableInfo()`-Query in `receipt/data.ts`, nimmt den frühesten
+    `service_order.tse_start_time`/`created_at`/`order_item.created_at`
+    über die auf diesem Beleg abgerechneten Positionen.
+  - `ReceiptData` um `tableName`/`firstOrderTime` erweitert.
+  - TSE-Klartextblock in `receipt/blocks.ts` auf das gesetzlich Nötige
+    reduziert: TSE-Seriennr./Transaktionsnr./Signaturzähler/Start/Ende/
+    Signatur-Hexblock entfernt (jetzt nur noch im QR-Code). Bewusst
+    **nicht** entfernt: `Kassensystem-Seriennr.` (kein garantierter
+    Gleichlauf mit dem QR-Feld, das den TSE-Client-ID trägt — eine separat
+    konfigurierte, potenziell abweichende Kennung) sowie Firmendaten/
+    Positionen/Steueraufschlüsselung (unabhängig von KassenSichV durch § 33
+    UStDV vorgeschrieben). Bei fehlgeschlagener Signatur bleibt ein
+    sichtbarer "! TSE Fehler !"-Klartexthinweis erhalten (der leere/
+    degradierte QR-Code allein wäre für Kunde/Prüfer kein offensichtliches
+    Warnsignal).
+  - `ReceiptData.tseSerial` (nur noch für den entfernten Klartext genutzt,
+    kryptografisch aus dem QR-Code ableitbar) komplett entfernt statt als
+    totes Feld stehen gelassen.
+  - Neue Unit-Tests (`receipt/blocks.test.ts`, neu angelegt) + 2 neue
+    Integrationstests (`register-session.integration.test.ts`: Tisch-Zeile
+    mit rückdatierter erster Bestellung; Bonkasse-Verkauf ohne Tisch/
+    Zeitangabe).
+
+- [Task] **#117** Bonkasse: "Mengen bearbeiten" — Großbestellungen ohne wiederholtes Antippen von "+" erfassen
+  **Klassifikation: Verbesserung.** Nutzerwunsch 2026-09-04.
+
+  **Anforderung:** Möglichkeit, an der Bonkasse eine Menge direkt einzugeben
+  statt sie über "+" hochzuzählen (z. B. 50 Tombola-Lose).
+
+  **Umgesetzt:** neuer Button "Mengen bearbeiten" in `register/[id]/+page.svelte`,
+  platziert wie "Hinweis hinzufügen" bei der Bedienungskasse (unter der
+  Positionsliste, außerhalb der Kassieren-Karte). Zwei-Schritt-Dialog analog
+  zu "Hinweis hinzufügen" (Position wählen, dann Menge eingeben) — bewusst
+  gegenüber einer Variante mit einem editierbaren Feld pro Position in einem
+  Dialog gewählt: kein Zustand für mehrere gleichzeitig offene Eingabefelder
+  zu pflegen, nutzt ein bereits etabliertes, vertrautes Muster. `0` eingeben
+  entfernt die Position komplett (löst nebenbei auch "eine große Menge nur
+  über 1er-Schritte wieder loswerden"). Nutzt die bereits vorhandene, aber
+  bis dahin nirgends verwendete, unit-getestete `setQuantity()` aus
+  `$lib/order.ts`. Bewusst keine künstliche Obergrenze für die Eingabe —
+  der sichtbare Gesamtbetrag plus der bestehende Hold-to-confirm-
+  "Kassieren"-Button sind die Sicherheitsbremse gegen Tippfehler.
+
+  **Separater Fund beim Testen (nicht behoben, außerhalb des Scopes):** beim
+  Versuch, den PIN-Login für einen Browser-Test automatisiert einzutippen,
+  reformatiert das Eingabefeld (`login/+page.svelte`) bei schnellem
+  Antippen mehrerer Zeichen hintereinander offenbar fehlerhaft — führende
+  Zeichen gingen verloren (bei sehr schnellem simuliertem Tippen sogar
+  mehrere). Bei Eingabe über einen einzelnen Paste-artigen Vorgang (wie es
+  ein Passwort-Manager oder Copy-Paste einer PIN tun würde) trat der Fehler
+  nicht auf. Nicht mit echten Nutzern reproduziert — vermutlich nur bei
+  Tippgeschwindigkeiten relevant, die eine reale Bildschirmtastatur kaum
+  erreicht. Noch nicht als eigener Finding-Eintrag aufgenommen, da nicht
+  am echten Gerät nachgestellt — bei Gelegenheit gegenprüfen.
+
+- [Task] **#118** Rückgeldrechner in der Rechnungsansicht
+  **Klassifikation: Verbesserung.** Nutzerwunsch 2026-09-05.
+
+  **Anforderung:** in der Rechnungsansicht (`ReceiptConfirmation.svelte`,
+  gemeinsam genutzt von Bonkasse `register/[id]/receipt` **und**
+  Bedienungskasse `register/[id]/tables/[tableId]/checkout/receipt`) einen
+  Rückgeldrechner ergänzen — rein clientseitige Rechenhilfe, nichts wird
+  gespeichert oder ans Backend geschickt. Rechnungsbetrag steht oben
+  (bereits vorhanden), darunter gibt der Anwender den "Gegeben"-Betrag über
+  ein Tastenfeld in der UI ein (kein Aufruf der Smartphone/Tablet-Tastatur),
+  Rückgeld wird live berechnet.
+
+  **Design per Prototyp abgestimmt** (HTML-Artifact, mehrfach iteriert,
+  2026-09-05): Eingabe wie an einem Kartenterminal — Ziffern schieben von
+  rechts rein (z. B. "2750" → 27,50 €), keine separate Komma-Taste nötig.
+  Zusätzlich Schnellwahl-Chips für 5/10/20/50/100 € (kein "Passend"-Button
+  — bewusst entfernt, Nutzerfeedback). Drei Ergebniszustände: noch nichts
+  eingegeben (neutral), zu wenig gegeben ("Es fehlen noch X,XX €", Warnfarbe
+  statt einer verwirrenden negativen Zahl), genug gegeben ("Rückgeld:
+  X,XX €", Erfolgsfarbe).
+
+  **Layout (Nutzervorgabe):** ab Tablet-Breite (≥768px, derselbe Breakpoint
+  wie `register/[id]/+page.svelte`s `.pos-layout`) zweispaltig — bestehende
+  Rechnungsansicht links, Rechner rechts. Unterhalb davon (Smartphone)
+  einspaltig — bestehende Ansicht zuerst, Rechner darunter. Wichtig: die
+  bestehenden Aktionen ("Kunde wünscht keinen Beleg" / "Rechnung drucken")
+  müssen in beiden Layouts immer ohne Scrollen erreichbar bleiben — im
+  Prototyp dadurch gelöst, dass der unveränderte Alt-UI-Block im DOM immer
+  zuerst kommt und nicht mit dem Rechner vermischt wird.
+
+  **Umsetzung:** Änderungen ausschließlich in `ReceiptConfirmation.svelte`
+  (wirkt dadurch automatisch für beide Kassenarten). Keine neuen Props/
+  API-Calls nötig — der Rechner braucht nur den bereits vorhandenen
+  `total`-Wert. Reiner Frontend-Task, keine Migration/Backend-Änderung.
+
+  **Umgesetzt (2026-09-06):** Prototyp 1:1 in Svelte übernommen. Bestehendes
+  Markup (Header/Betrag/Aktionen) unverändert in eine eigene `<section
+  class="old-ui">` gewrappt, Rechner als separate `<section
+  class="calc-card">` daneben/darunter (`.layout`-Grid, 1↔2 Spalten via
+  `@media (min-width: 768px)`, wie geplant). Auf-/Abrunden-Chips +
+  Ziffernblock + Ergebnis wie im Artifact. `--color-success`/
+  `--color-danger` etc. sind bereits echte globale Tokens aus
+  `+layout.svelte` — keine neuen Farben nötig. Typecheck + bestehende
+  Frontend-Unit-Tests grün; keine Live-Browser-Verifikation diesmal
+  (Sandbox-Chromium in dieser Session nicht mehr verfügbar) — Design war
+  aber bereits zweimal vom Nutzer im echten Browser über den
+  Artifact-Prototyp geprüft.
+
+  **Nachgebessert (2026-09-06, Nutzervorgabe):** Ein-/Ausklappen
+  (`calcOpen`-Toggle-Button "Rückgeld berechnen ausblenden") entfernt —
+  nicht notwendig, der Rechner bleibt jetzt immer eingeblendet. Statt des
+  Toggle-Buttons steht dort jetzt eine reine, nicht-interaktive
+  Überschrift ("Rückgeld berechnen").
+
+- [Task] **#125** PIN-Login: Bindestriche bei maskierter Eingabe nicht mehr erkennbar; Eingabe nicht hart begrenzt
+  Nutzerbericht (2026-09-06), Folgeproblem aus der PIN-Maskierung
+  (`login/+page.svelte`, `type={showPin ? 'text' : 'password'}`): seit die
+  Eingabe standardmäßig maskiert ist, zeigt ein `type="password"`-Feld
+  jedes Zeichen — auch die automatisch eingefügten Bindestriche
+  (`XXX-XXX-XXX`) — einheitlich als Punkt/Kreis an.
+
+  **Erledigt 2026-09-06:**
+  1. **Bindestriche bleiben sichtbar:** `login/+page.svelte` — das echte
+     `<input>` ist jetzt farblich transparent (`color`/`-webkit-text-fill-color:
+     transparent`, `caret-color` bleibt sichtbar), togglet aber weiterhin
+     echtes `type="password"`/`"text"` synchron mit dem Augen-Icon (verhindert,
+     dass markierter Text über die browsereigene `::selection`-Darstellung den
+     echten Wert doch preisgibt). Ein separates Overlay-`<div>` mit identischen
+     Font-Metriken rendert den sichtbaren Wert und maskiert dabei jedes
+     PIN-Zeichen als `•`, lässt Bindestriche aber im Klartext.
+  2. **Harte Formatbegrenzung:** `maxlength={MAX_DISPLAY_LENGTH}` (11 = 9
+     Zeichen + 2 Bindestriche) ergänzt.
+  3. **Bindestrich erscheint sofort:** `format()` hängt den Trennstrich direkt
+     nach Vervollständigung einer Dreiergruppe an (`length % 3 === 0`), statt
+     erst nach dem nächsten Zeichen — vorher sah "ABC" identisch aus wie ein
+     dreistelliger PIN ohne Trenner.
+  4. **Nebenbei behoben:** Backspace direkt nach einem automatisch
+     eingefügten Bindestrich hätte sonst wirkungslos gewirkt (Bindestrich
+     löschen, sofort automatisch neu eingefügt) — `onPinKeydown()` erweitert
+     Backspace/Delete an einem Bindestrich auf das benachbarte echte Zeichen.
+  Live im Browser bestätigt (Playwright-Screenshots: leer/maskiert/sichtbar/
+  Überlänge-Test — 16 eingegebene Zeichen korrekt auf `ABC-DEF-GHI` gekappt).
+  Typecheck + Frontend-Unit-Tests grün. Bekannter Kompromiss: Feld ist
+  `type="text"` statt durchgehend `"password"`, ein Screenreader liest den
+  echten Wert daher unabhängig von der visuellen Maskierung vor — für dieses
+  interne Kiosk-Tool als vertretbar eingestuft.
+
+- [Task] **#121** TSE-Rohdaten-Backup-/Archivierungsstrategie
+  Bisher nur in `docs/TSE-Integration.md` Abschnitt 11 als offener Punkt
+  genannt, kein eigener Task — hier nachgezogen (2026-09-06). Der TAR-Export
+  der TSE-Rohdaten (`worm_export_tar`, TR-03153-konform) ist seit Task #103
+  über die Admin-UI herunterladbar — was danach mit der Datei passieren
+  soll war nicht festgelegt.
+
+  **Vorab geklärte Rückfrage (Nutzer, 2026-09-06):** ob dafür ein
+  vollständiges `pg_dump`-Datenbank-Backup nötig ist oder die vorhandenen
+  veranstaltungsbezogenen Exporte (Excel/DSFinV-K/Rechnungs-ZIP je
+  Veranstaltung) ausreichen — Hintergrund: ein Veranstalter soll keine
+  fremden Veranstaltungen anderer Vereine vom selben (verliehenen) Server
+  herunterladen können. Recherche ergab: kein GoBD/KassenSichV-Passus
+  verlangt einen rohen DB-Dump speziell, nur maschinelle Auswertbarkeit in
+  DSFinV-K-Struktur — bereits durch die veranstaltungsbezogenen Exporte
+  erfüllt. Nichts fiskalisch Relevantes fehlt darin (nur nicht
+  aufbewahrungspflichtige Betriebskonfiguration bleibt außen vor). Das
+  Berechtigungsproblem besteht ohnehin nicht: `routes/admin/backup.ts`
+  nutzt bereits `authenticateSystemAdmin` (strikt System-Administrator-
+  exklusiv, siehe `middleware/authenticate.ts`), ein Veranstaltungs-
+  Administrator kommt an den vollen DB-Export gar nicht heran.
+
+  **Entscheidung (Nutzer): Option A — rein organisatorisch, keine
+  zusätzliche Automatisierung.** **Erledigt 2026-09-06:**
+  `docs/Organisatorische-Anleitung.md` Abschnitt 3 ("Backup-Konzept") um
+  einen neuen Punkt "TSE-Rohdatenexport (TAR)" ergänzt: regelmäßig im
+  selben Rhythmus wie das Datenbank-Backup ziehen (Einstellungen → TSE →
+  "Rohdaten exportieren"), auf demselben externen Medium ablegen, zwingend
+  vor jedem `deleteStoredData`-Aufruf ein frischer Export. Die bestehende
+  "Aufbewahrung"-Regelung (30 Tage täglich / 12 Monate monatlich / 10 Jahre
+  Archiv) gilt jetzt explizit für beide Backup-Arten gemeinsam.
+
+- [Task] **#123** `service_order`/`order_cancellation` ohne `daily_closing_id` — Zuordnung nur angenähert
+  **Klassifikation: Bewusste Vereinfachung, bisher nicht als Task erfasst.**
+  Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 als
+  "bewusste Vereinfachung (dokumentiert, nicht gelöst)" beschrieben — hier
+  nachgezogen (2026-09-06).
+
+  **Problem:** Anders als `invoice` haben `service_order`/
+  `order_cancellation` keine `daily_closing_id`-Referenz und werden im
+  DSFinV-K-Export daher über Kasse + Kalendertag (`business_date`)
+  angenähert, nicht über eine exakte Zuordnung zum tatsächlichen
+  Kassenabschluss (`exports/dsfinvk/load.ts`). Bei mehreren Abschlüssen
+  derselben Kasse am selben Tag kann das zu einer falschen Zuordnung
+  führen.
+
+  **Entscheidung (Nutzer, 2026-09-08):** unabhängig davon, wie oft mehrere
+  Abschlüsse pro Kasse und Tag praktisch vorkommen, sollen `service_order`/
+  `order_cancellation` konsistent mit `invoice` eine echte
+  `daily_closing_id`-Spalte bekommen — robuster und wartungsfreundlicher als
+  die Näherung dauerhaft zu behalten.
+
+  **Erledigt 2026-09-08:** Migration `0031_service_order_cancellation_daily_closing_id.sql`
+  fügt `daily_closing_id UUID REFERENCES daily_closing(id)` zu beiden
+  Tabellen hinzu und befüllt bestehende Zeilen einmalig anhand der bisherigen
+  Näherung (Kasse + `business_date`; bei historisch mehrdeutigen Tagen
+  deterministisch der Abschluss mit der niedrigsten `z_number`).
+  `routes/admin/closings.ts` (`closeRegister`) setzt die Spalte ab sofort im
+  selben Zug wie bei `invoice` — gleiche Tages-/Registerscope-Logik, gleiche
+  UPDATE-nach-Erfassung-Reihenfolge. `exports/dsfinvk/load.ts` filtert
+  `service_order`/`order_cancellation` seitdem exakt über
+  `daily_closing_id = $1` statt über die Näherung. `closing/pending-db.ts`
+  bezieht die erste-Aktivität-Berechnung jetzt zusätzlich aus
+  `service_order`/`order_cancellation` (nicht mehr nur `invoice`/
+  `daily_closing`), damit ein Kalendertag mit ausschließlich Bedienungskasse-
+  Aktivität (Bestellung/Storno, aber keine Rechnung) nicht dauerhaft
+  unzugeordnet bleibt. `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 und
+  `docs/Manueller-Testplan.md` aktualisiert (Näherung nicht mehr als bekannte
+  Einschränkung gelistet). Neue Integrationstests: FK-Zuweisung in
+  `closings.integration.test.ts` (inkl. Gap-Tag-Fall ohne Rechnungen) sowie
+  ein Regressionstest in `exports.dsfinvk.integration.test.ts`, der zwei
+  Abschlüsse desselben Tages/derselben Kasse anlegt und beweist, dass
+  `service_order`/`order_cancellation`-Zeilen jetzt korrekt getrennt bleiben
+  (genau das Szenario, das die alte Näherung nicht unterscheiden konnte).
+
+- [Task] **#122** DSFinV-K CSV-/index.xml-Format gegen GoBD-Anlage verifizieren
+  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
+  Release erledigen.**
+
+  **Problem:** Das CSV-/`index.xml`-Dateiformat (Feldtrennzeichen, Kopfzeile,
+  Zeichensatz) folgte der verbreiteten Konvention (Semikolon, UTF-8, CRLF,
+  GDPdU-artige `index.xml`), war aber nie gegen die separate GoBD-Anlage
+  "Ergänzende Informationen zur Datenträgerüberlassung" verifiziert worden.
+
+  **Vorgehen (2026-09-08, ausgelöst durch einen vom Nutzer bereitgestellten
+  echten DSFinV-K-Export von echter Hardware, `dsfinvk_Bonkasse_z17.zip`):**
+  Ausschließlich Behörden-Originalquellen verwendet (siehe AGENTS.md
+  "Compliance-Prüfungen gegen offizielle Standards", heute als Konvention
+  eingeführt) — nicht die zuvor referenzierte Drittanbieter-Kopie
+  (kassensichv.com):
+  - `bundesfinanzministerium.de` — die BMF-Anlage "Ergänzende Informationen
+    zur Datenträgerüberlassung" (28.11.2019) selbst: enthält **keine**
+    technischen Details (kein Feldtrennzeichen, keine Zeichensatz-Vorgabe,
+    kein XML-Schema) — verweist stattdessen ausschließlich auf eine bei der
+    Audicon GmbH kostenlos anzufordernde technische Beschreibung, die nicht
+    behördlich veröffentlicht ist.
+  - `bzst.de` (Bundeszentralamt für Steuern) — das offizielle
+    DSFinV-K-2.4-Downloadpaket selbst (`dsfinv_k_v_2_4.zip`) enthält jedoch
+    direkt im Ordner `02_index.xml/` sowohl die tatsächliche DTD
+    (`gdpdu-01-09-2004.dtd`) als auch eine vollständige Referenz-`index.xml`
+    — das ist die maßgebliche, autoritative technische Quelle, direkt von
+    der Behörde, und ersetzt damit die Notwendigkeit, das Audicon-Dokument
+    gesondert anzufordern.
+
+  **Befund: echter, bis dahin unentdeckter Compliance-Fehler, kein reines
+  Verifikations-Häkchen.** Das bisherige `index.xml` (`exports/dsfinvk/
+  index-xml.ts`) folgte **nicht** dem echten Schema — es verwendete frei
+  erfundene Elemente (`SkipRows`, `TextEncoding`, `Separator`,
+  `Columns`/`Column`/`Type`, ein nicht existierendes Namespace-Attribut)
+  statt der tatsächlich vorgeschriebenen DTD-Elemente. Konkrete Folgen bei
+  Einlesen durch ein strikt-konformes Prüfungstool (z. B. IDEA):
+  - Ohne `<UTF8 />` je Tabelle gilt "ANSI" als Default-Zeichensatz laut DTD
+    → deutsche Umlaute in den tatsächlich UTF-8-kodierten Dateien wären
+    falsch interpretiert worden.
+  - Ohne explizite `<DecimalSymbol>`/`<DigitGroupingSymbol>` gilt laut DTD
+    Komma als Dezimaltrennzeichen-Default — FairPOS' CSVs verwenden aber
+    tatsächlich Punkt (`toFixed(2)`, z. B. "36.00"). Ein strikt-konformer
+    Importer hätte das als 3600 (Punkt als Tausendertrennzeichen)
+    fehlinterpretiert, sobald ein Feld als `Numeric` markiert wird — ein
+    stiller, echter Zahlenfehler.
+  - Die per `<!DOCTYPE DataSet SYSTEM "gdpdu-01-09-2004.dtd">` referenzierte
+    DTD-Datei fehlte komplett im Export-ZIP — die DOCTYPE-Referenz war nicht
+    auflösbar.
+  - Jede Spalte war pauschal als `AlphaNumeric` deklariert statt der
+    tatsächlichen Typen — unterläuft den Zweck der maschinellen
+    Auswertbarkeit, die dieser Standard eigentlich sicherstellen soll.
+  - Kein `<Range><From>2</From></Range>` zum Überspringen der Kopfzeile
+    (offizielle Methode) — stattdessen das erfundene `SkipRows`.
+
+  **Erledigt 2026-09-08:**
+  - `exports/dsfinvk/index-xml.ts` komplett neu geschrieben: echtes
+    `DataSet`/`Version`/`DataSupplier`/`Media`/`Table`-Grundgerüst,
+    `<UTF8 />` und `<DecimalSymbol>.</DecimalSymbol>`/
+    `<DigitGroupingSymbol>,</DigitGroupingSymbol>` je Tabelle (deklariert die
+    tatsächliche Punkt-Dezimal-Konvention statt sie stillschweigend falsch
+    zu lassen — keine CSV-Änderung nötig, siehe Abwägung unten), `<Range>
+    <From>2</From></Range>` für den Kopfzeilen-Sprung, `<VariableColumn>`
+    mit `<Numeric>`/`<AlphaNumeric>` je nach offiziellem Feldkatalog (Anhang
+    E) statt pauschal `AlphaNumeric` — Zahlenfelder mit der spec-gemäßen
+    `Accuracy` (Dezimalstellen), was laut DTD sicher ist auch wenn FairPOS'
+    tatsächliche Werte weniger Nachkommastellen haben (nur der umgekehrte
+    Fall — mehr Dezimalstellen in den Daten als deklariert — ist laut DTD
+    "undefined behaviour"). Jede Tabelle trägt außerdem den offiziellen
+    DSFinV-K-Modulnamen (`Stamm_Abschluss`, `Bonkopf`, `TSE_Transaktionen`
+    usw.) als `<Name>`.
+  - **Abwägung Dezimaltrennzeichen:** zwei gleichwertig korrekte Optionen —
+    (A) CSV-Werte bleiben mit Punkt, `index.xml` deklariert das korrekt, oder
+    (B) CSV-Werte auf Komma umstellen, um der Konvention im offiziellen
+    Beispiel zu entsprechen. Option A gewählt: kein Funktionsrisiko, keine
+    Änderung an mehreren Export-Codepfaden nötig, technisch gleichwertig.
+  - Neues Modul `exports/dsfinvk/gdpduDtd.ts`: vendorte, byte-für-byte
+    geprüfte Kopie von `gdpdu-01-09-2004.dtd` (per Diff gegen die
+    Originaldatei aus dem bzst.de-Paket bestätigt, nur Zeilenenden LF statt
+    CRLF unterscheiden sich — inhaltlich identisch). `exports/dsfinvk/zip.ts`
+    packt die DTD jetzt zusätzlich zu `index.xml` ins Export-ZIP.
+  - **Echte DTD-Validierung durchgeführt** (nicht nur Sichtprüfung): `xmllint
+    --valid` (libxml2, lokal ohne Root via `apt-get download` extrahiert)
+    gegen die echte, offizielle DTD ausgeführt — sowohl das neu generierte
+    `index.xml` als auch die offizielle Referenz-`index.xml` selbst liefern
+    exakt dieselbe (harmlose, in der DTD selbst liegende
+    Nichtdeterminismus-)Warnung und validieren beide erfolgreich (Exit-Code
+    0) — bestätigt, dass die neue Implementierung strukturell exakt der
+    Behörden-Referenz entspricht.
+  - Neue Unit-Tests: `index-xml.test.ts` (7 Tests: DOCTYPE, Filterung leerer
+    Tabellen, UTF8/Dezimaltrennzeichen, Range statt SkipRows,
+    Trennzeichen-Deklarationen, Numeric/AlphaNumeric-Typisierung,
+    Modulnamen).
+  - `docs/Rechtliche-Anforderungen.md`, `docs/Manueller-Testplan.md`,
+    `exports/dsfinvk/types.ts`, `exports/dsfinvk/csv.ts` aktualisiert
+    (Zitat auf bzst.de statt kassensichv.com, "unverifiziert"-Hinweise
+    entfernt).
+  - Drei neue, nicht-blockierende Findings für Restpunkte angelegt:
+    D-063 (fehlende ForeignKey-Verknüpfungen), D-064 (fehlende
+    Description/MaxLength), D-065 (5 vs. 2 Nachkommastellen bei bestimmten
+    Geldbetrags-Feldern — reine Beobachtung, kein bekannter Fehler).
+
+  **Nebenbefund, direkt mitgelöst:** Dieselbe Recherche lieferte auch den
+  fehlenden Spezifikationstext für Task #120s offene
+  `TSE_ZERTIFIKAT_I/II`-Aufteilung (Anhang E, S. 78f.) — dort verdrahtet.
+
+- [Task] **#124** `docs/Datenmodell.dbml` gegen das echte Schema abgleichen
+  **Klassifikation: Doku-Bereinigung.** Bei Task #91 (2026-08-29) aufgefallen
+  — nur die für diese Änderung direkt relevanten Felder (`label`, `hidden`
+  auf `register_layout_slot`) wurden nachgezogen, eine größere Bereinigung
+  bewusst als eigene Aufgabe offen gelassen — hier angelegt (2026-09-06).
+
+  **Bekannte Drift (vermutet):** `register_layout.register_id`/`is_default`
+  existieren laut Task #91 im echten Schema gar nicht mehr. Vermutlich
+  weitere Abweichungen, da `docs/Datenmodell.dbml` nicht bei jeder Migration
+  systematisch mitgepflegt wird.
+
+  **Erledigt 2026-09-09.** Methodik: statt die 31 Migrationsdateien von Hand
+  nachzuvollziehen, wurde die lokale Dev-Datenbank auf den vollständigen
+  Migrationsstand gebracht (`npm run db:migrate`, Migration 0031 fehlte noch)
+  und das tatsächliche Schema per `information_schema`/`pg_constraint`
+  introspiziert (Spalten, Typen, Nullability, Primär-/Fremdschlüssel,
+  Unique-/Check-Constraints) — verlässlicher als erneutes Quellenlesen, weil
+  es exakt den Zustand zeigt, den `db:migrate` tatsächlich erzeugt.
+
+  **Ergebnis der vermuteten Drift:** `register_layout.register_id`/
+  `is_default` waren bereits vorher korrekt entfernt (Task #91 hatte das
+  schon erledigt) — keine Korrektur nötig. Die tatsächliche Drift lag
+  woanders: mehrere seit August 2026 hinzugekommene Spalten fehlten
+  komplett, kein einziges Feld war fälschlich vorhanden oder falsch typisiert.
+
+  **Gefundene und behobene Lücken (alle Tabellen gegen das echte Schema
+  geprüft, 26 Tabellen, keine fehlenden/überzähligen Tabellen):**
+  - `article_category.tax_rate` existiert nicht mehr (Task #110) — ersetzt
+    durch `tax_category varchar(10)` ('zero'/'reduced'/'standard'); die
+    Doku beschrieb noch das alte Freitext-Feld.
+  - `article`: fehlende Spalte `skip_pickup_slip` (Task #114, Migration 0030).
+  - `daily_closing`: fehlende Spalte `business_date` (Migration 0002) —
+    obwohl diese Spalte seit August 2026 zentral für die gesamte
+    Z-Bon-Pending-Logik ist (siehe D-054-Fix in dieser Session); im Datenmodell
+    aber nie ergänzt worden.
+  - `order_item`: drei fehlende Spalten — `tax_category` (Task #110),
+    `deposit_tax_rate` (Task #113), `cancellation_reason_name` (Task #111).
+  - `service_order`/`order_cancellation`: fehlende Spalte `daily_closing_id`
+    (Task #123, heute erst hinzugefügt) plus die zugehörigen zwei neuen
+    `Ref:`-Zeilen.
+  - `order_cancellation`: zusätzlich fehlende Spalte
+    `cancellation_reason_name` (Task #111).
+  - `print_job`: fehlende Spalte `blocks` (Task #105); `type`- und
+    `status`-Enum-Kommentare waren veraltet (fehlten `test_print`/`pin_slip`
+    bzw. `cancelled`).
+
+  Kopfzeile der Datei aktualisiert (Migrationsstand 0001–0031, Methodik-Hinweis).
+
+- [Task] **#129** Prüfen, ob der CredentialSeed wirklich händlerabhängig ist
+  **Klassifikation: Doku-Korrektur-Verdacht (noch nicht verifiziert).**
+  Angelegt 2026-09-10 (Nutzerwunsch).
+
+  **Hintergrund:** `docs/Installationsanleitung.md` und
+  `docs/TSE-CLI-Referenz.md` behaupten, der CredentialSeed für `setup`
+  werde vom **TSE-Händler** vergeben (häufig, aber nicht garantiert,
+  `SwissbitSwissbit`) und solle im Zweifel beim Händler verifiziert werden.
+  Diese Aussage stammt aus einer vom Nutzer eingebrachten Quelle. Auslöser
+  für die Prüfung: der tatsächliche TSE-Händler des Nutzers war auf
+  Nachfrage verwirrt über die Frage nach dem CredentialSeed — deutete
+  darauf hin, dass das keine übliche Information ist, die ein TSE-Händler
+  seinen Kunden typischerweise liefert.
+
+  **Recherche 2026-09-10 — drei unabhängige, nicht-behördliche
+  Praxisquellen** (allgemeine Web-Recherche zulässig, da keine
+  Compliance-Prüfung gegen einen offiziellen Standard im Sinne von
+  AGENTS.md, sondern eine herstellerspezifische Praxisfrage):
+  - [Gastro-MIS](https://support.gastro-mis.de/support/solutions/articles/36000214626-pin-puk-credentialseed)
+    (POS-Softwarehersteller mit eigenem Swissbit-TSE-Support, zwei
+    verschiedene Support-Artikel): `SwissbitSwissbit` für über sie
+    bezogene TSEs — **explizit**: "Ein anderer Händler kann einen anderen
+    CredentialSeed haben!"
+  - [Markus Soft](https://markus-software.de/tse/) (anderer
+    POS-Softwarehersteller): `SwissbitSwissbit` ist der vorausgefüllte
+    Standardwert — "es sei denn Sie haben zu Ihrem TSE USB Stick eine
+    andere Info Ihres Lieferanten vorliegen."
+  - [bwurst/python-tse](https://github.com/bwurst/python-tse) (unabhängiges
+    Open-Source-Projekt, kein Händler): "muss nach derzeitigen
+    Informationen immer der feste String 'SwissbitSwissbit' sein" —
+    unqualifiziert, aber die Formulierung "nach derzeitigen Informationen"
+    liest sich als eigene Einschätzung des Autors statt verifizierter
+    Fakt; Händlerabhängigkeit wird dort schlicht nicht thematisiert
+    (Schweigen, kein Widerspruch).
+
+  **Ergebnis: bestätigt, händlerabhängig — bestehende Doku-Aussage war
+  bereits korrekt, keine Korrektur nötig.** `SwissbitSwissbit` ist der weit
+  überwiegende Praxiswert (von allen drei Quellen bestätigt), aber
+  **zwei von drei unabhängigen kommerziellen Quellen mit echter
+  Support-Erfahrung** warnen übereinstimmend, dass einzelne Händler
+  abweichen können — kein Einzelfall, sondern von zwei verschiedenen
+  Anbietern unabhängig bestätigt. Angesichts der irreversiblen Folge eines
+  falschen Seeds (TSE-Sperrung nach 3 Fehlversuchen) bleibt die bestehende
+  Empfehlung (Nutzereingabe verlangen, im Zweifel beim Händler verifizieren,
+  nicht hardcoden) richtig.
+
+  **UX-Empfehlung für Task #131 übernommen:** Feld für den CredentialSeed
+  in der geplanten "TSE-Tools"-Setup-UI mit `SwissbitSwissbit` **vorausfüllen,
+  aber editierbar lassen** — reduziert Reibung im Normalfall (entspricht
+  Markus Softs eigenem UX-Muster), verhindert aber nicht die bewusste
+  Korrektur bei einem abweichenden Händler. Kein blindes Hardcoding.
+
+- [Task] **#131** "TSE-Tools" — Admin-UI für TSE-Verwaltungsfunktionen (statt reinem CLI-Handling)
+  Angelegt 2026-09-10 (Nutzerwunsch), ausgelöst durch den PUK-Längenfehler beim
+  `setup`-Aufruf (5- statt 6-stellig, Fehlercode `4103`) und die fehlende
+  Möglichkeit, eine gesperrte TimeAdmin-PIN zu entsperren. Kernproblem laut
+  Nutzer: "das mit der CLI ist sehr fehleranfällig" — keine clientseitige
+  Validierung.
+
+  **Vorgeschichte bewusst revidiert:** `docs/TSE-Integration.md` Abschnitt 7
+  hatte dokumentiert, Admin-PIN/PUK/CredentialSeed absichtlich nicht über die
+  Admin-UI abzufragen. Die zugrundeliegende Sicherheitsanforderung
+  (KassenSichV: diese Werte nie dauerhaft speichern) bleibt unverändert
+  bestehen und wird von der neuen UI eingehalten — nur transient pro Aufruf
+  durchgereicht, genau wie zuvor am CLI.
+
+  **Nutzer-Entscheidungen für die Umsetzung (2026-09-10):**
+  - Berechtigung: wie bisher `authenticateAdmin` (auch Veranstaltungs-
+    Administrator, da dieser typischerweise seine eigene TSE mitbringt).
+  - UI-Ort: ein Panel "TSE-Tools" in Einstellungen → TSE, ein Button je Tool,
+    jedes Tool öffnet einen Dialog; TSE-Selbsttest und Rohdatenexport wurden
+    mit hineingezogen.
+  - Rohdaten löschen (`deleteStoredData`) bewusst weggelassen.
+  - Alle Tools nutzen die auf der Hauptseite (TSE-Verbindung) bereits
+    gespeicherte Mount-Pfad/Client-ID-Konfiguration statt eigener Felder.
+  - Neue Idee zur Lösung von Task #109 nebenbei mit umgesetzt: Checkbox
+    "Automatische Zeit-Synchronisation aktiv", die sich selbst deaktiviert,
+    sobald der Health-Job eine PIN-Authentifizierungs-Fehlermeldung erhält.
+  - Alle PIN-/PUK-Felder mit doppelter Eingabe zur Bestätigung; Validierung
+    auf Ziffern-only + vorgeschriebene Länge, Client-ID ohne Sonderzeichen.
+  - Umfang: alles in einem Rutsch umgesetzt (keine Phasierung), Fokus auf
+    Berechtigungssicherheit statt Perfektion in jedem Detail.
+
+  **Erledigt 2026-09-10:**
+  - **`native/tse-cli`:** neuer Befehl `unblock <admin|timeAdmin> <puk>
+    <newPin>` (wrappt `worm_user_unblock`, meldet `remainingRetries` im
+    Fehlerfall); `cmdInfo()` liefert zusätzlich `needsSetup`
+    (`worm_tse_needs_setup`). Kompiliert und smoke-getestet
+    (`build.sh` fehlerfrei, `unblock`/Usage-Meldung manuell geprüft).
+  - **`tse/client.ts`:** neue Wrapper `unblockPin()`, `factoryResetTse()`,
+    `dumpProcessDataTse()` (Letztere zwei riefen zuvor existierende, aber
+    nie node-seitig verdrahtete CLI-Befehle auf). `TseError` trägt jetzt
+    optional `remainingRetries`.
+  - **`tse/validation.ts`** (neu): `isValidPuk`/`isValidPin`/`isValidClientId`
+    — serverseitige Formatprüfung vor jedem `tseCli`-Aufruf, exakt die
+    Längen aus `WormDLL.h` (PUK 6-stellig, PIN 5-stellig, Client-ID max.
+    30 Byte, keine Sonderzeichen).
+  - **`tse/healthJob.ts`** (Task #109-Anschluss): `config.tseAutoMaintainEnabled`
+    (neues `system_setting` `tse_auto_maintain_enabled`) wird automatisch
+    auf `false` gesetzt und persistiert, sobald ein automatischer
+    `maintainTse()`-Versuch mit einem PIN-Authentifizierungsfehler
+    (`WORM_ERROR_AUTHENTICATION_FAILED`/`_PIN_BLOCKED`, neue Helper-Funktion
+    `isPinAuthError` in `tse/signing.ts`) fehlschlägt — verhindert die
+    3-Minuten-PIN-Sperre aus Task #109. Zusätzlich `MAINTAIN_RETRY_COOLDOWN_MS`
+    (15 Minuten) gegen das zweite, weniger dringliche Risiko aus Task #109
+    (150.000-Aufrufe-Lebensdauerlimit von `worm_tse_updateTime`) — der Health-
+    Job hämmert nicht mehr jede Minute erneut, wenn die TSE aus einem
+    anderen Grund dauerhaft ungesund bleibt.
+  - **`routes/admin/tse.ts`:** neue Routen `POST /setup`, `POST /unblock`,
+    `POST /factory-reset`, `GET /dump-process-data` — jeweils mit
+    Formatvalidierung vor dem `tseCli`-Aufruf und `system_log`-Eintrag
+    (Kategorie `tse_setup`/`tse_export`).
+  - **Frontend (`settings/tse/+page.svelte`):** "TSE-Status" durch ein
+    "TSE-Tools"-Panel ersetzt (8 Buttons: TSE testen, Zeit synchronisieren,
+    TSE initialisieren, Admin-PIN entsperren, TimeAdmin-PIN entsperren,
+    Werkseinstellung, TSE-Rohdaten exportieren, Process-Data-Dump), jedes
+    öffnet einen `Modal`-Dialog. Setup-/Unblock-Dialoge verlangen PIN/PUK
+    doppelt (mit Client-seitiger Live-Validierung, Submit-Button erst bei
+    exaktem Match aktiv), Factory-Reset verlangt eine Tipp-Bestätigung
+    ("ZURÜCKSETZEN"). Neue Checkbox "Automatische Zeit-Synchronisation
+    aktiv" im Zeit-Synchronisieren-Dialog, speichert sofort bei Änderung.
+  - Tests: `validation.test.ts` (13), `client.test.ts` erweitert (+6),
+    `healthJob.integration.test.ts` erweitert (+2, Cooldown + PIN-Auto-Disable),
+    `tse.integration.test.ts` erweitert (+18 für die vier neuen Routen).
+    Voller Testlauf grün: Unit 364/364, Integration 343/343.
+  - **Live in echtem Browser verifiziert** (Playwright gegen den echten
+    Dev-Server, nicht nur Unit-/Integrationstests): Login +
+    Systemverwaltungs-Step-up, alle 8 Tool-Dialoge geöffnet und
+    Screenshots geprüft, Setup-Dialog-Validierung (PUK-Mismatch blockiert
+    Submit, Match aktiviert ihn) und Checkbox-Persistenz (DB-Wert nach
+    Toggle geprüft) funktional bestätigt.
+  - **Noch offen, nicht Teil dieses Tasks:** Dump-Process-Data-Platzierung
+    (Diagnose vs. Exporte) wurde in die Tools-Sektion gelegt statt zu den
+    Exporten — falls das nicht passt, einfach verschieben; kein
+    strukturelles Problem. `deleteStoredData` weiterhin bewusst nicht
+    verdrahtet.
+
+  **Nachgebessert 2026-09-10 (Live-Test der TSE-Tools deckte mehrere
+  UX-Probleme auf):**
+  - **PIN/PUK-Sperrstatus sichtbar gemacht (D-066-Fortsetzung):** `info`
+    liefert jetzt zusätzlich `pukBlockingDurationAdminSeconds`/
+    `...TimeAdminSeconds` (`worm_info_pukBlockingDurationAdmin`/
+    `...TimeAdmin`, `null`-Sentinel für "Self-Test nicht bestanden") —
+    einziger passiv auslesbarer Sperr-Indikator, da die SDK für den
+    PIN-Sperrstatus/Fehlversuchszähler kein entsprechendes Feld anbietet
+    (nur transient aus einer Login-/Unblock-Fehlerantwort ablesbar, was
+    selbst einen Versuch verbraucht). Im "TSE testen"-Dialog angezeigt.
+  - **Alle PIN/PUK-Felder in den TSE-Tools-Dialogen (Setup, Unblock) von
+    maskiertem Passwortfeld auf sichtbare Texteingabe umgestellt** —
+    Tippfehler sollen sichtbar sein statt hinter Punkten versteckt.
+  - **Client-ID im Setup-Dialog entkoppelt:** verwendete vorher stillschweigend
+    die auf der TSE-Verbindung-Karte gespeicherte Client-ID; ist jetzt ein
+    eigenes Dialogfeld (Backend: `setupTse()`/`POST /setup` nehmen `clientId`
+    explizit entgegen, keine Pflicht mehr, dass `tse_client_id` vorher
+    gespeichert ist — nur der Mount-Pfad muss es sein). Bei Erfolg wird die
+    eingegebene Client-ID als neue `tse_client_id`-Einstellung persistiert
+    und auf der Karte ohne Reload reflektiert — nötig für den Fall einer
+    zweiten/anderen TSE, bei dem `setup` absichtlich eine andere Client-ID
+    registrieren soll als die zuvor gespeicherte.
+  - **Automatische-Zeit-Synchronisation-Checkbox verschoben:** vom
+    "Zeit synchronisieren"-Dialog auf die TSE-Verbindung-Karte, direkt
+    unter dem TimeAdmin-PIN-Feld — logisch näher an der PIN, die sie
+    betrifft.
+  - **TSE-Rohdatenexport/Process-Data-Dump von `<a href>`-Downloadlink auf
+    Dialog mit Download-Button umgestellt:** ein direkter Link auf eine
+    fehlschlagende Route navigierte den Browser zu einer rohen
+    JSON-Fehlerseite statt eine Fehlermeldung inline zu zeigen (z. B. wenn
+    die TSE gerade gesperrt ist). Neue `api.ts`-Helper `requestFile()`
+    (holt die Datei per `fetch`, wirft bei Fehler wie `request()`) +
+    `$lib/download.ts`s `saveBlob()` (löst den eigentlichen Browser-Download
+    erst nach erfolgreicher Prüfung aus).
+  - **Warntexte präzisiert/ergänzt:** CredentialSeed-Warnung im Setup-Dialog
+    ersetzt durch eine Version-1/Version-2-differenzierte Formulierung
+    (dauerhafte Sperre vs. Zeitsperre, siehe D-066); dieselbe
+    PUK-spezifische Warnung neu im Unblock-Dialog ergänzt (hatte vorher gar
+    keine); TSE-Tools-Karte bekommt zusätzlichen Warnhinweis, dass die
+    Werkzeuge nur für Swissbit-TSEs vorgesehen sind und die TSE dauerhaft
+    beschädigen können. `docs/TSE-CLI-Referenz.md`s Credential-Seed-Warnung
+    im `setup`-Abschnitt ebenso auf die Version-1/2-Unterscheidung
+    korrigiert (vorher unbedingt "dauerhaft gesperrt" behauptet, was auf
+    Firmware ≥ 2.0.0 nicht mehr zutrifft).
+  - **Tool-Buttons von Grid auf einspaltige Liste umgestellt** — das Grid
+    wirkte bei acht Werkzeugen unübersichtlich.
+
+- [Task] **#109** Schutz gegen zu häufige TSE-Zeitsynchronisation (`worm_tse_updateTime`)
+  **Priorisierung (Nutzervorgabe 2026-09-06): Pre-Release — vor dem ersten
+  Release erledigen.**
+
+  **Klassifikation: Bug (Schwere: mittel bis hoch — kein akutes Problem im
+  Normalbetrieb, aber ein von der SDK-Doku ausdrücklich als schädlich
+  beschriebenes Szenario ohne jede Absicherung im Code).** Gefunden
+  2026-09-02 bei einer Nutzerfrage zu `dumpProcessData`-Testdaten — siehe
+  D-055 für die vollständige Analyse.
+
+  **Kurzfassung:** `tse/healthJob.ts`s minütlicher `tick()` rief bei jedem
+  "TSE ungesund"-Snapshot erneut `maintainTse()` auf (Selbsttest +
+  `worm_tse_updateTime`) — ohne Backoff/Cooldown über das
+  60-Sekunden-Ticksintervall hinaus. Zwei Risiken: (1) die TSE ist für
+  maximal 150.000 `updateTime`-Aufrufe über ihre gesamte Lebensdauer
+  spezifiziert — bei dauerhaft "ungesund" gemeldetem Zustand wäre das Limit
+  bei einem Aufruf pro Minute in ca. 104 Tagen aufgebraucht; (2) `maintainTse()`
+  authentifiziert sich mit der `tse_time_admin_pin`-Einstellung — bei einer
+  falsch hinterlegten PIN (Retry-Zähler 3) hätte derselbe Loop die PIN
+  bereits nach spätestens 3 Minuten dauerhaft blockiert.
+
+  **Erledigt 2026-09-10, im Rahmen von Task #131 (TSE-Tools):** Die
+  Nutzerentscheidung für den Lösungsansatz kam aus der Diskussion um Task
+  #131 (Checkbox-Idee gegen wiederholte PIN-Fehlversuche). Beide Risiken
+  jetzt in `tse/healthJob.ts` abgedeckt:
+  - **PIN-Risiko (das dringlichere):** neue Config-/Setting-gestützte
+    Sperre `config.tseAutoMaintainEnabled` (`system_setting`
+    `tse_auto_maintain_enabled`) — wird automatisch auf `false` gesetzt und
+    persistiert, sobald ein `maintainTse()`-Versuch mit einem
+    PIN-Authentifizierungsfehler fehlschlägt (`isPinAuthError()` in
+    `tse/signing.ts`, prüft auf `WORM_ERROR_AUTHENTICATION_FAILED`/
+    `_PIN_BLOCKED`). Der Health-Job hört danach auf, es erneut zu
+    versuchen — stoppt nach dem ersten Fehlversuch, weit vor den 3
+    kritischen Versuchen. Ein Admin muss die neue Checkbox "Automatische
+    Zeit-Synchronisation aktiv" (Einstellungen → TSE → TSE-Tools) nach
+    Prüfung/Entsperrung der PIN manuell wieder aktivieren.
+  - **`updateTime`-Lebensdauerlimit (das langfristigere):** neuer
+    `MAINTAIN_RETRY_COOLDOWN_MS` (15 Minuten) — der erste Versuch nach
+    einem gesund→ungesund-Übergang läuft weiterhin sofort (schnelle
+    Erholung bei kurzen Ausfällen bleibt erhalten), aber wiederholte
+    Versuche bei durchgehend ungesundem Zustand aus einem anderen Grund
+    als einer PIN werden auf höchstens einen pro 15 Minuten gedrosselt
+    statt jede Minute — senkt die Abnutzungsrate um den Faktor 15.
+  - Zwei neue Integrationstests (`healthJob.integration.test.ts`): Cooldown
+    verhindert einen zweiten `maintain`-Aufruf im direkt folgenden Tick;
+    PIN-Fehler deaktiviert automatisches Maintain und verhindert jeden
+    weiteren Versuch, bestätigt per DB-Wert und `system_log`-Eintrag.
+  - Vollständiger Umfang (Checkbox-UI, Persistenz, Tests) siehe Task #131.
+
+## Findings
+
+- [Finding] **D-001** (mittel, Datenmodell) — Gefunden 2026-06-24
+  `col_order`/`row_order` pro Tisch gespeichert.
+  **Erledigt 2026-06-24:** Eigene Tabellen `floor_plan_column(label PK, col_order UNIQUE)` und `floor_plan_row(...)`; `dining_table` referenziert beide per FK mit `ON DELETE CASCADE`. Order-Werte existieren genau einmal — Datenmodell garantiert Konsistenz. Spaltenlöschung räumt Tische automatisch mit. Backend an JOINs angepasst, Frontend-Schnittstelle unverändert.
+
+- [Finding] **D-002** (mittel, Migrationen) — Gefunden 2026-06-24
+  Patch-Historie 0002–0007 für noch nicht produktives Schema.
+  **Erledigt 2026-06-24:** Alle Deltas in `0001_initial.sql` konsolidiert; 0002–0007 entfernt. Migrations-README dokumentiert wie bestehende lokale DBs zurückgesetzt werden müssen.
+
+- [Finding] **D-003** (hoch, Tests) — Gefunden 2026-06-24
+  Keine Tests vorhanden.
+  **Erledigt 2026-06-24:** Vitest in beiden Paketen, 196 Tests grün, alle Pure-Helpers abgedeckt. Test-DB-Infrastruktur weiterhin offen → T-019.
+
+- [Finding] **D-004** (hoch, Architektur) — Gefunden 2026-06-24
+  Print Worker blockt #5/#6/#7.
+  **Erledigt 2026-06-24:** Print Worker implementiert (#2), #5/#6/#7 fertig.
+
+- [Finding] **D-005** (niedrig, UX) — Gefunden 2026-06-24
+  Spalten/Zeilen einzeln hinzufügen/löschen fehlt.
+  **Erledigt 2026-06-24:** Buttons „+ Spalte"/„+ Zeile" im Editor-Header (Prompt für Label, atomare Backend-Erweiterung). Handle bekommt beim Hover ein „×" zum Löschen der gesamten Spalte/Zeile mit Bestätigung. Backend-Endpoints: `POST /admin/tables/columns`, `POST /admin/tables/rows`, `DELETE /admin/tables/columns/:label`, `DELETE /admin/tables/rows/:label`.
+
+- [Finding] **D-006** (niedrig, Frontend / UX) — Gefunden 2026-06-24 — Kontext: Während Print-Worker-Implementierung gefunden
+  Sequentielle Status-Abfrage.
+  **Akzeptiert 2026-06-24:** Implementation läuft bereits über `Promise.all`. Ursprüngliche Beschreibung war ungenau. Wenn später Backoff bei chronisch offlinen Druckern nötig wird, separater Eintrag.
+
+- [Finding] **D-007** (niedrig, Backend / Determinismus) — Gefunden 2026-06-24 — Kontext: Während Print-Worker-Implementierung gefunden
+  `new Date()` im Test-Print-Handler.
+  **Akzeptiert 2026-06-24:** Reine Logik `buildTestPrint(name, ts)` nimmt Zeitstempel als Parameter und ist deterministisch testbar (siehe `escpos.test.ts`). Der Endpoint-Aufruf benutzt nur einen Wall-Clock-Stempel im PDF — kein Integrationsrisiko, kein DI nötig.
+
+- [Finding] **D-008** (niedrig, Datenmodell) — Gefunden 2026-06-24 — Kontext: Während Print-Worker-Implementierung gefunden
+  `print_job.type` ohne `test_print`.
+  **Erledigt 2026-06-24:** `test_print` als vierter Wert zum `print_job.type` CHECK-Constraint und zum `PrintJobType`-Shared-Type ergänzt. Testdruck-Endpoint nutzt jetzt `enqueuePrintJob('test_print', …)` — durchläuft die gesamte Druck-Infrastruktur (Queue → NOTIFY → Worker → TCP → Status), kein zweiter Druckpfad mehr. UI lädt die Queue nach dem Senden direkt neu, sodass der Operator den Job im Lifecycle sieht.
+
+- [Finding] **D-009** (hoch, Compliance) — Gefunden 2026-06-24, konkretisiert 2026-08-05, erledigt 2026-08-05 — Kontext: Während Kassenbon-PDF-Implementierung gefunden
+  QR-Code-Payload verwendete ein selbst-erfundenes Format.
+  **Erledigt (Task #46, August 2026):** `receipt/qr.ts` baut jetzt exakt das von DSFinV-K v2.4 Anhang I vorgeschriebene Feldformat (`<qr-code-version>;<kassen-seriennummer>;<processType>;<processData>;<transaktions-nummer>;<signatur-zaehler>;<start-zeit>;<log-time>;<sig-alg>;<log-time-format>;<signatur>;<public-key>`), inkl. Signaturalgorithmus/Zeitformat/Public-Key aus `tse/certificateInfo.ts` (`native/tse-cli`s `info`-Kommando liest sie jetzt aus). Gleichzeitig auf das ebenfalls exakt vorgeschriebene `processData`-Format für `Kassenbeleg-V1`/`Bestellung-V1`/`SonstigerVorgang` umgestellt (`tse/processData.ts`). Verbleibender, kleinerer Rest: volle TSE-Zertifikatskette für `tse.csv` (`TSE_ZERTIFIKAT_I/II`) — siehe `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7.
+
+- [Finding] **D-010** (mittel, Anforderungen) — Gefunden 2026-06-24 — Kontext: Während Kassenbon-PDF-Implementierung gefunden
+  `system_serial` wird beim ersten Serverstart noch nicht generiert.
+  **Erledigt 2026-06-24:** `ensureSystemSerial()` läuft nach Migrations, idempotent.
+
+- [Finding] **D-011** (niedrig, Sicherheit) — Gefunden 2026-06-24 — Kontext: Während Kassenbon-PDF-Implementierung gefunden
+  Token-Entropie für /receipt/:token.
+  **Erledigt 2026-06-24:** `generateReceiptToken()` in `receipt/numbering.ts` nutzt `crypto.randomBytes(32).toString('base64url')` → 256 Bit Entropie, 43 URL-sichere Zeichen. Brute-Force-Aufzählung astronomisch unrealistisch.
+
+- [Finding] **D-012** (niedrig, UI) — Gefunden 2026-06-24 — Kontext: Während Kassenbon-PDF-Implementierung gefunden
+  Bon-Vorschau via `window.open`.
+  **Erledigt 2026-06-24:** Vorschau läuft jetzt inline in einem Modal via `<embed>`; sekundärer „In neuem Tab"-Link für PDF-Viewer-Bevorzugung.
+
+- [Finding] **D-013** (hoch, Sicherheit / Auth) — Gefunden 2026-06-24 — Kontext: Während Bonkasse-UI-Implementierung gefunden
+  Geteilter Session-Cookie.
+  **Erledigt 2026-06-24:** Zwei getrennte signierte Cookies `admin_session` / `register_session` mit eigenen Middlewares (`authenticateAdmin` / `authenticateRegister`); Auth-Endpoints aufgeteilt in `/auth/admin/*` und `/auth/register/*`; FastifyRequest hat `adminUser` + `registerUser`; Admin-Login refused Non-Admins. Frontend: zwei separate Stores (`adminUser`/`registerUser`), Layouts prüfen jeweils nur ihren eigenen Endpoint, Login-Seite erkennt Token-URL vs. Username/Password.
+
+- [Finding] **D-014** (mittel, Datenintegrität) — Gefunden 2026-06-24 — Kontext: Während Bonkasse-UI-Implementierung gefunden
+  App-weiter Advisory-Lock blockt parallele Checkouts.
+  **Erledigt 2026-06-24:** Globaler Beleg-Zähler als einzelne Row in `system_setting` (`receipt_counter`). `nextReceiptNumber(client)` macht ein `UPDATE … RETURNING` — Row-Lock nur für die Dauer der Anweisung, nicht für den ganzen Checkout. Globale, lückenlose Sequenz bleibt erhalten (Rollback rollt den Zähler mit zurück). Bootstrap seedt den Counter aus `MAX(invoice.receipt_number)`. Settings-PUT zieht den Counter beim Anheben von `receipt_counter_start` mit hoch.
+
+- [Finding] **D-015** (niedrig, UX) — Gefunden 2026-06-24 — Kontext: Während Bonkasse-UI-Implementierung gefunden
+  Kein Reprint-Pfad für bereits gespeicherte Rechnungen.
+  **Erledigt 2026-06-24:** Neuer Endpoint `POST /api/admin/invoices/:id/reprint` lädt die persistierte Invoice und enqueued einen frischen Druckauftrag auf dem Drucker der zugehörigen Kasse. UI-Button (🖨) pro Zeile in der Auswertung „Erstellte Rechnungen". Kein UI-Ausbau in Bedienung/Bonkasse (per User-Direktive nicht nötig).
+
+- [Finding] **D-016** (niedrig, UX) — Gefunden 2026-06-24, als erledigt nachgetragen 2026-08-05 — Kontext: Während Bonkasse-UI-Implementierung gefunden
+  Bedienungskasse-User landen auf der Bonkasse-Route und sehen einen statischen Hinweis statt der für ihren Kassentyp passenden UI.
+  **Erledigt mit Task #6:** eigene Bedienungskasse-UI (Saalplan, Tische, Bestellung, Checkout) unter `register/[id]/floor-plan` bzw. `register/[id]/tables/[tableId]/*` — Nachtrag beim Konsistenz-Check gefunden, Eintrag war nie als erledigt markiert worden.
+
+- [Finding] **D-017** (mittel, Compliance) — Gefunden 2026-06-24, als erledigt nachgetragen 2026-08-05 — Kontext: Während Bedienungskasse-UI gefunden
+  Beim "100 % Rabatt"-Pfad wird im Storno-Endpoint aktuell KEINE 0-€-Invoice + TSE-Eintrag erstellt.
+  **Erledigt mit Task #41/#45:** kein 0-€-Invoice, sondern der bewusst gewählte, dokumentierte Weg — `order_cancellation` + TSE-signierter `SonstigerVorgang` (AVSonstige) für `booking_type='free_of_charge'`, genau wie für `cancellation` (siehe `docs/Anforderungen.md` → "Zu signierende Vorgänge in FairPOS", `routes/register-session.ts` cancel-Endpoint). Nachtrag beim Konsistenz-Check gefunden, Eintrag war nie als erledigt markiert worden.
+
+- [Finding] **D-018** (niedrig, UX) — Gefunden 2026-06-24 — Kontext: Während Bedienungskasse-UI gefunden
+  UI bestätigt Bestellung auch wenn Items ohne Drucker.
+  **Erledigt 2026-06-24:** Bestellansicht zeigt jetzt einen `alert()` mit der Anzahl nicht-gedruckter Artikel, bevor sie zur Tischaktionsauswahl zurückkehrt.
+
+- [Finding] **D-019** (niedrig, Datenmodell) — Gefunden 2026-06-24 — Kontext: Während Bedienungskasse-UI gefunden
+  Options als Text-Snapshot statt FK.
+  **Akzeptiert 2026-06-24:** Snapshot-Verhalten ist KassenSichV-korrekt — Bons müssen den Namen zum Bestellzeitpunkt zeigen, auch wenn Optionen später umbenannt werden. Analytik per Option wird aktuell nicht benötigt. Falls in Zukunft ein Report „Welche Optionen werden bestellt?" entsteht, eine `order_item_option` Junction-Tabelle (mit `option_name_snapshot` + nullable FK) einführen.
+
+- [Finding] **D-020** (niedrig, Reports) — Gefunden 2026-06-24 — Kontext: Während Auswertungen-Implementierung gefunden
+  Soll-Kassenstand zählt Stornos mit.
+  **Erledigt 2026-06-24:** `cash-balance` filtert jetzt zusätzlich auf `i.receipt_type='sales_receipt'` und `oi.status IN ('paid','free')`.
+
+- [Finding] **D-021** (niedrig, Reports) — Gefunden 2026-06-24 — Kontext: Während Auswertungen-Implementierung gefunden
+  „Erstellte Rechnungen" listet `payment_method='card'` mit auf, obwohl die App aktuell nur `cash` produziert. Spalte sinnvoll, aber für Auswertungs-Excel später konsistent halten.
+  **Geprüft 2026-09-06:** Der Excel-Export (Task #10, `exports/rows.ts`/`workbook.ts`) hat aktuell **gar keine** Zahlungsart-Spalte — die ursprüngliche Sorge (Inkonsistenz zwischen Report und Export) ist damit gegenstandslos, es gibt nichts, womit sie inkonsistent sein könnte. Der Admin-Report selbst (`admin/reports/invoices`) bildet `payment_method` bereits sauber auf "Bar"/"Karte" ab. **Kein Handlungsbedarf jetzt (Nutzerentscheidung):** nur relevant, falls irgendwann echte Kartenzahlungen dazukommen — dann prüfen, ob Excel-Export und Report dieselbe Zahlungsart-Bezeichnung verwenden sollen. **Geschlossen 2026-09-08** (Nutzerentscheidung: kein Grund, eine "nichts zu tun"-Bewertung offen zu lassen — auch erledigte Findings sind in dieser DONE-Liste dokumentiert).
+
+- [Finding] **D-022** (hoch, Anforderungen) — Gefunden 2026-06-24 — Kontext: Während Z-Bon-Implementierung gefunden
+  Automatische Nullabschlüsse fehlen.
+  **Anders gelöst 2026-06-24:** Da der Vereinsserver typisch nur an Veranstaltungstagen läuft, würde ein Cron unzuverlässig feuern. Stattdessen: Server erkennt fehlende Abschlüsse beim Pageload, zeigt globalen Banner + Kassen-Badges + Detail-Liste, und **sperrt Kassieren/Bestellen/Storno** bis der Admin nachgeholt hat. Sicherer als Cron.
+
+- [Finding] **D-023** (mittel, Compliance) — Gefunden 2026-06-24 — Kontext: Während Z-Bon-Implementierung gefunden
+  Z-Bon-Tagesabgrenzung fehlt.
+  **Erledigt 2026-06-24:** `closeRegister(id, user, date?)` akzeptiert jetzt einen `YYYY-MM-DD`-Parameter und filtert SQL auf `created_at::date = $date`. Der „Alle ausstehenden abschließen"-Button iteriert pro Tag und erzeugt einen Z-Bon pro Kalendertag.
+
+- [Finding] **D-024** (niedrig, UX) — Gefunden 2026-06-24 — Kontext: Während Z-Bon-Implementierung gefunden
+  Mehrfacher Abschluss am selben Tag möglich.
+  **Erledigt 2026-06-24:** Detailseite zeigt jetzt einen Warnhinweis mit der heute schon vergebenen Z-Nr. Operator kann trotzdem fortfahren (Mehrfach-Abschluss ist gewollt im Fehlerfall).
+
+- [Finding] **D-025** (niedrig, Excel-Export) — Gefunden 2026-06-24 — Kontext: Während Excel-Export-Implementierung gefunden
+  Tagesexport interpretiert das `date`-Query in der Server-Zeitzone. Bei abweichender Client-Zeitzone (z.B. Admin im Urlaub aus anderer TZ) entstehen Lücken/Überlappungen am Tageswechsel.
+  **Erledigt 2026-09-06:** Die Server-Zeitzone als maßgeblich zu verwenden ist bewusst richtig (der Server läuft am Veranstaltungsort, dessen Zeitzone ist die fachlich relevante — nicht die des möglicherweise entfernt browsenden Admins; frei einstellbar über die bereits vorhandene `PUT /api/admin/system/timezone`, Task #60). Kein neues System-Setting nötig — stattdessen Frontend-Fix: die Tagesexport-Seite (`admin/exports/excel/+page.svelte`) lädt beim Öffnen `GET /admin/system/status` und setzt das vorausgewählte Datum jetzt über `Intl.DateTimeFormat('en-CA', { timeZone })` auf den tatsächlichen Kalendertag des Servers, statt auf `new Date()` im Browser (behebt den Lücken/Überlappungs-Fall am Tageswechsel bei abweichender Client-Zeitzone direkt). Zusätzlich expliziter Hinweistext unter dem Datumsfeld, der die verwendete Zeitzone nennt.
+
+- [Finding] **D-026** (niedrig, Excel-Export) — Gefunden 2026-06-24 — Kontext: Während Excel-Export-Implementierung gefunden
+  Storno-Rechnungen (`receipt_type='cancellation'`) sind im Excel-Umsatzexport nicht enthalten. Aktueller Code-Stand (`routes/admin/exports.ts:81-84`, Docstring): der Ausschluss ist **bewusst dokumentiert** ("cancellation/training invoices are not part of the standard sales export") — Stornos landen stattdessen im Rechnungs-ZIP-Export und im DSFinV-K-Export, nicht im Excel-Umsatz-Export.
+  **Geprüft 2026-09-06, als "nichts zu tun" geschlossen (Nutzerentscheidung):** Der Ausschluss ist rechnerisch korrekt, kein Versehen — stornierte Positionen bekommen `order_item.status='cancelled'` gesetzt, der Export filtert explizit auf `status IN ('paid', 'free')`. Der Excel-Export ist als Netto-Umsatzbericht gedacht ("was wurde final verkauft"); eine verkaufte und stornierte Position hat wirtschaftlich 0 € Netto-Umsatz, das einfache Weglassen ist korrekt statt eine Lücke. Lückenlose Prüfbarkeit (dass verkauft *und* storniert wurde) bleibt über DSFinV-K/Rechnungs-ZIP erhalten — dort ist sie auch fachlich relevant, im Excel-Bericht nicht. Die ursprünglich vorgeschlagene Fußnote/Hinweis im Export selbst wird nicht umgesetzt. **Geschlossen 2026-09-08** (Nutzerentscheidung: kein Grund, eine "nichts zu tun"-Bewertung offen zu lassen — auch erledigte Findings sind in dieser DONE-Liste dokumentiert).
+
+- [Finding] **D-027** (niedrig, Sicherheit / Auth) — Gefunden 2026-08-06 — Kontext: Während Excel-Export-Implementierung gefunden
+  `PUT /api/admin/users/:id` blockte Selbstlöschung und Selbstdeaktivierung, aber nicht die Selbst-Degradierung (`is_admin: false`) — ein einziger verbleibender Administrator hätte sich damit ohne API-seitigen Rückweg aussperren können.
+  **Erledigt 2026-08-06 (gefunden bei gezieltem Security-Review auf SQL-Injection + Login/Berechtigungsprüfungen aller Endpunkte, sonst keine Funde):** Dritte Guard-Klausel neben den beiden bestehenden (`is_active: false`, DELETE) in `routes/admin/users.ts` PUT — `id === req.adminUser.id && body.is_admin === false` → 400. Test in `admin-routes.integration.test.ts`.
+
+- [Finding] **D-028** (mittel, Repo-Hygiene / Deployment) — Gefunden 2026-08-24 — Kontext: Während Excel-Export-Implementierung gefunden
+  Alle Shell-Skripte im Repo (`native/tse-cli/build.sh`, `scripts/install/*.sh`, `test/fixtures/*.sh`) waren im Git-Index ohne Ausführbar-Bit (`100644` statt `100755`) gespeichert. Auf dem `/mnt/c/...`-WSL-Mount, auf dem hier entwickelt wird, fällt das nie auf (Windows-Mount täuscht überall `777` vor) — auf echtem Linux (z.B. dem Produktionsserver) schlägt jeder `./skript.sh`-Aufruf mit „Permission denied" fehl. Gefunden live bei der ersten Produktionsinstallation auf einem echten Ubuntu-26.04-Server, als `./build.sh` genau daran scheiterte.
+  **Erledigt 2026-08-24:** `git update-index --chmod=+x` für alle acht betroffenen Dateien.
+
+- [Finding] **D-029** (hoch, Backend / Build) — Gefunden 2026-08-24 — Kontext: Während Excel-Export-Implementierung gefunden
+  `npm run build` (`tsc`) kompiliert nur `.ts`→`.js` und kopiert keine `.sql`-Dateien — `dist/db/migrations/` existierte nach dem Build nie. `index.ts` ruft `runMigrations()` bei **jedem** Start auf (idempotente Nachzieh-Prüfung), `migrate.ts` löst seinen Migrationsordner relativ zur eigenen (kompilierten) Datei auf → sucht `dist/db/migrations/`, findet nichts, Absturz mit `ENOENT`. In Dev/Tests nie aufgefallen, weil dort immer `tsx` direkt gegen `src/` läuft (nie über `dist/`). Hat den allerersten echten Produktions-Boot (systemd, `node dist/index.js`) sofort in eine Restart-Schleife geschickt.
+  **Erledigt 2026-08-24:** `packages/backend/package.json` `build`-Skript kopiert `.sql`-Dateien jetzt explizit nach dem `tsc`-Lauf mit nach `dist/db/migrations/` (`tsc && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/`) — analog zum bereits bestehenden manuellen Frontend-Kopierschritt in `docs/Installationsanleitung.md` Abschnitt 6, hier aber automatisch als Teil von `npm run build`, kein zusätzlicher manueller Schritt in der Anleitung nötig.
+
+- [Finding] **D-030** (mittel, Frontend / UI) — Gefunden 2026-08-24 — Kontext: Während Excel-Export-Implementierung gefunden
+  Alle drei „Kopieren"-Buttons im Admin-UI (Kassensystem-Seriennummer, TSE-Status-Rohdaten, QR-Login-Link) benutzten `navigator.clipboard` direkt. Die Clipboard-API existiert nur in Secure Contexts (HTTPS oder `http://localhost`) — genau das reale Deployment-Modell dieses Projekts (natives Ubuntu, `http://<LAN-IP>:3000`, keine TLS-Terminierung) ist **kein** Secure Context, `navigator.clipboard` ist dort `undefined`. Zwei der drei Stellen scheiterten dadurch lautlos (`?.`-Chaining schluckt es), eine dritte hätte einen JS-Fehler geworfen (kein Chaining). Gefunden live bei der ersten Produktionsinstallation, als der Kopieren-Button bei den TSE-Rohdaten und bei der Kassensystem-Seriennummer nicht reagierte.
+  **Erledigt 2026-08-24:** Neue gemeinsame Hilfsfunktion `copyToClipboard()` (`packages/frontend/src/lib/clipboard.ts`, mit Unit-Tests) — versucht zuerst `navigator.clipboard.writeText`, fällt sonst auf das klassische `document.execCommand('copy')`-Textarea-Muster zurück (funktioniert auch außerhalb von Secure Contexts). Alle drei Call-Sites (`settings/system/+page.svelte`: `copySerial`, `copyTseResult`; `users/+page.svelte`: `copyToken`) darauf umgestellt. `jsdom` als Dev-Dependency ergänzt, damit der DOM-Test tatsächlich laufen kann (vorher nur als optionale Vitest-Peer-Dependency vorhanden, nie installiert).
+
+- [Finding] **D-031** (mittel, Backend / Rechnungsdruck) — Gefunden 2026-08-25 — Kontext: Während Excel-Export-Implementierung gefunden
+  `buildDemoReceipt()` (für die "Bon-Vorschau" in Unternehmensdaten) hatte `logoPng` fest auf `null` — die Vorschau zeigte nie das Logo, egal ob eins hochgeladen und die "logo_on_receipt"-Checkbox aktiv war. Nie aufgefallen, da für dieses Feature bisher keinerlei Tests existierten. Gefunden live beim ersten echten Testlauf nach der Produktionsinstallation.
+  **Erledigt 2026-08-25:** `GET /api/admin/settings/receipt-preview` lädt jetzt zusätzlich `loadLogoFor('receipt')` und merged das Ergebnis in die von `buildDemoReceipt()` gelieferten Daten — `buildDemoReceipt()` selbst bleibt bewusst DB-frei (wird unverändert in Unit-Tests verwendet). 3 neue Integrationstests (`settings.receipt-preview.integration.test.ts`, vorher gab es keine): Baseline ohne Logo, Logo eingebettet bei aktivem Flag (PDF-Größenvergleich als Nachweis), unverändert bei deaktiviertem Flag trotz gespeichertem Logo.
+
+- [Finding] **D-032** (hoch, Frontend / Admin-Layout) — Gefunden 2026-08-25 — Kontext: Während Excel-Export-Implementierung gefunden
+  Menü-Highlighting im Admin-Bereich blieb nach Client-seitiger Navigation immer auf dem zuvor aktiven Eintrag hängen (Seiteninhalt aktualisierte sich korrekt, nur das visuelle Highlighting nicht) — erst F5 korrigierte es. Ursache: `isActive`/`groupActive` in `admin/+layout.svelte` waren als normale `function`-Deklarationen geschrieben, die `$page` nur im Funktionskörper lesen. Sveltes Reaktivitäts-Tracking analysiert aber nur Bezeichner, die direkt im Template-Ausdruck stehen (z.B. `isActive('/admin/users')`) — `$page` blieb dadurch für den Compiler unsichtbar, die Ausdrücke wurden nur einmal beim ersten Rendern ausgewertet. Zunächst fälschlich auf eine `@sveltejs/kit`/`svelte`-Versionsinkompatibilität vermutet (verworfen, nachdem SvelteKits eigenes Changelog bestätigte, dass Kit 2.x Svelte 4 weiterhin offiziell unterstützt) — echte Ursache erst durch DOM-Inspektion (Nutzer bestätigte: die `active`-Klasse wanderte im DOM tatsächlich nicht) von der reinen CSS-Vermutung unterschieden. Gefunden live beim ersten echten Klick-Test nach der Produktionsinstallation.
+  **Erledigt 2026-08-25:** `isActive`/`groupActive` als reaktive Zuweisung (`$: isActive = (href, exact) => …`) statt als `function`-Deklaration — die Funktionsreferenz selbst ändert sich dadurch bei jeder `$page`-Änderung, was Svelte korrekt als Abhängigkeit erkennt und alle Aufrufstellen neu auswertet. Nebenbei den fehlenden Eintrag für die neue `/admin/settings/tse`-Seite in der `settingsOpen`-Auto-Aufklapp-Liste ergänzt.
+
+- [Finding] **D-035** (hoch, Backend / Benutzerverwaltung) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  `POST /api/admin/users` verlangte für **jeden** neuen Benutzer ein Passwort (`if (!body.name || !body.password)`), auch für Nicht-Administratoren — das Frontend (`users/+page.svelte`) verlangt Passwort dagegen bewusst nur für Administratoren (`formIsAdmin && !formPassword`), da Nicht-Admin-Benutzer (Bedienungskasse/Bonkasse) ausschließlich per QR-Token einloggen (`POST /api/auth/register/token`) — `/api/auth/admin/login` weist Nicht-Admins ohnehin pauschal ab, ihr Passwort wird nirgends im Code je geprüft. Die Anlage eines Nicht-Admin-Benutzers ohne Passwort schlug dadurch mit „Name und Passwort erforderlich" fehl, obwohl die UI kein Passwort verlangte. Bug seit dem allerersten Commit (`2948b2b`) vorhanden, nie aufgefallen, da bisher offenbar immer ein Passwort mit angegeben wurde — gefunden beim ersten echten UI-Test auf der Ziel-Hardware (2026-08-26).
+  **Erledigt 2026-08-26:** `POST /api/admin/users` verlangt Passwort jetzt nur noch, wenn `is_admin: true` gesetzt ist (identische Fehlermeldung „Passwort erforderlich für Administrator" wie im Frontend, für Konsistenz). Ohne angegebenes Passwort wird ein zufälliger, dem Benutzer nie mitgeteilter Hash gesetzt (`randomBytes(32)`, bereits im File für die Token-Generierung importiert) — nötig, da `password_hash` in der DB `NOT NULL` ist. 2 neue Integrationstests (`admin-routes.integration.test.ts`): Nicht-Admin ohne Passwort → 201, Admin ohne Passwort → 400 mit der spezifischen Meldung. **Live bestätigt (2026-09-06).**
+
+- [Finding] **D-036** (niedrig, Frontend / Bedienungskasse-UI) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Kopfzeile der Kassen-UI zeigte „FairPOS — Kasse" — auf den kleinen Touch-Bildschirmen der Zielhardware unnötig lang. Gefunden beim ersten echten UI-Test auf der Ziel-Hardware (2026-08-26), Screenshot zeigte den Titel bereits am Rand umbrechend.
+  **Erledigt 2026-08-26:** `register/+layout.svelte` — sichtbarer Markenname auf „FairPOS" gekürzt (der ungekürzte Browser-Tab-Titel `<Kassenname> — FairPOS` bleibt unverändert, betrifft nur den sichtbaren Header). **Live bestätigt (2026-09-06).**
+
+- [Finding] **D-037** (mittel, Frontend / Bedienungskasse-UI) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Lange, bindestrich- und leerzeichenlose Artikelnamen (z.B. „Apfelschorle", „Maultasche", „Beilagensalat") wurden auf den Artikel-Buttons der Bestellansicht nicht umgebrochen, sondern liefen über den Button-Rand hinaus und überlappten Nachbar-Buttons — auf der kleinen Touch-Fläche der Zielhardware potenziell fehlbedienungsträchtig. `.grid-btn` (dupliziert in `register/[id]/+page.svelte` und `.../order/+page.svelte`, kein gemeinsames Component) hatte kein `overflow-wrap`. Gefunden beim ersten echten UI-Test auf der Ziel-Hardware (2026-08-26).
+  **Erledigt 2026-08-26:** `overflow-wrap: anywhere` auf `.grid-btn` ergänzt, in beiden Fundstellen — analog zum bereits bestehenden Muster aus Task #59 (TSE-Public-Key-Wrapping). Erzwingt einen Umbruch auch mitten im Wort, wenn kein natürlicher Umbruchpunkt existiert. **Live bestätigt (2026-09-06).**
+
+- [Finding] **D-038** (hoch, Backend / TSE) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Beim ersten echten Hardware-Test (2026-08-26) meldete die Bedienungskasse beim Absenden einer Bestellung „TSE nicht erreichbar", obwohl der Admin-Selbsttest kurz zuvor erfolgreich war. Ursache der Diskrepanz gefunden: der Selbsttest (`GET /api/admin/tse/status` → `getTseInfo()`) ruft nur das rein lesende `info`-Kommando auf, das nicht einmal die Client-ID prüft — das Absenden einer Bestellung ruft dagegen `startTransaction()` mit der konfigurierten Client-ID auf, eine andere Operation. `tse_outage.reason` enthielt nur die generische, für jede Ursache identische Fallback-Message des CLI-Wrappers (`worm_transaction_start failed`) — der eigentliche numerische Swissbit-SDK-Fehlercode wurde vom C++-Wrapper zwar korrekt im JSON mitgeliefert, ging aber auf dem Weg zur DB/UI verloren.
+  **Teilweise behoben 2026-08-26:** `signing.ts` — neue Hilfsfunktion `describeTseError()` hängt bei einem `TseError` den numerischen Code an die Meldung an (`<Message> (Code <n>)`), sowohl im UI-Warnhinweis als auch in `tse_outage.reason`. Integrationstest ergänzt (`signing.integration.test.ts`, prüft jetzt auch auf den Code-Anteil). **Vollständig behoben und live bestätigt 2026-08-26** — Ursache war `WORM_ERROR_NO_TIME_SET`, siehe D-038-Fortsetzung.
+
+- [Finding] **D-039** (mittel, Frontend / Bedienungskasse-UI) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Beim ersten echten Hardware-Test (2026-08-26) verschoben lange Artikelnamen die Spalten der Bestellpositions-Tabelle (`.order-line` in `.../order/+page.svelte`) — der Preis wurde teils ganz aus dem sichtbaren Bereich gedrängt. Ursache: CSS-Grid-Item-Default `min-width: auto` verhindert das Schrumpfen der `1fr`-Namensspalte trotz vorhandenem Grid-Layout — dieselbe Fehlerklasse wie schon bei Task #59 (TSE-Public-Key). Dieselbe Ursache betrifft (nicht im Screenshot gezeigt, aber beim Beheben mitgeprüft) auch die `checkout-table` auf dem Kassieren-Screen (`checkout/+page.svelte`) — dort `table-layout: auto` statt `fixed`, ebenfalls kein Schrumpfen der Namensspalte. Nutzervorgabe: kein Umbruch, stattdessen Abschneiden mit Auslassungspunkten, alle Spalten müssen immer sichtbar bleiben; bei mehr Platz (z.B. Querformat) sollen die Spalten automatisch breiter werden.
+  **Erledigt 2026-08-26:** `.line-name` (Order-Page) — `min-width: 0` + `overflow: hidden; white-space: nowrap; text-overflow: ellipsis`. `.checkout-table` (Checkout-Page) — `table-layout: fixed` + feste `em`-Breiten auf den vier numerischen Spalten, erste Spalte (Position) bleibt unbegrenzt und nimmt den Rest ein, mit derselben Ellipsis-Behandlung. Beide Lösungen sind rein `fr`/`%`-basiert (kein Media-Query nötig) — bei mehr verfügbarer Breite (Querformat) bekommt die Namensspalte automatisch mehr Platz, bevor abgeschnitten wird. **Nachgebessert, siehe Task #81** (Ellipsis reichte auf schmalen Bildschirmen wie dem iPhone nicht — Namensspalte hatte praktisch keinen Platz übrig; Lösung: Punkt-, Gesamtpreis-Spalte entfernt, Stepper verkleinert, als eigener Task statt hier weitergeführt). **Live bestätigt (2026-08-26).**
+
+- [Finding] **D-040** (niedrig, Backend / Kassenbon) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Bon-Text bei fehlender TSE-Signatur lautete „TSE noch nicht aktiv" — irreführend beim ersten echten Hardware-Test (2026-08-26): klingt nach „noch nicht eingerichtet", obwohl der Text bei **jedem** Fehlen einer Signatur erscheint, auch bei einer eigentlich konfigurierten, aber gerade ausgefallenen TSE (derselbe Fall wie D-038).
+  **Erledigt 2026-08-26:** `receipt/escpos-receipt.ts` (physischer Bon) → „TSE Fehler !", `receipt/pdf.ts` (PDF-Vorschau/-Download) → „TSE Fehler" (Warnsymbol ⚠ bleibt dort bestehen). Test in `escpos-receipt.test.ts` angepasst. **Live bestätigt (2026-08-26)** — Nutzer hat den TSE-USB-Stick physisch gezogen, um einen echten Ausfall zu provozieren.
+
+- [Finding] **D-041** (mittel, Backend / Server-Adresse-Einstellung) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Beim ersten echten Hardware-Test (2026-08-26) gefunden: `register-session.ts` hängte unbedingt `http://` vor den konfigurierten `server_address`-Wert — hätte ein Admin versehentlich selbst `http://...` mit eingetragen, wäre eine kaputte doppelte URL (`http://http://...`) im Kassenbon-QR-Code gelandet. Blockierte zusätzlich die künftige HTTPS-Einrichtung (Task #66) — eine `https://`-Adresse hätte nie funktioniert, da unbedingt überschrieben.
+  **Erledigt 2026-08-26:** Neue reine Funktion `buildReceiptQrUrl()` (`receipt/qr.ts`) — honoriert ein explizit angegebenes `http://`/`https://`-Präfix unverändert, ergänzt `http://` nur wenn keins angegeben wurde (abwärtskompatibel zu bestehenden Konfigurationen ohne Präfix). `register-session.ts` nutzt sie jetzt statt der alten fest verdrahteten Verkettung. 6 neue Unit-Tests (`qr.test.ts`) für die Protokoll-Normalisierung, 2 neue Integrationstests (`register-session.integration.test.ts`: Happy-Path 200 + `image/png`, 403 bei fremder Kasse) — für den `qr.png`-Endpunkt gab es vorher noch gar keine Tests. UI-seitige Verbesserungen (Beschreibung, Testfunktion) siehe Task #73. **Live bestätigt (2026-08-26).**
+
+- [Finding] **D-042** (mittel, Backend / TSE) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Live beim Hardware-Test entdeckt (2026-08-26): ein kalter `maintain`-Aufruf (Zeit synchronisieren) direkt nach dem Einstecken der TSE scheiterte zuverlässig mit einem rohen `execFile`-Fehler („Command failed: ..."), auch noch 20+ Sekunden nach dem Einstecken — ein vorheriger `info`-Aufruf („TSE testen") ließ den nächsten `maintain`-Versuch aber sofort gelingen. Deutet darauf hin, dass die TSE ihre interne Boot-/Warmlaufsequenz erst beim **ersten tatsächlich empfangenen Kommando** startet, nicht beim physischen Einstecken — das feste 15-Sekunden-Timeout in `runCli()` (`tse/client.ts`) reichte für „Boot + Self-Test in einem Aufruf" (was `maintain`/`setup` laut `tseCli.cpp` intern tun) dann nicht mehr.
+  **Behoben 2026-08-26:** `runCli()` bekommt einen optionalen `timeoutMs`-Parameter; `maintainTse()`/`setupTse()` (beide lösen laut C++-Wrapper intern einen Self-Test aus) nutzen jetzt 60s statt der bisherigen 15s. Bewusst nur für diese beiden — laufen nie im heißen Kassiervorgang, sondern nur bei explizitem Admin-Klick bzw. der einmaligen Ersteinrichtung, ein großzügigeres Timeout kostet dort nichts. **Live bestätigt (2026-08-26).**
+
+- [Finding] **D-043** (niedrig, Frontend / TSE-Einstellungen) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Live beim Hardware-Test entdeckt (2026-08-26): eine Fehlermeldung von „TSE testen" oder „Zeit synchronisieren" blieb stehen, auch wenn der jeweils **andere** Button danach erfolgreich war — jede der beiden `onclick`-Handler-Funktionen (`testTse()`/`runMaintain()`) setzte bisher nur ihren eigenen Fehler-/Erfolgs-State zurück, nie den des anderen Buttons.
+  **Erledigt 2026-08-26:** `testTse()` setzt jetzt zusätzlich `maintainError`/`maintainSuccess` zurück, `runMaintain()` zusätzlich `tseTestError`/`tseResult` — ein Klick auf einen der beiden Buttons räumt den Status beider auf. **Live bestätigt (2026-08-26).**
+
+- [Finding] **D-044** (niedrig, Frontend / TSE-Einstellungen) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Live beim Hardware-Test entdeckt (2026-08-26): die TSE-Seriennummer im „TSE testen"-Ergebnis lief über den Kartenrahmen hinaus — dieselbe Fehlerklasse wie Task #59 (Public-Key), dort aber nur für die `.pubkey`-Zeile gefixt, nicht generell für `.kv code`.
+  **Erledigt 2026-08-26:** `.kv code` bekommt jetzt generell `word-break: break-all; overflow-wrap: anywhere` statt nur die einzelne `.pubkey`-Klasse — deckt damit auch die Seriennummer und jeden künftigen langen `<code>`-Wert in dieser Karte ab. **Live bestätigt (2026-08-26).**
+
+- [Finding] **D-045** (niedrig, Deployment / Skripte) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Live beim ersten echten Einsatz von `update.sh` entdeckt (2026-08-26): der Health-Check am Ende (`smoke-test.sh`) schlug direkt nach `systemctl restart fairpos` fehl, obwohl der Neustart selbst erfolgreich war. Ursache: `systemctl restart` gilt bereits als „aktiv", sobald der Prozess gestartet wurde — nicht erst, wenn Node/Fastify tatsächlich hochgefahren ist und den Port bindet. `smoke-test.sh` prüfte `/api/health` bisher mit einem einzigen, sofortigen `curl`-Versuch, ohne diese Startzeit zu berücksichtigen — hätte bei **jedem** `update.sh`-Lauf so fehlgeschlagen, nicht nur zufällig diesmal.
+  **Erledigt 2026-08-26:** Health-Check versucht jetzt bis zu 15× im 1-Sekunden-Abstand, bevor er als fehlgeschlagen gilt, statt beim ersten Fehlschlag sofort aufzugeben. Die übrigen Checks (systemd-Status, PostgreSQL, TSE-Mountpunkt) sind von derselben Verzögerung nicht betroffen und blieben unverändert. **Live bestätigt (2026-08-26)** — nächster `update.sh`-Lauf lief mit allen Checks (inkl. Health-Check) grün durch.
+
+- [Finding] **D-046** (niedrig, Frontend / Bedienungskasse-UI) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Aufgekommen beim Hardware-Test (2026-08-26): Artikeloptionen (z. B. „Ohne Eis") wurden in der Bestellliste (`.../order/+page.svelte`) inline direkt hinter dem Artikelnamen angezeigt, innerhalb desselben `.line-name`-Elements, das per `overflow: hidden; white-space: nowrap; text-overflow: ellipsis` (siehe Task #81) auf eine Zeile begrenzt ist — bei wenig Platz wurden Optionen dadurch faktisch nie sichtbar, mit abgeschnitten statt eigenständig lesbar. Gleiches Muster auch im Kassieren-Screen (`checkout/+page.svelte`), dort betraf die Kürzung die ganze `<td>` inkl. Optionen.
+  **Erledigt 2026-08-26:** Name und Optionen sind jetzt getrennte Elemente — nur der Name behält die Ellipsis-Kürzung (`.line-name-text` bzw. `.g-name`), Optionen (`.line-options`/`.g-opts`) stehen als eigene Zeile darunter, mit normalem Zeilenumbruch statt Kürzung. `.line-name`/erste Tabellenspalte auf `display: flex; flex-direction: column` bzw. `display: block` auf beiden Teilen umgestellt. **Nachgebessert (2026-08-26):** dieselbe Inkonsistenz auch in der „Offene Positionen"-Liste am Tisch (`register/[id]/tables/[tableId]/+page.svelte`, `.name`/`.opts`) gefunden und für Konsistenz mit den anderen beiden Stellen behoben — dort gab es keine Ellipsis-Kürzung, nur die Zeilenaufteilung selbst war anders. **Live bestätigt (2026-08-26).**
+
+- [Finding] **D-047** (mittel, Frontend / Bedienungskasse-Checkout) — Gefunden 2026-08-27 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Nutzer berichtet (2026-08-27): schließt man den Rechnungsbestätigungs-Dialog (`tables/[tableId]/checkout/+page.svelte`) **nicht** über einen der beiden Buttons („Drucken" / „Rechnung per QR Code gescannt"), sondern über Klick auf den Hintergrund oder das X, bleibt die Liste der offenen Positionen auf der Bezahlen-Seite fälschlich unverändert stehen — obwohl die Rechnung bereits gebucht wurde.
+  **Gegenstandslos geworden (2026-08-30):** der Rechnungsbestätigungs-Dialog ist auf beiden Kassenarten keine Modal-Dialog-Frage mehr — sowohl Bonkasse (`register/[id]/receipt/+page.svelte`) als auch Bedienungskasse (`tables/[tableId]/checkout/receipt/+page.svelte`) zeigen die Rechnungsbestätigung jetzt als eigene Seite (Nutzervorgabe für einheitliche UX). Damit gibt es kein X/Backdrop/Escape mehr, das umgangen werden könnte — eine echte Navigation lädt die jeweilige Vorseite beim Zurückkehren immer frisch neu. Der ursprüngliche 2026-08-27-Fix (`on:close`-Handler) ist damit obsolet, nicht nur erledigt.
+
+- [Finding] **D-048** (mittel, Frontend / `Modal.svelte`) — Gefunden 2026-08-27 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Nutzer berichtet (2026-08-27): der „Hinweis hinzufügen"-Dialog (Task #88) wird unbedienbar, sobald zu viele Positionen in der Liste stehen — kein Scrollbalken erscheint, OK/Abbrechen-Buttons werden unerreichbar. Betrifft potenziell jeden Dialog im System, nicht nur diesen, da die Ursache in der gemeinsam genutzten `Modal.svelte` liegt: `.modal` begrenzte seine Höhe ausschließlich über `max-height: 90dvh` (Dynamic Viewport Height, eine vergleichsweise junge CSS-Einheit) — unterstützt der Tablet-Browser sie nicht, verwirft er die gesamte Regel, der Dialog bekommt gar keine Höhenbegrenzung mehr und wächst unbegrenzt, ohne dass `overflow-y: auto` je etwas zu tun bekommt (das greift erst, wenn überhaupt eine Höhenbegrenzung besteht).
+  **Erledigt 2026-08-27:** `.modal` bekommt zusätzlich einen `max-height: 90vh`-Fallback **vor** der `dvh`-Regel (bei fehlender `dvh`-Unterstützung gewinnt der zuletzt gültige Wert), außerdem auf `display: flex; flex-direction: column` umgestellt mit fixem `.modal-header` (`flex-shrink: 0`) und eigenständig scrollendem `.modal-body` (`overflow-y: auto; min-height: 0` — ohne `min-height: 0` verweigert ein Flex-Kind mit `overflow-y` sonst das Schrumpfen unter seine Inhaltshöhe, derselbe Effekt wäre sonst erneut aufgetreten). Header bleibt jetzt beim Scrollen sichtbar, statt mitzuscrollen. **Live bestätigt (2026-09-06).**
+
+- [Finding] **D-049** (hoch, Deployment / Task #90) — Gefunden 2026-08-29 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Live beim Update auf den PIN-Login (Task #90, 2026-08-29) entdeckt: `update.sh` lief inkl. Migration `0011_pin_login_sessions.sql` fehlerfrei durch, der anschließende Service-Neustart schlug aber fehl — `/api/health` antwortete nie, obwohl systemd den Dienst als „aktiv" zeigte. Ursache: `config.ts` verlangt seit Task #90 zusätzlich `PIN_HASH_SECRET` (`requireEnv()`, wirft sofort beim Modul-Import) — fehlt die Variable in der `.env` des Servers, stürzt der Prozess noch vor dem Port-Binden ab, vermutlich in einer Neustart-Schleife durch systemd. Betrifft jede bestehende Installation, die auf diesen Commit aktualisiert, nicht nur diese eine — die neue Pflichtvariable war zwar in `docs/SETUP.md`/`docs/Installationsanleitung.md` dokumentiert, aber nichts erinnert beim Update aktiv daran, sie auf bereits laufenden Servern nachzutragen.
+  **Workaround (2026-08-29):** `PIN_HASH_SECRET` manuell in die Server-`.env` eintragen (eigener Zufallswert, nicht identisch mit `SESSION_SECRET`, siehe `docs/Installationsanleitung.md` Abschnitt 5), danach `systemctl restart fairpos`. **Erledigt 2026-09-06:** `update.sh` prüft jetzt direkt nach `git pull` (vor `npm ci`/Build/Migration) alle Pflichtvariablen und bricht mit klarer Fehlermeldung ab, falls eine in der Server-`.env` fehlt, statt blind fortzufahren und den Ausfall erst dem nachgelagerten Smoke-Test zu überlassen. Die Liste der Pflichtvariablen wird dafür direkt aus `config.ts`s `requireEnv(...)`-Aufrufen ausgelesen statt separat im Skript gepflegt — eine künftig neu hinzukommende Pflichtvariable wird dadurch automatisch mitgeprüft, ohne `update.sh` anfassen zu müssen.
+
+- [Finding] **D-050** (hoch, Deployment / Task #90) — Gefunden 2026-08-29 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Zweiter, unabhängiger Fund im selben Update-Vorgang (2026-08-29): selbst nach Behebung von D-049 wäre der bestehende Admin-Benutzer weiterhin ausgesperrt gewesen — die Migration `0011_pin_login_sessions.sql` fügt nur die (leere) Spalte `user.pin_hash` hinzu, vergibt aber keine PIN für schon existierende Benutzer. Da PIN-Login seit Task #90 der einzige Weg ins System ist, gibt es ohne PIN keine Möglichkeit, sich selbst eine zuzuweisen (Henne-Ei-Problem) — betrifft ebenfalls jede bestehende Installation beim Update auf diesen Commit.
+  **Erledigt 2026-08-29:** `db/seed.ts` erweitert — erkennt jetzt zusätzlich den Fall „Benutzername existiert bereits, aber `pin_hash IS NULL`" und vergibt in diesem Fall eine frische PIN, ohne Name/Passwort anzufassen (dritter Fall: existiert bereits **mit** PIN → unverändert übersprungen, kein versehentliches Überschreiben). Wiederherstellung für Betroffene: `npm run db:seed -- <bestehender-name> <bestehendes-passwort>`. Alle drei Zweige lokal gegen die Dev-DB verifiziert. **Live bestätigt (2026-09-06):** auf dem betroffenen Produktivserver ausgeführt, PIN-Login funktioniert wieder.
+
+- [Finding] **D-051** (niedrig, Frontend / Benutzerverwaltung) — Gefunden 2026-08-29 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Nutzer berichtet (2026-08-29): im „PIN ändern"-Dialog sind die Buttons zu groß und liegen außerhalb des sichtbaren Bereichs. Ursache: die neue „PIN drucken"-Funktion brachte den Dialog auf fünf Buttons in einer einzigen, nicht umbrechenden `.modal-actions`-Zeile (Neu erzeugen, Kopieren, PIN drucken, Abbrechen, Speichern) — läuft auf schmaleren Bildschirmen über den Dialogrand hinaus. Zusätzlich gemeldet: „im ganzen Adminbereich sind die Buttons größer geworden" — ließ sich nicht bestätigen (Code-Splitting Admin/Register per Vite-Manifest geprüft, keine CSS-Chunk-Überschneidung; Basis-Button-Stile in `admin/+layout.svelte` per Git-Historie seit jeher unverändert).
+  **Teilweise behoben 2026-08-29:** Dialog-Aktionen in zwei Zeilen aufgeteilt (Hilfsaktionen separat von Abbrechen/Speichern), `flex-wrap: wrap` als generelles Sicherheitsnetz für `.modal-actions` in `admin/+layout.svelte` ergänzt (betrifft dadurch jeden Admin-Dialog, nicht nur diesen). Der breitere „ganzer Adminbereich"-Befund bleibt ungeklärt — **auf Nutzerwunsch (2026-09-06) geschlossen, bleibt vorerst wie es ist**, kein weiterer Handlungsbedarf ohne neuen konkreten Befund.
+
+- [Finding] **D-053** (mittel, Backend / Rechnungs-Vorschau) — Gefunden 2026-09-01 — Kontext: Während Task #105-Umsetzung (gemeinsames Zwischenformat für alle Belege) gefunden
+  Vom vollen Integrationstest-Lauf aufgedeckt: `GET /api/admin/settings/receipt-preview` (Bon-Vorschau in Unternehmensdaten) zeigte das Firmenlogo nach der Block-Modell-Umstellung gar nicht mehr an, obwohl konfiguriert und die Checkbox aktiv. Ursache: die Route baut ihr `ReceiptData`-Objekt manuell zusammen (`logoPng`/`logoWidth`/`logoHeight`/`logoWidthFactor`), setzt aber `logoEscPos` nie — der neue gemeinsame Block-Builder (`receipt/blocks.ts`) verlangt für den Bild-Block jetzt beide Repräsentationen gleichzeitig (PNG fürs PDF, ESC/POS-Raster für den Ausdruck), da ein Block ja für beide Renderer gilt. Die echten Druck-Pfade (`receipt/data.ts`) setzten `logoEscPos` bereits korrekt — nur dieser eine Vorschau-Endpunkt (baute `ReceiptData` von Hand statt über `receipt/data.ts` zu laden) hatte die Lücke.
+  **Behoben (2026-09-01):** `routes/admin/settings.ts`s `receipt-preview`-Handler ergänzt `logoEscPos: logo?.escposBytes ?? null`. Regressionstest `settings.receipt-preview.integration.test.ts` (bereits vorhanden, Task #98) hat den Fehler beim vollen Integrationslauf sofort aufgedeckt, keine neue Testdatei nötig. **Live bestätigt (2026-09-06).**
+
+- [Finding] **D-054** (hoch, Backend / Tagesabschluss (Z-Bon)) — Gefunden 2026-09-02 — Kontext: Live beim Testen der Admin-UI gefunden (2026-09-02)
+  Nutzer berichtet: „Alle Kassen abschließen" meldete 2 erstellte Z-Bons (2 Nullabschlüsse), aber nur eine Kasse hatte laut UI überhaupt einen offenen Tag — und genau diese Kasse zeigte danach weiterhin einen offenen Tag, der Z-Bon musste manuell nachgeholt werden. Ursache: `closeRegister()` stempelte den `daily_closing`-Eintrag immer mit `business_date = current_date` statt dem tatsächlichen Rechnungsdatum.
+  **Erledigt 2026-09-03:** neue Funktion `closeAllPendingDays()` ermittelte vor dem Abschließen die tatsächlich vorkommenden Kalendertage unter den unzugeordneten Rechnungen und schloss chronologisch aufsteigend einmal pro Tag. Siehe Task #106.
+
+  **Nachgebessert 2026-09-06 (Live-Test mit 3 Kassen und echten Lücken-Tagen deckte weitere Bugs auf):**
+  - **Kernursache:** `closeAllPendingDays()` ermittelte die zu schließenden Tage über `DISTINCT created_at::date` auf unzugeordneten Rechnungen — ein Kalendertag ganz ohne Buchung ("Lücke") tauchte darin nie auf und konnte dadurch **nie** geschlossen werden, obwohl die "ausstehend"-Erkennung (`findPendingDaysForRegister()`) für genau diesen Tag weiterhin einen Abschluss verlangte. Die betroffene Kasse blieb dadurch dauerhaft "1 Tag ausstehend", egal wie oft abgeschlossen wurde.
+  - **Zweiter Fund:** wiederholtes Klicken auf einer bereits vollständig abgeschlossenen, untätigen Kasse erzeugte bei jedem Klick einen weiteren Nullabschluss für denselben Geschäftstag (keine Prüfung, ob heute schon abgeschlossen war).
+  - **Fix:** `closeAllPendingDays()` durch `closePastPendingDays()` ersetzt — nutzt jetzt exakt dieselbe Tagesliste wie `findPendingDaysForRegister()` (eine einzige Quelle der Wahrheit statt zweier potenziell abweichender Definitionen), wodurch Lücken-Tage automatisch einen Nullabschluss bekommen. Ergänzt um `closeTodayUnlessAlreadyClosed()` — schließt den heutigen Tag nur, wenn tatsächlich unzugeordnete Rechnungen vorliegen oder heute noch gar nicht abgeschlossen wurde.
+  - **"Alle Kassen abschließen" (systemweiter Button + `POST /closings/close-all`) komplett entfernt** (Nutzerentscheidung) — ein blinder Sammel-Abschluss über alle Kassen wurde als zu riskant eingestuft; jede Kasse wird jetzt einzeln aus ihrer Detailseite abgeschlossen (`docs/Anforderungen.md` entsprechend nachgezogen).
+  - **Fehlender UI-Refresh behoben:** neuer Store `lib/stores/pendingClosings.ts` — beide Kassen-Detail-Aktionen ("Tagesabschluss jetzt durchführen", "ausstehende Tage nachholen") aktualisieren jetzt das globale Banner sofort, nicht erst nach manuellem Neuladen oder Routenwechsel.
+  - **"Null"-Markierung** in der Abschluss-Tabelle durch echte Spalte "Nullabschluss" (mit "X" bei Nullabschlüssen) ersetzt, statt eines unklaren Textes hinter den Buttons.
+  - Drei neue Integrationstests (Lücken-Tag-Nullabschluss + danach entsperrt, kein doppelter Nullabschluss bei wiederholtem Klick) laufen grün gegen eine echte Postgres-Instanz; bestehende Tests mit fest codiertem historischem Datum (`2026-06-24`) auf relative Daten umgestellt, da die Korrektur das Verhalten bei großem Abstand zu "heute" grundlegend ändert.
+  **Live-Test bestätigt (2026-09-10):** mehrere ausstehende Tage (inkl. Lücken-Tage) über mehrere Kassen erzeugt, Anzeige an allen UI-Stellen (Banner, Dashboard-Kachel, Kassenliste-Badge, Kassendetail-Karte) korrekt, Bedienungskasse-Sperre (409) korrekt, „ausstehende Tage nachholen" schließt chronologisch korrekt ohne doppelten Nullabschluss, heutiger Tag danach separat abschließbar. Siehe `docs/Manueller-Testplan.md` Abschnitt 5/6.
+
+- [Finding] **D-055** (mittel, Backend / TSE-Health-Job) — Gefunden 2026-09-02 — Kontext: Bei Nutzerfragen zur TSE-Nutzung/Steuersätzen gefunden (2026-09-02)
+  Nutzerfrage zu `dumpProcessData`-Testdaten führte zur Prüfung, ob die minütliche TSE-Gesundheitsprüfung (`tse/healthJob.ts`) der TSE schaden könnte. Die routinemäßige Minutenabfrage selbst ist unkritisch (`getTseInfo()`, reiner Lesebefehl, erzeugt keinen Log-Eintrag). Aber: `tick()`s "TSE ungesund"-Zweig rief bei jedem Fehlschlag erneut `maintainTse()` auf (Selbsttest + `worm_tse_updateTime`) — **ohne jeglichen Backoff/Cooldown** über das 60-Sekunden-Ticksintervall hinaus. Der SDK-Header warnt explizit (Abschnitt „Common Issues" → „Update Time Frequency"): `worm_tse_updateTime` "should NOT be called significantly more often than announced in `worm_info_maxTimeSynchronizationDelay`" (typischerweise im Bereich von Stunden/einem Tag) — "the guaranteed number of supported update time commands is 150000... If the time gets synchronized more often than that, the TSE might get damaged." Würde eine TSE aus irgendeinem Grund dauerhaft als "ungesund" gemeldet, würde jede Minute ein neuer `updateTime`-Aufruf ausgelöst — bei diesem Takt wäre das 150.000er-Lebensdauer-Limit in ca. 104 Tagen aufgebraucht. **Ergänzung 2026-09-06:** Dieselbe ungebremste Schleife hatte noch ein zweites, deutlich akuteres Risiko — `maintainTse()` authentifiziert sich dabei mit dem `tse_time_admin_pin`-Setting. Laut SDK-Header (`WormDLL.h` Zeile 2273f.): "PINs have a retry counter of 3. If a wrong PIN has been entered 3 times, the PIN will be blocked and must be unblocked with the PUK." Ist die hinterlegte TimeAdmin-PIN aus irgendeinem Grund falsch, würde der minütliche Retry-Loop die PIN nach spätestens 3 Minuten (statt erst nach 104 Tagen wie beim Update-Time-Limit) dauerhaft blockieren.
+  **Erledigt 2026-09-10, siehe Task #109/#131:** `config.tseAutoMaintainEnabled` deaktiviert sich automatisch und dauerhaft (persistiert in `system_setting`), sobald ein automatischer `maintainTse()`-Versuch mit einem PIN-Authentifizierungsfehler fehlschlägt (`isPinAuthError()`, `tse/signing.ts`) — deckt das dringlichere PIN-Risiko vollständig ab. `MAINTAIN_RETRY_COOLDOWN_MS` (15 Minuten) drosselt wiederholte Versuche bei jedem anderen Dauer-Fehlerzustand — senkt die `updateTime`-Abnutzungsrate um den Faktor 15. Volle Details in Task #109 (Lösung) und Task #131 (Checkbox-UI zum manuellen Wiederaktivieren).
+
+- [Finding] **D-056** (mittel, Backend / TSE + DSFinV-K + Z-Bon) — Gefunden 2026-09-02 — Kontext: Bei Nutzerfragen zur TSE-Nutzung/Steuersätzen gefunden (2026-09-02)
+  Nutzerfrage: wie verhält sich das Kassenbeleg-V1-Format bei einer künftigen USt-Satz-Änderung (z. B. Regelsteuersatz 19 %→20 %)? Code-Recherche zeigt drei unabhängige, hart codierte Annahmen über die aktuell gültigen Sätze 19/7, die bei einer Satzänderung silent falsch würden: (1) `tse/processData.ts::taxSlot()` — exakter Floatvergleich gegen 19/7; (2) `exports/dsfinvk/rows.ts::ustSchluessel()` — identische Logik; (3) `closing/totals.ts::computeClosingTotals()` — Schwellenwerte statt Exaktvergleich. Zusätzlich druckt `closing/blocks.ts` die Z-Bon-Zeilen mit fest einprogrammiertem Text "19 %"/"7 %".
+  **Erledigt mit Task #110/D-059/D-060 (2026-09-03), Eintrag hier nachgezogen (2026-09-06):** `taxSlot()`/`ustSchluessel()` nehmen längst `TaxCategory` statt rohem Prozentwert entgegen, keine Floatvergleiche mehr gegen 19/7. `closing/blocks.ts`s `ClosingContext` bekommt `vat_rate_standard`/`vat_rate_reduced` jetzt dynamisch aus den Einstellungen übergeben statt fest "19 %"/"7 %" zu drucken. Alle drei ursprünglich beschriebenen Stellen sind damit korrekt.
+
+- [Finding] **D-057** (hoch, Backend / Stornogründe + TSE + DSFinV-K) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02)
+  `PUT /api/admin/cancellation-reasons/:id` erlaubte Umbenennen jederzeit ohne Prüfung, ob der Grund bereits verwendet wurde. `register-session.ts` brennt den Namen zum Stornierungszeitpunkt fest in die TSE-signierte `AVSonstige`-`processData` ein, während der DSFinV-K-Export den Namen live über einen JOIN nachlud — nach einem Umbenennen zeigte der Export einen anderen Text als in der signierten processData steht.
+  **Erledigt 2026-09-03:** neue Snapshot-Spalte `cancellation_reason_name` (Migration `0029_cancellation_reason_name.sql`) auf `order_cancellation` (NOT NULL, rückwirkend befüllt) und `order_item` (nullable, analog zum bestehenden `cancelled_by_name`-Muster aus Migration `0017`), FK-Spalten `cancellation_reason_id` bleiben zusätzlich erhalten. Beide Stornierungswege (`register-session.ts` Bedienungskasse-Stornieren/Kostenfrei, `admin/cancellations.ts` Admin-Bonstorno) schreiben den Namen jetzt beim Storno fest; `exports/dsfinvk/load.ts` liest `oc.cancellation_reason_name` direkt statt per JOIN nachzuladen — Export und TSE-Signatur zeigen dauerhaft denselben Text, auch nach späterer Umbenennung des Stornogrunds. Siehe Task #111.
+
+- [Finding] **D-059** (niedrig **hoch**, Backend / Einstellungen) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02)
+  Die Einstellung `vat_rate_deposit` (Pfand-USt-Satz) war ein System-Administrator-exklusiver Schlüssel, wurde aber nirgends im Backend tatsächlich gelesen — Pfandbeträge wurden stattdessen konsistent mit dem USt-Satz des zugehörigen Artikels selbst verrechnet, was bei ermäßigt besteuerten Warengruppen zum falschen Pfand-Steuersatz führte. Vollständige Analyse siehe D-060.
+  **Erledigt 2026-09-03** (Task #110, gemeinsam mit D-060/Task #113): `vat_rate_deposit`-Einstellung entfernt (ohnehin nie gelesen) — Pfand verwendet jetzt immer `vat_rate_standard` (siehe D-060). Artikelgruppen haben statt eines freien `tax_rate`-Prozentwerts jetzt eine `tax_category` (`zero`/`reduced`/`standard`); die konkreten Prozentsätze `vat_rate_standard`/`vat_rate_reduced` sind zentrale Einstellungen, **bewusst editierbar durch Veranstaltungs-Administrator, nicht nur System-Administrator** (Nutzervorgabe 2026-09-03) — damit lässt sich eine gesetzliche Steuersatzänderung ohne System-Administrator-Zugriff pflegen, ohne jeden Artikel einzeln anfassen zu müssen. Siehe Task #110. **Live bestätigt (2026-09-06)** — zusammen mit der neuen Pfand-Zeilendarstellung auf dem Beleg getestet.
+
+- [Finding] **D-060** (hoch, Backend / TSE + Z-Bon + DSFinV-K + Bon) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02)
+  Fiskalrelevanter Bug: Pfand wurde mit dem falschen USt-Satz verrechnet. Pfand unterliegt in Deutschland immer dem Regelsteuersatz (19 %), unabhängig vom Steuersatz des verkauften Artikels. `price` und `deposit_price` wurden an vier unabhängigen Stellen unter demselben Artikel-`tax_rate` in einen Topf geworfen: TSE-`processData`, Z-Bon-Summen, gedruckte USt-Aufschlüsselung, DSFinV-K-Pfandzeile.
+  **Erledigt 2026-09-03** (gemeinsam mit D-059/Task #110 umgesetzt): neue Domain-Typ `TaxCategory = 'zero' | 'reduced' | 'standard'` ersetzt rohe Prozent-Vergleiche überall. Artikel-Beitrag und Pfand-Beitrag werden jetzt an allen vier Stellen **getrennt** gebucht: Artikel nach seiner eigenen `tax_category`, Pfand **immer** fest nach `standard` — in `tse/processData.ts::buildKassenbelegProcessData()` (direkt in der TSE-signierten processData), `closing/totals.ts::computeClosingTotals()` (Z-Bon-Summen), `receipt/format.ts::computeTaxBreakdown()` (gedruckte USt-Aufschlüsselung, neue `deposit_tax_rate`-Spalte) und `exports/dsfinvk/rows.ts` (Pfand-Zeile fest mit USt-Schlüssel 1). Bereits signierte Altdaten bleiben unkorrigiert (unveränderliche processData), betrifft nur zukünftige Verkäufe. Siehe Task #113. **Live bestätigt (2026-09-06)** — zusammen mit der neuen Pfand-Zeilendarstellung auf dem Beleg getestet.
+
+- [Finding] **D-061** (mittel, Backend / Druck (Pfandrückgabe)) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02)
+  Pfandrückgabe (Artikel mit 0 € Preis und negativem Pfand) — der resultierende Selbstabholerbon zeigte den Artikel ganz ohne jede Pfand-Angabe. Ursache: `register-session.ts`s `depositEuros: depositRaw > 0 ? depositRaw : null` verwarf einen negativen Pfandbetrag bereits vor dem Slip-Aufbau.
+  **Erledigt 2026-09-03:** `depositRaw > 0` → `depositRaw !== 0` an allen betroffenen Stellen (`depositEuros`, `separateDepositSlip`) in `register-session.ts`. `print/order-slip.ts`s `buildPickupSlipBlocks()`/`buildDepositSlipBlocks()` sind jetzt vorzeichenbewusst: Kopfzeile "PFANDRÜCKGABE" statt "SELBSTABHOLER"/"PFAND", Zeile "Pfand-Rückgabe" mit Betrag als Absolutwert. Zusätzlich neue Artikel-Option "Selbstabholerbon nicht drucken" (`article.skip_pickup_slip`, Migration `0030_skip_pickup_slip.sql`) für Direktmitnahme-/Pfandrückgabe-Artikel, deren Selbstabholerbon an der Bonkasse übersprungen werden soll. Siehe Task #114. **Live bestätigt (2026-09-06).**
+
+- [Finding] **D-062** (mittel, Backend / TSE + Rechnungsbeleg (Bedienungskasse)) — Gefunden 2026-09-04 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02)
+  Nutzerfrage 2026-09-04: Start/Ende der TSE-Daten auf dem Rechnungsbeleg der Bedienungskasse sind identisch (Zahlungsmoment), nicht die erste Bestellung. Recherche gegen die verbatim DSFinV-K-v2.4-Spezifikation (Tz. 2.7.2, S. 13f., direkt heruntergeladen und geprüft) ergab: FairPOS nutzt bereits korrekt die dort beschriebene "Durchbedienen"-Erleichterung (Kassenbeleg-V1 erst bei Zahlung gestartet und sofort beendet, statt eine Transaktion über den ganzen Tischbesuch offenzuhalten) — das ist zulässig, hat aber eine explizite Voraussetzung: "Der Start-Zeitpunkt der ersten Transaktion „Bestellung" muss zusätzlich auf dem Beleg abgedruckt werden." Diese Zeile fehlte komplett.
+  **Erledigt 2026-09-04:** neue Zeile `Tisch <Name> von <erste Bestellung> bis <Zahlung>` unter der Positionsliste (`receipt/blocks.ts`), gespeist aus einer neuen Query in `receipt/data.ts` (`loadTableInfo()`: `MIN(COALESCE(service_order.tse_start_time, service_order.created_at, order_item.created_at))` über die auf dem Beleg abgerechneten Positionen). `null`/nicht gedruckt für Bonkasse-Verkäufe ohne Tisch. Gleichzeitig, im selben Aufwasch geprüft und umgesetzt (Nutzerfrage zu § 6 Satz 2 Nr. 2 KassenSichV, verbatim-Gesetzestext direkt von gesetze-im-internet.de geprüft): TSE-Seriennr./Transaktionsnr./Signaturzähler/Start/Ende/Signatur-Klartextblock entfernt — alle fünf sind byte-identisch mit bzw. (TSE-Seriennr.) kryptografisch aus dem ohnehin vorhandenen QR-Code ableitbar. `Kassensystem-Seriennr.` bleibt bewusst stehen (kein garantierter Gleichlauf mit dem QR-Feld, das den TSE-Client-ID trägt, einer separat konfigurierten, potenziell abweichenden Kennung); Firmendaten/Positionen/Steueraufschlüsselung bleiben unverändert, da unabhängig von KassenSichV durch § 33 UStDV vorgeschrieben. Ein "! TSE Fehler !"-Klartexthinweis bleibt bei fehlgeschlagener Signatur sichtbar. Siehe Task #116. **Live bestätigt (2026-09-06).**
+
+- [Finding] **D-038-Fortsetzung** (hoch, Backend / TSE) — Gefunden 2026-08-26 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
+  Root Cause zu D-038 gefunden (2026-08-26): der echte Fehlercode nach dem D-038-Fix war `4098` = `0x1002` = `WORM_ERROR_NO_TIME_SET` (siehe `wormError.h`). Bestätigt Task #58/#64: `maintainTse()` (Self-Test + Zeitsync) ist fertig implementiert, wird aber **nirgends automatisch aufgerufen** — eine frisch eingerichtete TSE hat dadurch nie eine gültige Uhrzeit, `startTransaction()` lehnt jede Signierung ab. Kein Code-Bug, sondern ein fehlender Auslöser — der `setup`-Befehl (einmalige Hardware-Inbetriebnahme) setzt selbst keine Zeit.
+  **Teilweise behoben 2026-08-26 (entblockt den laufenden Hardware-Test):** Den in Task #64 bereits geplanten manuellen Button vorgezogen — neue Route `POST /api/admin/tse/maintain` (`routes/admin/tse.ts`, liest die TimeAdmin-PIN frisch aus `system_setting`, ruft `maintainTse()` auf), neuer „Zeit synchronisieren"-Button neben „TSE testen" in `settings/tse/+page.svelte`. 4 neue Integrationstests (`tse.integration.test.ts`: nicht konfiguriert → 400, keine PIN → 400, Erfolg gegen Stub-CLI, kein Admin → 401). **Live bestätigt 2026-08-26:** nach Klick auf „Zeit synchronisieren" signiert die TSE wieder erfolgreich, sowohl in Bonkasse als auch Bedienungskasse — keine Fehler mehr, Signatur sichtbar auf Ausdruck und PDF. **Automatischer Aufruf beim Backend-Start + Protokollierung: erledigt** (beim Doku-Audit vor dem QA-Lauf am 2026-09-02 nachgezogen — war hier fälschlich noch als offen markiert): `index.ts` ruft `startTseHealthJob()` beim Boot auf, `tse/healthJob.ts` pollt minütlich und protokolliert Zustandswechsel unter `system_log`-Kategorie `tse_health`, siehe Task #64. **Weiterhin offen:** inhaltliche Korrektheit der signierten Transaktionen (Beträge, Transaktionsnummern) — dafür existiert inzwischen ein Werkzeug (`tseCli dumpProcessData`, Task #102), der eigentliche Abgleich (Task #47) steht aber noch aus.
+
+- [Finding] **DOC-001** (mittel, Inline-Doku) — Gefunden 2026-06-24 — Kontext: Dokumentations-Schuld
+  JSDoc-Convention (vollständige `@param`/`@returns`) seit 2026-06-24.
+  **Erledigt 2026-09-06:** Verbleibende Lücke (Routes und Frontend) geschlossen. Backend `routes/**` (alle Admin-Routen-Registrierungsfunktionen, `health.ts`, `register-session.ts`, `tables.helpers.ts::makeLabels`) und Frontend `lib/{floor-plan,order}.ts` auf vollständige `@param`/`@returns` gehoben — meist fehlte nur die `@param app`-Zeile bei den einzeiligen Route-Registrierungs-JSDocs. Per Skript verifiziert (Abgleich Funktionssignatur ↔ JSDoc-Block über den gesamten Baum), keine offenen Lücken mehr in `routes/`/Frontend. Backend-Typecheck/Tests und Frontend-Typecheck/Tests weiterhin grün.
+
+- [Finding] **T-001** (hoch, Backend / Auth) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  Authentifizierungsfluss nicht getestet.
+  **Erledigt 2026-06-24:** `routes/auth.integration.test.ts` mit 12 Tests — Admin-Login (Happy/falsches Passwort/Non-Admin/Unknown User/missing fields), Register-Token-Exchange (gültig/unbekannt/abgelaufen/wiederverwendet), Session-Trennung (admin→register kein Zugriff und umgekehrt), Logout-Cookie-Reset.
+
+- [Finding] **T-002** (hoch, Backend / DB) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  `withTransaction` Rollback-Verhalten (braucht echten Throw + Verify Rollback).
+  **Erledigt 2026-09-06:** `db/client.integration.test.ts` (neu, 5 Tests) — Commit bei Erfolg, Rollback bei Wurf (Zeilenzahl geprüft), Original-Fehler wird unverändert weitergereicht, Client wird auch nach einem Fehler wieder freigegeben (nächster Aufruf funktioniert weiterhin statt zu hängen), Rückgabewert wird nur bei Erfolg durchgereicht.
+
+- [Finding] **T-003** (hoch, Backend / Admin-Routen) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  Alle admin/*.ts Routen ungetestet.
+  **Teilweise erledigt 2026-06-24:** `admin-routes.integration.test.ts` deckt Kategorien (Duplikat-409), Articles (Join), Users (Self-Delete-Block, Duplikat-409), Layouts (Resize+Duplicate), Tables (Generate+Cascade-Delete+Duplicate-409), Invoices-Reprint, Excel-Export ab. CRUD-Vollständigkeit für jeden Endpoint ist noch lückenhaft; Tests für `events` und `cancellation-reasons` folgen bei Bedarf.
+
+- [Finding] **T-004** (mittel, Backend / Layouts) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  Layouts-Slot-Logik nicht getestet.
+  **Erledigt 2026-06-24:** Out-of-bounds-Slot-Removal beim Grid-Shrink + Duplicate-Logik in `admin-routes.integration.test.ts` abgedeckt.
+
+- [Finding] **T-005** (mittel, Backend / Tables) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  Tables-Routen ungetestet.
+  **Erledigt 2026-06-24:** Generate + Cascade-Delete von Spalten + Duplicate-Label-Check in `admin-routes.integration.test.ts`. `makeLabels` ist bereits per Unit-Test in `tables.test.ts` abgedeckt.
+
+- [Finding] **T-006** (mittel, Frontend / API-Client) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  `lib/api.ts` request helper.
+  **Erledigt 2026-06-24:** `request` exportiert + mit fetch-mock getestet (10 Tests).
+
+- [Finding] **T-007** (mittel, Frontend / Layout-Editor) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  `routes/admin/settings/layouts/[id]/+page.svelte` — `buildGrid`, `changeSize` (Slots fallen aus Grid raus), Drop-Logik (Swap bei besetzter Zelle).
+  **Erledigt 2026-09-06:** `buildGrid`/`changeSize` (jetzt `changeGridSize`)/Drop-Logik (jetzt `applyDrop`) nach `lib/layout-editor.ts` extrahiert (reine Funktionen, keine Verhaltensänderung), Komponente ruft sie jetzt auf statt sie inline zu definieren. 13 neue Unit-Tests in `layout-editor.test.ts` — Grid-Aufbau, Clamping auf [1,10], Slot-Drop beim Verkleinern, Ablage-Platzierung mit Default-Farbe, Verdrängen einer belegten Zelle, Verschieben mit Attributerhalt, Swap bei besetzter Zielzelle. Komponententest für Drag-and-Drop weiterhin nicht nötig (Logik jetzt vollständig in den reinen Funktionen getestet).
+
+- [Finding] **T-008** (mittel, Frontend / Saalplan-Editor) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  `reorderArray` + columns/rows Ableitung.
+  **Erledigt 2026-06-24:** `reorderArray` getestet (8 Tests); `columnsFromTables`/`rowsFromTables` in `lib/floor-plan.ts` extrahiert + getestet (6 Tests).
+
+- [Finding] **T-009** (mittel, Frontend / Deutsche Zahlen) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  parseDE/formatDE Helpers.
+  **Erledigt 2026-06-24:** `formatEuro` etc. in `receipt/format.test.ts` umfangreich getestet (de-DE inkl. Negativen, Tausenderpunkten, Cent-Rundung). Die Form-Parser im Frontend nutzen direkt `replace(',','.')` + `parseFloat` — trivial, kein dedizierter Helper extrahiert.
+
+- [Finding] **T-010** (mittel, Backend / Print Worker) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  atomarer Claim, Crash-Recovery, Retry.
+  **Erledigt 2026-09-06:** `processJob`/`retryPending`/`recoverInFlight` aus `workers/print-worker.ts` exportiert (nur für Tests, keine Verhaltensänderung — `startPrintWorker()` selbst bleibt eine LISTEN/NOTIFY-Dauerschleife, die ein Test nicht direkt antreiben kann). Neue `print-worker.integration.test.ts` (10 Tests) mit echtem `net.createServer` als Mock-Drucker: erfolgreicher Versand + `done`, zweiter Aufruf auf bereits erledigten Job ist No-Op, zwei gleichzeitige Aufrufe auf denselben Job senden nur einmal (atomarer Claim), Retry bei Verbindungsfehler, `failed` nach `MAX_ATTEMPTS`, Crash-Recovery (`printing`→`pending`), Retry-Cooldown (zu junger `last_attempt_at` wird übersprungen, alter wird verarbeitet).
+
+- [Finding] **T-011** (mittel, Backend / Print Endpoints) — Gefunden 2026-06-24 — Kontext: Bereits implementierte Bereiche ohne Unit Tests
+  Status-Probe, Test-Print, Job-Listing, Job-Cancel.
+  **Erledigt 2026-09-06:** Job-Listing/Job-Cancel waren bereits in `print-jobs.integration.test.ts` abgedeckt (GET-Liste, DELETE, cancel-all). Neu in `printers.integration.test.ts`: `GET /:id/status` (online via echtem Mock-`net.createServer`, offline via verweigerter Verbindung, 404), `POST /:id/test-print` (legt `print_job`-Zeile mit korrektem Typ/Status/Drucker an, 404).
+
+- [Finding] **T-012** (mittel, Backend / Receipt-Endpoints) — Gefunden 2026-06-24 — Kontext: Während Kassenbon-PDF — Tests fehlen für
+  `routes/receipt.ts` (Token→PDF), `settings.ts:/receipt-preview`.
+  **Erledigt/überholt 2026-09-06:** Der öffentliche Token→PDF-Endpunkt existiert seit der Entfernung des digitalen Gästebelegs (Task #100) nicht mehr — `receipt_token` wird nur noch intern von `POST /api/register-session/invoices/:id/print` gelesen (session-authentifiziert), jetzt in `register-session.integration.test.ts` mit 5 Tests abgedeckt (Happy Path, 404, 403, 400 ohne Drucker, 500 bei `receipt_token IS NULL`). `settings.ts:/receipt-preview` war bereits seit Task #98 in `settings.receipt-preview.integration.test.ts` abgedeckt (siehe D-053).
+
+- [Finding] **T-013** (mittel, Backend / loadReceiptByToken) — Gefunden 2026-06-24 — Kontext: Während Kassenbon-PDF — Tests fehlen für
+  DB-getriebene Datenladelogik.
+  **Erledigt 2026-09-06:** Neue `receipt/data.integration.test.ts` (6 Tests) — `loadReceiptByToken`/`loadReceiptById`: Treffer, unbekanntes Token/unbekannte ID → `null`, Groß-/Kleinschreibung wird unterschieden (kein Case-Insensitive-Match), leerer Token → `null`.
+
+- [Finding] **T-014** (niedrig, Backend / ensureSystemSerial) — Gefunden 2026-06-24 — Kontext: Während Kassenbon-PDF — Tests fehlen für
+  Bootstrap-Hooks ungetestet.
+  **Erledigt 2026-06-24:** `admin-routes.integration.test.ts` deckt `ensureSystemSerial` (fresh/idempotent/replace-malformed) und `initReceiptCounter` (seed from invoice max / no-overwrite) ab.
+
+- [Finding] **T-015** (hoch, Backend / register-session) — Gefunden 2026-06-24 — Kontext: Während Bonkasse-UI — Tests fehlen für
+  Checkout-Endpoint ungetestet.
+  **Erledigt 2026-06-24:** `register-session.integration.test.ts` deckt Bonkasse-Checkout (Pos→Items, fortlaufende Nummern, 403/400 Validierung) ab.
+
+- [Finding] **T-016** (mittel, Backend / Reprint-Pfad) — Gefunden 2026-06-24 — Kontext: Während Bonkasse-UI — Tests fehlen für
+  Reprint-Endpoint ungetestet.
+  **Erledigt 2026-06-24:** `admin-routes.integration.test.ts` deckt Reprint (Happy-Path mit Print-Job-Enqueue + 400 bei fehlendem Drucker) ab.
+
+- [Finding] **T-017** (niedrig, Backend / QR-Endpoint) — Gefunden 2026-06-24 — Kontext: Während Bonkasse-UI — Tests fehlen für
+  Token-URL wird korrekt aus `server_address` aufgebaut; ohne Setting fällt auf `request.host` zurück.
+  **Überholt 2026-09-06:** Der digitale Gästebeleg (der öffentliche `qr.png`-Endpunkt + `buildReceiptQrUrl()`, den dieser Eintrag betraf) wurde komplett entfernt (Task #100) — `grep` bestätigt keine verbleibende Referenz. Der heutige Bon-QR-Code (`receipt/qr.ts::buildQrPayload`, Task #116) enthält TSE-Rohdaten, keine URL/`server_address` mehr. Kein Test nötig, da der betroffene Code nicht mehr existiert.
+
+- [Finding] **T-018** (hoch, Backend / Bedienungs-Endpoints) — Gefunden 2026-06-24 — Kontext: Während Bedienungskasse-UI — Tests fehlen für
+  Bedienungskassen-Flow ungetestet.
+  **Erledigt 2026-06-24:** `register-session.integration.test.ts` deckt Order-Place (Items angelegt), Checkout (Items→paid + Invoice), Cancel (Items→cancelled) und die Pending-Z-Bon-Sperre (409) ab.
+
+- [Finding] **T-019** (hoch, Test-DB-Infrastruktur) — Gefunden 2026-06-24 — Kontext: Während Bedienungskasse-UI — Tests fehlen für
+  Postgres-spezifische Pfade nicht testbar.
+  **Erledigt 2026-06-24:** testcontainers-Setup steht. `global-setup.ts` startet einen Postgres-Container pro Test-Run, applies Migrationen; `integration-setup.ts` injiziert die URL pro Worker; `db-fixture.ts` exportiert `truncateAllTables()` für `beforeEach`. Trennung Unit-Tests (`*.test.ts`) vs Integration (`*.integration.test.ts`) per zwei vitest-Konfigs. Erstes Beispiel: `pending-db.integration.test.ts` mit 6 Tests. Befehl: `npm run test:integration`.
+
+- [Finding] **T-020** (hoch, Backend / Reports) — Gefunden 2026-06-24 — Kontext: Während Auswertungen-Implementierung gefunden
+  Komplexe Aggregat-Queries ungetestet.
+  **Erledigt 2026-06-24:** `reports.integration.test.ts` deckt alle vier Reports ab. **Fand einen echten Bug**: `free`-Items wurden im cash-balance mit dem vollen Preis als Bargeld gezählt — sind aber 0€-Belege. Query auf `oi.status = 'paid'` eingeschränkt.
+
+- [Finding] **T-021** (hoch, Backend / Closing-Endpoint) — Gefunden 2026-06-24 — Kontext: Während Z-Bon-Implementierung gefunden
+  Z-Bon-Erstellung ungetestet.
+  **Erledigt 2026-06-24:** `closings.integration.test.ts` mit 12 Tests — Z-Nummer sequentiell pro Register, Zero-Closing, Invoice-Link, Print-Job, Pending-Detection, Close-Pending Multi-Day-Catchup, Close-All, Auth.
+
+- [Finding] **T-022** (mittel, Backend / Excel-Endpoint) — Gefunden 2026-06-24 — Kontext: Während Excel-Export-Implementierung gefunden
+  DB-Query-Pfad ungetestet.
+  **Teilweise erledigt 2026-06-24:** Smoke-Test in `admin-routes.integration.test.ts` prüft den Tagesexport (XLSX-Magic-Bytes + 400 bei invalidem Datum). Vollständige Datenkorrektheit über das Workbook hinweg bleibt offen — kann nachgezogen werden wenn echte Daten hereinkommen.
+
+- [Finding] **D-066** (niedrig, Frontend / TSE-Tools) — Gefunden 2026-09-10 — Kontext: Live-Test der TSE-Tools-UI (Task #131), TimeAdmin-PIN mit absichtlich falscher PUK entsperrt
+  Nutzer berichtet: Der Entsperren-Dialog zeigte nach einem Fehlversuch „…noch 3 Versuche, bevor die PUK selbst gesperrt wird." — dieselbe Meldung erschien unverändert auch nach weiteren Fehlversuchen, obwohl der Text einen Countdown suggeriert. Ursache in `WormDLL.h` (`worm_user_unblock`-Doku) gefunden: „For TSEs with software version >= 2.0.0, this will always be set to 3 as the PUK will only be blocked temporarily." — `remainingRetries` zählt auf Firmware ≥ 2.0.0 **nicht** pro Fehlversuch herunter, sondern steht bei jedem Fehlschlag fest auf `3`; ein echter Countdown existiert laut SDK nur auf Firmware < 2.0.0.
+  **Behoben 2026-09-10:** `+page.svelte` zeigt den spezifischen Zahlenwert nur noch, wenn `remainingRetries < 3` (echtes Signal); bei `=== 3` erscheint stattdessen ein allgemeiner Hinweis ohne falsche Zahlenangabe. `docs/TSE-CLI-Referenz.md` (Abschnitt `unblock`) entsprechend korrigiert.
+
+  **Zweiter Fund, live 2026-09-10 (TimeAdmin-PIN entsperren schlug mit echter PUK fehl):** Nutzer meldete `worm_user_unblock failed (Code 4103)` beim tatsächlichen Entsperren-Versuch, obwohl PUK/PIN-Format bereits serverseitig validiert war (also kein Wiederauftreten des ursprünglichen 5-stelligen-PUK-Bugs). Ursache: die neu gesetzte PIN war identisch zur bisherigen — laut `WormDLL.h` zu `worm_user_unblock`: „New PIN. Must be different from the previous PIN." Der dabei tatsächlich gemeldete Code ist `4103` (`WORM_ERROR_TSE_INVALID_PARAMETER`), nicht der dafür eigentlich dokumentierte `WORM_ERROR_TSE_SEAPI_SETTING_NEW_PIN_FAILED` (`0x1021`) — die SDK meldet hier einen generischeren Code als an anderer Stelle in der Doku beschrieben. Mit einer tatsächlich anderen PIN funktionierte der Entsperren-Vorgang.
+  **Behoben 2026-09-10:** Hinweistext „Die neue PIN darf nicht identisch zur bisherigen PIN sein." im Entsperren-Dialog ergänzt; `docs/TSE-CLI-Referenz.md` (Abschnitt `unblock`) um diese Anforderung und die abweichende Fehlercode-Beobachtung erweitert.
+
+- [Finding] **D-067** (hoch, Backend / Excel-Export) — Gefunden 2026-09-12 — Kontext: Live gemeldet vom Nutzer
+  Nutzer berichtet: Excel-Tagesexport enthielt Buchungen einer anderen Veranstaltung, die am selben Kalendertag stattfand — der Export darf sich aber nur auf die aktuell aktive Veranstaltung beziehen, auch wenn an diesem Tag noch eine andere Veranstaltung gebucht hat. Ursache in `routes/admin/exports.ts` gefunden: `loadExportSourceByDateRange()` (genutzt von `GET /excel/day`) und `loadInvoiceIdsByDateRange()` (genutzt von `GET /invoices/day`, Rechnungs-PDF-ZIP) filterten bisher **ausschließlich** über den Kalendertag (`i.created_at`), ganz ohne `register.event_id`-Bezug — der eigene Code-Kommentar bezeichnete das sogar explizit als „by design (Task #95)". Der Veranstaltungsexport (`GET /excel/event`, `GET /invoices/event`) war davon nicht betroffen — dort filtert `loadExportSourceByEvent()`/`loadInvoiceIdsByEvent()` bereits korrekt über `register.event_id`, mit bestehender Regressionsabdeckung.
+  **Behoben 2026-09-12:** Beide tagesbezogenen Loader nehmen jetzt zusätzlich einen `eventId`-Parameter und filtern per `AND r.event_id = $n` (zusätzlicher `JOIN register`/vorhandener Join genutzt). Beide Routen (`/excel/day`, `/invoices/day`) laden vorab die aktive Veranstaltung (`loadActiveEvent()`, dieselbe Funktion wie bei den `*/event`-Routen) und liefern `404 "Keine Veranstaltung verfügbar"`, falls keine aktiv ist — analog zum bestehenden Verhalten der Veranstaltungsexporte. Neue Regressionstests: `exports.excel.integration.test.ts` (Tagesexport enthält nur die eigene Veranstaltung trotz Fremdbuchung am selben Tag + 404 ohne aktive Veranstaltung), `exports.invoices-zip.integration.test.ts` (dieselben zwei Fälle für den Rechnungs-PDF-ZIP-Tagesexport).
+
+  **Nutzeranstoß zur vollständigen Codebasis-Prüfung (2026-09-12):** Nutzer wies darauf hin, dass „by design (Task #95)" eine bewusst revidierte Altannahme war (Veranstaltung war früher ein reiner Datumsfilter) und bat um eine systematische Suche nach weiteren Stellen mit derselben Alt-Annahme.
+  - **Zweiter, eigenständiger Fund derselben Bugklasse:** `routes/admin/reports.ts`s `GET /today-revenue` (Dashboard-Kachel "Heutiger Umsatz") war die einzige Auswertung in dieser Datei, die **nicht** über `register.event_id` filterte — eigener Code-Kommentar bestätigte das explizit ("unlike every other report here — is not scoped to an event"). Bei zwei Veranstaltungen am selben Kalendertag hätte die Kachel fremden Umsatz mit eingerechnet.
+    **Behoben 2026-09-12:** `JOIN register r` + `AND r.event_id = $1` ergänzt (lädt die aktive Veranstaltung vorab wie die übrigen Reports in dieser Datei; `{total: 0}` statt Fehler, falls keine Veranstaltung aktiv ist — Dashboard-Kachel soll nicht brechen). Neuer Regressionstest in `reports.integration.test.ts`.
+  - **Vollständige Prüfung der übrigen Codebasis (`packages/backend/src`, per Subagent-Audit):** keine weiteren Fundstellen. Alle anderen Auswertungen (`/invoices`, `/cash-balance`, `/cancellations`) filtern bereits korrekt über `register.event_id`; alle Kassenabschluss-/DSFinV-K-/Rechnungs-Ladepfade sind über eine konkrete `register_id`/`daily_closing_id` skopiert (dadurch by construction sicher, da eine Kasse lebenslang genau einer Veranstaltung gehört). Zwei bewusste, weiterhin korrekte Ausnahmen bestätigt: `/open-positions` (offene, unbezahlte Positionen müssen sichtbar bleiben, auch nach Wechsel der aktiven Veranstaltung) und `/tse-outages` (TSE-Hardwareausfälle sind veranstaltungsunabhängig). Kein Bypass über einen alten `event_id`-Query-Parameter mehr möglich — der frühere manuelle Veranstaltungs-Selector ist vollständig entfernt.
+
+- [Finding] **D-068** (hoch, Backend / Bonstorno-Aggregation) — Gefunden 2026-09-12 — Kontext: Live gemeldet vom Nutzer
+  Nutzer berichtet: Bonstorno-Buchungen (`routes/admin/cancellations.ts`, `receipt_type='cancellation'`) erschienen weder im Soll-Kassenstand (`/cash-balance`) noch auf dem Z-Bon. Recherche ergab ein tiefer liegendes Konzeptproblem: `order_item.price`/`deposit_price` waren bei einer Bonstorno immer **positiv** gespeichert, das Vorzeichen lebte ausschließlich in `invoice.receipt_type='cancellation'` — jede Aggregationsstelle musste das eigenständig erkennen und umdrehen. Systematisch durchsucht, dabei **vier unabhängige, jeweils separat implementierte Vorzeichen-Umkehrungen** gefunden: `closing/totals.ts` (`total_cash`, korrekt), `tse/processData.ts`s `buildKassenbelegProcessData()` (korrekt), `exports/dsfinvk/rows.ts` (`isStornoBeleg`-Flag, korrekt), `receipt/data.ts`s `assembleReceiptData()` (korrekt) — aber `total_gross`/die Steuertöpfe und die "Stornos/Kostenfrei"-Zeile in `closing/totals.ts` sowie `/cash-balance` und der Excel-Export (`routes/admin/exports.ts`) schlossen Bonstorno-Rechnungen komplett aus (`receipt_type = 'sales_receipt'`-Filter), statt sie mit umgekehrtem Vorzeichen einzurechnen — genau das erklärte das gemeldete Symptom.
+  **Nutzerentscheidung 2026-09-12 (bewusste Revision einer bisherigen Designentscheidung):** Statt weiterhin an jeder Konsumstelle das Vorzeichen aus `receipt_type` abzuleiten (fehleranfälliges, mehrfach dupliziertes Muster — Nutzerzitat: "das Konzept... provoziert Fehler"), lebt das Vorzeichen jetzt direkt in den Daten: `order_item.price`/`deposit_price` werden bei einer Bonstorno-Buchung **negiert** gespeichert (die Umkehrung des aktuellen Artikel-Stammpreises, unabhängig von dessen eigenem Vorzeichen). Jede Aggregation wird dadurch ein einfaches `SUM()`.
+  **Wichtige Nebenbedingung, vom Nutzer explizit eingefordert:** Das Vorzeichen darf **niemals** zur Erkennung "ist das ein Storno" verwendet werden — ein Artikel mit `deposit_price < 0` (Leergutrückgabe/`PfandRueckzahlung`) ist bereits unabhängig von jeder Storno-Buchung negativ. Verifiziert: kein Code-Pfad klassifiziert per Vorzeichen (grep über alle geänderten Dateien) — Klassifikation läuft überall über `receipt_type`/`status`.
+  **Zusätzlich (Nutzervorgabe):** die bisherige `total_cancellations`-Sammelzeile in drei fachlich unterschiedliche Fälle aufgeteilt — "Stornierte Rechnungen" (Bonstorno, tatsächlich zurückgezahltes Geld), "Kostenfreie Warenabgabe" (Ware ging raus, nie berechnet), "Stornierte Bestellungen" (Ware ging nie raus, nie berechnet). Recherche in der offiziellen DSFinV-K-2.4-Spezifikation (bzst.de) ergab: keine Compliance-Pflicht zu dieser Aufteilung — Anhang C's `GV_TYP`-Werteliste kennt keinen eigenen Storno-Wert (ein Bonstorno bleibt `GV_TYP=Umsatz`, negativ, "im Umsatz saldiert dargestellt", Anhang C-Zitat); §146 AO/GoBD verlangen nur allgemein, dass Stornos/Retouren irgendwie dokumentiert sind (keine bestimmte Zeilenzahl). Die Drei-Zeilen-Aufteilung ist damit reine, freiwillige Transparenz auf dem gedruckten Z-Bon.
+  **Umgesetzt 2026-09-12:**
+  - Migration `0032_daily_closing_split_cancellation_totals.sql`: `daily_closing.total_cancellations` ersetzt durch `total_bonstorno`/`total_free`/`total_order_cancellations`. Historische Zeilen bewusst nicht rekonstruiert (Nutzervorgabe: reine Testdaten, DB wird vor Echtbetrieb ohnehin zurückgesetzt) — `total_cancellations` pauschal nach `total_free` übernommen.
+  - `closing/totals.ts`: `computeClosingTotals()` komplett überarbeitet — plain `SUM()` für `total_gross`/Steuertöpfe/`total_cash` (kein `receipt_type`-Sonderfall mehr), `total_bonstorno` als informative Teilsumme, `total_free`/`total_order_cancellations` getrennt, `receipt_type='training'` bleibt explizit ausgeschlossen (Task #130).
+  - `routes/admin/cancellations.ts`: negiert `price`/`deposit_price` beim Insert; TSE-Snapshot bekommt dieselben (schon negierten) Werte übergeben statt einer eigenen `receiptType`-Vorzeichenlogik.
+  - `tse/processData.ts`: `buildKassenbelegProcessData()`/`KassenbelegSnapshot` verlieren das `receiptType`-Feld und die interne Vorzeichenlogik komplett — reine Summierfunktion, Aufrufer liefert bereits korrekt signierte Beträge (3 Aufrufstellen angepasst: `register-session.ts` ×2, `cancellations.ts`, `receipt/qr.ts`).
+  - `exports/dsfinvk/rows.ts`/`load.ts`: `isStornoBeleg`-Flag komplett entfernt (war nur noch für die jetzt überflüssige Vorzeichenumkehr da) — `priceEuros`/`depositPriceEuros` werden direkt summiert.
+  - `receipt/data.ts`: `assembleReceiptData()` verliert die eigene `isCancellation`-basierte Vorzeichenumkehr — `positions` unverändert durchgereicht; `isCancellation` bleibt nur für die "Stornobeleg"-Beschriftung erhalten.
+  - `reports.ts` (`/cash-balance`), `exports.ts` (Excel-Tages-/Veranstaltungsexport): `receipt_type = 'sales_receipt'`-Filter durch `receipt_type != 'training'` ersetzt — Bonstorno trägt jetzt über sein eigenes Vorzeichen korrekt bei (löst nebenbei Task #126 — Excel-Export-Verhalten bei Storno war nie verifiziert).
+  - `closing/blocks.ts`: Z-Bon zeigt jetzt drei eigene Zeilen statt einer gemeinsamen "Stornos/Kostenfrei"-Zeile.
+  - Neue/erweiterte Tests: `closing/totals.test.ts` (komplett neu), `cancellations.integration.test.ts` (negierte Werte direkt geprüft + `total_gross`/`total_bonstorno`), `processData.test.ts`, `qr.test.ts`, `receipt/data.integration.test.ts` (neuer Regressionstest), `dsfinvk/rows.test.ts`, `exports.dsfinvk.integration.test.ts` (neuer Bonstorno-End-to-End-Test), `exports.excel.integration.test.ts` (Bonstorno in Tages- und Veranstaltungsexport), `reports.integration.test.ts` (Bonstorno reduziert `/cash-balance` — der ursprünglich gemeldete Fehler).
+  **Nachträglich geklärt (D-069, siehe eigener Eintrag unten):** GV_TYP-Einstufung `Pfand`/`PfandRueckzahlung` bei einer Bonstorno-Pfandzeile. **Weiterhin offen, bewusst nicht selbst entschieden:** Task #135 (`cancels_invoice_id` entfernen oder Fall A implementieren — unabhängig von diesem Fix, weiterhin offen).
+
+- [Finding] **D-069** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-12 — Kontext: Bei der Bonstorno-Vorzeichen-Neukonzeption (D-068) gefunden
+  `exports/dsfinvk/rows.ts`s `GV_TYP`-Einstufung für eine Pfand-Zeile (`Pfand` vs. `PfandRueckzahlung`) richtete sich zunächst nach dem **Ergebnis**-Vorzeichen von `it.depositPriceEuros`. Für eine normale Verkaufsbuchung korrekt, aber für eine **Bonstorno, die eine Leergutrückgabe-Position (Artikel mit bereits negativem `deposit_price` in den Stammdaten) storniert**, hätte das die Zeile fälschlich als `Pfand` (Einzahlung) statt `PfandRueckzahlung` (Auszahlung) eingestuft — die Negation dreht das Vorzeichen ja gerade um.
+  **Nutzerfragen zur Absicherung (2026-09-12):** (1) Greift die Klassifikation auf bereits festgeschriebene Bon-Attribute zurück oder auf den (potenziell inzwischen geänderten) Artikelstamm? (2) Gibt es nicht ohnehin schon ein Storno-Flag, das sich dafür wiederverwenden ließe? Beide Fragen mit Code-Beleg beantwortet: `it.depositPriceEuros` stammt aus dem zum Buchungszeitpunkt eingefrorenen `order_item.deposit_price`-Snapshot (keine erneute Artikelstamm-Abfrage beim Export), und `invoice.receipt_type='cancellation'` existierte bereits als Flag — musste nur wieder bis zu `SourceVorgang` durchgereicht werden (war beim D-068-Umbau zusammen mit `isStornoBeleg` entfernt worden).
+  **Entscheidung (Nutzervorgabe 2026-09-12):** Einstufung nach dem *ursprünglichen* Charakter des Artikels (Pfand-erhebend vs. -rückzahlend), nicht nach dem resultierenden Vorzeichen — konsistent mit Anhang I's eigenem "Warenrücknahme"-Beispiel (S. 115): eine Storno bleibt im ursprünglichen Umsatz-Topf, nur das Vorzeichen dreht.
+  **Umgesetzt 2026-09-12:** `SourceVorgang` bekommt ein neues, bewusst eng begrenztes Feld `isBonstorno: boolean` (gesetzt aus `invoice.receipt_type==='cancellation'` in `load.ts`; immer `false` für AVBestellung/AVSonstige) — Doc-Kommentar warnt explizit, dass es **ausschließlich** für diese eine GV_TYP-Entscheidung gilt und niemals zum erneuten Umdrehen eines Euro-Betrags verwendet werden darf (genau das D-068 beseitigt hat). `rows.ts`: `originalSign = v.isBonstorno ? -it.depositPriceEuros : it.depositPriceEuros` rekonstruiert für die Einstufung das ursprüngliche Vorzeichen, der tatsächliche gebuchte Betrag (`depositBrutto`/`STK_BR`) bleibt unverändert der echte (ggf. negative) Wert. Zwei neue Tests in `dsfinvk/rows.test.ts` (Bonstorno auf normalen Pfand-Artikel bleibt `Pfand` trotz jetzt negativem Betrag; Bonstorno auf Leergut-Artikel bleibt `PfandRueckzahlung` trotz jetzt positivem Betrag).
+
+- [Finding] **D-070** (mittel, Betrieb / Installation & Update) — Gefunden 2026-09-12 — Kontext: Nutzer meldet live einen seit 25+ Minuten hängenden `sudo /opt/fairpos/scripts/install/update.sh`-Lauf auf dem Produktivserver, fest bei `npm ci`
+  Untersuchung ergab: kein echter Hänger, sondern ein aktiver, aber unnötig teurer nativer Kompilierlauf. `npm ci` (ohne `--omit=dev`, notwendig weil `npm run build` echte Build-Werkzeuge aus `devDependencies` — `typescript`, `vite`, `@sveltejs/kit` — braucht) installiert auch `testcontainers` (`packages/backend/package.json`, nur für Integrationstests). Dessen Kette `dockerode` → `docker-modem` → `ssh2` zieht `ssh2`s optionale native Crypto-Beschleunigung sowie `cpu-features` mit — beide werden bei **jedem** `npm ci`-Lauf per `node-gyp` komplett neu aus C-Quellcode gebaut (kein Zwischenstand wird über `npm ci`-Läufe hinweg wiederverwendet, da `npm ci` `node_modules` jedes Mal vollständig neu aufbaut), obwohl beide im Produktivbetrieb nie verwendet werden — `ssh2` fällt ohne den nativen Build klaglos auf reines JavaScript zurück (eigenes `install.js` fängt einen Fehlschlag bereits ab und bricht nicht ab). Auf schwächerer Server-Hardware (bestätigt per `top`: 7 GB RAM, Load ~2,7, mehrere `python3`/`gyp`-Prozesse mit 90%+ CPU) macht das 20-30+ Minuten pro Update aus, bei jedem einzelnen Lauf.
+  **Verifiziert vor dem Fix:** Kein `pre`-/`postinstall`-Skript im eigenen Code (`package.json` in Root/shared/backend/frontend). Über `package-lock.json`s `hasInstallScript`-Flag geprüft, welche Pakete überhaupt ein Install-Skript mitbringen: `cpu-features`, `ssh2` (beide nur über `testcontainers`/`dockerode`, nie im Produktivcode referenziert), `protobufjs` (ebenfalls nur über `dockerode`/`@grpc/proto-loader` in der testcontainers-Kette — Skript-Inhalt gelesen: reiner Versionsschema-Warnhinweis, folgenlos überspringbar), `fsevents` (macOS-only, auf Linux ohnehin nie installiert), `esbuild` (echte Build-Abhängigkeit von `vite` — Skript-Inhalt gelesen: verlinkt nur lokal die bereits per `optionalDependencies` heruntergeladene plattformspezifische Binary, kein Netzwerkzugriff, muss also erhalten bleiben).
+  **Fix 2026-09-12:** `npm ci --ignore-scripts` (überspringt alle Install-Skripte, auch die harmlosen) gefolgt von einem gezielten `npm rebuild esbuild` (holt nur das für den Frontend-Build tatsächlich benötigte Skript nach) — in `scripts/install/03-build.sh` (Erstinstallation) und `scripts/install/update.sh` (Update-Ablauf) sowie den entsprechenden manuellen Befehlen in `docs/Installationsanleitung.md` (Abschnitt 6 "Bauen" und Abschnitt 12 "Update", manuelle Alternative zu `update.sh`). Lokal verifiziert: `npm ci --ignore-scripts --prefer-offline` (541 Pakete) dauert 2m23s statt der zuvor beobachteten 25-45+ Minuten; `npm rebuild esbuild` danach funktioniert (`require('esbuild').version` liefert `0.28.2`); `ssh2`/`cpu-features` bauen dabei nachweislich keine native Binary mehr (`build/*.node` fehlt in beiden Paketen).
+  **Live auf dem Produktivserver bestätigt (2026-09-12):** Nutzer berichtet nach Commit/Pull des Fixes einen `update.sh`-Lauf von unter einer Minute — zuvor 45+ Minuten für denselben Schritt auf derselben Hardware.
+
+- [Finding] **D-065** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 gefunden
+  Die offizielle DSFinV-K-2.4-Spezifikation (Anhang E) nennt für mehrere Geldbetrags-Felder 5 Nachkommastellen (`Z_UMS_BRUTTO`/`Z_UMS_NETTO`/`Z_UST`, `BON_BRUTTO`/`BON_NETTO`/`BON_UST`, `POS_BRUTTO`/`POS_NETTO`/`POS_UST`, `STK_BR`), FairPOS rundete diese Werte aber durchgängig auf 2 Nachkommastellen (`rows.ts`, `toFixed(2)`). `index.xml` deklarierte trotzdem schon vorher korrekt `Accuracy=5` für diese Felder — laut DTD unproblematisch (eine höhere deklarierte als tatsächliche Genauigkeit ist explizit erlaubt), aber ungenutzt.
+  **Konkret bewertet (2026-09-12), auf Nutzeranfrage:** Ja, die 2-Dezimalstellen-Rundung verursachte einen echten, auditor-sichtbaren Rundungsfehler. Ursache: `articleNetto = articleBrutto / (1 + taxRate/100)` wird intern mit voller Fließkomma-Genauigkeit berechnet und aufsummiert, aber jede Zeile (`POS_NETTO`/`POS_UST`) UND jedes Aggregat (`BON_NETTO`/`BON_UST`, `Z_UMS_NETTO`/`Z_UST`) wird unabhängig voneinander separat gerundet — kein Zusammenhang zur Berechnungs-*Reihenfolge*, reines Formatierungsproblem. Beispiel (3× 1,99 € brutto, 19% USt): bei 2 Nachkommastellen ergeben die von Hand aufsummierten Einzelzeilen 5,01 €/0,96 € USt, während das gedruckte Aggregat (aus der ungerundeten Summe, einmal gerundet) 5,02 €/0,95 € zeigt — ein echter 1-Cent-Widerspruch bei einem gewöhnlichen 3-Positionen-Bon. Bei 5 Nachkommastellen verschwindet das (beide Pfade ergeben exakt 5,01681/0,95319).
+  **Umgesetzt 2026-09-12:** Neue Funktion `euro5()` (`toFixed(5)`) neben der bestehenden `euro()` (`toFixed(2)`) in `exports/dsfinvk/rows.ts` — angewendet auf genau die 10 Felder mit spec-gemäßer `Accuracy=5` (`STK_BR`, `POS_BRUTTO`/`POS_NETTO`/`POS_UST` je Artikel- und Pfandzeile, `BON_BRUTTO`/`BON_NETTO`/`BON_UST`, `Z_UMS_BRUTTO`/`Z_UMS_NETTO`/`Z_UST`). Alle 2-Dezimalstellen-Felder (`UMS_BRUTTO`, `BASISWAEH_BETRAG`, `Z_ZAHLART_BETRAG`, `ZAHLART_BETRAG_WAEH`, `Z_SE_ZAHLUNGEN`, `Z_SE_BARZAHLUNGEN`) bleiben unverändert bei `euro()`. Keine Änderung an der eigentlichen Berechnung (war schon ungerundet) und an `closing/totals.ts`/dem Z-Bon-PDF (rein Brutto-Cent-basiert, keine Netto/USt-Division, daher nicht betroffen). Neuer Regressionstest in `rows.test.ts` (3×1,99€-Beispiel, verifiziert exakte Übereinstimmung von Zeilensumme und Aggregat bei 5 Nachkommastellen); bestehende `STK_BR`/`POS_BRUTTO`-Erwartungswerte in `rows.test.ts` und `exports.dsfinvk.integration.test.ts` auf 5-stelliges Format aktualisiert. Unit-Tests grün, `tsc --noEmit` clean.
+
+- [Finding] **D-063** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 (`index.xml` gegen die offizielle DTD verifiziert) gefunden
+  Das jetzt korrekte `index.xml` (`exports/dsfinvk/index-xml.ts`) deklariert keine `ForeignKey`/`VariablePrimaryKey`-Beziehungen zwischen den Tabellen (z. B. `transactions.csv.BON_ID` ↔ `lines.csv.BON_ID`/`transactions_vat.csv.BON_ID`/`datapayment.csv.BON_ID`/`transactions_tse.csv.BON_ID`), obwohl die DTD (`gdpdu-01-09-2004.dtd`) das vorsieht und die offizielle Referenz-`index.xml` (bzst.de) es durchgängig nutzt. Fachlich unschädlich (jede Tabelle bleibt für sich korrekt lesbar), aber ein Prüfungstool könnte die Tabellen ohne diese Angabe nicht automatisch verknüpfen (JOIN von Hand nötig statt automatisch).
+  Kein Handlungsbedarf jetzt — nice-to-have für spätere Verbesserung, kein Compliance-Blocker.
+  **Korrektur des ursprünglichen Findings (2026-09-12):** Die obige Behauptung "die offizielle Referenz-`index.xml` (bzst.de) nutzt es durchgängig" war **sachlich falsch**. Bei der Umsetzung erneut direkt gegen die Referenzdatei geprüft (`grep` auf `ForeignKey`/`PrimaryKey` in der aus `dsfinvk_2_4.zip`, bzst.de, extrahierten `02_index.xml/index.xml`, ~1639 Zeilen/20 Tabellen): **null** Treffer. Die DTD (`gdpdu-01-09-2004.dtd`, seit Version 1.5, 2004-09-01) unterstützt `ForeignKey`/`PrimaryKey` zwar, aber BZSt's eigene Referenz macht davon an keiner einzigen Stelle Gebrauch.
+  **Umgesetzt 2026-09-12:** Da die Einstufung als bloßes "Nachziehen der Referenz" damit entfällt, wurde dies als bewusste, freiwillige, DTD-konforme Erweiterung umgesetzt (nicht als Anpassung an die Referenz) — kostet nichts, macht die `BON_ID`-Verknüpfung aber für Prüftools, die den DTD-Mechanismus auswerten, maschinenlesbar. `exports/dsfinvk/index-xml.ts`: `transactions.csv`s (Bonkopf) `BON_ID` wird jetzt als `VariablePrimaryKey` statt `VariableColumn` ausgegeben (per DTD `VariablePrimaryKey+, VariableColumn*` an den Anfang der Tabelle vorgezogen, unabhängig von der tatsächlichen Feldreihenfolge im Row-Objekt). `lines.csv`, `transactions_vat.csv`, `datapayment.csv`, `transactions_tse.csv` und `allocation_groups.csv` — die fünf Tabellen, die tatsächlich ein `BON_ID`-Feld gegen `transactions.csv`/Bonkopf führen (per `types.ts`/`rows.ts` einzeln verifiziert) — bekommen je ein `<ForeignKey><Name>BON_ID</Name><References>Bonkopf</References></ForeignKey>` ans Ende ihres `VariableLength`-Inhalts (per DTD-Grammatik zwingend nach allen `VariableColumn`/`VariablePrimaryKey`-Elementen). `lines_vat.csv` bekommt bewusst **keinen** Eintrag, obwohl es ebenfalls ein `BON_ID`-Feld führt: sein natürlicher Schlüssel ist zusammengesetzt (`BON_ID`+`POS_ZEILE`) und referenziert `Bonpos` (lines.csv), nicht `Bonkopf` direkt — außerhalb des Umfangs dieser einfachen, gleichnamigen Verknüpfung. Neue Unit-Tests in `index-xml.test.ts` (VariablePrimaryKey-Reihenfolge, ForeignKey-Platzierung, kein ForeignKey auf `transactions.csv` selbst). Zusätzlich manuell gegen die echte DTD validiert (siehe D-064-Eintrag unten für Details zum Validierungsverfahren) — eine vollständige, alle 15 Dateien abdeckende `index.xml` wurde generiert und bestand die Validierung.
+
+- [Finding] **D-064** (niedrig, Backend / DSFinV-K-Export) — Gefunden 2026-09-08 — Kontext: Bei Task #122 gefunden
+  `index.xml`s `VariableColumn`-Elemente lassen `Description` (Klartext-Erläuterung je Feld) und `MaxLength` (Performance-Hinweis für `VariableLength`-Tabellen) bewusst weg — beide sind laut DTD optional, ihr Fehlen macht das Dokument nicht ungültig (per `xmllint --valid` gegen die echte, offizielle DTD bestätigt), aber `Description` würde einem Prüfer die Feldbedeutung direkt in der `index.xml` zeigen statt im separaten Anhang-E-Dokument nachschlagen zu müssen.
+  Kein Handlungsbedarf jetzt — nice-to-have für spätere Verbesserung, kein Compliance-Blocker.
+  **Umgesetzt 2026-09-12:** `exports/dsfinvk/index-xml.ts` bekommt eine neue `COLUMN_DESCRIPTIONS`-Lookup-Tabelle (Spaltenname → `{ description, maxLength? }`), deren Werte **wörtlich** aus der offiziellen Referenz-`index.xml` (bzst.de, `dsfinvk_2_4.zip`, `02_index.xml/index.xml`) übernommen wurden — jede von FairPOS verwendete Spalte wurde einzeln per `<Name>SPALTE</Name>` in der Referenz nachgeschlagen (automatisiert per Python/`xml.etree`, `Table`-Kontext berücksichtigt), keine selbst formulierten Texte (siehe AGENTS.md "Compliance-Prüfungen gegen offizielle Standards"). Für zwei Spalten (`UST_SCHLUESSEL`, `TSE_ID`) verwendet die Referenz je nach Tabelle unterschiedliche Formulierungen — dafür eine kleine `COLUMN_DESCRIPTION_OVERRIDES`-Map (Datei→Spalte→Text) zusätzlich zur Flat-Map. `MaxLength` wird nur für `AlphaNumeric`-Spalten gesetzt (bei `Numeric` laut DTD verboten), Werte ebenfalls wörtlich aus der Referenz. Jede `Table` bekommt zusätzlich eine `<Description>` direkt nach `<Name>` — Wert ist der eigene Dateiname (`cashpointclosing.csv` etc.), exakt die Konvention, die die Referenz selbst durchgängig verwendet (per Beispiel gegengeprüft: `<URL>cashpointclosing.csv</URL><Name>Stamm_Abschluss</Name><Description>cashpointclosing.csv</Description>`). Reihenfolge der neuen Elemente (`Name, Description?, (Numeric | (AlphaNumeric, MaxLength?) | Date)` auf Spaltenebene; `URL, Name?, Description?, ...` auf Tabellenebene) folgt exakt der DTD-Grammatik. Erweiterte Unit-Tests in `index-xml.test.ts` (Table-Description, Spalten-Description, MaxLength nur bei AlphaNumeric). Da im Projekt kein `xmllint` verfügbar war, zusätzlich manuell mit Python/`lxml` gegen die echte, unveränderte `gdpdu-01-09-2004.dtd` geprüft: eine vollständige, alle 15 CSV-Dateien abdeckende `index.xml` wurde aus dem echten Code generiert und validiert fehlerfrei (nach einem lokalen, nur für die Prüfung selbst nötigen Workaround für eine vorbestehende, nicht-deterministische `Media`-Content-Model-Regel in der DTD selbst — betrifft auch die unveränderte offizielle Referenzdatei identisch, also kein durch diese Änderung eingeführtes Problem). Unit-Tests (375/375) grün, `tsc --noEmit` clean.
+
+- [Task] **#127** Tests für nachträgliche Datenänderungen (Artikelname, Artikelpreis, USt-Satz etc.)
+  **Klassifikation: Test-Aufgabe / ggf. Datenintegritäts-Prüfung.**
+  Angelegt 2026-09-09 (Nutzerwunsch).
+
+  Zu klären war: was passiert mit bereits verkauften/historischen Belegen
+  (Rechnungen, Z-Bons, Exporte), wenn Stammdaten (Artikelname, -preis,
+  USt-Satz) nachträglich geändert werden — bleiben vergangene Belege
+  unverändert (Snapshot auf `order_item` zum Verkaufszeitpunkt), oder
+  zeigen rückwirkend angezeigte/exportierte Werte die **neuen** Stammdaten?
+  Ähnliche Problemklasse wie Task #112 (Firmendaten/Logo werden live statt
+  eingefroren geladen) — hier aber für Artikeldaten/Steuersätze.
+
+  **Abgeschlossen 2026-09-12 (Nutzerwunsch):** als konkreter Prüfpunkt in
+  `docs/Manueller-Testplan.md` Abschnitt 3 ("Admin: Stammdaten") verankert,
+  direkt bei der Artikel-Checkliste — Artikel verkaufen, danach
+  Name/Preis/USt-Satz ändern, dann verifizieren, dass Rechnungs-PDF/Reprint,
+  die Z-Bon-Summen des betroffenen Tagesabschlusses und der
+  DSFinV-K-Export (`lines.csv`/`lines_vat.csv`) für den historischen
+  Vorgang unverändert bleiben. Die eigentliche Durchführung (welche Felder
+  tatsächlich Snapshot vs. live sind) passiert damit im Rahmen des
+  bestehenden Task #47 (voller manueller Regressionstest), nicht als
+  eigenständige Code-Prüfung jetzt — dieser Task war rein organisatorischer
+  Natur (fehlender Prüfpunkt in der Checkliste), kein bestätigter Bug.
+
+- [Task] **#132** TSE-Zertifikatsablauf prüfen und warnen (Self-Test + Zeitsync bleiben grün, obwohl Signieren nicht mehr geht)
+  **Klassifikation: Bug/Feature, live gefunden (2026-09-12).** Nutzer
+  berichtet: TSE zeigte weiterhin bestandenen Self-Test und synchronisierte
+  Zeit, Transaktionssignaturen schlugen aber fehl — Ursache war ein
+  abgelaufenes TSE-Zertifikat. `worm_info_certificateExpirationDate`
+  (`WormDLL.h`) wurde weder vom manuellen "TSE testen" noch vom
+  zyklischen Hintergrund-Health-Check (`tse/healthJob.ts`, prüfte bisher
+  nur `hasValidTime`/`hasPassedSelfTest`) ausgewertet — beide blieben
+  also "grün", bis der erste echte Signierversuch fehlschlug.
+
+  **Wichtiger Fund zur Uhrzeit:** `WormDLL.h`-Doku zu
+  `worm_info_certificateExpirationDate`: *"This is the timestamp (as
+  seconds since Unix Epoch) after which the certificate... will be
+  invalid."* — der Wert ist ein **voller Unix-Timestamp mit Uhrzeit**,
+  keine reine Kalenderdatum-Angabe (erklärt den beobachteten Effekt: die
+  TSE wurde am Ablauftag gegen ca. 15 Uhr ungültig, nicht erst um
+  Mitternacht).
+
+  **Umgesetzt 2026-09-12 (Phase 1 eines gemeinsamen TSE-Task-Konzepts,
+  siehe Chat):**
+  - Neue, reine Funktion `certificateExpiresTodayOrEarlier()` in
+    `tse/healthJob.ts` — vergleicht auf Kalendertag-Ebene (nicht exakter
+    Zeitpunkt), sodass die Warnung bereits ab Beginn des Ablauftags
+    erscheint statt erst nach dem exakten Ablaufmoment. Server-lokale
+    Zeitzone (`Date.getFullYear/Month/Date`), 4 neue Unit-Tests
+    (`healthJob.test.ts`).
+  - `tick()` prüft das jetzt bei **jedem** Tick, unabhängig vom
+    Self-Test/Zeitsync-Zweig (genau das Problem: beide können grün
+    bleiben, während das Zertifikat abgelaufen ist) — schreibt einmalig
+    (nicht bei jedem Tick) eine `warning`-Zeile ins `system_log`, mit
+    Datum **und** Uhrzeit im Text. 2 neue Integrationstests
+    (`healthJob.integration.test.ts`): einmalige Warnung bei bereits
+    abgelaufenem Zertifikat, keine Warnung bei gültigem Zertifikat.
+  - Manueller "TSE testen"-Dialog (`settings/tse/+page.svelte`): Feld
+    "Zertifikat gültig bis" zeigt jetzt Datum **und** Uhrzeit
+    (`toLocaleString` statt `toLocaleDateString`) und wird rot
+    (`.error-text`, bereits global in `admin/+layout.svelte` definiert)
+    mit Warntext dargestellt, wenn `certificateExpiresTodayOrEarlier()`
+    zutrifft — löst damit auch die "Uhrzeit-Frage" (Punkt 3): Uhrzeit wird
+    jetzt überall mit angezeigt, wo der Rohwert gerendert wird (einzige
+    Stelle im Frontend, verifiziert per `grep`).
+  - **Nebenbefund direkt mitbehoben:** Die Dashboard-Kachel
+    "TSE-Zustand" (`admin/+page.svelte`) behandelte `severity: 'error'`
+    bisher identisch zu "gesund" (zeigte weiterhin "✓ Gesund") — jetzt
+    eigene Darstellung ("⛔ Fehler", neue `.tile.error`-Rot-Variante neben
+    dem bestehenden `.tile.warn`).
+  - Alle drei explizit geforderten Punkte damit erledigt. `tsc --noEmit`
+    (Backend + Frontend/`svelte-check`, 455 Dateien) clean, volle
+    Unit-Suite 379/379, `healthJob.integration.test.ts` 10/10 grün.
+
+  **Bewusst nicht umgesetzt, weiterhin offen:** die im Task selbst gestellte
+  Frage nach einer frühzeitigeren Vorwarnung (30/60 Tage vor Ablauf,
+  zusätzlich zum "heute oder in der Vergangenheit"-Schwellwert) — reine
+  Produktentscheidung, kein technisches Hindernis. Bei Bedarf als eigener,
+  kleiner Task nachreichbar. Siehe weiterhin Task #133 (aktiver
+  Signaturtest) als robusterer, direkterer Ansatz für Signierprobleme
+  allgemein — Teil desselben TSE-Task-Konzepts, als nächste Phase geplant.
+
+- [Task] **#130** Echter Trainingsmodus (DSFinV-K `AVTraining`) implementieren
+  **Klassifikation: Feature.** Angelegt 2026-09-10 (Nutzerwunsch) als
+  Diskussionsstand ohne finale Design-Entscheidung — siehe die
+  Originalanforderungen (offizielle DSFinV-K-2.4-Spezifikation, bzst.de,
+  Abschnitt 4.2.6 "Trainingsbuchungen" + Anhang B "AVTraining"): Training
+  muss weiterhin über die TSE laufen (kein "daran vorbei"), muss aktiv
+  angesteuert werden, muss vollständig dokumentiert/gekennzeichnet sein
+  (`BON_TYP=AVTraining`), darf den Kassenabschluss nicht beeinflussen, und
+  darf keine echte Zahlung entgegennehmen (simulierte Zahlart erlaubt).
+
+  **Umgesetzt 2026-09-12**, nach dem vom Nutzer bereits im Detail
+  freigegebenen Konzept (Kassen-Flag statt Session-/Event-Toggel):
+
+  **Kernentscheidung recherchiert und bestätigt:** `AVTraining` braucht
+  **keinen eigenen TSE-`processType`** — verifiziert gegen AEAO zu §146a
+  Nr. 2.2.3.5/2.2.3.6 und DSFinV-K 2.4 Anhang I. Eine Trainingsbuchung wird
+  weiterhin ganz normal mit dem TSE-`processType` `Kassenbeleg-V1` signiert,
+  kein Eingriff in `native/tse-cli` nötig — das war die im Task als
+  "wichtigste technische Unbekannte" offen gelassene Frage.
+  **Nachträglich korrigiert (D-071, siehe eigener Eintrag unten):** die
+  ursprüngliche Umsetzung beließ es fälschlich rein bei einer
+  Export-Klassifikation in `exports/dsfinvk/rows.ts`/`load.ts` — das im
+  `processData` selbst eingebettete `<Vorgangstyp>`-Feld (`tse/
+  processData.ts`) blieb unverändert `Beleg`, auch für Trainingsbuchungen.
+
+  **Wichtigste Korrektheits-Detail — Z_GV_TYP-Ausschluss:** `rows.ts`s
+  `businesscaseTotals`-Map (feeds `businesscases.csv`/Z_GV_TYP) hatte
+  vorher keinerlei Filter auf `bonTyp` — jeder Vorgang floss unbedingt ein.
+  Die beiden `addToBusinesscase(...)`-Aufrufe (Artikel- und Pfandzeile)
+  werden jetzt für `bonTyp==='AVTraining'` übersprungen, während
+  `transactions.csv`/`lines.csv`/`lines_vat.csv`/`transactions_vat.csv`
+  weiterhin die volle Dokumentation bekommen (Vorgabe der Spezifikation:
+  Trainingsbuchungen müssen protokolliert bleiben, dürfen nur nicht in die
+  Summen einfließen). **Zusätzlich, über die ursprüngliche Analyse hinaus
+  bei der Umsetzung gefunden und mitbehoben:** dieselbe Aggregat-vs.-
+  Dokumentation-Unterscheidung gilt genauso für `payment.csv`/Z_Zahlart und
+  `cash_per_currency.csv` (beides `Z_`-Kassenabschluss-Aggregate wie
+  `businesscases.csv`, siehe Abschnitt 6.1) — `paymentTotals` schließt
+  `AVTraining` jetzt ebenfalls aus, während `datapayment.csv` (Bonkopf-
+  Zahlarten, pro-Vorgang) unverändert jede Zahlung dokumentiert. Ohne diesen
+  zusätzlichen Fix wäre ein Trainingsumsatz zwar aus Z_GV_TYP verschwunden,
+  aber unbemerkt weiterhin in den Zahlarten-Summen des Exports aufgetaucht.
+
+  **`bonTyp`-Herleitung — vom Register, nicht vom einzelnen Vorgang:** Ein
+  Bonstorno (`receipt_type='cancellation'`) auf einer Trainingskasse muss
+  ebenfalls als `AVTraining` exportiert werden, nicht als `Beleg`/
+  `AVSonstige`. `load.ts` liest `register.is_training` deshalb **einmal pro
+  Kassenabschluss** (nicht per-Zeilen-Join) — verifiziert, dass das
+  korrekt ist: `daily_closing_id` wird für `invoice`/`service_order`/
+  `order_cancellation` ausschließlich von `closeRegister()`
+  (`routes/admin/closings.ts`) gesetzt, und zwar immer scoped auf
+  `WHERE register_id = $1` — jeder Vorgang in einem `daily_closing` gehört
+  also zwangsläufig zum selben Register wie der Abschluss selbst. `isBonstorno`
+  bleibt unabhängig weiter aus `receipt_type==='cancellation'` abgeleitet
+  (D-069-Pfand-Klassifikation) — ein Trainings-Bonstorno ist gleichzeitig
+  `bonTyp: 'AVTraining'` und `isBonstorno: true`.
+
+  **Nebenbei gefundener und mitbehobener Bug (kein separates Finding, direkt
+  im Rahmen dieses Tasks entdeckt):** `rows.ts`s No-TSE-Fallback für
+  `transactions_tse.csv` (`TSE_TA_FEHLER`-Zweig) leitete `TSE_TA_VORGANGSART`
+  bisher ad hoc über `bonTyp === 'Beleg' ? 'Kassenbeleg-V1' : bonTyp` her —
+  für `AVBestellung` stand dort fälschlich der rohe `BON_TYP`-String
+  `"AVBestellung"` statt `"Bestellung-V1"`, abweichend von der signierten
+  Variante direkt darüber (`tseProcessTypeFor(v.bonTyp)`). Direkt relevant
+  für `AVTraining` (hätte sonst `"AVTraining"` statt `"Kassenbeleg-V1"`
+  gezeigt, sobald eine Trainingsbuchung ohne TSE-Signatur landet) — beide
+  Zweige rufen jetzt einheitlich `tseProcessTypeFor()` auf.
+
+  **Alle Änderungen im Einzelnen:**
+  - **DB/Migration:** `db/migrations/0033_register_is_training.sql` —
+    `register.is_training BOOLEAN NOT NULL DEFAULT false`.
+  - **Admin-API** (`routes/admin/registers.ts`): neue Helper-Funktion
+    `registerHasBookings()` (EXISTS-Check über `invoice`/`service_order`/
+    `order_cancellation`, gleiche drei Tabellen wie beim bestehenden
+    `DELETE`-409). `GET /`/`GET /:id`/`POST /`/`PUT /:id` führen
+    `is_training` mit; `GET /:id` liefert zusätzlich `has_bookings`. `PUT
+    /:id` lehnt eine tatsächliche *Änderung* von `is_training` mit 400 ab,
+    sobald die Kasse Buchungen hat — ein erneutes Senden des unveränderten
+    Werts wird nicht abgelehnt (gleiches Präzedenzmuster wie das
+    PIN-Resave in `routes/admin/users.ts`).
+  - **Checkout** (`routes/register-session.ts`): neue Helper-Funktion
+    `receiptTypeForRegister()`; beide `INSERT INTO invoice`-Stellen
+    (Bonkasse-Checkout und Bedienungskasse-Split-Checkout) setzen
+    `receipt_type='training'` statt `'sales_receipt'`, wenn die Kasse als
+    Trainingskasse markiert ist — sonst unverändert (gleiche
+    TSE-Signierung, gleiche `nextReceiptNumber()`-Sequenz wie jede andere
+    Buchung, exakt wie im Konzept vorgesehen). `GET /me` und
+    `GET /registers/:id` liefern `is_training` für das Frontend mit.
+  - **DSFinV-K-Export:** `exports/dsfinvk/rows.ts` (`SourceVorgang.bonTyp`
+    um `'AVTraining'` erweitert, `tseProcessTypeFor()`-Branch, Z_GV_TYP-/
+    Z_Zahlart-Ausschluss, No-TSE-Fallback-Fix — alle Details oben) und
+    `exports/dsfinvk/load.ts` (`isTrainingRegister`-Flag einmal pro Closing
+    gelesen, auf alle drei Vorgangstypen angewendet).
+  - **Belegdruck** (`receipt/types.ts`/`data.ts`/`demo.ts`/`blocks.ts`):
+    `ReceiptData.isTraining`, geladen über einen Join auf
+    `register.is_training` (analog zu `isCancellation`). Zwei
+    `T R A I N I N G`-Blöcke (Formatierung wie `STORNOBELEG`) — direkt nach
+    dem Logo/vor dem Firmennamen, und als letzte Zeile nach "Danke für
+    Ihren Einkauf!" — beide unabhängig von `isCancellation`, ein
+    Trainings-Bonstorno zeigt folglich beide Marker gleichzeitig.
+  - **Z-Bon** (`closing/blocks.ts`/`load.ts`, `routes/admin/closings.ts`):
+    `ClosingContext.is_training`; `buildZBonBlocks()` druckt ein
+    prominentes "TRAININGSKASSE" direkt unter dem Z-BON-Kopf. Keine Änderung
+    an der Summenberechnung — `closing/totals.ts`s bereits vorbereitete
+    `if (inv.receipt_type === 'training') continue;`-Zeile (aus einer
+    früheren Vorarbeit) sorgt bereits dafür, dass eine Trainingskasse
+    (deren Buchungen jetzt tatsächlich alle `receipt_type='training'`
+    tragen) einen reinen Nullabschluss produziert.
+  - **Frontend:** `admin/registers/+page.svelte` — "Trainingskasse"-Checkbox
+    im Anlegen-/Bearbeiten-Formular, per `has_bookings` gesperrt (mit
+    Tooltip/Hinweistext) sobald die Kasse Buchungen hat; kleines
+    "Training"-Badge in der Kassen-Liste. `lib/stores/page-title.ts` — neuer
+    Store `currentRegisterIsTraining`, geschrieben von denselben drei
+    Unterseiten, die bereits `currentRegisterName` schreiben
+    (`register/[id]/+page.svelte`, `.../floor-plan/+page.svelte`,
+    `.../tables/[tableId]/order/+page.svelte`). `register/+layout.svelte`
+    rendert daraus einen durchgehenden, nicht wegklickbaren roten Banner
+    (koexistiert mit normalem Betrieb, anders als der Vollbild-Sperrzustand)
+    — sichtbar auf jeder Unterseite der Bon-/Bedienungskasse. `api.ts`/
+    `@fairpos/shared` `Register`-Typ um `is_training` erweitert.
+  - **Dokumentation:** `docs/Datenmodell.dbml` (`register.is_training`),
+    `docs/Rechtliche-Anforderungen.md` Abschnitt 6.2 (AVTraining-Zeile von
+    "vorgesehen, falls genutzt" auf "umgesetzt" mit den obigen
+    Kernentscheidungen aktualisiert).
+
+  **Neue Tests:** Unit — `exports/dsfinvk/rows.test.ts` (neue Describe
+  "AVTraining (Task #130)": Kassenbeleg-V1-Signierung, volle
+  Dokumentation in transactions/lines/lines_vat/transactions_vat, Ausschluss
+  aus businesscases.csv UND payment.csv/cash_per_currency.csv, AVBestellung/
+  AVSonstige-Quellen werden ebenfalls zu AVTraining), `receipt/blocks.test.ts`
+  (beide `T R A I N I N G`-Marker, Koexistenz mit STORNOBELEG),
+  `closing/blocks.test.ts` (TRAININGSKASSE-Marker). Integration —
+  `routes/admin/registers.integration.test.ts` (freies Umschalten ohne
+  Buchungen, Sperre bei Buchung über alle drei referenzierenden Tabellen,
+  unverändertes Resave wird nicht abgelehnt), `routes/register-session.
+  integration.test.ts` (Bonkasse- und Bedienungskasse-Checkout setzen
+  `receipt_type='training'` auf einer Trainingskasse, `sales_receipt` sonst
+  unverändert), `routes/admin/exports.dsfinvk.integration.test.ts`
+  (Trainingskassen-Rechnung End-to-End: BON_TYP=AVTraining, TSE_TA_
+  VORGANGSART weiterhin Kassenbeleg-V1, vollständig in transactions.csv/
+  lines.csv/datapayment.csv, aber nicht in businesscases.csv/payment.csv;
+  Trainingskassen-Bonstorno exportiert als AVTraining statt Beleg, negierter
+  Betrag bleibt erhalten). Volle Unit-Suite, die genannten
+  Integrationstests, sowie `tsc --noEmit` (Backend) und `svelte-check`
+  (Frontend) grün.
+
+- [Finding] **D-071** (hoch, Backend / TSE-Signierung) — Gefunden 2026-09-12 — Kontext: Nutzer prüfte den Process-Data-Dump-Inhalt einer Trainingskasse live nach der Umsetzung von Task #130
+  Nutzer meldete: der Process-Data-Dump (`tseCli dumpProcessData`, TSE-Tools)
+  zeigte für Buchungen auf einer als Trainingskasse markierten Kasse weiterhin
+  `Beleg^...` statt `AVTraining^...` — obwohl der DSFinV-K-Export dieselben
+  Buchungen bereits korrekt als `BON_TYP=AVTraining` auswies.
+  **Root Cause:** `tse/processData.ts`s `buildKassenbelegProcessData()` hat
+  das `<Vorgangstyp>`-Feld (Anhang I: `<Vorgangstyp>^<Brutto-Steuerumsätze>^
+  <Zahlungen>`, das eigentliche, TSE-signierte, fälschungssichere Inhaltsfeld)
+  fest auf `'Beleg'` verdrahtet — unabhängig von `register.is_training`. Die
+  Task-#130-Umsetzung hatte `AVTraining` ausschließlich als
+  Export-Klassifikation (`exports/dsfinvk/rows.ts`/`load.ts`) behandelt und
+  dabei übersehen, dass dieselbe Information auch in den tatsächlich an die
+  TSE übergebenen, signierten Rohdaten korrekt stehen muss — sonst
+  widerspricht der signierte TSE-Datenbestand dem später erzeugten Export:
+  ein Betriebsprüfer, der den rohen Process-Data-Dump gegen den
+  DSFinV-K-Export abgleicht, hätte einen "Beleg" (echter Umsatz) gefunden,
+  wo der Export "AVTraining" (kein Umsatz) behauptet.
+  **Behoben 2026-09-12:** `KassenbelegSnapshot` bekommt ein neues Pflichtfeld
+  `vorgangstyp: 'Beleg' | 'AVTraining'`; `buildKassenbelegProcessData()`
+  verwendet es statt der festen Zeichenkette. Alle vier Aufrufstellen liefern
+  jetzt den korrekten Wert, abgeleitet aus derselben Quelle wie die
+  Export-Klassifikation (`register.is_training`, nicht aus `receipt_type`
+  allein): `routes/register-session.ts` (beide Checkout-Stellen, über das
+  bereits vorhandene `receiptType`), `routes/admin/cancellations.ts` (neu:
+  `register.is_training` mitgeladen — ein Bonstorno auf einer Trainingskasse
+  signiert jetzt ebenfalls `AVTraining`, konsistent mit dessen
+  `bonTyp`-Export), `receipt/qr.ts` (über das bereits vorhandene
+  `ReceiptData.isTraining` — der QR-Code muss exakt dieselben Rohdaten
+  reproduzieren, die tatsächlich signiert wurden, sonst verifiziert er
+  nicht mehr gegen die echte Signatur). Der TSE-`processType` selbst bleibt
+  unverändert `Kassenbeleg-V1` (bestätigt durch die ursprüngliche
+  #130-Recherche) — nur das eingebettete `<Vorgangstyp>`-Textfeld ändert
+  sich.
+  **Tests:** `tse/processData.test.ts` (neuer Fall: `vorgangstyp: 'AVTraining'`
+  erzeugt `AVTraining^...` statt `Beleg^...`; die 8 bestehenden Fälle
+  explizit auf `vorgangstyp: 'Beleg'` umgestellt, kein stiller Default).
+  Neuer Integrationstest `routes/register-session.integration.test.ts`
+  (liest die tatsächlich an die Stub-TSE gesendeten `finish`-Rohdaten einer
+  Trainingskassen-Buchung und prüft `AVTraining^` als Präfix — genau der
+  Aspekt, den die ursprüngliche Task-#130-Testabdeckung nicht abgedeckt
+  hatte, da sie nur `invoice.receipt_type` prüfte, nie den tatsächlich
+  signierten Rohinhalt). Volle Unit-Suite (390/390) und die betroffenen
+  Integrationstests grün, `tsc --noEmit` clean.
+
+- [Task] **#134** Neues Dokument "Veranstaltungscheckliste" (docs/)
+  **Klassifikation: Doku, angelegt 2026-09-12 (Nutzerwunsch).**
+
+  **Umgesetzt 2026-09-12:** `docs/Veranstaltungscheckliste.md` neu
+  angelegt — vier Abschnitte (Vor der Veranstaltung / Jeden
+  Veranstaltungstag vor Beginn / Jeden Veranstaltungstag nach Abschluss /
+  Nach der Veranstaltung), `- [ ]`-Checkbox-Syntax wie
+  `docs/Manueller-Testplan.md`. Inhalt basiert auf der vom Nutzer
+  vorgegebenen Gliederung/den vorgegebenen Punkten, ergänzt um konkrete
+  FairPOS-Menüpfade (per Grep gegen `routes/admin/+layout.svelte` und die
+  einzelnen Seiten verifiziert, nicht geraten) — u. a. Verweise auf
+  Task #132 (TSE-Ablaufdatum-Prüfung, "TSE testen"-Dialog), die
+  Dashboard-Kacheln (TSE-Zustand, Druckwarteschlange, Ausstehende
+  Tagesabschlüsse, Offene Rechnungen, Uhrzeit-Abweichung-Banner), die
+  Einlage/Entnahme-Funktion der Kassen-Detailseite, und einen kurzen,
+  optionalen Hinweis auf Trainingskassen (Task #130).
+
+  **Recherche zu den drei offenen `TODO`-Markern + der Backup-Frage,
+  ausschließlich gegen offizielle Behördenquellen (gesetze-im-internet.de,
+  siehe AGENTS.md "Compliance-Prüfungen gegen offizielle Standards" —
+  bundesfinanzministerium.de war für die AEAO-/GoBD-Volltexte wie schon
+  in `docs/Rechtliche-Anforderungen.md` Abschnitt 5 dokumentiert wegen
+  Bot-Schutz nicht abrufbar):**
+  1. **Vor der Veranstaltung:** Nutzer-Entwurf sprach von "30 Tage nach
+     Inbetriebnahme" für die TSE-Meldung — der tatsächliche Gesetzestext
+     (§ 146a Abs. 4 AO, gesetze-im-internet.de) nennt **"einen Monat"**,
+     nicht 30 Tage; korrigiert und mit
+     `docs/Organisatorische-Anleitung.md` Abschnitt 1 verlinkt statt neu
+     hergeleitet. Kein weiterer eigenständiger gesetzlicher
+     Vorab-Prüfpunkt gefunden (§ 146a AO und § 5 KassenSichV im
+     Volltext geprüft — keine gesonderte "vor Inbetriebnahme"-Klausel
+     über die ohnehin durchgehend geltende TSE-Zertifizierungspflicht
+     hinaus); explizit als offene Wissenslücke vermerkt (AEAO-Volltext
+     nicht abrufbar).
+  2. **Vor jedem Veranstaltungstag:** keine eigenständige tagesbezogene
+     Rechtspflicht gefunden — § 146 Abs. 1 AO/GoBD verlangen tägliche
+     **Erfassung** und Tagesabschluss, keine bestimmte Vorab-Prüfroutine;
+     im Dokument als solches klargestellt statt eine Pflicht zu erfinden.
+  3. **Nach jedem Veranstaltungstag (Datenarchivierung/-sicherung):**
+     § 147 Abs. 2 Nr. 2 AO verlangt jederzeitige Verfügbarkeit/
+     Lesbarkeit während der 10-Jahres-Frist, aber **keine explizite
+     Frequenzvorgabe** für die Sicherung selbst (weder in § 146/§ 147 AO
+     noch in DSFinV-K v2.4 gefunden). Tägliche Sicherung bleibt
+     dringend empfohlene betriebliche Vorsichtsmaßnahme (bereits in
+     `docs/Organisatorische-Anleitung.md` Abschnitt 3 so beschrieben),
+     aber ohne nachgewiesene eigene Tages-Rechtspflicht — als solches
+     benannt statt stillschweigend als Pflicht behauptet.
+  4. **Nach der Veranstaltung ("Datensicherung?"):** dieselbe Pflicht/
+     Empfehlung wie Punkt 3, nur am Veranstaltungsende angewendet — kein
+     zusätzlicher veranstaltungsende-spezifischer Fund.
+
+  **Housekeeping:** `AGENTS.md`s "Kerndokumente"-Liste um eine Zeile für
+  `docs/Veranstaltungscheckliste.md` ergänzt.
+
+- [Task] **#133** "Signatur testen" — echten Testvorgang gegen die TSE in den TSE-Tools anbieten
+  **Klassifikation: Feature.** Angelegt 2026-09-12 (Nutzerwunsch), direkt
+  motiviert durch Task #132: Self-Test und Zeitsync allein erkennen nicht
+  jedes Signierproblem (#132 — beide waren grün, während das Zertifikat
+  bereits abgelaufen war und echte Signaturen fehlschlugen).
+
+  **Nutzerfrage gelöst — welcher "gefahrlose" Vorgangstyp:** Von den zwei
+  ursprünglich zur Debatte stehenden Kandidaten (`AVBelegabbruch`-Muster
+  wiederverwenden vs. an Task #130/`AVTraining` koppeln) erwies sich
+  `AVBelegabbruch` nach Code-Recherche als eindeutig überlegen, sobald man
+  seine tatsächliche Mechanik nachvollzieht: `tse/signing.ts` nutzt dieses
+  Muster bereits, um eine gestrandete Transaktion (start erfolgreich, finish
+  fehlgeschlagen) folgenlos abzuschließen — ein reiner `start('',
+  Buffer.alloc(0))` gefolgt von `finish(transactionNumber, Kassenbeleg-V1,
+  buildAvBelegabbruchProcessData())`, mit `0.00`-Beträgen, **ohne jemals eine
+  `invoice`/`service_order`/`order_cancellation`-Zeile anzulegen**. Damit war
+  die im Task offen gelassene Frage ("wird das zuverlässig aus DSFinV-K-
+  Export/Kassenabschluss ausgeschlossen?") nicht mehr nur "vermutlich",
+  sondern **beweisbar**: `exports/dsfinvk/load.ts` liest ausschließlich aus
+  genau diesen drei Tabellen — ein Vorgang, der dort nie eine Zeile erzeugt,
+  kann strukturell nie in einem Export oder Kassenabschluss auftauchen.
+  Die Alternative (Kopplung an Task #130/Trainingskasse) hätte zusätzlich
+  eine Kassen-Auswahl in den TSE-Tools gebraucht (systemweite Einstellungs-
+  seite, keine Kassen-spezifische Ansicht) — mit `AVBelegabbruch` entfällt
+  das komplett.
+
+  **Umgesetzt 2026-09-12:**
+  - Neue Route `POST /api/admin/tse/test-signature` (`routes/admin/tse.ts`):
+    führt genau den obigen `start`/`finish`-Zyklus aus und gibt bei Erfolg
+    Transaktionsnummer, Signaturzähler, Signatur, Seriennummer sowie Start-/
+    Endzeit zurück — genug Detail, damit ein Admin visuell bestätigen kann,
+    dass die TSE gerade wirklich neu signiert hat (veränderter Zähler), nicht
+    nur, dass `info` grüne Felder zeigt. Bewusst **nicht** über `tse/
+    signing.ts`s `signTseTransaction()` (die nie wirft und nur die
+    generische, kundenseitige `TSE_UNAVAILABLE_WARNING` liefert) — als
+    Admin-Diagnosewerkzeug wird stattdessen die echte `describeTseError()`-
+    Detailmeldung inkl. SDK-Fehlercode durchgereicht (502 bei Fehlschlag,
+    400 wenn die TSE nicht konfiguriert ist). Erfolgreiche Läufe werden
+    unter der Kategorie `tse_health` protokolliert, wie schon "Zeit
+    synchronisieren".
+  - Frontend (`settings/tse/+page.svelte`): neuer Button "Signatur testen"
+    neben "TSE testen", eigener Dialog mit denselben `.kv`/`.pubkey`-Stilen
+    wie der bestehende "TSE testen"-Dialog. Bewusst weiterhin eine rein
+    manuelle Admin-Aktion (kein automatischer/periodischer Aufruf) — ein
+    Testvorgang verbraucht trotzdem einen Platz im begrenzten
+    Transaktionszähler der TSE.
+  - Neue Typen `TseTestSignatureResult`/`TseTestSignatureResponse` in
+    `lib/api.ts`/`routes/admin/tse.ts`.
+
+  **Tests:** 4 neue Integrationstests in `tse.integration.test.ts`
+  (400 ohne Konfiguration; erfolgreicher Lauf inkl. Rückgabewerten; Nachweis
+  per Stub-CLI-Log, dass `finish` tatsächlich mit `AVBelegabbruch`-Inhalt
+  aufgerufen wird — nicht nur behauptet; 502 mit durchgereichtem SDK-
+  Fehlercode). Volle Unit-Suite und die betroffene Integrationsdatei (36/36)
+  grün, `tsc --noEmit`/`svelte-check` clean.
+
+  **Nebenbefund während der Umsetzung, separat behoben:** siehe D-071 — beim
+  Live-Test der Trainingskasse (Task #130) fiel auf, dass deren
+  Process-Data-Dump weiterhin `Beleg^...` statt `AVTraining^...` zeigte;
+  derselbe `tse/processData.ts`-Code, der hier für `AVBelegabbruch` genau
+  richtig gemacht wurde (eingebettetes `<Vorgangstyp>`-Feld muss zur
+  tatsächlichen Vorgangsart passen), war für `AVTraining` schlicht vergessen
+  worden.
+
+- [Task] **#126** Excel-Export-Verhalten bei Stornos testen
+  **Klassifikation: Test-Aufgabe (Verifikation bestehenden Verhaltens).**
+  Angelegt 2026-09-09 (Nutzerwunsch). Zu testen: Storno einer ganzen
+  Rechnung, Erstellen einer Bonstornorechnung, Storno durch Bedienung bei
+  der Rechnungstellung (`Storno` und `kostenfrei`, `order_cancellation`).
+
+  **Abgeschlossen 2026-09-12:**
+  - **Bonstornorechnung:** bereits über D-068 (2026-09-12) mitgetestet —
+    `exports.excel.integration.test.ts` hat seitdem einen Test, der einen
+    Bonstorno-Vorgang mit negativem Preis im Excel-Export korrekt zeigt.
+  - **Storno einer ganzen Rechnung (Fall A):** nicht testbar — laut Task
+    #135 wurde dieser Weg nie implementiert (`invoice.cancels_invoice_id`
+    ist totes Feld, kein Storno-Button an einer bestehenden Rechnung
+    existiert). Weiterhin offene Design-Entscheidung, unabhängig von diesem
+    Task.
+  - **Storno durch Bedienung (`order_cancellation`, Storno und
+    kostenfrei):** neuer Test bestätigt explizit, dass solche Positionen
+    im Excel-Export **nie** auftauchen — `order_item.invoice_id` bleibt für
+    sie strukturell `NULL` (nie eine Rechnung entstanden), und
+    `EXPORT_SOURCE_COLUMNS`s `JOIN order_item oi ON oi.invoice_id = i.id`
+    ist ein INNER JOIN, kann solche Zeilen also gar nicht erst erreichen —
+    unabhängig vom (bereits vorhandenen) `oi.status IN ('paid','free')`-
+    Filter. Bisher nur vermutet, jetzt durch einen dedizierten Test
+    bewiesen (`exports.excel.integration.test.ts`, 2 Zeilen mit
+    `status='cancelled'`/`'free'`, keine davon erscheint im Export).
+  - **Nebenbei gefundener und behobener Bug (Nutzerauftrag, direkt bei
+    diesem Aufräumen gemeldet):** die "Besteller"-Spalte im Excel-Export
+    zeigte für eine Bonstorno-Zeile bisher **nichts** — `order_item.
+    user_name` wird für die eigenen `order_item`-Zeilen einer Bonstorno-
+    Rechnung (`routes/admin/cancellations.ts`) nie gesetzt (es gibt keinen
+    "Besteller" für eine Stornobuchung). Der eigentlich schon vorhandene
+    Name des stornierenden Admins (`order_item.cancelled_by_name`, wird
+    dort bereits aus `req.adminUser.name` befüllt) wurde in der Export-Abfrage
+    aber nie gelesen. **Nicht generell fehlend, wie zunächst vermutet** —
+    nur an dieser einen Stelle nicht ausgewertet. Behoben:
+    `EXPORT_SOURCE_COLUMNS` liest jetzt `COALESCE(oi.user_name,
+    oi.cancelled_by_name) AS ordering_user_name` — normale Verkäufe
+    unverändert (immer `user_name` gesetzt, `cancelled_by_name` null),
+    Bonstorno-Zeilen zeigen jetzt den stornierenden Admin als "Besteller".
+    Neuer Test bestätigt das.
+  - Alle vier neuen/betroffenen Integrationstests grün, `tsc --noEmit`
+    clean.
+
+- [Task] **#139** Automatisches Drucken des Z-Bons entfernen
+  **Klassifikation: Nutzerwunsch, angelegt und abgeschlossen 2026-09-12.**
+  Bisher wurde bei jedem Tagesabschluss (`closeRegister()` in
+  `routes/admin/closings.ts`) unmittelbar ein ESC/POS-Druckjob für den
+  Z-Bon eingereiht, sofern der Kasse (oder dem System als Fallback) ein
+  Drucker zugeordnet war. Nutzerwunsch: kein automatischer Druck mehr —
+  der Z-Bon soll nur archiviert werden (als PDF, bereits vorhanden über
+  `GET /closings/:id/pdf`), Druck bei Bedarf manuell auslösen (bereits
+  vorhandener `POST /closings/:id/reprint`-Endpoint samt "Drucken"-Button
+  in der Kassenverwaltung).
+
+  **Umsetzung:** der komplette Auto-Print-Block in `closeRegister()`
+  entfernt (Settings-Load für Firmendaten, `resolvePrinterForRegister`,
+  `loadLogoFor`/`loadTaxRates`, `buildZBonBlocks`, `enqueuePrintJob`,
+  `renderBlocksToEscPos`) — dadurch wurden `register.name`/
+  `register.is_training` und mehrere Zwischenwerte (`zeroCounter`,
+  `businessDate`, Settings-Map) in dieser Funktion komplett ungenutzt und
+  wurden mitentfernt; `loadLogoFor`/`loadTaxRates`-Imports gestrichen.
+  `CloseResult` (Backend) und die entsprechenden Frontend-Typen
+  (`packages/frontend/src/lib/api.ts`) verlieren das Feld `print_job_id`
+  ersatzlos, statt es dauerhaft `null` zu belassen. Die Kassenverwaltung
+  (`registers/[id]/+page.svelte`) zeigt jetzt einen festen Hinweis ("Der
+  Z-Bon wird nicht automatisch gedruckt, sondern als PDF archiviert …")
+  statt der bisherigen druckerabhängigen Bedingung, und die Erfolgsmeldung
+  nach dem Abschluss nennt keinen Druckjob mehr.
+
+  Der manuelle Reprint-Pfad war bereits vollständig unabhängig vom
+  Auto-Print-Code (`loadClosingById()` lädt Kontext/Logo/Steuersätze
+  eigenständig aus den persistierten Werten) — keine funktionale Änderung
+  an `/reprint` oder `/pdf` nötig.
+
+  **Tests:** `closings.integration.test.ts` — der bisherige Test "enqueues
+  a print job when the register has a printer" ersetzt durch "does not
+  enqueue a print job when closing a register" (prüft `print_job_id`
+  fehlt in der Antwort und keine `print_job`-Zeile entsteht); der Test zur
+  Standarddrucker-Fallback-Logik ("uses the system-default printer when
+  the register has no own printer") umgebaut auf den `/reprint`-Endpoint,
+  da das die einzige verbliebene Z-Bon-Stelle ist, die überhaupt noch
+  einen Drucker auflöst.
+
+- [Task] **#140** Z-Bon: Storno-Arten unter einer Überschrift mit Gesamtsumme zusammenfassen
+  **Klassifikation: Nutzerwunsch (UI/Layout), angelegt und abgeschlossen
+  2026-09-12.** Die drei seit D-068 getrennten Storno-Abschnitte
+  ("Stornierte Rechnungen", "Kostenfreie Warenabgabe", "Stornierte
+  Bestellungen") hatten bisher je eine eigene fette Überschrift und einen
+  eigenen `hr`-Trenner. Nutzerwunsch: nur noch eine gemeinsame Überschrift,
+  darunter die drei Teilsummen als Zeilen, abschließend eine fette
+  "Gesamt"-Zeile — analog zum bereits bestehenden Muster des Abschnitts
+  "Brutto nach MwSt.-Satz" darüber.
+
+  **Umsetzung** (`packages/backend/src/closing/blocks.ts`,
+  `buildZBonBlocks()`): die drei Text+Row+hr-Blöcke durch eine Überschrift
+  "Stornos und kostenfreie Abgabe", drei `row`-Zeilen (jetzt mit dem
+  jeweiligen Storno-Typ als linkem Label statt generischem "Summe") und
+  eine fette "Gesamt"-Zeile (`total_bonstorno + total_free +
+  total_order_cancellations`) ersetzt, gefolgt von einem einzelnen `hr`.
+  Die zugrunde liegenden Werte in `ClosingTotals`/`computeClosingTotals()`
+  (`closing/totals.ts`) bleiben unverändert (D-068s dreiteilige
+  Aggregation war nie das Problem, nur die Druck-Darstellung) — betrifft
+  daher gleichermaßen den ESC/POS-Druck, die PDF-Archivierung und den
+  manuellen Reprint, da alle drei denselben `PrintBlock[]`-Baustein
+  (`print/blocks.ts`) durchlaufen.
+
+  **Tests:** `closing/blocks.test.ts` — der bestehende Test zu den drei
+  Storno-Zeilen umbenannt/erweitert, prüft jetzt zusätzlich die neue
+  Überschrift und die korrekt summierte "Gesamt"-Zeile
+  (-8,00 + 4,00 + 3,00 = -1,00 EUR im Testfixture).
+
+- [Task] **#141** Manueller "Zeit synchronisieren"-Button behandelt eine falsche TimeAdmin-PIN nicht
+  **Klassifikation: Bug, live gefunden und behoben 2026-09-12.** Nutzer hatte
+  versehentlich eine falsche TimeAdmin-PIN über den manuellen "Zeit
+  synchronisieren"-Button (Einstellungen → TSE) ausgelöst und danach
+  berichtet: weder verschwand die Checkbox "Automatische
+  Zeit-Synchronisation", noch sprang das Dashboard auf einen Fehlerzustand —
+  wiederholter Verdacht des Nutzers, der periodische Health-Job
+  (`tse/healthJob.ts`, Task #64) täte grundsätzlich nichts.
+
+  **Tatsächliche Ursache (per Code-Analyse verifiziert, nicht vermutet):**
+  der Health-Job läuft korrekt (Registrierung in `index.ts` bei Boot,
+  60-Sekunden-Takt bestätigt) und behandelt eine falsche PIN dort bereits
+  richtig (Task #109/#131: `disableAutoMaintain()` + `'error'`-Log-Eintrag).
+  Der manuelle Button (`POST /api/admin/tse/maintain`,
+  `routes/admin/tse.ts`) ruft dieselbe `maintainTse()`-Funktion auf, hatte
+  aber einen komplett eigenen, unvollständigen `catch`-Block: nur ein
+  502-Response an den Browser, **kein** `logSystemEvent`-Aufruf, **kein**
+  `disableAutoMaintain()`. Ein über diesen Button ausgelöster PIN-Fehler war
+  dadurch im System komplett unsichtbar — unabhängig davon, ob der
+  Hintergrund-Job (der nur bei einer *aktuell erkannt ungesunden* TSE
+  überhaupt eingreift, siehe D-072) dieselbe falsche PIN je selbst zu
+  Gesicht bekommen hätte.
+
+  **Behoben:** `routes/admin/tse.ts`s `/maintain`-Route loggt jetzt bei
+  jedem Fehlschlag einen `'error'`-Eintrag (Kategorie `tse_health`) und ruft
+  bei einem PIN-Authentifizierungsfehler `disableAutoMaintain()` auf — exakt
+  dasselbe Verhalten wie der Health-Job, jetzt aus `tse/healthJob.ts`
+  exportiert statt modul-privat. Frontend (`settings/tse/+page.svelte`,
+  `runMaintain()`) lädt nach einem Fehlschlag die Einstellungen neu, damit
+  die Checkbox sofort den neuen (ggf. deaktivierten) Zustand zeigt, statt
+  erst nach einem Seiten-Reload.
+
+  **Tests:** `routes/admin/tse.integration.test.ts` — neuer Test simuliert
+  über die Stub-CLI (`TSE_STUB_MAINTAIN_FAILS`/`_ERROR_CODE=4352`) einen
+  PIN-Authentifizierungsfehler am manuellen Endpunkt und prüft: 502-Antwort,
+  `tse_auto_maintain_enabled` wird auf `false` persistiert, zwei
+  `'error'`-Log-Zeilen (eigene Fehlschlag-Meldung + die "deaktiviert"-Meldung
+  aus `disableAutoMaintain()`).
+
+- [Finding] **D-072** TSE Health-Job: Übergang in "ungesund" wurde nicht sofort geloggt; Dashboard-Kachel für deaktivierte Auto-Sync fehlte
+  **Kontext:** direkt im Zuge von Task #141 gefunden (Nutzer fragte
+  berechtigt: "wenn der manuelle Klick nicht geloggt wurde, hätte der
+  automatische Job es doch später erkennen müssen?"), live am 2026-09-12.
+
+  **Zwei getrennte, zusammenhängende Lücken:**
+  1. **`tick()` in `tse/healthJob.ts` loggte den Übergang healthy →
+     unhealthy (ungültige Zeit/fehlgeschlagener Self-Test) nicht selbst** —
+     anders als der symmetrische "TSE nicht erreichbar"-Zweig, der das schon
+     immer tat. Es wurde nur geloggt, wenn danach tatsächlich ein
+     Sync-Versuch stattfand (Erfolg/Fehlschlag) oder die Checkbox bereits
+     deaktiviert war (einmalige Meldung). Blieb ein Versuch durch die
+     Checkbox oder das 15-Minuten-Retry-Cooldown (Task #109,
+     `MAINTAIN_RETRY_COOLDOWN_MS`) unterdrückt, blieb die Dashboard-Kachel
+     (die nur die neueste `tse_health`-Log-Zeile zeigt) bei einem alten
+     "✓ Gesund" stehen, obwohl die TSE aktuell ungesund war — potenziell
+     unbegrenzt lange.
+  2. **Die Dashboard-Kachel selbst war rein log-basiert**, ohne einen
+     eigenen, live geprüften Zustand für "Auto-Sync ist aktuell
+     deaktiviert" — ein einmalig geloggter "deaktiviert"-Eintrag kann von
+     jedem späteren, unabhängigen `tse_health`-Log-Eintrag aus der
+     Kachel-Sicht verdrängt werden, obwohl die Checkbox weiterhin aus ist.
+     Im produktiven Betrieb inakzeptabel (Nutzerfeedback): ein dauerhafter
+     Zustand braucht eine dauerhafte, nicht wegblätterbare Anzeige.
+
+  **Behoben:**
+  - `tick()` loggt jetzt sofort einen `'warning'`-Eintrag beim Übergang in
+    "ungesund" (einmalig pro Episode, wie das bereits bestehende Muster für
+    den "wieder gesund"-Übergang), unabhängig davon, was danach passiert.
+  - Admin-Dashboard (`admin/+page.svelte`) liest jetzt zusätzlich, bei jedem
+    30-Sekunden-Poll, live `tse_auto_maintain_enabled` /
+    `tse_mount_point`/`tse_client_id` über das ohnehin schon triviale
+    `GET /api/admin/settings` (kein teurer Hardware-Zugriff wie
+    `/tse/status`) und zeigt eine eigene, dauerhafte "⚠ Auffällig"-Kachel
+    ("Automatische Zeit-Synchronisation ist deaktiviert …"), solange die
+    Checkbox aus ist und eine TSE konfiguriert ist — unabhängig vom
+    Log-Verlauf, kann also nicht durch neuere Log-Zeilen verdeckt werden.
+  - **Nutzerfeedback zum Cooldown:** ursprünglich vorgeschlagen, das
+    15-Minuten-Cooldown ganz zu entfernen, da die Checkbox doch bereits vor
+    wiederholten Versuchen schütze — richtiggestellt: Checkbox und Cooldown
+    schützen vor unterschiedlichen Dingen (Checkbox: PIN-Fehler; Cooldown:
+    das begrenzte Lifetime-Kontingent von `worm_tse_updateTime`-Aufrufen der
+    TSE bei jedem sonstigen Dauerfehler, siehe D-055). Cooldown bleibt
+    bestehen, wird aber jetzt selbst transparent gemacht: die eine
+    Fehlschlag-Meldung, die ein Versuch vor dem Cooldown erzeugt, nennt
+    jetzt explizit den Zeitpunkt des nächsten automatischen Versuchs
+    ("… nächster automatischer Versuch nicht vor HH:MM:SS"), statt dass ein
+    Admin raten muss, ob der Job noch aktiv ist oder feststeckt.
+
+  **Tests:** `tse/healthJob.integration.test.ts` — zwei bestehende Tests um
+  die neue Übergangs-Log-Zeile ergänzt, ein neuer Test prüft, dass sie bei
+  zwei aufeinanderfolgenden ungesunden Ticks nur einmal geloggt wird, ein
+  weiterer prüft den "nächster Versuch"-Text bei einem Nicht-PIN-Fehlschlag.
+  Kein automatisierter Test für die neue Dashboard-Kachel selbst (Svelte-
+  Komponente ohne bestehende Test-Infrastruktur für diese Seite) —
+  `svelte-check` bleibt clean, manueller Test empfohlen.
+
+- [Finding] **D-073** Systemprotokoll sortierte nach `created_at` — Dev-TSE-Uhr-Rückdatierung ließ neue Einträge dauerhaft in der Mitte statt oben erscheinen
+  **Kontext:** Nutzer meldete live (2026-09-12) im Zuge der D-072-Nachprüfung
+  wiederholt "die Checkbox wird deaktiviert, aber im Systemprotokoll steht
+  kein Eintrag" — eine ausführliche Codeanalyse (zwei Subagent-Durchläufe,
+  DB-Direktabfragen, `journalctl`) fand keinen Pfad, der die Checkbox ohne
+  begleitenden Log-Eintrag deaktiviert. Der tatsächliche Health-Job, das
+  15-Minuten-Retry-Cooldown (Task #109) und das Logging selbst arbeiteten
+  die ganze Zeit korrekt. Ursache: der Nutzer hatte die Systemuhr des Servers
+  manuell zurückgesetzt, weil seine Entwickler-TSE abgelaufen war (etablierte
+  Praxis, siehe `docs/TSE-Integration.md`) — danach geschriebene
+  `system_log`-Zeilen bekamen dadurch ein `created_at`, das *vor* bereits
+  bestehenden Zeilen lag.
+
+  **Eigentlicher Fehler:** `GET /api/admin/logs` (`routes/admin/logs.ts`)
+  sortierte per `ORDER BY created_at DESC` — verlässlich, solange die
+  Systemuhr nur vorwärts läuft, aber nach einem manuellen Rücksetzen landeten
+  neu geschriebene Zeilen chronologisch "in der Vergangenheit" und damit
+  mitten in der (nach `created_at` sortierten) Liste statt oben. `id` ist
+  eine UUID (`gen_random_uuid()`) und gibt keine Einfüge-Reihenfolge her —
+  es gab keine von der Systemuhr unabhängige Sortiergrundlage.
+
+  **Behoben:** Migration `0034_system_log_seq.sql` fügt `system_log` eine
+  reine `BIGSERIAL seq`-Spalte hinzu (mit Index); `routes/admin/logs.ts`
+  sortiert jetzt nach `seq DESC` statt `created_at DESC` — `created_at`
+  bleibt als Anzeige-Zeitstempel unverändert erhalten, ist aber nicht mehr
+  die Sortiergrundlage. Damit entspricht die Anzeige-Reihenfolge immer der
+  tatsächlichen Einfüge-Reihenfolge, unabhängig davon, was die Systemuhr im
+  Moment des Schreibens anzeigt.
+
+  **Tests:** `routes/admin/logs.integration.test.ts` — neuer Test fügt zwei
+  Zeilen ein, wobei die zweite (später eingefügte) Zeile ein `created_at`
+  einen Tag in der Vergangenheit trägt (simuliert die Uhr-Rückdatierung),
+  und prüft, dass sie trotzdem als erste (neueste) zurückgegeben wird.
+
+- [Finding] **D-074** DSFinV-K-Export: `tse.csv` (Stamm_TSE) fehlte komplett bei Abschlüssen ohne Rechnung
+  **Kontext:** Nutzer wollte für Task #120 (TSE-Zertifikatsketten-Spalten)
+  einen frischen Live-Export prüfen — ein echter Export
+  (`dsfinvk_Kasse2_z1.zip`, 2026-09-12) enthielt `transactions_tse.csv` mit
+  echten signierten Zeilen, aber **kein** `tse.csv` — weder als Datei in der
+  ZIP noch im `index.xml`-Manifest. Erste Vermutung (Regression durch die
+  Task #120-Zertifikatsketten-Verdrahtung) per Codeanalyse widerlegt:
+  `extractLeafCertificateChunks()` (`leafCertificate.ts`) ist komplett
+  fehlerresistent (leere Strings statt Exception bei fehlender/ungültiger
+  Kette) und beeinflusst nicht, ob die Datei überhaupt existiert.
+
+  **Tatsächliche, unabhängig davon bereits länger bestehende Ursache**
+  (`exports/dsfinvk/load.ts`, seit dem allerersten Implementierungs-Commit
+  2026-08-05, unberührt von Task #123): `tseSerial` wurde ausschließlich aus
+  der `invoice`-Tabelle ermittelt
+  (`invoicesResult.rows.map(r => r.tse_serial_number).find(...)`). Ein
+  Tagesabschluss, der ausschließlich aus `service_order`/
+  `order_cancellation`-Vorgängen besteht (AVBestellung/AVSonstige, keine
+  einzige Rechnung) — der genau in Kasse2s Export vorlag — hat trotzdem eine
+  eigene `tse_serial_number` pro Zeile (Migration 0005), die aber nirgends
+  abgefragt wurde. `tseSerial` blieb dadurch `null`, `rows.ts:243` baute
+  ein leeres `tse`-Array, und `zip.ts:31` überspringt leere CSV-Tabellen
+  lautlos — keine Fehlermeldung, kein Log-Eintrag. Ergebnis: ein Export mit
+  `transactions_tse.csv`-Zeilen, die auf eine `TSE_ID` verweisen, für die es
+  gar keine Stammdatenzeile in `tse.csv` gibt — ein für eine Prüfung
+  unvollständiger/inkonsistenter Export.
+
+  **Behoben:** `load.ts`s Abfragen für `service_order`
+  (`ordersResult`)/`order_cancellation` (`cancellationsResult`) laden jetzt
+  zusätzlich `tse_serial_number`; die `tseSerial`-Ermittlung durchsucht jetzt
+  alle drei Quellen (`invoicesResult`, `ordersResult`, `cancellationsResult`)
+  statt nur `invoice`.
+
+  **Tests:** `routes/admin/exports.dsfinvk.integration.test.ts` — neuer Test
+  legt einen Abschluss ganz ohne Rechnung an (nur eine signierte
+  `service_order`) und prüft, dass `tse.csv` trotzdem in der ZIP enthalten
+  ist und die korrekte `TSE_SERIAL` trägt.
+
+  **Folge für Task #120:** der ausstehende Live-Hardware-Nachweis der
+  Zertifikatsketten-Spalten war durch diesen Bug bisher gar nicht möglich
+  (die Datei fehlte ja komplett) — ein neuer Export nach diesem Fix ist
+  jetzt die Voraussetzung dafür, nicht nur ein "nice to have".
+
+- [Task] **#120** TSE-Zertifikatskette für `tse.csv` (`TSE_ZERTIFIKAT_I/II`)
+  **Klassifikation: Feature/Doku-Lücke (klein, nicht blockierend).**
+  Bisher nur in `docs/Rechtliche-Anforderungen.md` Abschnitt 6.7 und
+  `docs/TSE-Integration.md` Abschnitt 11 dokumentiert, ohne eigenen Task —
+  hier nachgezogen (2026-09-06).
+
+  **Problem:** `tse.csv`s Felder `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II`
+  bleiben im DSFinV-K-Export leer. `native/tse-cli` liest die volle
+  Zertifikatskette (`worm_getLogMessageCertificate`) noch nicht aus — dafür
+  wird laut SDK die CTSS-Schnittstelle benötigt, die der CLI-Wrapper bisher
+  nicht anspricht. `TSE_SIG_ALGO`/`TSE_ZEITFORMAT`/`TSE_PUBLIC_KEY` sind
+  bereits befüllt (Task #46) — genau die drei für die QR-Code-Prüfung
+  relevanten Felder; die Zertifikatskette betrifft nur `tse.csv`s
+  Vollständigkeit, nicht die Prüfbarkeit der einzelnen Belege.
+
+  **Weitgehend umgesetzt 2026-09-06 — Analyse und Auslesen fertig, ein
+  Rest bewusst offengelassen:**
+  - **Aufwandsanalyse (`WormDLL.h` geprüft):** `worm_getLogMessageCertificate`
+    verlangt laut Doku-Kommentar nur eine aktive CTSS-Schnittstelle, **keinen**
+    Nutzerlogin (anders als z. B. `worm_export_deleteStoredData`, das
+    ausdrücklich "the user Admin to be logged in" verlangt — dieser Satz
+    fehlt bei der Zertifikatsfunktion). Auf TSE-Firmware ≥2.0.0 ist die
+    CTSS-Schnittstelle laut `worm_info_isCtssInterfaceActive`-Doku ohnehin
+    automatisch aktiv, sobald der Self-Test bestanden wurde — kein
+    `worm_tse_ctss_enable`-Aufruf nötig (der wäre auf ≥2.0.0 ohnehin ein
+    No-Op). Zusätzlich bestätigt der bereits produktiv genutzte
+    `exportTar`-Befehl (`worm_export_tar`, identische
+    "nur CTSS aktiv"-Doku-Formulierung), dass diese Funktionsklasse im
+    bestehenden Code tatsächlich ohne Login funktioniert. Die CTSS-Anbindung
+    war damit **kein zusätzlicher Aufwand** — nur ein weiterer Auslese-Aufruf
+    im bereits bestehenden `info`-Kommando.
+  - **Umgesetzt:** `native/tse-cli/src/tseCli.cpp`s `cmdInfo()` ruft jetzt
+    zusätzlich `worm_getLogMessageCertificate` auf (Base64-kodiert im neuen
+    JSON-Feld `certificateChain`; leer statt Fehlschlag, falls die TSE sie
+    gerade nicht liefern kann). Durchgereicht über `tse/types.ts`s `TseInfo`
+    und `tse/certificateInfo.ts`s `TseCertificateInfo` (neues Feld
+    `certificateChainBase64`, prozessweit gecacht wie die anderen drei
+    Felder). 4 neue Unit-Tests (`certificateInfo.test.ts`).
+  - **Compile+Link gegen die echte vendorte SDK erfolgreich verifiziert**
+    (`build.sh` lief fehlerfrei mit `-Wall -Wextra`, der gebaute Binary lädt
+    `libWormAPI.so` korrekt und meldet bei ungültigem Mount-Pfad den
+    erwarteten `worm_init failed`-Fehler) — aber **kein Live-Hardware-Test**:
+    ob `worm_getLogMessageCertificate` an einer echten, physisch
+    angeschlossenen TSE tatsächlich ohne Login gelingt, ist bisher nur
+    durch die SDK-Dokumentation belegt, nicht durch einen echten Aufruf.
+  - **Verdrahtet 2026-09-08:** Der offene Punkt (wie die eine PEM-Kette auf
+    `TSE_ZERTIFIKAT_I`/`TSE_ZERTIFIKAT_II` aufzuteilen ist) ist jetzt anhand
+    des verbindlichen Spezifikationstexts geklärt — Anhang E (S. 78f.) des
+    offiziellen DSFinV-K-2.4-Downloadpakets (bzst.de, Bundeszentralamt für
+    Steuern): beide Felder enthalten **"das Zertifikat der TSE"** (Singular
+    — nur das TSE-eigene Leaf-Zertifikat, nicht die volle Kette samt
+    Ausstellern), Base64-kodiert, aufgeteilt in zwei 1.000-Zeichen-Blöcke
+    (`TSE_ZERTIFIKAT_I` = erste 1.000 Zeichen, `TSE_ZERTIFIKAT_II` = Rest).
+    Neues Modul `exports/dsfinvk/leafCertificate.ts`
+    (`extractLeafCertificateChunks`) extrahiert das erste PEM-Zertifikat aus
+    der Kette und splittet es entsprechend; `rows.ts` verdrahtet das jetzt in
+    `tse.csv`. 5 neue Unit-Tests (`leafCertificate.test.ts`) plus ein
+    Rows-Test mit einer >1000 Zeichen langen synthetischen PEM-Kette.
+  - **Blocker gefunden und behoben (2026-09-12, siehe D-074 oben):** ein
+    zweiter, unabhängiger Export (`dsfinvk_Kasse2_z1.zip`) enthielt `tse.csv`
+    überhaupt nicht — der Live-Test war dadurch bisher gar nicht möglich.
+    Ursache lag nicht in dieser Verdrahtung selbst, sondern in `load.ts`s
+    `tseSerial`-Ermittlung (nur `invoice` statt auch
+    `service_order`/`order_cancellation`), jetzt gefixt.
+
+  **Abgeschlossen 2026-09-12 — Live-Hardware-Nachweis erbracht.** Nach dem
+  D-074-Fix erzeugter, echter Export von Produktivhardware liefert `tse.csv`
+  mit gefüllten Zertifikats-Spalten: `TSE_ZERTIFIKAT_I` exakt 1.000 Zeichen,
+  `TSE_ZERTIFIKAT_II` die restlichen 192 Zeichen. Verifiziert (Base64-Decode
+  beider Felder aneinandergehängt, dann `openssl x509 -inform DER`):
+  ergibt ein gültiges, parsebares X.509-Zertifikat — `subject CN` stimmt mit
+  dem Wert in `TSE_SERIAL` überein, `issuer` ist "TSE-Test-CA Swissbit",
+  Gültigkeitszeitraum März–September 2026 passt zur Test-TSE. Damit ist der
+  zuvor einzige offene Punkt (Live-Hardware-Bestätigung) erbracht — Task
+  vollständig abgeschlossen.
+
+- [Task] **#112** Firmendaten/Logo auf Rechnungs-PDF und Reprint werden live geladen statt zum Verkaufszeitpunkt eingefroren
+  **Klassifikation: Bug (niedrig-mittel).** Nutzerauftrag 2026-09-02, Fund
+  per Code-Recherche bestätigt (D-058, siehe unten). Priorisiert als
+  Pre-Release (Nutzervorgabe 2026-09-06).
+
+  **Problem:** `receipt/data.ts`s `loadReceiptWhere()` (genutzt von sowohl
+  `GET /:id/pdf` als auch `POST /:id/reprint`) lud Firmenname/-adresse/
+  -steuernummer/USt-IdNr. sowie das Firmenlogo bei jedem Aufruf frisch aus
+  `system_setting`/`company_logo` — kein Snapshot auf `invoice`. Änderte ein
+  Admin später diese Stammdaten, zeigte eine alte Rechnung beim erneuten
+  Ansehen/Reprint die neuen statt der zum Verkaufszeitpunkt gültigen Daten.
+  Die TSE-/fiskalisch relevanten Felder (Beträge, Steueraufschlüsselung,
+  Transaktionsnummer, Signatur, Belegnummer) waren nie betroffen — nur der
+  "Briefkopf".
+
+  **Entscheidung (Nutzer, 2026-09-12):** von den beiden ursprünglich
+  skizzierten Varianten — (a) Snapshot direkt auf `invoice`, oder (b) den
+  beim Verkauf erzeugten `print_job`-Datensatz für Reprints wiederverwenden
+  — fiel die Wahl auf (a), nachdem der Nutzer zu Recht auf das
+  Datenvolumen-Problem eines Logo-Snapshots pro Rechnung hinwies UND
+  bestätigte, dass `print_job`-Zeilen gelöscht werden können (Variante (b)
+  damit nicht zuverlässig genug).
+
+  **Umgesetzt — zweigeteilte Lösung, um das Datenvolumen-Problem zu
+  vermeiden:**
+  - **Textfelder** (Name/Straße/PLZ/Ort/Steuernummer/USt-IdNr.) werden
+    direkt auf `invoice` gespeichert (Migration `0035_invoice_company_
+    snapshot.sql`) — pro Zeile nur wenige Bytes, vernachlässigbar auch bei
+    sehr vielen Rechnungen.
+  - **Logo NICHT pro Rechnung dupliziert:** neue, content-adressierte,
+    append-only Tabelle `logo_version` (`logo/logo.ts`s `ensureLogoVersion()`/
+    `loadLogoVersion()`) — ein SHA-256-Hash über die tatsächlich gerenderten
+    Bytes (PDF-PNG + ESC/POS-Raster + Breite/Höhe/Zoomfaktor) entscheidet, ob
+    eine neue Zeile nötig ist; ein über ein ganzes Event unverändertes Logo
+    erzeugt nur eine einzige `logo_version`-Zeile, auf die alle Rechnungen
+    per `invoice.logo_version_id` (UUID-FK) verweisen — kein Bytes-Duplikat
+    pro Verkauf.
+  - **Snapshot-Erstellung:** `receipt/data.ts`s neue
+    `snapshotCompanyDataForInvoice(target)` liest die aktuell gültigen
+    Firmendaten + (falls für den Zieltyp aktiviert) das aktuelle Logo und
+    wird an allen drei Stellen aufgerufen, an denen eine `invoice`-Zeile
+    entsteht: Bonkasse-Checkout und Bedienungskasse-Tischabrechnung
+    (`register-session.ts`, beide Stellen) sowie Bonstorno
+    (`admin/cancellations.ts`).
+  - **Laden:** `loadReceiptWhere()` bevorzugt jetzt die Snapshot-Spalten,
+    sobald `invoice.company_name IS NOT NULL` (das Signal dafür, dass diese
+    Zeile nach dem Fix erzeugt wurde — nie `NULL` für einen leeren, aber
+    konfigurierten Namen). Für Alt-Rechnungen von vor diesem Fix
+    (`company_name IS NULL`) bleibt das bisherige Live-Lookup-Verhalten
+    unverändert bestehen — es gibt keine Möglichkeit, rückwirkend zu
+    rekonstruieren, was zum damaligen Verkaufszeitpunkt tatsächlich galt.
+
+  **Tests:** `logo/logo.integration.test.ts` (neu) — Dedup-Verhalten von
+  `ensureLogoVersion()` (identischer Inhalt → gleiche Zeile, unterschiedliche
+  Pixel oder Zoomfaktor → neue Zeile). `receipt/data.integration.test.ts` —
+  drei neue Tests: Snapshot wird gegenüber aktuellen `system_setting`-Werten
+  bevorzugt; Alt-Rechnung ohne Snapshot fällt weiterhin auf Live-Werte
+  zurück; Logo wird aus `logo_version` geladen, nicht aus der aktuell
+  konfigurierten `company_logo`. `register-session.integration.test.ts`/
+  `cancellations.integration.test.ts` — je ein neuer End-to-End-Test:
+  Firmendaten werden beim Checkout/Storno tatsächlich auf die neue
+  `invoice`-Zeile eingefroren, eine spätere Einstellungsänderung ändert die
+  bereits ausgestellte Rechnung nicht mehr rückwirkend.
+
+- [Finding] **D-058** (niedrig-mittel, Backend / Rechnungs-PDF) — Gefunden 2026-09-02 — Kontext: Bei Prüfung der GoBD-Unveränderbarkeit gefunden (2026-09-02) — behoben zusammen mit Task #112, siehe dort für die volle Lösungsbeschreibung
+  Firmendaten (Name/Adresse/Steuernummer/USt-IdNr.) und das Firmenlogo wurden bei **jedem** PDF-Abruf/Reprint einer Rechnung live aus `system_setting`/dem aktuell gespeicherten Logo geladen (`receipt/data.ts`s `loadReceiptWhere()`/`loadCompanySettings()`/`loadLogoFor()`), nicht zum Verkaufszeitpunkt eingefroren — weder `invoice` noch eine andere Tabelle speicherte einen Snapshot. Folge: änderte ein Admin später Firmenname/Adresse/Logo, zeigte die PDF-Ansicht/ein Reprint einer alten Rechnung die neuen statt der zum Verkaufszeitpunkt gültigen Daten — die eigentlich TSE-relevanten Felder blieben davon unberührt, betroffen war nur der "Briefkopf".
+
+- [Task] **#138** Verkaufsstatistik je Artikel/Tag — Excel-Export kennzeichnet Stornos jetzt aggregationsfreundlich
+  **Klassifikation: Feature/Nutzerwunsch, angelegt 2026-09-12.** Priorisiert
+  als Pre-Release (Nutzervorgabe 2026-09-12).
+
+  **Problem:** Der bestehende Excel-Export (`exports/rows.ts`/`workbook.ts`)
+  kennzeichnete Bonstorno-Zeilen nicht als solche (nur am bereits negativen
+  `unit_price`/`line_total` erkennbar) und ließ `quantity` bei einem Storno
+  positiv — eine simple `SUM(quantity)` je Artikel zählte stornierte
+  Einheiten weiterhin positiv mit und verfälschte damit jede
+  Stückzahl-Auswertung, obwohl der Umsatz (`SUM(line_total)`) schon korrekt war.
+
+  **Umgesetzt (Nutzervorgabe, 2026-09-12):**
+  - Neue Spalte **"Storno"**: `"ja"` bei einer Bonstorno-Zeile, sonst
+    **leer** (ausdrücklich kein `"nein"`, damit ein Blick/Autofilter direkt
+    nur die Stornos zeigt).
+  - `quantity` ist bei einer Bonstorno-Zeile jetzt negativ — eine einfache
+    `SUM(quantity)`/`SUM(line_total)` je Artikel ergibt direkt die korrekte
+    Verkaufsstatistik, ohne dass manuell nach Storno gefiltert werden muss.
+    Rein im Export (`ExportRow.quantity`) — `order_item` selbst bleibt
+    unverändert positiv, kollidiert nicht mit D-068s Vorzeichen-Design für
+    die eigentlichen Bon-/TSE-/DSFinV-K-Daten.
+  - **Zusätzlich (Nutzervorgabe):** `Pfandbetrag`/`USt. Pfand` bleiben jetzt
+    leer statt `0,00 €`, wenn eine Position gar keinen Pfand hat
+    (`ExportRow.unit_deposit`/`deposit_tax_rate` auf `null` statt `0`,
+    unterscheidet "kein Pfand" von einem echten Pfandbetrag von 0).
+
+  **Tests:** `exports/rows.test.ts` (neue Fälle: negative Menge + Flag bei
+  Storno, `unit_deposit: null` ohne Pfand vs. echte `0` mit Pfand),
+  `exports/workbook.test.ts` (neue Storno-Spalte, leere Pfand-Zellen),
+  `routes/admin/exports.excel.integration.test.ts` (Spaltenindizes
+  angepasst, neue Storno-Spalten-Prüfung am echten DB-Datensatz).
+
+- [Finding] **D-075** Kassenabschluss-Pending-Logik erkannte nur "existiert ein Z-Bon für den Tag", nicht "sind alle Zeilen dieses Tages tatsächlich verknüpft"
+  **Kontext:** Nutzer fragte bei der Diskussion zu Task #137 (Kassenjournal)
+  konkret nach, ob eine spätere Einlage/Entnahme nach einem Kassenabschluss
+  einen neuen Z-Bon erzwingen würde — dabei fiel eine unabhängig davon schon
+  bestehende Lücke in der bestehenden "ausstehende Tage"-Logik auf
+  (`closing/pending-db.ts`/`closing/pending.ts`), die nichts mit
+  `cash_transaction` zu tun hat.
+
+  **Problem:** `findPendingDaysForRegister()` bestimmte "Tag X ist erledigt"
+  bisher rein darüber, ob **irgendein** `daily_closing`-Eintrag mit
+  `business_date = X` existiert — nicht darüber, ob an diesem Tag
+  tatsächlich **alle** `invoice`/`service_order`/`order_cancellation`-Zeilen
+  bereits verknüpft sind (`daily_closing_id IS NOT NULL`). Da nichts eine
+  Kasse nach einem Abschluss sperrt (Sperrung greift laut
+  `isRegisterUnlocked()` ausschließlich bei **vergangenen, nie
+  abgeschlossenen** Tagen, nie am aktuellen Tag), konnte jederzeit noch am
+  selben Kalendertag eine weitere Buchung entstehen. Diese blieb für die
+  Pending-Prüfung **für immer unsichtbar**, sobald der Tag einmal einen
+  Z-Bon hatte — sie wurde beim nächstbesten (nicht datumsgebundenen)
+  Abschluss trotzdem mit eingesammelt, aber dem **falschen** `business_date`
+  zugeordnet, ohne dass die Sperrlogik das je bemerkt oder verhindert hätte.
+  Betrifft schon heute alle drei existierenden Tabellen, unabhängig von
+  Kassenbewegungen (die aktuell ohnehin keine `daily_closing_id`-Spalte
+  haben).
+
+  **Behoben:** `closing/pending.ts`s `pendingClosingDays()` bekommt einen
+  neuen Parameter `daysWithUnlinkedRows` — ein Tag gilt jetzt als
+  ausstehend, wenn entweder (a) noch kein Abschluss für ihn existiert
+  (bisheriges Verhalten, deckt auch den Nullabschluss-Fall ab) **oder** (b)
+  ein Abschluss existiert, aber mindestens eine Zeile mit `created_at` an
+  diesem Tag noch `daily_closing_id IS NULL` hat. `closing/pending-db.ts`s
+  `findPendingDaysForRegister()` ermittelt (b) über eine zusätzliche
+  `UNION ALL`-Abfrage aller drei Tabellen.
+
+  **Tests:** `closing/pending.test.ts` — vier neue Fälle für
+  `daysWithUnlinkedRows` (öffnet einen bereits geschlossenen Tag wieder;
+  kein zusätzlicher Effekt bei einem ohnehin schon offenen Tag; niemals der
+  heutige Tag, selbst mit Straggler; ein Straggler außerhalb des
+  Wanderungs-Zeitraums wird ignoriert). `closing/pending-db.integration.test.ts`
+  — bestehender Test korrigiert (spiegelte zuvor exakt den Bug wider, ohne
+  ihn zu erkennen), zwei neue Tests: eine nicht verknüpfte `invoice` bzw.
+  `service_order` nach einem bereits erfolgten Abschluss öffnet den Tag
+  wieder.
+
+- [Task] **#142** Excel-Export: neue Spalte "Tagesabschluss" mit der Z-Bon-Nummer
+  **Klassifikation: Nutzerwunsch, angelegt 2026-09-12.**
+
+  Neue Spalte direkt nach "Storno" — trägt `daily_closing.z_number` je
+  Rechnung, leer solange die Rechnung noch keinem Tagesabschluss zugeordnet
+  ist (`daily_closing_id IS NULL`).
+
+  **Umgesetzt:** `routes/admin/exports.ts`s `EXPORT_SOURCE_COLUMNS` joint
+  jetzt `daily_closing` per `LEFT JOIN ... ON dc.id = i.daily_closing_id`
+  und selektiert `dc.z_number`; durchgereicht über `ExportSourceRow`/
+  `ExportRow` (`exports/rows.ts`) bis in die neue `workbook.ts`-Spalte.
+
+  **Tests:** `exports/rows.test.ts` (Passthrough offen/geschlossen),
+  `exports/workbook.test.ts` (Spalte zeigt Z-Nr. bzw. bleibt leer),
+  `routes/admin/exports.excel.integration.test.ts` (neuer End-to-End-Test:
+  eine per echtem `daily_closing`-Datensatz verknüpfte Rechnung zeigt die
+  Z-Nr., eine offene bleibt leer).
+
+- [Task] **#143** Einlage/Entnahme-Funktion vollständig entfernt, ersetzt durch "Offen seit letztem Tagesabschluss"
+  **Klassifikation: Nutzerentscheidung, angelegt 2026-09-12.** Auslöser: die
+  D-075-Diskussion (Pending-Tage-Logik) legte offen, dass Kassenbewegungen
+  strukturell nie an den Kassenabschluss angebunden waren (kein TSE-Bezug,
+  keine Z-Bon-Summe, kein DSFinV-K-Export). Statt das nachträglich
+  compliance-konform auszubauen, hat der Nutzer entschieden, die Funktion
+  ganz zu entfernen.
+
+  **Entfernt:**
+  - `cash_transaction`-Tabelle per neuer Migration
+    (`0036_drop_cash_transaction.sql`, `DROP TABLE` — Nutzerentscheidung,
+    bewusst auch vorhandene Produktivdaten mit fallen gelassen, kein
+    Migrations-Backup).
+  - Backend: `GET`/`POST /api/admin/registers/:id/transactions`
+    (`routes/admin/registers.ts`), `total_deposits`/`total_withdrawals` aus
+    `GET /:id`.
+  - Frontend: Einlage/Entnahme-Bereich (Balance-Karte, Buttons, Modal,
+    Transaktionshistorie-Tabelle) aus `registers/[id]/+page.svelte`;
+    `listTransactions`/`addTransaction` aus `api.ts`; `CashTransaction`-Typ
+    aus `@fairpos/shared`.
+
+  **Neu — "Offen seit letztem Tagesabschluss":** ersetzt die entfernte
+  Balance-Karte an derselben Stelle. Zeigt je Zahlungsart (Bar/Karte) die
+  Summe aller noch nicht einem Z-Bon zugeordneten Rechnungen
+  (`daily_closing_id IS NULL`) für diese Kasse — bewusst **nicht** auf
+  einen Kalendertag beschränkt (Nutzervorgabe: eine gesperrte Kasse macht
+  Tagesgrenzen ohnehin hinfällig, ein Anzeigefehler an der Grenze wäre rein
+  kosmetisch). `registers.ts`s neue `loadOpenSinceLastClosing()` lädt die
+  offenen Rechnungen + Positionen und übergibt sie an das bereits
+  bestehende, getestete `computeClosingTotals()` (`closing/totals.ts`) —
+  dieselbe Aggregation, die auch `closeRegister()` selbst verwendet, damit
+  die Anzeige garantiert mit dem nächsten echten Z-Bon übereinstimmt.
+
+  **Tests:** `routes/admin/registers.integration.test.ts` — neuer
+  Testblock: Null bei keiner Rechnung, Summe je Zahlungsart über mehrere
+  offene Rechnungen, bereits verknüpfte Rechnungen werden ausgeschlossen,
+  ein Bonstorno nettet über sein eigenes negatives Vorzeichen korrekt ein.
+  `admin-routes.integration.test.ts`/`reports.integration.test.ts` — die
+  jetzt gegenstandslosen `cash_transaction`-Tests entfernt.
+
+- [Task] **#144** "Soll-Kassenstand"-Auswertung vollständig entfernt
+  **Klassifikation: Nutzerentscheidung, angelegt 2026-09-12.** Im selben
+  Zug wie Task #143 — die Kennzahl beruhte auf denselben, nie an den
+  Kassenabschluss angebundenen `cash_transaction`-Daten.
+
+  **Entfernt:** `GET /api/admin/reports/cash-balance`
+  (`routes/admin/reports.ts`), die Seite
+  `admin/reports/cash-balance/+page.svelte`, der Navigationseintrag
+  "Soll-Kassenstand" in `admin/+layout.svelte`, `api.ts`s
+  `reports.cashBalance()`.
+
+  **Tests:** `reports.integration.test.ts` — den gesamten
+  `cash-balance`-Testblock sowie den zugehörigen Eintrag in der
+  "Authentication required"-Sammelliste entfernt.
+
+- [Task] **#145** Excel-Export: neue Spalte "Artikelgruppe"
+  **Klassifikation: Nutzerwunsch, angelegt 2026-09-12.**
+
+  Neue Spalte direkt nach "Artikelname" — trägt `order_item.article_category_name`
+  (war bereits vorhanden, aber bisher nicht Teil des Excel-Exports).
+
+  **Umgesetzt:** `routes/admin/exports.ts`s `EXPORT_SOURCE_COLUMNS` selektiert
+  jetzt zusätzlich `oi.article_category_name`, durchgereicht über
+  `ExportSourceRow`/`ExportRow` bis in die neue `workbook.ts`-Spalte. Nicht
+  Teil des Aggregations-Schlüssels (dieselbe `article_name` impliziert
+  immer dieselbe Artikelgruppe).
+
+  **Tests:** `exports/rows.test.ts` (Passthrough), `exports/workbook.test.ts`
+  (Spalten-Header + -Wert), `routes/admin/exports.excel.integration.test.ts`
+  (Spaltenindizes entsprechend verschoben).
+
+- [Task] **#146** "Ausstehende Tagesabschlüsse"-Banner zählte veranstaltungsübergreifend; Dashboard-Kachel "Tagesumsatz" verlinkte auf entfernte Seite
+  **Kontext:** Nutzer meldete live (2026-09-12), dass das Banner offene
+  Tagesabschlüsse zeigt, aber keine einzelne Kasse in der Übersicht als
+  offen erscheint — Verdacht auf Veranstaltungsübergreifen. Gleichzeitig
+  meldete der Nutzer, die "Tagesumsatz"-Kachel im Dashboard verlinke auf
+  eine nicht mehr existierende Seite und zeige einen unerwarteten Wert.
+
+  **Bug 1 (bestätigt, veranstaltungsübergreifend):** `GET /api/admin/
+  closings/pending` (`routes/admin/closings.ts`) lud Kassen bisher per
+  `SELECT id, name FROM register` — **ohne** `event_id`-Einschränkung,
+  anders als praktisch jeder andere Admin-Endpoint in dieser Codebase
+  (`GET /api/admin/registers` filtert korrekt nach `config.activeEventId`).
+  Eine Kasse aus einer vergangenen/inaktiven Veranstaltung mit noch
+  unverknüpften Zeilen konnte damit das globale Banner/die
+  Dashboard-Kachel aufblähen, obwohl sie in der Kassen-Liste/-Detailseite
+  (beide korrekt event-gescoped) nie auftaucht und nie erreichbar war —
+  ein Admin hatte keine Möglichkeit, die vom Banner gemeldete Kasse
+  überhaupt zu finden. Vorbestehender Bug, unabhängig von D-075 — die
+  D-075-Korrektur (empfindlicher gegenüber unverknüpften Zeilen) hat ihn
+  nur erstmals sichtbar gemacht.
+
+  **Behoben:** `SELECT id, name FROM register WHERE event_id = $1 ORDER BY
+  name` mit `config.activeEventId`, exakt wie `routes/admin/registers.ts`.
+
+  **Bug 2 (bestätigt, Regression aus Task #144):** Die "Tagesumsatz"-Kachel
+  (`admin/+page.svelte`) verlinkte noch auf `/admin/reports/cash-balance`,
+  das im selben Sitzungsblock mit Task #144 entfernt wurde. Auf "Kassen"
+  (`/admin/registers`) umgebogen (Nutzervorgabe).
+
+  **Wert der Kachel selbst:** die zugrundeliegende Abfrage
+  (`GET /admin/reports/today-revenue`) entsprach bereits exakt der
+  Nutzererwartung (alle Kassen außer Training, Stornos via D-068-Vorzeichen
+  genettet, aktive Veranstaltung, `CURRENT_DATE`) — kein Code-Bug gefunden;
+  vermutlich Folge der für den Dev-TSE-Test zurückgesetzten Systemuhr
+  (dieselbe Ursache-Klasse wie D-073), nicht weiter verfolgt.
+
+  **Nebenbefund, separat als Finding festgehalten:** siehe D-076
+  (Zeitzonen-Inkonsistenz zwischen Postgres- und Node-Zeitzone bei der
+  Tage-Bucketing-Logik).
+
+  **Tests:** `routes/admin/closings.integration.test.ts` — neuer Test:
+  eine Kasse einer anderen, inaktiven Veranstaltung mit offener Rechnung
+  taucht nicht mehr in `/closings/pending` auf.
+
+  **Live bestätigt (2026-09-15):** beide Fixes auf dem Produktivsystem
+  nachvollzogen — Banner/Kachel zeigen jetzt korrekt nur noch Kassen der
+  aktiven Veranstaltung, "Tagesumsatz"-Kachel führt zu "Kassen" statt ins
+  Leere.
+
+- [Task] **#147** Rechnungsvorschau im Checkout-Screen (Rückgeldrechner)
+  **Klassifikation: Feature/Nutzerwunsch, angelegt und umgesetzt 2026-09-15.**
+
+  **Anforderung:** Im Checkout-Bestätigungsbildschirm (`ReceiptConfirmation.svelte`
+  — "Rückgeld berechnen", nach Bonkasse-/Bedienungskasse-Kassieren, vor dem
+  Drucken) zusätzlich eine Vorschau der fertigen Rechnung anzeigen.
+
+  **Entscheidungen (Nutzervorgabe 2026-09-15):** HTML-Renderer statt
+  PDF-Embed (PDF-Rendering in einem iframe ist auf Tablet-/Kiosk-Browsern —
+  dem typischen Bonkasse-Gerät — erfahrungsgemäß nicht zuverlässig; das
+  bereits vorhandene formatunabhängige `PrintBlock[]`-Modell ist genau
+  dafür gebaut). Schmales Bon-Format, in ein standardmäßig zugeklapptes
+  Panel gepackt, Daten erst beim Öffnen geladen — damit der Checkout-
+  Screen nicht überladen wird.
+
+  **Umgesetzt:**
+  - Neuer Endpoint `GET /api/register-session/invoices/:id/preview`
+    (`routes/register-session.ts`) — dieselbe Berechtigungsprüfung wie
+    `POST /invoices/:id/print` (`userHasRegister()`), aber ohne
+    Drucker-Auflösung/Print-Job: lädt `loadReceiptById()` +
+    `buildReceiptBlocks()` und liefert die `PrintBlock[]` direkt als JSON.
+  - Neue Komponente `ReceiptBlockPreview.svelte` — rendert `PrintBlock[]`
+    (text/row/hr/blank/image) als schmales, monospace Bon-Layout mit
+    bewusst fest hellem "Papier"-Look (unabhängig vom App-Theme, da es wie
+    der echte Ausdruck aussehen soll).
+  - `ReceiptConfirmation.svelte`: natives `<details>/<summary>`-Panel
+    ("Rechnungsvorschau", zugeklappt) direkt unter den Summen — Daten
+    werden erst beim ersten Öffnen (`ontoggle`) geladen, nicht beim Laden
+    der Seite; danach gecacht (kein erneutes Laden bei erneutem Öffnen, da
+    die Rechnung zu diesem Zeitpunkt bereits abgeschlossen/signiert ist und
+    sich nicht mehr ändert).
+  - `api.ts`: neue `registerSession.previewInvoice()` + lokaler
+    `PrintBlock`-Typ (bewusst nicht aus dem Backend-Package importiert, da
+    Frontend/Backend getrennte npm-Workspaces sind; `escposRasterBase64`
+    absichtlich weggelassen, da die Vorschau nur die PNG-Variante braucht).
+
+  **Tests:** `routes/register-session.integration.test.ts` — neuer
+  Testblock: liefert Blöcke ohne Print-Job zu erzeugen, 404 bei
+  unbekannter Rechnung, 403 bei fremder Kasse. `svelte-check` sauber
+  (455 Dateien, 0 Fehler).
+
+  **Nachbesserung nach Live-Test (2026-09-15, Nutzerfeedback):** Der
+  Öffnen-Button war als reine unscheinbare Textzeile zu leicht zu
+  übersehen — zu einem deutlich sichtbaren, umrahmten Button mit Icon und
+  rotierendem Chevron umgebaut, und von oberhalb auf unterhalb der beiden
+  Aktionsbuttons ("Kunde wünscht keinen Beleg"/"Rechnung drucken")
+  verschoben. Live auf Produktivhardware bestätigt und für gut befunden.
+
+- [Task] **#148** Versionsnummer-Schema eingeführt und dokumentiert
+  **Klassifikation: Prozess/Feature, angelegt und umgesetzt 2026-09-15.**
+
+  **Schema (Nutzerentscheidung):** `[Major].[Release].[Build]` in der Datei
+  `VERSION` (Repo-Root) — vollständig dokumentiert in `AGENTS.md` Abschnitt
+  "Versionsnummer" (Kaskaden-Reset wie bei Semver: ein Major-Inkrement
+  setzt Release UND Build auf 0, ein Release-Inkrement setzt Build auf 0;
+  Release erhöht sich bei jedem Squash-Merge `develop`→`master`, Build bei
+  jedem `develop`-Commit).
+
+  **Umgesetzt:**
+  - `config.ts` liest `VERSION` beim Start (`readVersion()`, Fallback
+    `'0.0.0'` statt Absturz bei fehlender Datei).
+  - `GET /api/auth/admin/me` und `GET /api/auth/register/me` liefern
+    `version` mit aus — kein zusätzlicher Request nötig, beide Layouts
+    rufen ohnehin eine der beiden Routen beim Mounten auf.
+  - Anzeige: Admin-Bereich oben neben dem "FairPOS"-Schriftzug in der
+    Seitenleiste, Kassen-Topbar neben dem FairPOS-Logo (Bonkasse/
+    Bedienungskasse) — nach Live-Feedback 2026-09-15 von der ursprünglich
+    vorgesehenen Sidebar-Footer-Position dorthin verschoben, um mit der
+    Kassen-Ansicht konsistent zu sein.
+
+  **Live-Test (2026-09-15):** Position/Prominenz in beiden Bereichen auf
+  Produktivhardware bestätigt und für gut befunden — Prototyp-Status damit
+  aufgehoben, Platzierung gilt als final.
+
+  **Tests:** `routes/auth.integration.test.ts` — neuer Test prüft, dass
+  `version` in der `register/me`-Antwort als nicht-leerer String vorliegt.
+  `svelte-check` sauber (455 Dateien, 0 Fehler).
+
+  **Bewusst offengelassen, nicht blockierend für den Abschluss:**
+  Format-Feinheiten (`git tag` auf `master` bei jedem Release?), ob eine
+  technische Durchsetzung (Git-Hook) später sinnvoll wird — aktuell reine
+  Konvention, der der KI-Agent bei jedem Commit/Squash-Merge manuell folgt.
+
+- [Task] **#137** Kassenjournal — ursprüngliche Anforderung durch Entfernung von Einlage/Entnahme obsolet geworden, final abgeschlossen
+  **Ursprüngliche Anforderung (angelegt 2026-09-12, Pre-Release
+  priorisiert):** ein "Kassenjournal" — eine kombinierte, chronologische
+  Ansicht aus Einlagen/Entnahmen (`cash_transaction`) und Bareinnahmen aus
+  Rechnungen —, weil die zwei damals existierenden Ansichten
+  (`GET /:id/transactions` je Kasse, `/cash-balance` "Soll-Kassenstand" nur
+  als Summen) beide unvollständig waren.
+
+  **Was sich seitdem geändert hat:** Bei der Umsetzungsdiskussion (konkret
+  bei der Frage, ob `cash_transaction` eine `daily_closing_id`-Referenz
+  bekommen sollte) kam heraus, dass Kassenbewegungen strukturell nie an
+  den Kassenabschluss angebunden waren — keine TSE-Signatur, keine
+  Z-Bon-Summe, kein DSFinV-K-Export, trotz bereits dokumentierter
+  GV_TYP-Zuordnung (Einzahlung/Auszahlung/Anfangsbestand) in
+  `docs/Rechtliche-Anforderungen.md`. Der Nutzer hat daraufhin entschieden,
+  die Einlage/Entnahme-Funktion und den "Soll-Kassenstand"-Report komplett
+  zu entfernen, statt sie nachträglich compliance-konform auszubauen —
+  siehe **Task #143** (Entfernung inkl. `cash_transaction`-`DROP TABLE`-
+  Migration) und **Task #144** (Entfernung des Soll-Kassenstand-Reports).
+
+  An die Stelle der beiden alten Ansichten ist eine einfachere Lösung
+  getreten: die Kassen-Detailseite zeigt seitdem unter "Offen seit letztem
+  Tagesabschluss" je Zahlungsart (Bar/Karte) die Summe aller noch nicht
+  einem Z-Bon zugeordneten Rechnungen dieser Kasse (`computeClosingTotals()`,
+  dieselbe Aggregation wie der echte Tagesabschluss selbst).
+
+  **Final entschieden (2026-09-15, Nutzerbestätigung):** "Offen seit
+  letztem Tagesabschluss" deckt den Bedarf vollständig ab — aktuell kein
+  weiterer Bedarf an einer chronologischen Einzelpositions-Ansicht oder
+  einem Excel-Export dazu. Task damit endgültig abgeschlossen; eine
+  spätere, davon unabhängige Anforderung in diesem Bereich würde als neuer,
+  eigener Task angelegt, nicht unter dieser Nummer.
+
+- [Finding] **D-077** (hoch → behoben, Backend / Sicherheit) — Gefunden 2026-09-15 — Kontext: erste (unauthentifizierte) Runde von Task #33s Security-Test, live gegen die Produktivinstanz des Nutzers
+  **Hauptfund (HOCH): Login-Rate-Limiter sperrte global, nicht pro
+  Angreifer.** `auth/rateLimit.ts` sperrt nach `request.ip` — im Backend war
+  aber nirgends `trustProxy` gesetzt, obwohl nginx als Reverse-Proxy davor
+  läuft (`proxy_pass http://127.0.0.1:3000`, siehe
+  `docs/Installationsanleitung.md`). Fastify vertraut `X-Forwarded-For`/
+  `X-Real-IP` ohne `trustProxy` grundsätzlich nicht — `request.ip` war damit
+  für **jeden** externen Besucher identisch (die Loopback-Adresse von
+  nginx). Live bestätigt: 3 fehlgeschlagene `POST /api/auth/pin`-Versuche
+  (ein Injection-Payload, ein 5000-Zeichen-Payload, ein leerer Body)
+  lösten die 15-Minuten-Sperre für die **komplette Seite** aus, nicht nur
+  für die Testquelle — ein anonymer Besucher konnte mit drei trivialen
+  Requests alle 15 Minuten den Login für alle Mitarbeitenden lahmlegen.
+  War kein bewusster DoS-Test, sondern die im Vorfeld vereinbarte,
+  begrenzte Prüfung des Rate-Limiters selbst — das Auslösen der globalen
+  Sperre war der Fund.
+
+  **Weitere Funde (niedrig/info):**
+  - Fehlende Security-Header (CSP, HSTS, X-Frame-Options,
+    X-Content-Type-Options, Referrer-Policy) auf allen Antworten.
+  - TLS-Zertifikatskette unvollständig ausgeliefert (nur Leaf-Zertifikat,
+    `openssl s_client -showcerts` liefert 1 statt 2+ Zertifikate,
+    `Verify return code: 21`) — betrifft laut Nutzereinordnung primär die
+    aktuelle Serverkonfiguration, aber `system/tlsCert.ts`s
+    Upload-Validierung warnt auch nicht vor einem alleinigen Leaf-Zertifikat
+    (siehe **Task #150**, dort als eigener Punkt weitergeführt).
+  - Session-Cookie ohne explizites `secure: true` (funktionierte nur
+    inzident über den HTTP→HTTPS-Redirect).
+  - nginx-Version im `Server`-Header sichtbar (kein echtes Risiko, aber
+    kostenlos zu unterdrücken).
+  - (Kein echter Fund, gegengeprüft) `/.env`/`/.git/config` liefern 200,
+    sind aber nur der SPA-Fallback (`index.html`), keine echten Dateien.
+
+  **Bestätigt solide:** 12 stichprobenartig geprüfte Admin-/Register-
+  Session-Routen liefern durchgängig 401 ohne Datenleck; PIN-Eingabe wird
+  vor der parametrisierten Query normalisiert — Injection- und
+  Oversized-Payloads beide sauber mit 401 abgewiesen, kein 500, kein
+  Timing-Leck; keine CORS-Fehlkonfiguration; korrekter HTTP→HTTPS-Redirect;
+  keine Stack-Traces in Fehlerantworten; PIN-Keyspace (9 Zeichen, 36
+  Symbole) ohnehin brute-force-resistent.
+
+  **Behoben (Nutzerentscheidung: alles einfach Umsetzbare sofort, Rest als
+  Task):**
+  - `app.ts`: `trustProxy: '127.0.0.1'` — bewusst auf die Loopback-Adresse
+    beschränkt statt pauschal `true`, damit ein Client, der das Backend
+    direkt erreicht (unter Umgehung von nginx), seine IP nicht per Header
+    fälschen kann.
+  - `app.ts`: `@fastify/helmet` (MIT-lizenziert, mit AGPL kompatibel)
+    registriert — `contentSecurityPolicy: false` bewusst vorerst
+    deaktiviert (Begründung + Folge-Task siehe **Task #149**), alle
+    anderen Standard-Header (HSTS, X-Content-Type-Options, X-Frame-Options,
+    Referrer-Policy etc.) aktiv.
+  - `auth/session.ts`: `secure: !config.isDev` auf dem Session-Cookie
+    (nicht pauschal `true`, sonst würde die lokale Entwicklung über
+    `http://localhost` brechen).
+  - `docs/Installationsanleitung.md`: `server_tokens off;` in der
+    dokumentierten nginx-Konfiguration ergänzt (gilt für künftige
+    Neuinstallationen; auf dem bestehenden Produktivserver muss die Zeile
+    manuell nachgetragen und `nginx` neu geladen werden).
+  - TLS-Zertifikatsketten-Hinweis und CSP-Design bewusst **nicht** sofort
+    umgesetzt, da beides echte Design-Entscheidungen braucht — siehe
+    **Task #150** bzw. **Task #149**.
+
+  **Tests:** `routes/auth.integration.test.ts` — zwei neue Tests belegen,
+  dass unterschiedliche `X-Forwarded-For`-Werte vom vertrauenswürdigen
+  Proxy aus unabhängig gesperrt werden (nicht mehr global) und dass ein
+  gefälschter `X-Forwarded-For` von einer nicht-vertrauten Gegenstelle
+  ignoriert wird (keine Umgehung per Spoofing); ein weiterer Test prüft das
+  `Secure`-Flag des Session-Cookies gegen `config.isDev`. Neue Datei
+  `app.integration.test.ts` prüft die aktiven Helmet-Header. Voller
+  Unit-/Integrationstest-Lauf grün.
+
+  **Live-Hinweis:** Die aktive Sperre auf der Produktivinstanz (durch den
+  Test selbst ausgelöst) läuft nach 15 Minuten automatisch ab oder wird
+  durch einen Dienst-Neustart sofort gelöscht (In-Memory-Zähler).
+
+- [Task] **#33** KI-basierte Security-Attack-Tests gegen installierte Anwendung — **Erledigt 2026-09-15**
+  Drei Runden live gegen die Produktivinstanz des Nutzers durchgeführt
+  (Nutzerfreigabe: "aktuell sind dort noch Testdaten und nichts zu
+  befürchten").
+
+  **Runde 1 (unauthentifiziert):** Außentäter-Perspektive — Security-Header,
+  Auth-Endpunkte (PIN-Login, Admin-Step-up)/Rate-Limiting, unautorisierte
+  Zugriffe auf 12 stichprobenartig gewählte Admin-/Register-Session-Routen,
+  SQL-Injection-Sondierung (sichere, nicht-destruktive Payloads),
+  Informationslecks (Fehlerantworten, Server-Header, vermeintlich
+  exponierte Dateien). Hauptfund + Fixes: **D-077** (globale Login-Sperre
+  statt pro-IP, siehe oben). Bestätigt solide: durchgängig korrekte
+  401-Antworten ohne Datenleck, parametrisierte PIN-Abfrage bereits
+  injection-sicher, keine CORS-Fehlkonfiguration, korrekter HTTP→HTTPS-
+  Redirect, keine Stack-Traces in Fehlerantworten, PIN-Keyspace ohnehin
+  brute-force-resistent.
+
+  **Runde 2 (authentifiziert, System-Administrator-Account, PIN
+  111-111-111):** Admin-Gating über ~19 Admin-Routendateien (401
+  unauthentifiziert → 403 authentifiziert-aber-nicht-verifiziert → 200 nach
+  Step-up, live an mehreren Stichproben bestätigt), Register-Scoping/IDOR
+  (403 auf eine fremde Kasse, auch mit System-Admin-Rechten; unbekannte
+  Rechnungs-ID → sauberes 404), Upload-Validierung (Logo, TLS-Zertifikat —
+  lehnt ungültige Eingaben vor jedem Schreibvorgang ab; bewusst kein
+  tatsächlicher Ersatz-Upload durchgeführt, um Produktivdaten nicht zu
+  verändern), TSE-Endpunkte (nur die unkritischen Lese-Endpunkte
+  authentifiziert getestet; die gefährlichen — `maintain`,
+  `test-signature`, `setup`, `unblock`, `factory-reset`, `detect` — bewusst
+  nur unauthentifiziert geprüft, um keine echte TSE-Hardware-Aktion
+  auszulösen), Logout-Invalidierung, Isolation paralleler Sessions. Alles
+  davon bestätigt solide, keine Funde. Ein echter Fund (keine Session-
+  Rotation beim Admin-Step-up) wurde als eigenständiges Finding **D-078**
+  festgehalten (weiterhin offen, unabhängiger Fix nötig).
+
+  **Runde 3 (authentifiziert, Veranstaltungs-Administrator-Account, PIN
+  222-222-222):** gezielt zum Schließen der aus Runde 2 bekannten
+  Deckungslücke — ob eine Nicht-System-Admin-Session korrekt an der
+  Admin-Rollen-Grenze abgewiesen wird. Account-Rolle live bestätigt
+  (`is_admin: false, is_event_admin: true` — echter Veranstaltungs-Admin,
+  kein System-Admin). Login (200) und Step-up mit Passwort "fairpos"
+  (200) erfolgreich, danach auf den beiden ausschließlich per
+  `authenticateSystemAdmin` gegateten Routendateien (`backup.ts`,
+  `events.ts`) korrekt **403** statt 401 oder 200 erhalten — die Grenze
+  hält. Zusätzlich per Code-Review bestätigt: `routes/admin/users.ts:138`
+  verweigert serverseitig explizit jede Änderung von `is_admin` durch
+  einen Nicht-System-Admin (ein tatsächlicher PATCH-Selbstbeförderungs-
+  versuch wurde nicht abgesetzt, um keine mutierende Produktivaktion
+  auszulösen). Kein Fund.
+
+  **Ergebnis:** Task #33 hat keine offenen Testpunkte mehr. Einziges
+  verbleibendes Arbeitsergebnis aus der gesamten Testreihe ist der
+  eigenständige Fix zu **D-078** (Session-Rotation beim Step-up).
+
+- [Finding] **D-079** (mittel, Frontend+Backend / Admin) — Gefunden 2026-09-15 — **Behoben 2026-09-15** — Kontext: Live-Bugreport während der Security-Test-Sitzung (Task #33 Runde 3), Nutzer bemerkte die eigene Test-Session eines Veranstaltungs-Administrators
+  Die "Aktive Sessions"-Ansicht (`admin/settings/sessions`, Task #90) zeigte
+  jede Session ohne `is_admin = true` pauschal als "Bediener" an, unabhängig
+  von `is_event_admin` und unabhängig vom tatsächlichen `admin_verified`-
+  Step-up-Status dieser Session. Root Cause: die Seite wurde vor Einführung
+  von `is_event_admin` (Task #94, Migration `0018_event_admin_role.sql`)
+  gebaut und nie nachgezogen — weder die Backend-Query
+  (`routes/admin/sessions.ts`) noch der Frontend-Typ noch die Label-Logik
+  kannten das zweite Rollenflag; das Verified-Badge war zudem exklusiv an
+  `is_admin` gekoppelt (`{#if s.is_admin}`), sodass ein verifizierter
+  Veranstaltungs-Administrator sein Badge nie sah. Auf der Schwesterseite
+  (`admin/users/+page.svelte::roleLabel()`) existierte die korrekte,
+  dreiwertige Logik bereits, wurde aber nicht wiederverwendet.
+
+  **Behoben:**
+  - `routes/admin/sessions.ts`: `u.is_event_admin` in `SELECT` und
+    `SessionListRow`-Interface ergänzt.
+  - `lib/api.ts`: dritte, unabhängige Kopie desselben Response-Typs
+    (`admin.sessions.list()`) ebenfalls um `is_event_admin` ergänzt.
+  - `admin/settings/sessions/+page.svelte`: neue `roleLabel()`-Funktion
+    (analog zu `admin/users/+page.svelte`) kombiniert `is_admin`/
+    `is_event_admin` zu "System-Administrator", "Veranstaltungs-
+    Administrator", "System-Administrator + Veranstaltungs-Administrator"
+    oder "Bediener"; das Verified-Badge erscheint jetzt bei `is_admin ||
+    is_event_admin` statt nur bei `is_admin`.
+
+  **Tests:** neuer Integrationstest in `sessions.integration.test.ts`
+  bestätigt, dass eine reine Veranstaltungs-Administrator-Session
+  (`is_admin: false, is_event_admin: true`) korrekt von der Query
+  zurückgegeben wird. Voller Unit-/gezielter Integrationstest-Lauf sowie
+  `tsc --noEmit`/`svelte-check` grün.
+

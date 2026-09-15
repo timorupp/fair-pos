@@ -6,18 +6,19 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import type { Article, RegisterType } from '@fairpos/shared';
+import type { Article, RegisterType, TaxCategory } from '@fairpos/shared';
+import { loadTaxRates, percentFor } from '../tax/rates.js';
 import { query, withTransaction } from '../db/client.js';
 import { authenticateRegister } from '../middleware/authenticate.js';
 import { generateReceiptToken } from '../receipt/numbering.js';
 import { nextReceiptNumber } from '../receipt/sequence.js';
-import { buildReceiptEscPos } from '../receipt/escpos-receipt.js';
-import { loadReceiptByToken } from '../receipt/data.js';
+import { buildReceiptBlocks } from '../receipt/blocks.js';
+import { loadReceiptById, loadReceiptByToken, snapshotCompanyDataForInvoice } from '../receipt/data.js';
 import { enqueuePrintJob } from '../print/enqueue.js';
-import { renderQrPng, buildReceiptQrUrl } from '../receipt/qr.js';
+import { renderBlocksToEscPos } from '../print/blocks.js';
 import {
-  bucketItemsByPrinter, buildOrderSlipEscPos,
-  buildPickupSlipEscPos, buildDepositSlipEscPos,
+  bucketItemsByPrinter, buildOrderSlipBlocks,
+  buildPickupSlipBlocks, buildDepositSlipBlocks,
   type OrderSlipItem,
 } from '../print/order-slip.js';
 import { resolvePrinterForRegister } from '../print/resolve-printer.js';
@@ -30,18 +31,25 @@ import {
 import { formatReceiptNumber, readReceiptPrefix } from '../receipt/format-receipt-number.js';
 import { makeGroupKey, pickItemsToCharge } from '../order/grouping.js';
 import { isRegisterUnlocked, findPendingDaysForRegister } from '../closing/pending-db.js';
+import { config } from '../config.js';
 
-/** Resolves the effective layout for a register: explicit `layout_id`, else the per-type default from settings, else null. */
+/**
+ * Resolves the effective layout for a register: explicit `layout_id`, else
+ * the active event's per-type default (Task #95 — moved off `system_setting`
+ * onto `event` itself, since a global default could point at a layout
+ * belonging to a different event), else null.
+ */
 async function resolveLayoutId(registerLayoutId: string | null, registerType: RegisterType): Promise<string | null> {
   if (registerLayoutId) return registerLayoutId;
-  const key = registerType === 'receipt_register'
-    ? 'default_layout_receipt_register'
-    : 'default_layout_service_register';
-  const result = await query<{ value: string }>(
-    `SELECT value FROM system_setting WHERE key = $1`,
-    [key],
+  if (!config.activeEventId) return null;
+  const column = registerType === 'receipt_register'
+    ? 'default_receipt_register_layout_id'
+    : 'default_service_register_layout_id';
+  const result = await query<{ layout_id: string | null }>(
+    `SELECT ${column} AS layout_id FROM event WHERE id = $1`,
+    [config.activeEventId],
   );
-  return result.rows[0]?.value ?? null;
+  return result.rows[0]?.layout_id ?? null;
 }
 
 /** Confirms the authenticated user has been assigned the given register. Returns 403 via reply if not. */
@@ -51,6 +59,25 @@ async function userHasRegister(userId: string, registerId: string): Promise<bool
     [userId, registerId],
   );
   return result.rowCount! > 0;
+}
+
+/**
+ * Resolves the `invoice.receipt_type` a new checkout on this register must
+ * use (Task #130) — `'training'` for a training register, `'sales_receipt'`
+ * otherwise. Training invoices still go through the exact same checkout path
+ * (TSE signing, `nextReceiptNumber()` sequence, printing) as a normal sale —
+ * only this one column differs, which is what drives their exclusion from
+ * closing totals (`closing/totals.ts`) and their `AVTraining` DSFinV-K
+ * classification (`exports/dsfinvk/load.ts`).
+ *
+ * @param registerId - The register the checkout is happening on.
+ * @returns `'training'` or `'sales_receipt'`.
+ */
+async function receiptTypeForRegister(registerId: string): Promise<'training' | 'sales_receipt'> {
+  const result = await query<{ is_training: boolean }>(
+    `SELECT is_training FROM register WHERE id = $1`, [registerId],
+  );
+  return result.rows[0]?.is_training ? 'training' : 'sales_receipt';
 }
 
 /**
@@ -78,7 +105,11 @@ async function lockedResponse(registerId: string): Promise<{ status: 409; body: 
   };
 }
 
-/** Registers /api/register-session routes. */
+/**
+ * Registers /api/register-session routes.
+ *
+ * @param app - The Fastify scope under which to register the routes.
+ */
 export async function registerSessionRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateRegister);
 
@@ -87,19 +118,20 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    * Each register is annotated with its pending-Z-Bon state so the UI can
    * show a "locked" indicator on the chooser screen. Archived registers
    * (`is_active = false`, Task #55) are excluded entirely — they stay
-   * assigned in `user_register` but no longer appear as choosable.
+   * assigned in `user_register` but no longer appear as choosable. Task #95:
+   * also excludes registers of an event other than the active one.
    */
   app.get('/me', async (req, reply) => {
     const result = await query<{
       id: string; name: string; type: RegisterType;
-      printer_id: string | null; layout_id: string | null;
+      printer_id: string | null; layout_id: string | null; is_training: boolean;
     }>(`
-      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id
+      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_training
         FROM register r
         JOIN user_register ur ON ur.register_id = r.id
-       WHERE ur.user_id = $1 AND r.is_active = true
+       WHERE ur.user_id = $1 AND r.is_active = true AND r.event_id = $2
        ORDER BY r.name
-    `, [req.registerUser.id]);
+    `, [req.registerUser.id, config.activeEventId]);
 
     const today = new Date();
     const registers = [];
@@ -108,7 +140,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       registers.push({ ...r, locked: pending.length > 0, pending_days: pending });
     }
     return reply.send({
-      user: { id: req.registerUser.id, name: req.registerUser.name, is_admin: req.registerUser.is_admin },
+      user: {
+        id: req.registerUser.id, name: req.registerUser.name,
+        is_admin: req.registerUser.is_admin, is_event_admin: req.registerUser.is_event_admin,
+      },
       registers,
     });
   });
@@ -118,6 +153,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    * An archived register (Task #55) is treated as not found — it has already
    * disappeared from `GET /me`, so reaching this by a stale/typed-in id should
    * behave the same as a deleted register, not silently allow operating it.
+   * Task #95: same treatment for a register of a different (non-active) event.
    */
   app.get('/registers/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -127,10 +163,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
     const regResult = await query<{
       id: string; name: string; type: RegisterType;
-      printer_id: string | null; layout_id: string | null;
+      printer_id: string | null; layout_id: string | null; is_training: boolean;
     }>(
-      `SELECT id, name, type, printer_id, layout_id FROM register WHERE id = $1 AND is_active = true`,
-      [id],
+      `SELECT id, name, type, printer_id, layout_id, is_training FROM register WHERE id = $1 AND is_active = true AND event_id = $2`,
+      [id, config.activeEventId],
     );
     const register = regResult.rows[0];
     if (!register) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
@@ -160,13 +196,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       }
     }
 
-    const articles = await query<Article & { category_name: string; tax_rate: string }>(
+    const articles = await query<Article & { category_name: string; tax_category: TaxCategory }>(
       `SELECT a.id, a.category_id, a.name, a.price, a.deposit_price,
-              a.print_deposit_receipt, a.printer_id, a.is_active, a.created_at,
-              c.name AS category_name, c.tax_rate
+              a.print_deposit_receipt, a.skip_pickup_slip, a.printer_id, a.is_active, a.created_at,
+              c.name AS category_name, c.tax_category
          FROM article a
          JOIN article_category c ON c.id = a.category_id
-        WHERE a.is_active = true`,
+        WHERE a.is_active = true AND a.event_id = $1`,
+      [config.activeEventId],
     );
 
     const pending = await findPendingDaysForRegister(register.id);
@@ -220,6 +257,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       const locked = await lockedResponse(registerId);
       if (locked) return reply.status(locked.status).send(locked.body);
 
+      // Task #130: a training register's checkout invoice carries
+      // receipt_type='training' instead of 'sales_receipt' — everything else
+      // about the checkout (TSE signing, receipt numbering, printing) is unchanged.
+      const receiptType = await receiptTypeForRegister(registerId);
+
       // At the Bonkasse, self-pickup slips go to the register's own printer
       // (fallback: system default). The per-article printer is intentionally
       // NOT used here — that's a Bedienungskasse-only rule. See
@@ -230,7 +272,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // `depositEuros` carries the per-unit deposit if any; `separateDepositSlip`
       // mirrors `article.print_deposit_receipt` and decides whether the deposit
       // is printed as an extra slip or as an extra line on the article slip.
-      const slipUnits: { name: string; priceEuros: number; depositEuros: number | null; separateDepositSlip: boolean }[] = [];
+      const slipUnits: {
+        name: string; priceEuros: number; depositEuros: number | null;
+        separateDepositSlip: boolean; skipPickupSlip: boolean;
+      }[] = [];
       let registerName = '';
 
       // Articles are fetched once, up front, so the same snapshot can be used
@@ -239,17 +284,17 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       const articleIds = [...new Set(positions.map((p) => p.article_id))];
       const articlesResult = await query<{
         id: string; name: string; price: string;
-        deposit_price: string | null; print_deposit_receipt: boolean;
+        deposit_price: string | null; print_deposit_receipt: boolean; skip_pickup_slip: boolean;
         printer_id: string | null;
-        category_name: string; tax_rate: string;
+        category_name: string; tax_category: TaxCategory;
       }>(
         `SELECT a.id, a.name, a.price, a.deposit_price,
-                a.print_deposit_receipt, a.printer_id,
-                c.name AS category_name, c.tax_rate
+                a.print_deposit_receipt, a.skip_pickup_slip, a.printer_id,
+                c.name AS category_name, c.tax_category
            FROM article a
            JOIN article_category c ON c.id = a.category_id
-          WHERE a.id = ANY($1)`,
-        [articleIds],
+          WHERE a.id = ANY($1) AND a.event_id = $2`,
+        [articleIds, config.activeEventId],
       );
       const articleById = new Map(articlesResult.rows.map((a) => [a.id, a]));
       for (const pos of positions) {
@@ -257,24 +302,37 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           return reply.status(400).send({ error: `Artikel ${pos.article_id} nicht gefunden` });
         }
       }
+      // Article's own tax_category resolves to a concrete percentage
+      // (order_item snapshot); a deposit is always taxed at `standard`
+      // regardless of the article (Task #113).
+      const taxRates = await loadTaxRates();
 
       // TSE-Signierung (Kassenbeleg-V1) läuft VOR der DB-Transaktion. `signTseTransaction`
       // blockiert den Kassiervorgang nicht — siehe docs/TSE-Integration.md Abschnitt 8.1
       // ("TSE-Ausfall", AEAO zu § 146a Nr. 1.14.3) für die vollständige Begründung.
       const kassenbelegSnapshot = buildKassenbelegProcessData({
         paymentMethod: 'cash',
-        receiptType: 'sales_receipt',
+        // Task #130: the embedded Vorgangstyp must agree with this same
+        // register's is_training flag, exactly like the DSFinV-K export's
+        // own BON_TYP derivation (`exports/dsfinvk/load.ts`) — otherwise the
+        // TSE-signed processData and the export would classify the same
+        // booking differently.
+        vorgangstyp: receiptType === 'training' ? 'AVTraining' : 'Beleg',
         positions: positions.map((p) => {
           const article = articleById.get(p.article_id)!;
           return {
             quantity: p.quantity,
             unitPriceEuros: Number(article.price),
             depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
-            taxRatePercent: Number(article.tax_rate),
+            taxCategory: article.tax_category,
           };
         }),
       });
       const { signature: tse, warning: tseWarning } = await signTseTransaction(KASSENBELEG_PROCESS_TYPE, kassenbelegSnapshot);
+      // Task #112: freeze the currently-active company data/logo onto this
+      // invoice — read outside the transaction since it's a pure snapshot of
+      // already-current state, not something the sale itself needs to lock.
+      const companySnapshot = await snapshotCompanyDataForInvoice('receipt');
 
       const result = await withTransaction(async (client) => {
         // Atomic increment of the global receipt counter — row-level lock held
@@ -286,14 +344,19 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           `INSERT INTO invoice (
              register_id, receipt_number, receipt_type, payment_method, receipt_token,
              tse_transaction_number, tse_start_time, tse_end_time,
-             tse_signature, tse_signature_counter, tse_serial_number
+             tse_signature, tse_signature_counter, tse_serial_number,
+             company_name, company_street, company_postal_code, company_city,
+             company_tax_number, company_vat_id, logo_version_id
            )
-           VALUES ($1, $2, 'sales_receipt', 'cash', $3, $4, $5, $6, $7, $8, $9)
+           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
            RETURNING id`,
           [
-            registerId, receiptNumber, receiptToken,
+            registerId, receiptNumber, receiptType, receiptToken,
             tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
             tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+            companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
+            companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
+            companySnapshot.logoVersionId,
           ],
         );
         const invoiceId = invoiceResult.rows[0]!.id;
@@ -308,25 +371,34 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         for (const pos of positions) {
           const article = articleById.get(pos.article_id)!;
           const displayName = article.name;
+          const articleTaxRate = percentFor(article.tax_category, taxRates);
+          const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
+          // Deposit is always taxed at the Regelsteuersatz (Task #113),
+          // frozen here at booking time independent of the article's own rate.
+          const depositTaxRate = depositRaw !== 0 ? taxRates.standard : null;
           for (let i = 0; i < pos.quantity; i++) {
             await client.query(
               `INSERT INTO order_item (
-                 invoice_id, register_id, user_id, article_id,
-                 article_name, article_category_name, tax_rate, price, deposit_price,
+                 invoice_id, register_id, user_name, article_id,
+                 article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
                  status
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'paid')`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'paid')`,
               [
-                invoiceId, registerId, req.registerUser.id, article.id,
+                invoiceId, registerId, req.registerUser.name, article.id,
                 displayName, article.category_name,
-                article.tax_rate, article.price, article.deposit_price,
+                articleTaxRate, article.tax_category, article.price, article.deposit_price, depositTaxRate,
               ],
             );
-            const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
             slipUnits.push({
               name: displayName,
               priceEuros: Number(article.price),
-              depositEuros: depositRaw > 0 ? depositRaw : null,
-              separateDepositSlip: depositRaw > 0 && article.print_deposit_receipt,
+              // `!== 0` (not `> 0`) so a Pfandrückgabe (negative deposit)
+              // reaches the slip builder instead of being silently dropped
+              // here (Task #114 — this was the actual root cause, one level
+              // above the slip builder's own now-also-fixed `> 0` check).
+              depositEuros: depositRaw !== 0 ? depositRaw : null,
+              separateDepositSlip: depositRaw !== 0 && article.print_deposit_receipt,
+              skipPickupSlip: article.skip_pickup_slip,
             });
           }
         }
@@ -349,24 +421,29 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       let slipsEnqueued = 0;
       if (slipPrinterId) {
         for (const unit of slipUnits) {
-          // Article slip: includes the deposit line only when there is a
-          // deposit AND the article is NOT configured for a separate slip.
-          const inlineDeposit = unit.separateDepositSlip ? null : unit.depositEuros;
-          const articleBytes = buildPickupSlipEscPos(
-            { name: unit.name, priceEuros: unit.priceEuros, depositEuros: inlineDeposit },
-            slipCtx,
-            pickupLogo?.escposBytes ?? null,
-          );
-          await enqueuePrintJob(slipPrinterId, 'order_slip', articleBytes);
-          slipsEnqueued += 1;
+          // Task #114: articles flagged "Selbstabholerbon nicht drucken"
+          // (e.g. direct-takeaway items, Pfandrückgabe) skip the pickup slip
+          // entirely — but a separately configured deposit slip still prints.
+          if (!unit.skipPickupSlip) {
+            // Article slip: includes the deposit line only when there is a
+            // deposit AND the article is NOT configured for a separate slip.
+            const inlineDeposit = unit.separateDepositSlip ? null : unit.depositEuros;
+            const articleBlocks = buildPickupSlipBlocks(
+              { name: unit.name, priceEuros: unit.priceEuros, depositEuros: inlineDeposit },
+              slipCtx,
+              pickupLogo,
+            );
+            await enqueuePrintJob(slipPrinterId, 'order_slip', renderBlocksToEscPos(articleBlocks), articleBlocks);
+            slipsEnqueued += 1;
+          }
 
           if (unit.separateDepositSlip && unit.depositEuros !== null) {
-            const depositBytes = buildDepositSlipEscPos(
+            const depositBlocks = buildDepositSlipBlocks(
               { depositEuros: unit.depositEuros },
               slipCtx,
-              depositLogo?.escposBytes ?? null,
+              depositLogo,
             );
-            await enqueuePrintJob(slipPrinterId, 'order_slip', depositBytes);
+            await enqueuePrintJob(slipPrinterId, 'order_slip', renderBlocksToEscPos(depositBlocks), depositBlocks);
             slipsEnqueued += 1;
           }
         }
@@ -410,31 +487,36 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const data = await loadReceiptByToken(inv.receipt_token);
     if (!data) return reply.status(404).send({ error: 'Rechnungsdaten nicht ladbar' });
 
-    const bytes = buildReceiptEscPos(data);
-    const job = await enqueuePrintJob(printerId, 'receipt', bytes, id);
+    const blocks = await buildReceiptBlocks(data);
+    const job = await enqueuePrintJob(printerId, 'receipt', renderBlocksToEscPos(blocks), blocks, id);
     return reply.send({ print_job_id: job.id });
   });
 
-  /** GET /invoices/:id/qr.png — PNG QR-code carrying the public receipt URL for customer scanning. */
-  app.get<{ Params: { id: string } }>('/invoices/:id/qr.png', async (req, reply) => {
+  /**
+   * GET /invoices/:id/preview — read-only `PrintBlock[]` for an on-screen
+   * receipt preview on the checkout confirmation screen (Task #147). Same
+   * ownership check as `/invoices/:id/print` above, but no printer
+   * resolution and no print job — just the structured blocks the receipt
+   * renderer already builds from, so the frontend preview and the actual
+   * printed/PDF receipt can never visually diverge.
+   */
+  app.get<{ Params: { id: string } }>('/invoices/:id/preview', async (req, reply) => {
     const { id } = req.params;
-    const result = await query<{ register_id: string; receipt_token: string | null }>(
-      `SELECT register_id, receipt_token FROM invoice WHERE id = $1`,
+    const invResult = await query<{ register_id: string }>(
+      `SELECT register_id FROM invoice WHERE id = $1`,
       [id],
     );
-    const inv = result.rows[0];
+    const inv = invResult.rows[0];
     if (!inv) return reply.status(404).send({ error: 'Rechnung nicht gefunden' });
     if (!(await userHasRegister(req.registerUser.id, inv.register_id))) {
       return reply.status(403).send({ error: 'Keine Berechtigung für diese Kasse' });
     }
-    if (!inv.receipt_token) return reply.status(500).send({ error: 'Rechnung ohne Token' });
 
-    const addr = await query<{ value: string }>(
-      `SELECT value FROM system_setting WHERE key = 'server_address'`,
-    );
-    const url = buildReceiptQrUrl(addr.rows[0]?.value, req.headers.host ?? 'localhost', inv.receipt_token);
-    const png = await renderQrPng(url, 320);
-    reply.header('Content-Type', 'image/png').header('Cache-Control', 'no-store').send(png);
+    const data = await loadReceiptById(id);
+    if (!data) return reply.status(404).send({ error: 'Rechnungsdaten nicht ladbar' });
+
+    const blocks = await buildReceiptBlocks(data);
+    return reply.send({ blocks });
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -443,7 +525,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
   // because they always go straight from cart → paid invoice in one step.
   // ──────────────────────────────────────────────────────────────────────────
 
-  /** GET /registers/:id/floor-plan — tables visible to the operator with per-table occupancy status. */
+  /** GET /registers/:id/floor-plan — tables of the active event visible to the operator with per-table occupancy status. */
   app.get<{ Params: { id: string } }>('/registers/:id/floor-plan', async (req, reply) => {
     const { id: registerId } = req.params;
     if (!(await userHasRegister(req.registerUser.id, registerId))) {
@@ -459,17 +541,17 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
              c.col_order, r.row_order, t.status,
              COALESCE(o.cnt, 0)::text AS open_count
         FROM dining_table t
-        JOIN floor_plan_column c ON c.label = t.col_label
-        JOIN floor_plan_row    r ON r.label = t.row_label
+        JOIN floor_plan_column c ON c.event_id = t.event_id AND c.label = t.col_label
+        JOIN floor_plan_row    r ON r.event_id = t.event_id AND r.label = t.row_label
         LEFT JOIN (
           SELECT dining_table_id, COUNT(*) AS cnt
             FROM order_item
            WHERE status = 'open' AND dining_table_id IS NOT NULL
            GROUP BY dining_table_id
         ) o ON o.dining_table_id = t.id
-       WHERE t.status <> 'hidden'
+       WHERE t.status <> 'hidden' AND t.event_id = $1
        ORDER BY c.col_order, r.row_order
-    `);
+    `, [config.activeEventId]);
 
     return reply.send({
       tables: tables.rows.map((t) => ({
@@ -495,13 +577,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     return reply.send(result.rows);
   });
 
-  /** GET /cancellation-reasons — active cancellation reasons available to the operator. */
+  /** GET /cancellation-reasons — active cancellation reasons of the active event available to the operator. */
   app.get('/cancellation-reasons', async (_req, reply) => {
     const result = await query(
       `SELECT id, name, booking_type, is_active
          FROM cancellation_reason
-        WHERE is_active = true
+        WHERE is_active = true AND event_id = $1
         ORDER BY name`,
+      [config.activeEventId],
     );
     return reply.send(result.rows);
   });
@@ -604,9 +687,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       if (locked) return reply.status(locked.status).send(locked.body);
     }
 
-    // Validate the table exists and is bookable (active). Hidden / inactive tables refuse new orders.
+    // Validate the table exists (of the active event) and is bookable (active). Hidden / inactive tables refuse new orders.
     const tableCheck = await query<{ name: string; status: string }>(
-      `SELECT name, status FROM dining_table WHERE id = $1`, [tableId],
+      `SELECT name, status FROM dining_table WHERE id = $1 AND event_id = $2`, [tableId, config.activeEventId],
     );
     if (tableCheck.rows.length === 0) return reply.status(404).send({ error: 'Tisch nicht gefunden' });
     if (tableCheck.rows[0]!.status !== 'active') {
@@ -625,14 +708,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const articlesResult = await query<{
       id: string; name: string; price: string;
       deposit_price: string | null; printer_id: string | null;
-      category_name: string; tax_rate: string;
+      category_name: string; tax_category: TaxCategory;
     }>(
       `SELECT a.id, a.name, a.price, a.deposit_price, a.printer_id,
-              c.name AS category_name, c.tax_rate
+              c.name AS category_name, c.tax_category
          FROM article a
          JOIN article_category c ON c.id = a.category_id
-        WHERE a.id = ANY($1)`,
-      [articleIds],
+        WHERE a.id = ANY($1) AND a.event_id = $2`,
+      [articleIds, config.activeEventId],
     );
     const articleById = new Map(articlesResult.rows.map((a) => [a.id, a]));
     for (const pos of positions) {
@@ -640,6 +723,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         return reply.status(400).send({ error: `Artikel ${pos.article_id} nicht gefunden` });
       }
     }
+    const taxRates = await loadTaxRates();
 
     // One Bestellung-V1 signature per Bestellvorgang, not per position — see
     // docs/Anforderungen.md → "Zu signierende Vorgänge in FairPOS".
@@ -663,14 +747,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // call reference the same service_order.
       const soResult = await client.query<{ id: string }>(
         `INSERT INTO service_order (
-           register_id, dining_table_id, user_id,
+           register_id, dining_table_id, user_name,
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number
          )
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
         [
-          registerId, tableId, req.registerUser.id,
+          registerId, tableId, req.registerUser.name,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
         ],
@@ -680,17 +764,20 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       for (const pos of positions) {
         const article = articleById.get(pos.article_id)!;
         const options = pos.options?.trim() ? pos.options.trim() : null;
+        const articleTaxRate = percentFor(article.tax_category, taxRates);
+        const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
+        const depositTaxRate = depositRaw !== 0 ? taxRates.standard : null;
         for (let i = 0; i < pos.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (
-               service_order_id, dining_table_id, register_id, user_id, article_id,
-               article_name, article_category_name, tax_rate, price, deposit_price,
+               service_order_id, dining_table_id, register_id, user_name, article_id,
+               article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
                options, status
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'open')`,
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'open')`,
             [
-              serviceOrderId, tableId, registerId, req.registerUser.id, article.id,
+              serviceOrderId, tableId, registerId, req.registerUser.name, article.id,
               article.name, article.category_name,
-              article.tax_rate, article.price, article.deposit_price,
+              articleTaxRate, article.tax_category, article.price, article.deposit_price, depositTaxRate,
               options,
             ],
           );
@@ -712,10 +799,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     let enqueued = 0, skipped = 0;
     for (const bucket of buckets) {
       if (!bucket.printer_id) { skipped += bucket.lines.length; continue; }
-      const bytes = buildOrderSlipEscPos(bucket, {
+      const blocks = buildOrderSlipBlocks(bucket, {
         tableName, serverName: req.registerUser.name, createdAt: now,
-      }, orderLogo?.escposBytes ?? null);
-      await enqueuePrintJob(bucket.printer_id, 'order_slip', bytes);
+      }, orderLogo);
+      await enqueuePrintJob(bucket.printer_id, 'order_slip', renderBlocksToEscPos(blocks), blocks);
       enqueued += 1;
     }
 
@@ -761,6 +848,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       if (locked) return reply.status(locked.status).send(locked.body);
     }
 
+    // Task #130: a training register's checkout invoice carries
+    // receipt_type='training' instead of 'sales_receipt'.
+    const receiptType = await receiptTypeForRegister(registerId);
+
     const quantitiesMap = new Map<string, number>();
     for (const q of quantities) {
       if (!q.group_key || typeof q.count !== 'number' || !Number.isInteger(q.count) || q.count < 0) {
@@ -774,9 +865,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
     const open = await query<{
       id: string; article_id: string | null; article_name: string; options: string | null;
-      tax_rate: string; price: string; deposit_price: string | null; created_at: Date;
+      tax_category: TaxCategory; price: string; deposit_price: string | null; created_at: Date;
     }>(
-      `SELECT id, article_id, article_name, options, tax_rate, price, deposit_price, created_at
+      `SELECT id, article_id, article_name, options, tax_category, price, deposit_price, created_at
          FROM order_item
         WHERE dining_table_id = $1 AND status = 'open'`,
       [tableId],
@@ -789,18 +880,21 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
     const kassenbelegSnapshot = buildKassenbelegProcessData({
       paymentMethod: 'cash',
-      receiptType: 'sales_receipt',
+      // Task #130: see the Bonkasse checkout's identical comment above.
+      vorgangstyp: receiptType === 'training' ? 'AVTraining' : 'Beleg',
       positions: ids.map((id) => {
         const item = pickedById.get(id)!;
         return {
           quantity: 1,
           unitPriceEuros: Number(item.price),
           depositPriceEuros: item.deposit_price === null ? null : Number(item.deposit_price),
-          taxRatePercent: Number(item.tax_rate),
+          taxCategory: item.tax_category,
         };
       }),
     });
     const { signature: tse, warning: tseWarning } = await signTseTransaction(KASSENBELEG_PROCESS_TYPE, kassenbelegSnapshot);
+    // Task #112: see the Bonkasse checkout's identical comment above.
+    const companySnapshot = await snapshotCompanyDataForInvoice('receipt');
 
     const result = await withTransaction(async (client) => {
       // Defends against a concurrent change (another checkout/cancel on the
@@ -825,14 +919,19 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         `INSERT INTO invoice (
            register_id, receipt_number, receipt_type, payment_method, receipt_token,
            tse_transaction_number, tse_start_time, tse_end_time,
-           tse_signature, tse_signature_counter, tse_serial_number
+           tse_signature, tse_signature_counter, tse_serial_number,
+           company_name, company_street, company_postal_code, company_city,
+           company_tax_number, company_vat_id, logo_version_id
          )
-         VALUES ($1, $2, 'sales_receipt', 'cash', $3, $4, $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          RETURNING id`,
         [
-          registerId, receiptNumber, receiptToken,
+          registerId, receiptNumber, receiptType, receiptToken,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
+          companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
+          companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
+          companySnapshot.logoVersionId,
         ],
       );
       const invoiceId = inv.rows[0]!.id;
@@ -898,8 +997,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     }
 
     const reasonResult = await query<{ name: string; booking_type: 'cancellation' | 'free_of_charge'; is_active: boolean }>(
-      `SELECT name, booking_type, is_active FROM cancellation_reason WHERE id = $1`,
-      [cancellation_reason_id],
+      `SELECT name, booking_type, is_active FROM cancellation_reason WHERE id = $1 AND event_id = $2`,
+      [cancellation_reason_id, config.activeEventId],
     );
     const reason = reasonResult.rows[0];
     if (!reason || !reason.is_active) {
@@ -958,14 +1057,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // by this call reference the same cancellation.
       const cancellationResult = await client.query<{ id: string }>(
         `INSERT INTO order_cancellation (
-           register_id, cancellation_reason_id, cancelled_by,
+           register_id, cancellation_reason_id, cancellation_reason_name, cancelled_by_name,
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
         [
-          registerId, cancellation_reason_id, req.registerUser.id,
+          registerId, cancellation_reason_id, reason.name, req.registerUser.name,
           tse?.transactionNumber ?? null, tse?.startTime ?? null, tse?.endTime ?? null,
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
         ],
@@ -976,11 +1075,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         `UPDATE order_item
             SET status = $1,
                 cancellation_reason_id = $2,
-                cancelled_by = $3,
+                cancellation_reason_name = $3,
+                cancelled_by_name = $4,
                 cancelled_at = now(),
-                order_cancellation_id = $5
-          WHERE id = ANY($4)`,
-        [nextStatus, cancellation_reason_id, req.registerUser.id, ids, cancellationId],
+                order_cancellation_id = $6
+          WHERE id = ANY($5)`,
+        [nextStatus, cancellation_reason_id, reason.name, req.registerUser.name, ids, cancellationId],
       );
 
       return { items_cancelled: ids.length, booking_type: reason.booking_type };
