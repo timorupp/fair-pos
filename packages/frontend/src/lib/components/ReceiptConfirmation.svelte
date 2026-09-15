@@ -21,7 +21,8 @@
    */
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { api } from '$lib/api';
+  import { api, type PrintBlock } from '$lib/api';
+  import ReceiptBlockPreview from '$lib/components/ReceiptBlockPreview.svelte';
 
   interface Props {
     /** Route to navigate back to after printing or declining. */
@@ -57,6 +58,32 @@
   /** Back to the calling flow's next screen — a full navigation, so its list is always freshly loaded (no stale-state risk like an in-page modal had, see D-047). */
   function finish() {
     goto(backHref);
+  }
+
+  // ── Rechnungsvorschau (Task #147) — collapsed by default, data fetched
+  // lazily only on first opening (not on page load), so the checkout screen
+  // stays as light/fast as before whenever the operator doesn't open it. The
+  // invoice is already fully finalized/TSE-signed by the time this screen is
+  // shown, so the preview never needs to refresh once loaded.
+  let previewBlocks: PrintBlock[] | null = $state(null);
+  let previewLoading = $state(false);
+  let previewError = $state('');
+
+  async function loadPreviewOnce() {
+    if (previewBlocks !== null || previewLoading || !invoiceId) return;
+    previewLoading = true; previewError = '';
+    try {
+      const result = await api.registerSession.previewInvoice(invoiceId);
+      previewBlocks = result.blocks;
+    } catch (e) {
+      previewError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      previewLoading = false;
+    }
+  }
+
+  function handlePreviewToggle(e: Event & { currentTarget: HTMLDetailsElement }) {
+    if (e.currentTarget.open) loadPreviewOnce();
   }
 
   const fmt = (n: number) => n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -127,6 +154,19 @@
           <div class="muted small">{count} Artikel</div>
         </div>
       </div>
+
+      <!-- Rechnungsvorschau (Task #147, experimentelles Prototyp-Layout) —
+           zugeklappt, Daten erst beim Öffnen geladen. -->
+      <details class="preview-details" ontoggle={handlePreviewToggle}>
+        <summary>Rechnungsvorschau</summary>
+        {#if previewLoading}
+          <p class="muted small">Lade Vorschau…</p>
+        {:else if previewError}
+          <p class="error-text small">{previewError}</p>
+        {:else if previewBlocks}
+          <ReceiptBlockPreview blocks={previewBlocks} />
+        {/if}
+      </details>
 
       {#if tseWarning}<p class="warning-text">⚠ {tseWarning}</p>{/if}
       {#if printDone}<p class="success-text">✓ Bon wird gedruckt</p>{/if}
@@ -208,6 +248,16 @@
   .total-final { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .total-final.negative { color: var(--color-danger); }
   .small { font-size: 0.85rem; }
+
+  /* ── Rechnungsvorschau (Task #147) ──────────────────────────────────── */
+  .preview-details { margin: 0.75rem 0; }
+  .preview-details summary {
+    cursor: pointer; font-size: 0.9rem; font-weight: 600;
+    color: var(--color-text-muted); padding: 0.5rem 0; min-height: 44px;
+    display: flex; align-items: center;
+  }
+  .preview-details summary:hover { color: var(--color-text); }
+  .preview-details[open] summary { margin-bottom: 0.5rem; }
 
   .success-text { color: #4caf7d; font-size: 0.9rem; margin-top: 0.5rem; }
   .warning-text { color: #f59e0b; font-size: 0.9rem; margin-top: 0.5rem; font-weight: 600; }

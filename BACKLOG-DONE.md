@@ -6040,3 +6040,44 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   eine Kasse einer anderen, inaktiven Veranstaltung mit offener Rechnung
   taucht nicht mehr in `/closings/pending` auf.
 
+- [Task] **#147** Rechnungsvorschau im Checkout-Screen (Rückgeldrechner)
+  **Klassifikation: Feature/Nutzerwunsch, angelegt und umgesetzt 2026-09-15.**
+
+  **Anforderung:** Im Checkout-Bestätigungsbildschirm (`ReceiptConfirmation.svelte`
+  — "Rückgeld berechnen", nach Bonkasse-/Bedienungskasse-Kassieren, vor dem
+  Drucken) zusätzlich eine Vorschau der fertigen Rechnung anzeigen.
+
+  **Entscheidungen (Nutzervorgabe 2026-09-15):** HTML-Renderer statt
+  PDF-Embed (PDF-Rendering in einem iframe ist auf Tablet-/Kiosk-Browsern —
+  dem typischen Bonkasse-Gerät — erfahrungsgemäß nicht zuverlässig; das
+  bereits vorhandene formatunabhängige `PrintBlock[]`-Modell ist genau
+  dafür gebaut). Schmales Bon-Format, in ein standardmäßig zugeklapptes
+  Panel gepackt, Daten erst beim Öffnen geladen — damit der Checkout-
+  Screen nicht überladen wird.
+
+  **Umgesetzt:**
+  - Neuer Endpoint `GET /api/register-session/invoices/:id/preview`
+    (`routes/register-session.ts`) — dieselbe Berechtigungsprüfung wie
+    `POST /invoices/:id/print` (`userHasRegister()`), aber ohne
+    Drucker-Auflösung/Print-Job: lädt `loadReceiptById()` +
+    `buildReceiptBlocks()` und liefert die `PrintBlock[]` direkt als JSON.
+  - Neue Komponente `ReceiptBlockPreview.svelte` — rendert `PrintBlock[]`
+    (text/row/hr/blank/image) als schmales, monospace Bon-Layout mit
+    bewusst fest hellem "Papier"-Look (unabhängig vom App-Theme, da es wie
+    der echte Ausdruck aussehen soll).
+  - `ReceiptConfirmation.svelte`: natives `<details>/<summary>`-Panel
+    ("Rechnungsvorschau", zugeklappt) direkt unter den Summen — Daten
+    werden erst beim ersten Öffnen (`ontoggle`) geladen, nicht beim Laden
+    der Seite; danach gecacht (kein erneutes Laden bei erneutem Öffnen, da
+    die Rechnung zu diesem Zeitpunkt bereits abgeschlossen/signiert ist und
+    sich nicht mehr ändert).
+  - `api.ts`: neue `registerSession.previewInvoice()` + lokaler
+    `PrintBlock`-Typ (bewusst nicht aus dem Backend-Package importiert, da
+    Frontend/Backend getrennte npm-Workspaces sind; `escposRasterBase64`
+    absichtlich weggelassen, da die Vorschau nur die PNG-Variante braucht).
+
+  **Tests:** `routes/register-session.integration.test.ts` — neuer
+  Testblock: liefert Blöcke ohne Print-Job zu erzeugen, 404 bei
+  unbekannter Rechnung, 403 bei fremder Kasse. `svelte-check` sauber
+  (455 Dateien, 0 Fehler).
+

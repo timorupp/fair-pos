@@ -159,6 +159,16 @@ describe('GET /api/auth/register/me', () => {
     const response = await app.inject({ method: 'GET', url: '/api/auth/register/me' });
     expect(response.statusCode).toBe(401);
   });
+
+  it('includes the app version (Task #148)', async () => {
+    const app = await getTestApp();
+    const user = await createTestUser({ isAdmin: false });
+    const login = await app.inject({ method: 'POST', url: '/api/auth/pin', payload: { pin: user.pin } });
+    const cookie = cookieFrom(login.headers['set-cookie']);
+    const response = await app.inject({ method: 'GET', url: '/api/auth/register/me', headers: { cookie } });
+    expect(typeof response.json().version).toBe('string');
+    expect(response.json().version.length).toBeGreaterThan(0);
+  });
 });
 
 describe('POST /api/auth/logout', () => {

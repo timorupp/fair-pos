@@ -16,6 +16,14 @@
   let { children }: Props = $props();
 
   let checking = $state(true);
+
+  /**
+   * Running app version (Task #148), piggybacked on the same `register/me`
+   * call this layout already makes on mount — no extra request. Display
+   * position (topbar) is an explicit prototype (Nutzervorgabe 2026-09-15):
+   * to be confirmed/adjusted after live testing on production hardware.
+   */
+  let appVersion = $state('');
   // Hide the "Kasse wechseln" button on the register-picker page itself —
   // there is nothing to switch back to from there.
   let onRegisterPicker = $derived($page.url.pathname === '/register');
@@ -27,6 +35,7 @@
     try {
       const user = await api.auth.register.me();
       registerUser.set(user);
+      appVersion = user.version;
     } catch {
       // No valid session → back to the login page.
       goto('/login');
@@ -43,6 +52,7 @@
 <div class="shell">
   <header class="topbar">
     <div class="brand"><img class="brand-icon" src="/fairpos-icon.svg" alt="" width="18" height="18" /> FairPOS</div>
+    {#if appVersion}<span class="version">v{appVersion}</span>{/if}
     <div class="spacer"></div>
     {#if $registerUser}
       <span class="user-name">{$registerUser.name}</span>
@@ -78,6 +88,8 @@
   .brand-icon { width: 18px; height: 18px; flex-shrink: 0; }
   .spacer { flex: 1; }
   .user-name { font-size: 0.85rem; color: var(--color-text-muted); }
+  /* Task #148 — prototype placement, see doc comment above appVersion in the script block. */
+  .version { font-size: 0.7rem; color: var(--color-text-muted); opacity: 0.7; }
   .icon-btn {
     width: 44px; height: 44px; padding: 0; font-size: 1.3rem;
     display: flex; align-items: center; justify-content: center;

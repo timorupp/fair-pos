@@ -333,6 +333,56 @@ describe('POST /api/register-session/invoices/:id/print (T-012/T-013)', () => {
   });
 });
 
+describe('GET /api/register-session/invoices/:id/preview (Task #147)', () => {
+  async function checkout(): Promise<string> {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 2 }] },
+    });
+    return response.json().invoice_id;
+  }
+
+  it('returns the receipt blocks for the invoice, without enqueuing any print job', async () => {
+    const invoiceId = await checkout();
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/invoices/${invoiceId}/preview`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const { blocks } = response.json();
+    expect(Array.isArray(blocks)).toBe(true);
+    expect(blocks.length).toBeGreaterThan(0);
+    expect(blocks.some((b: { kind: string }) => b.kind === 'row')).toBe(true);
+
+    const jobs = await pool.query(`SELECT id FROM print_job WHERE reference_id = $1`, [invoiceId]);
+    expect(jobs.rowCount).toBe(0);
+  });
+
+  it('returns 404 for an invoice that does not exist', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/invoices/00000000-0000-0000-0000-000000000000/preview`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns 403 when the caller is not assigned to the invoice\'s register', async () => {
+    const invoiceId = await checkout();
+    const other = await createTestUser({ isAdmin: false });
+    const otherCookie = await loginAsRegisterUser(await getTestApp(), other.pin);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/invoices/${invoiceId}/preview`,
+      headers: { cookie: otherCookie },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+});
+
 describe('GET /api/register-session/registers/:id — layout slots (Task #91 follow-up)', () => {
   it('excludes hidden slots entirely and includes the custom label of visible ones', async () => {
     const layout = await pool.query<{ id: string }>(

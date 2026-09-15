@@ -16,6 +16,14 @@
   /** Whether the layout is still verifying the admin session on first load. */
   let checking = $state(true);
 
+  /**
+   * Running app version (Task #148), piggybacked on the same `admin/me` call
+   * this layout already makes on mount — no extra request. Display position
+   * (sidebar footer) is an explicit prototype (Nutzervorgabe 2026-09-15):
+   * to be confirmed/adjusted after live testing on production hardware.
+   */
+  let appVersion = $state('');
+
   let pendingRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   onMount(async () => {
@@ -24,6 +32,7 @@
     try {
       const user = await api.auth.admin.me();
       adminUser.set(user);
+      appVersion = user.version;
     } catch (e) {
       adminUser.set(null);
       // Logged in but hasn't passed the Systemverwaltung step-up yet (Task
@@ -222,6 +231,7 @@
       <span class="user-name">{$adminUser?.name}</span>
       <button class="btn-secondary" onclick={() => goto('/register')}>Zur Kassenauswahl</button>
       <button class="btn-logout" onclick={logout}>Abmelden</button>
+      {#if appVersion}<span class="version">v{appVersion}</span>{/if}
     </div>
   </aside>
 
@@ -294,6 +304,8 @@
     display: flex; flex-direction: column; gap: 0.5rem;
   }
   .user-name { font-size: 0.8rem; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Task #148 — deliberately as unobtrusive as .user-name; prototype placement, see doc comment above appVersion. */
+  .version { font-size: 0.7rem; color: var(--color-text-muted); opacity: 0.7; }
   .btn-secondary, .btn-logout {
     padding: 0.4rem 0; background: transparent; border: 1px solid var(--color-border);
     border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: 0.8rem;

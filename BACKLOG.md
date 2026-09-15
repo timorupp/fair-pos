@@ -194,38 +194,80 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Bonstorno-Bugfixes (Aggregation in `closing/totals.ts`, `/cash-balance`,
   Excel-Export) — daher zuerst hier klären, dann den Bugfix angehen.
 
-- [Task] **#137** Kassenjournal — kombinierte, chronologische Übersicht aus Einlagen/Entnahmen und Bareinnahmen
-  **Priorisierung (Nutzervorgabe 2026-09-12): Pre-Release — echte
-  Nutzbarkeitslücke, vor dem ersten Release erledigen.**
+- [Task] **#137** Kassenjournal — ursprüngliche Anforderung durch Entfernung von Einlage/Entnahme obsolet geworden, offen bis Live-Bestätigung
+  **Status (2026-09-12): noch offen — bewusst nicht abgeschlossen**, bis der
+  Nutzer live bestätigt, dass die neue Lösung (siehe unten) den
+  ursprünglichen Bedarf tatsächlich deckt. Erst nach dieser Bestätigung
+  schließen und nach `BACKLOG-DONE.md` verschieben, dort die
+  Entscheidung/Anforderungsänderung dokumentieren.
 
-  **Klassifikation: Feature/Nutzerwunsch, angelegt 2026-09-12.**
+  **Ursprüngliche Anforderung (angelegt 2026-09-12, Pre-Release
+  priorisiert):** ein "Kassenjournal" — eine kombinierte, chronologische
+  Ansicht aus Einlagen/Entnahmen (`cash_transaction`) und Bareinnahmen aus
+  Rechnungen —, weil die zwei damals existierenden Ansichten
+  (`GET /:id/transactions` je Kasse, `/cash-balance`
+  "Soll-Kassenstand" nur als Summen) beide unvollständig waren.
 
-  Aktuell gibt es zwei getrennte, jeweils unvollständige Ansichten:
-  - `GET /:id/transactions` (`routes/admin/registers.ts`) listet Einlagen/
-    Entnahmen (`cash_transaction`) einzeln auf, aber nur pro Kasse, ohne
-    Bezug zu den tatsächlichen Bareinnahmen aus Rechnungen.
-  - `/cash-balance` (`routes/admin/reports.ts`, Admin-Seite
-    `reports/cash-balance`) zeigt den **Soll-Kassenstand** nur als
-    aggregierte Summen (Einlagen gesamt, Bareinnahmen gesamt, Entnahmen
-    gesamt) — keine Einzelpositionen, keine zeitliche Abfolge.
+  **Was sich seitdem geändert hat:** Bei der Umsetzungsdiskussion (konkret
+  bei der Frage, ob `cash_transaction` eine `daily_closing_id`-Referenz
+  bekommen sollte) kam heraus, dass Kassenbewegungen strukturell nie an
+  den Kassenabschluss angebunden waren — keine TSE-Signatur, keine
+  Z-Bon-Summe, kein DSFinV-K-Export, trotz bereits dokumentierter
+  GV_TYP-Zuordnung (Einzahlung/Auszahlung/Anfangsbestand) in
+  `docs/Rechtliche-Anforderungen.md`. Der Nutzer hat daraufhin
+  entschieden, die Einlage/Entnahme-Funktion und den "Soll-Kassenstand"-
+  Report komplett zu entfernen, statt sie nachträglich compliance-konform
+  auszubauen — siehe **Task #143** (Entfernung inkl. `cash_transaction`-
+  `DROP TABLE`-Migration) und **Task #144** (Entfernung des
+  Soll-Kassenstand-Reports), beide bereits umgesetzt und committed
+  (Details in `BACKLOG-DONE.md`).
 
-  Es fehlt eine **kombinierte, chronologische Ansicht** ("Kassenjournal"),
-  die Einlagen, Entnahmen und einzelne Bareinnahmen aus Bezahlvorgängen
-  (Rechnungen mit `payment_method = 'cash'`) in einer gemeinsamen,
-  zeitlich sortierten Liste zeigt — z. B. je Kasse oder je Tagesabschluss,
-  mit laufendem Saldo.
+  An die Stelle der beiden alten Ansichten ist eine einfachere,
+  bereits umgesetzte Lösung getreten: die Kassen-Detailseite zeigt jetzt
+  unter "Offen seit letztem Tagesabschluss" je Zahlungsart (Bar/Karte) die
+  Summe aller noch nicht einem Z-Bon zugeordneten Rechnungen dieser Kasse
+  (`computeClosingTotals()`, dieselbe Aggregation wie der echte
+  Tagesabschluss selbst).
 
-  **Nutzerwunsch:** ggf. auch mit Excel-Export vorsehen (analog zu den
-  bestehenden Excel-Exports in `routes/admin/exports.ts`).
+  **Offene Frage, die die Live-Bestätigung klären soll:** Deckt "Offen
+  seit letztem Tagesabschluss" den ursprünglichen Bedarf vollständig ab,
+  oder besteht doch noch Bedarf an einer chronologischen
+  Einzelpositions-Ansicht bzw. einem Excel-Export dazu? Falls Letzteres:
+  neue, eigene Anforderung als separaten Task anlegen — nicht mehr unter
+  #137, da die ursprüngliche Grundlage (Einlagen/Entnahmen) nicht mehr
+  existiert.
 
-  **Noch nicht bewertet:** Datenquelle für die Bareinnahmen-Zeilen (eine
-  Zeile pro Rechnung, oder aggregiert je Zeiteinheit?), Scope der Ansicht
-  (pro Kasse, pro Tagesabschluss, oder frei wählbarer Zeitraum), ob dafür
-  ein neuer Endpoint nötig ist oder `/cash-balance` erweitert werden kann,
-  und ob GoBD/DSFinV-K hierfür bereits eine passende Datenquelle liefern
-  (`transactions.csv`/`datapayment.csv`) oder das rein eine
-  FairPOS-interne Komfortfunktion ist, ohne Compliance-Bezug.
+- [Task] **#148** Versionsnummer-Schema — implementiert, bleibt offen bis Live-Bestätigung auf echter Hardware
+  **Status (2026-09-15): umgesetzt, aber ausdrücklich als Prototyp/
+  experimentell zu behandeln (Nutzervorgabe)** — bleibt offen, bis auf dem
+  Produktivsystem an echter Hardware geprüft wurde, ob die Anzeige-Position
+  Sinn ergibt oder zu prominent wirkt; danach ggf. Korrekturen, dann
+  abschließen und nach `BACKLOG-DONE.md` verschieben.
 
+  **Umgesetztes Schema:** `[Major].[Release].[Build]` in der Datei
+  `VERSION` (Repo-Root) — siehe `AGENTS.md` Abschnitt "Versionsnummer" für
+  die vollständige, verbindliche Dokumentation (Kaskaden-Reset,
+  Durchsetzung, Sichtbarkeit). Aktueller Stand: `0.0.0` (wird beim nächsten
+  Commit gemäß Konvention auf `0.0.1` erhöht).
+
+  **Umgesetzt:**
+  - `config.ts` liest `VERSION` beim Start (`readVersion()`, Fallback
+    `'0.0.0'` statt Absturz bei fehlender Datei).
+  - `GET /api/auth/admin/me` und `GET /api/auth/register/me` liefern
+    `version` mit aus — kein zusätzlicher Request nötig, beide Layouts
+    rufen ohnehin eine der beiden Routen beim Mounten auf.
+  - Anzeige (Prototyp): Admin-Sidebar-Footer (`admin/+layout.svelte`,
+    unauffällig unter dem Benutzernamen) und Kassen-Topbar
+    (`register/+layout.svelte`, neben dem FairPOS-Logo) — bewusst dezent
+    (`opacity: 0.7`, kleine Schrift), um im Betrieb nicht zu stören.
+
+  **Tests:** `routes/auth.integration.test.ts` — neuer Test prüft, dass
+  `version` in der `register/me`-Antwort als nicht-leerer String vorliegt.
+  `svelte-check` sauber (455 Dateien, 0 Fehler).
+
+  **Noch offen (bewusst nicht vorab entschieden):** Format-Feinheiten
+  (`git tag` auf `master` bei jedem Release?), ob eine technische
+  Durchsetzung (Git-Hook) später sinnvoll wird — aktuell reine Konvention.
 
 ## Findings
 

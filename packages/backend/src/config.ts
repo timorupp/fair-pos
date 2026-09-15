@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 /**
  * Reads and validates all required environment variables at startup.
  * Throws immediately if a required variable is missing so the error is obvious.
@@ -6,6 +9,25 @@ function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
+}
+
+/**
+ * Reads the repo-root `VERSION` file (Task #148) — `[Major].[Release].[Build]`,
+ * see `AGENTS.md` for the full scheme. Resolved relative to `process.cwd()`,
+ * not `import.meta.url`, because both `npm run dev` (`tsx` from source) and
+ * production (`node dist/index.js`) are always started with the backend
+ * workspace directory as cwd (`docs/Installationsanleitung.md`'s systemd
+ * unit sets `WorkingDirectory=/opt/fairpos/packages/backend`) — two levels
+ * up from there is always the repo root, regardless of source vs. compiled
+ * location. Falls back to `'0.0.0'` rather than throwing — a missing
+ * VERSION file must never prevent the backend from starting.
+ */
+function readVersion(): string {
+  try {
+    return readFileSync(path.resolve(process.cwd(), '../../VERSION'), 'utf-8').trim();
+  } catch {
+    return '0.0.0';
+  }
 }
 
 /**
@@ -90,4 +112,7 @@ export const config = {
   // legitimately stays null until then, not just before the first load.
   activeEventId: null as string | null,
   isDev: (process.env['NODE_ENV'] ?? 'development') === 'development',
+  // Task #148 — read once at startup, surfaced via GET /api/auth/admin/me
+  // and GET /api/auth/register/me.
+  version: readVersion(),
 };

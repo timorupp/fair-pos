@@ -8,6 +8,21 @@ import type {
   DiningTable, TaxCategory,
 } from '@fairpos/shared';
 
+/**
+ * Neutral, format-independent print block, mirroring
+ * `packages/backend/src/print/blocks.ts`'s `PrintBlock` union (Task #147) —
+ * used for the read-only on-screen receipt preview. Kept as its own local
+ * type rather than imported from the backend package (frontend/backend are
+ * separate npm workspaces); `escposRasterBase64` is intentionally omitted
+ * here since the preview only ever needs the PNG variant.
+ */
+export type PrintBlock =
+  | { kind: 'text'; text: string; align?: 'left' | 'center'; bold?: boolean; size?: 'normal' | 'large' | 'xlarge' }
+  | { kind: 'row'; left: string; right: string; bold?: boolean; size?: 'normal' | 'large' | 'xlarge' }
+  | { kind: 'hr' }
+  | { kind: 'blank' }
+  | { kind: 'image'; pngBase64: string; pngWidth: number; pngHeight: number; widthFactor: number };
+
 /** Snapshot of TSE health/status, mirroring `packages/backend/src/tse/types.ts`. */
 export interface TseInfo {
   hasPassedSelfTest: boolean;
@@ -149,7 +164,7 @@ export const api = {
      * authenticates in one step (no separate username). Sets the session
      * cookie; lands everyone on the Kassenauswahl.
      */
-    pin: (pin: string): Promise<User> => request('POST', '/auth/pin', { pin }),
+    pin: (pin: string): Promise<User & { version: string }> => request('POST', '/auth/pin', { pin }),
 
     admin: {
       /**
@@ -161,14 +176,14 @@ export const api = {
       verify: (password: string): Promise<{ ok: boolean }> =>
         request('POST', '/auth/admin/verify', { password }),
 
-      /** Returns the current admin user, or throws when the session hasn't passed the step-up yet. */
-      me: (): Promise<User> =>
+      /** Returns the current admin user, or throws when the session hasn't passed the step-up yet. `version` is the running app version (Task #148). */
+      me: (): Promise<User & { version: string }> =>
         request('GET', '/auth/admin/me'),
     },
 
     register: {
-      /** Returns the current user, or throws when no session exists. Works for any logged-in user, admin or not. */
-      me: (): Promise<User> =>
+      /** Returns the current user, or throws when no session exists. Works for any logged-in user, admin or not. `version` is the running app version (Task #148). */
+      me: (): Promise<User & { version: string }> =>
         request('GET', '/auth/register/me'),
     },
 
@@ -753,6 +768,10 @@ export const api = {
     /** Enqueues a print job for the given invoice on the register's assigned printer. */
     print: (invoiceId: string): Promise<{ print_job_id: string }> =>
       request('POST', `/register-session/invoices/${invoiceId}/print`),
+
+    /** Read-only receipt blocks for the on-screen preview (Task #147) — no print job, no printer needed. */
+    previewInvoice: (invoiceId: string): Promise<{ blocks: PrintBlock[] }> =>
+      request('GET', `/register-session/invoices/${invoiceId}/preview`),
 
     /** Saalplan view: all visible tables annotated with their occupancy status. */
     floorPlan: (registerId: string): Promise<{

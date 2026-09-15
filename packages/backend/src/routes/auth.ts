@@ -20,6 +20,7 @@ import {
 } from '../auth/session.js';
 import { isLockedOut, recordFailedAttempt, recordSuccessfulAttempt } from '../auth/rateLimit.js';
 import { authenticateAdmin, authenticateRegister } from '../middleware/authenticate.js';
+import { config } from '../config.js';
 
 /** User row looked up by PIN hash. */
 interface PinUserRow {
@@ -30,12 +31,18 @@ interface PinUserRow {
   is_active: boolean;
 }
 
-/** Public user payload returned by login / me endpoints. */
+/**
+ * Public user payload returned by login / me endpoints. `version` (Task
+ * #148) piggybacks on these three responses since every admin/register
+ * layout already calls one of them once on mount — no extra request needed
+ * just to surface the app version.
+ */
 interface UserResponse {
   id: string;
   name: string;
   is_admin: boolean;
   is_event_admin: boolean;
+  version: string;
 }
 
 /**
@@ -77,6 +84,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     await createSession(reply, user.id, request.headers['user-agent']);
     const response: UserResponse = {
       id: user.id, name: user.name, is_admin: user.is_admin, is_event_admin: user.is_event_admin,
+      version: config.version,
     };
     return reply.send(response);
   });
@@ -128,6 +136,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       name: request.adminUser.name,
       is_admin: request.adminUser.is_admin,
       is_event_admin: request.adminUser.is_event_admin,
+      version: config.version,
     };
     return reply.send(response);
   });
@@ -139,6 +148,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       name: request.registerUser.name,
       is_admin: request.registerUser.is_admin,
       is_event_admin: request.registerUser.is_event_admin,
+      version: config.version,
     };
     return reply.send(response);
   });

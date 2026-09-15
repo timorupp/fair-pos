@@ -205,6 +205,37 @@ einziger Commit mit dem damaligen Codestand, keine Elternhistorie) — die
 komplette bisherige Entwicklungsgeschichte bis dahin liegt vollständig in
 `develop`.
 
+### Versionsnummer (Task #148)
+
+FairPOS führt eine Versionsnummer im Format `[Major].[Release].[Build]`
+(z. B. `0.3.17`), gepflegt in der Datei `VERSION` im Repo-Root (einzeilig,
+einfacher Text, kein führendes `v`).
+
+- **Major** — nur durch explizite Entscheidung des Nutzers geändert.
+- **Release** — wird bei jedem Squash-Merge `develop` → `master` (siehe
+  Git-Workflow oben) automatisch um eins erhöht. Ein Release-Stand =
+  ein Merge nach `master`.
+- **Build** — wird bei jedem Commit auf `develop` automatisch erhöht.
+
+**Kaskadierendes Zurücksetzen** (wie bei Semver — ein höherwertiger Bump
+setzt alle niedrigerwertigeren auf 0 zurück):
+- Ein **Major**-Inkrement setzt **Release UND Build** auf 0 zurück.
+- Ein **Release**-Inkrement setzt **Build** auf 0 zurück.
+
+**Durchsetzung:** aktuell reine Konvention, kein Git-Hook — wer committet
+(Mensch oder KI-Agent), pflegt `VERSION` im selben Commit mit. Beim
+Squash-Merge nach `master`: `Release` erhöhen, `Build` auf 0 setzen, bevor
+der Merge-Commit erstellt wird.
+
+**Sichtbarkeit:** `config.ts` liest `VERSION` beim Start des Backends und
+liefert sie über `GET /api/auth/admin/me` und `GET /api/auth/register/me`
+mit aus (kein zusätzlicher Request nötig, beide Layouts rufen ohnehin
+einen davon beim Laden auf). Angezeigt (Stand 2026-09-15, **ausdrücklich
+als Prototyp/experimentell zu behandeln** — Platzierung noch nicht auf
+echter Produktivhardware bestätigt) im Admin-Sidebar-Footer
+(`admin/+layout.svelte`) und in der Kassen-Topbar
+(`register/+layout.svelte`).
+
 ---
 
 ## Technologie-Stack

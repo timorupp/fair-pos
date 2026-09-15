@@ -13,7 +13,7 @@ import { authenticateRegister } from '../middleware/authenticate.js';
 import { generateReceiptToken } from '../receipt/numbering.js';
 import { nextReceiptNumber } from '../receipt/sequence.js';
 import { buildReceiptBlocks } from '../receipt/blocks.js';
-import { loadReceiptByToken, snapshotCompanyDataForInvoice } from '../receipt/data.js';
+import { loadReceiptById, loadReceiptByToken, snapshotCompanyDataForInvoice } from '../receipt/data.js';
 import { enqueuePrintJob } from '../print/enqueue.js';
 import { renderBlocksToEscPos } from '../print/blocks.js';
 import {
@@ -490,6 +490,33 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const blocks = await buildReceiptBlocks(data);
     const job = await enqueuePrintJob(printerId, 'receipt', renderBlocksToEscPos(blocks), blocks, id);
     return reply.send({ print_job_id: job.id });
+  });
+
+  /**
+   * GET /invoices/:id/preview — read-only `PrintBlock[]` for an on-screen
+   * receipt preview on the checkout confirmation screen (Task #147). Same
+   * ownership check as `/invoices/:id/print` above, but no printer
+   * resolution and no print job — just the structured blocks the receipt
+   * renderer already builds from, so the frontend preview and the actual
+   * printed/PDF receipt can never visually diverge.
+   */
+  app.get<{ Params: { id: string } }>('/invoices/:id/preview', async (req, reply) => {
+    const { id } = req.params;
+    const invResult = await query<{ register_id: string }>(
+      `SELECT register_id FROM invoice WHERE id = $1`,
+      [id],
+    );
+    const inv = invResult.rows[0];
+    if (!inv) return reply.status(404).send({ error: 'Rechnung nicht gefunden' });
+    if (!(await userHasRegister(req.registerUser.id, inv.register_id))) {
+      return reply.status(403).send({ error: 'Keine Berechtigung für diese Kasse' });
+    }
+
+    const data = await loadReceiptById(id);
+    if (!data) return reply.status(404).send({ error: 'Rechnungsdaten nicht ladbar' });
+
+    const blocks = await buildReceiptBlocks(data);
+    return reply.send({ blocks });
   });
 
   // ──────────────────────────────────────────────────────────────────────────
