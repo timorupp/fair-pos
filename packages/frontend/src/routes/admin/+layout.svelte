@@ -18,9 +18,10 @@
 
   /**
    * Running app version (Task #148), piggybacked on the same `admin/me` call
-   * this layout already makes on mount — no extra request. Display position
-   * (sidebar footer) is an explicit prototype (Nutzervorgabe 2026-09-15):
-   * to be confirmed/adjusted after live testing on production hardware.
+   * this layout already makes on mount — no extra request. Shown next to
+   * the "FairPOS" brand at the top of the sidebar (moved there 2026-09-15
+   * per live feedback, matching the register topbar's placement) — still
+   * an explicit prototype pending final confirmation on production hardware.
    */
   let appVersion = $state('');
 
@@ -139,7 +140,10 @@
 {:else}
 <div class="shell">
   <aside>
-    <div class="brand"><img class="brand-icon" src="/fairpos-icon.svg" alt="" width="20" height="20" /> FairPOS</div>
+    <div class="brand">
+      <img class="brand-icon" src="/fairpos-icon.svg" alt="" width="20" height="20" /> FairPOS
+      {#if appVersion}<span class="version">v{appVersion}</span>{/if}
+    </div>
     <nav>
       <a href="/admin" class:active={isActive('/admin', true)}>Dashboard</a>
 
@@ -231,7 +235,6 @@
       <span class="user-name">{$adminUser?.name}</span>
       <button class="btn-secondary" onclick={() => goto('/register')}>Zur Kassenauswahl</button>
       <button class="btn-logout" onclick={logout}>Abmelden</button>
-      {#if appVersion}<span class="version">v{appVersion}</span>{/if}
     </div>
   </aside>
 
@@ -305,7 +308,7 @@
   }
   .user-name { font-size: 0.8rem; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Task #148 — deliberately as unobtrusive as .user-name; prototype placement, see doc comment above appVersion. */
-  .version { font-size: 0.7rem; color: var(--color-text-muted); opacity: 0.7; }
+  .version { font-size: 0.7rem; font-weight: 400; color: var(--color-text-muted); opacity: 0.7; }
   .btn-secondary, .btn-logout {
     padding: 0.4rem 0; background: transparent; border: 1px solid var(--color-border);
     border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: 0.8rem;

@@ -155,19 +155,6 @@
         </div>
       </div>
 
-      <!-- Rechnungsvorschau (Task #147, experimentelles Prototyp-Layout) —
-           zugeklappt, Daten erst beim Öffnen geladen. -->
-      <details class="preview-details" ontoggle={handlePreviewToggle}>
-        <summary>Rechnungsvorschau</summary>
-        {#if previewLoading}
-          <p class="muted small">Lade Vorschau…</p>
-        {:else if previewError}
-          <p class="error-text small">{previewError}</p>
-        {:else if previewBlocks}
-          <ReceiptBlockPreview blocks={previewBlocks} />
-        {/if}
-      </details>
-
       {#if tseWarning}<p class="warning-text">⚠ {tseWarning}</p>{/if}
       {#if printDone}<p class="success-text">✓ Bon wird gedruckt</p>{/if}
       {#if error}<p class="error-text">{error}</p>{/if}
@@ -184,6 +171,24 @@
           {printing ? 'Drucke…' : 'Rechnung drucken'}
         </button>
       </div>
+
+      <!-- Rechnungsvorschau (Task #147, experimentelles Prototyp-Layout) —
+           zugeklappt, Daten erst beim Öffnen geladen. Nutzerfeedback
+           2026-09-15: deutlicher darstellen + unter die Aktionsbuttons. -->
+      <details class="preview-details" ontoggle={handlePreviewToggle}>
+        <summary class="preview-toggle">
+          <span class="preview-toggle-icon">🧾</span>
+          <span>Rechnungsvorschau anzeigen</span>
+          <span class="preview-toggle-chevron">▾</span>
+        </summary>
+        {#if previewLoading}
+          <p class="muted small">Lade Vorschau…</p>
+        {:else if previewError}
+          <p class="error-text small">{previewError}</p>
+        {:else if previewBlocks}
+          <ReceiptBlockPreview blocks={previewBlocks} />
+        {/if}
+      </details>
     </section>
 
     <section class="calc-card">
@@ -249,15 +254,25 @@
   .total-final.negative { color: var(--color-danger); }
   .small { font-size: 0.85rem; }
 
-  /* ── Rechnungsvorschau (Task #147) ──────────────────────────────────── */
-  .preview-details { margin: 0.75rem 0; }
-  .preview-details summary {
-    cursor: pointer; font-size: 0.9rem; font-weight: 600;
-    color: var(--color-text-muted); padding: 0.5rem 0; min-height: 44px;
-    display: flex; align-items: center;
+  /* ── Rechnungsvorschau (Task #147) — deutlich als eigener Button
+     dargestellt (Nutzerfeedback 2026-09-15: vorherige reine Textzeile war
+     zu unscheinbar), nicht mehr nur eine leise Textzeile. ── */
+  .preview-details { margin-top: 1.25rem; }
+  .preview-toggle {
+    cursor: pointer; list-style: none;
+    display: flex; align-items: center; gap: 0.6rem;
+    min-height: 48px; padding: 0.65rem 1rem;
+    background: var(--color-surface-2); border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 1rem; font-weight: 600; color: var(--color-text);
   }
-  .preview-details summary:hover { color: var(--color-text); }
-  .preview-details[open] summary { margin-bottom: 0.5rem; }
+  .preview-toggle::-webkit-details-marker { display: none; }
+  .preview-toggle:hover { border-color: var(--color-primary); }
+  .preview-toggle-icon { font-size: 1.1rem; }
+  .preview-toggle span:nth-child(2) { flex: 1; }
+  .preview-toggle-chevron { color: var(--color-text-muted); transition: transform 0.15s; }
+  .preview-details[open] .preview-toggle-chevron { transform: rotate(180deg); }
+  .preview-details[open] .preview-toggle { margin-bottom: 0.75rem; border-color: var(--color-primary); }
 
   .success-text { color: #4caf7d; font-size: 0.9rem; margin-top: 0.5rem; }
   .warning-text { color: #f59e0b; font-size: 0.9rem; margin-top: 0.5rem; font-weight: 600; }
