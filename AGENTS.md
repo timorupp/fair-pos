@@ -223,9 +223,20 @@ setzt alle niedrigerwertigeren auf 0 zurück):
 - Ein **Release**-Inkrement setzt **Build** auf 0 zurück.
 
 **Durchsetzung:** aktuell reine Konvention, kein Git-Hook — wer committet
-(Mensch oder KI-Agent), pflegt `VERSION` im selben Commit mit. Beim
-Squash-Merge nach `master`: `Release` erhöhen, `Build` auf 0 setzen, bevor
-der Merge-Commit erstellt wird.
+(Mensch oder KI-Agent), pflegt `VERSION` im selben Commit mit.
+
+**Ablauf beim Release (korrigiert 2026-09-15, ursprüngliche Fassung hätte
+den Bump beim Merge-Commit auf `master` vorgenommen):** der Release-Bump
+(`Release` erhöhen, `Build` auf 0 setzen) passiert als **eigener Commit auf
+`develop`**, direkt bevor nach `master` gemergt wird — nicht erst beim
+Merge-Commit selbst. Der Squash-Merge übernimmt diesen bereits gebumpten
+Stand unverändert nach `master`. Grund: **der Produktivserver läuft
+bewusst auf `develop`** (siehe Git-Workflow oben), nicht auf `master` — ein
+Bump erst auf `master` würde `develop` (und damit die tatsächlich
+laufende Instanz) dauerhaft auf der alten, niedrigeren Nummer stehen
+lassen. So zeigen `develop` und `master` direkt nach dem Merge dieselbe
+Versionsnummer, und die Weiterentwicklung auf `develop` knüpft nahtlos mit
+Build-Inkrementen daran an.
 
 **Sichtbarkeit:** `config.ts` liest `VERSION` beim Start des Backends und
 liefert sie über `GET /api/auth/admin/me` und `GET /api/auth/register/me`
