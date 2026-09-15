@@ -6237,3 +6237,88 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Test selbst ausgelöst) läuft nach 15 Minuten automatisch ab oder wird
   durch einen Dienst-Neustart sofort gelöscht (In-Memory-Zähler).
 
+- [Task] **#33** KI-basierte Security-Attack-Tests gegen installierte Anwendung — **Erledigt 2026-09-15**
+  Drei Runden live gegen die Produktivinstanz des Nutzers durchgeführt
+  (Nutzerfreigabe: "aktuell sind dort noch Testdaten und nichts zu
+  befürchten").
+
+  **Runde 1 (unauthentifiziert):** Außentäter-Perspektive — Security-Header,
+  Auth-Endpunkte (PIN-Login, Admin-Step-up)/Rate-Limiting, unautorisierte
+  Zugriffe auf 12 stichprobenartig gewählte Admin-/Register-Session-Routen,
+  SQL-Injection-Sondierung (sichere, nicht-destruktive Payloads),
+  Informationslecks (Fehlerantworten, Server-Header, vermeintlich
+  exponierte Dateien). Hauptfund + Fixes: **D-077** (globale Login-Sperre
+  statt pro-IP, siehe oben). Bestätigt solide: durchgängig korrekte
+  401-Antworten ohne Datenleck, parametrisierte PIN-Abfrage bereits
+  injection-sicher, keine CORS-Fehlkonfiguration, korrekter HTTP→HTTPS-
+  Redirect, keine Stack-Traces in Fehlerantworten, PIN-Keyspace ohnehin
+  brute-force-resistent.
+
+  **Runde 2 (authentifiziert, System-Administrator-Account, PIN
+  111-111-111):** Admin-Gating über ~19 Admin-Routendateien (401
+  unauthentifiziert → 403 authentifiziert-aber-nicht-verifiziert → 200 nach
+  Step-up, live an mehreren Stichproben bestätigt), Register-Scoping/IDOR
+  (403 auf eine fremde Kasse, auch mit System-Admin-Rechten; unbekannte
+  Rechnungs-ID → sauberes 404), Upload-Validierung (Logo, TLS-Zertifikat —
+  lehnt ungültige Eingaben vor jedem Schreibvorgang ab; bewusst kein
+  tatsächlicher Ersatz-Upload durchgeführt, um Produktivdaten nicht zu
+  verändern), TSE-Endpunkte (nur die unkritischen Lese-Endpunkte
+  authentifiziert getestet; die gefährlichen — `maintain`,
+  `test-signature`, `setup`, `unblock`, `factory-reset`, `detect` — bewusst
+  nur unauthentifiziert geprüft, um keine echte TSE-Hardware-Aktion
+  auszulösen), Logout-Invalidierung, Isolation paralleler Sessions. Alles
+  davon bestätigt solide, keine Funde. Ein echter Fund (keine Session-
+  Rotation beim Admin-Step-up) wurde als eigenständiges Finding **D-078**
+  festgehalten (weiterhin offen, unabhängiger Fix nötig).
+
+  **Runde 3 (authentifiziert, Veranstaltungs-Administrator-Account, PIN
+  222-222-222):** gezielt zum Schließen der aus Runde 2 bekannten
+  Deckungslücke — ob eine Nicht-System-Admin-Session korrekt an der
+  Admin-Rollen-Grenze abgewiesen wird. Account-Rolle live bestätigt
+  (`is_admin: false, is_event_admin: true` — echter Veranstaltungs-Admin,
+  kein System-Admin). Login (200) und Step-up mit Passwort "fairpos"
+  (200) erfolgreich, danach auf den beiden ausschließlich per
+  `authenticateSystemAdmin` gegateten Routendateien (`backup.ts`,
+  `events.ts`) korrekt **403** statt 401 oder 200 erhalten — die Grenze
+  hält. Zusätzlich per Code-Review bestätigt: `routes/admin/users.ts:138`
+  verweigert serverseitig explizit jede Änderung von `is_admin` durch
+  einen Nicht-System-Admin (ein tatsächlicher PATCH-Selbstbeförderungs-
+  versuch wurde nicht abgesetzt, um keine mutierende Produktivaktion
+  auszulösen). Kein Fund.
+
+  **Ergebnis:** Task #33 hat keine offenen Testpunkte mehr. Einziges
+  verbleibendes Arbeitsergebnis aus der gesamten Testreihe ist der
+  eigenständige Fix zu **D-078** (Session-Rotation beim Step-up).
+
+- [Finding] **D-079** (mittel, Frontend+Backend / Admin) — Gefunden 2026-09-15 — **Behoben 2026-09-15** — Kontext: Live-Bugreport während der Security-Test-Sitzung (Task #33 Runde 3), Nutzer bemerkte die eigene Test-Session eines Veranstaltungs-Administrators
+  Die "Aktive Sessions"-Ansicht (`admin/settings/sessions`, Task #90) zeigte
+  jede Session ohne `is_admin = true` pauschal als "Bediener" an, unabhängig
+  von `is_event_admin` und unabhängig vom tatsächlichen `admin_verified`-
+  Step-up-Status dieser Session. Root Cause: die Seite wurde vor Einführung
+  von `is_event_admin` (Task #94, Migration `0018_event_admin_role.sql`)
+  gebaut und nie nachgezogen — weder die Backend-Query
+  (`routes/admin/sessions.ts`) noch der Frontend-Typ noch die Label-Logik
+  kannten das zweite Rollenflag; das Verified-Badge war zudem exklusiv an
+  `is_admin` gekoppelt (`{#if s.is_admin}`), sodass ein verifizierter
+  Veranstaltungs-Administrator sein Badge nie sah. Auf der Schwesterseite
+  (`admin/users/+page.svelte::roleLabel()`) existierte die korrekte,
+  dreiwertige Logik bereits, wurde aber nicht wiederverwendet.
+
+  **Behoben:**
+  - `routes/admin/sessions.ts`: `u.is_event_admin` in `SELECT` und
+    `SessionListRow`-Interface ergänzt.
+  - `lib/api.ts`: dritte, unabhängige Kopie desselben Response-Typs
+    (`admin.sessions.list()`) ebenfalls um `is_event_admin` ergänzt.
+  - `admin/settings/sessions/+page.svelte`: neue `roleLabel()`-Funktion
+    (analog zu `admin/users/+page.svelte`) kombiniert `is_admin`/
+    `is_event_admin` zu "System-Administrator", "Veranstaltungs-
+    Administrator", "System-Administrator + Veranstaltungs-Administrator"
+    oder "Bediener"; das Verified-Badge erscheint jetzt bei `is_admin ||
+    is_event_admin` statt nur bei `is_admin`.
+
+  **Tests:** neuer Integrationstest in `sessions.integration.test.ts`
+  bestätigt, dass eine reine Veranstaltungs-Administrator-Session
+  (`is_admin: false, is_event_admin: true`) korrekt von der Query
+  zurückgegeben wird. Voller Unit-/gezielter Integrationstest-Lauf sowie
+  `tsc --noEmit`/`svelte-check` grün.
+

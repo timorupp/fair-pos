@@ -220,7 +220,8 @@ export const api = {
     sessions: {
       /** Every currently active session (Task #90), newest activity first. */
       list: (): Promise<{
-        id: string; user_name: string; is_admin: boolean; admin_verified: boolean;
+        id: string; user_name: string; is_admin: boolean; is_event_admin: boolean;
+        admin_verified: boolean;
         created_at: string; last_activity_at: string; user_agent: string | null;
       }[]> => request('GET', '/admin/sessions'),
       /** Forcibly ends one session — that device is logged out on its next request. */

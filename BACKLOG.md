@@ -6,40 +6,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 
 ## Tasks
 
-- [Task] **#33** KI-basierte Security-Attack-Tests gegen installierte Anwendung
-  **Status (2026-09-15): erste Runde (unauthentifiziert) durchgeführt, live
-  gegen die Produktivinstanz des Nutzers** (Nutzerfreigabe:
-  "aktuell sind dort noch Testdaten und nichts zu befürchten"). Geprüft aus
-  Außentäter-Perspektive: Security-Header, Auth-Endpunkte (PIN-Login,
-  Admin-Step-up)/Rate-Limiting, unautorisierte Zugriffe auf 12 stichproben-
-  artig gewählte Admin-/Register-Session-Routen, SQL-Injection-Sondierung
-  (sichere, nicht-destruktive Payloads), Informationslecks (Fehlerantworten,
-  Server-Header, vermeintlich exponierte Dateien). Alle Funde + die daraus
-  entstandenen Fixes: siehe **D-077** in `BACKLOG-DONE.md`.
-
-  **Bestätigt solide (kein Fund):** durchgängig korrekte 401-Antworten ohne
-  Datenleck auf allen geprüften geschützten Routen, parametrisierte
-  PIN-Abfrage bereits injection-sicher, keine CORS-Fehlkonfiguration,
-  korrekter HTTP→HTTPS-Redirect, keine Stack-Traces in Fehlerantworten,
-  PIN-Keyspace ohnehin brute-force-resistent.
-
-  **Noch offen — authentifizierte Runde** (Test-Zugangsdaten liegen vor,
-  aber die Rate-Limiter-Sperre aus D-077 musste erst durch den `trustProxy`-
-  Fix behoben werden, bevor sinnvoll weitergetestet werden kann):
-  1. IDOR-Kandidaten: `:id`-Routen (Kasse, Rechnung, Abschluss, Artikel) —
-     kann eine Veranstaltungs-Administrator- oder Kassierer-Session Daten
-     einer anderen Veranstaltung/Kasse über erratene/hochgezählte UUIDs
-     erreichen?
-  2. Admin-Rollen-Grenze: liefert eine Nicht-Admin-Session korrekt 403 (nicht
-     401) auf System-Administrator-exklusive Endpunkte (Backup, Nutzer-
-     verwaltung, TSE-Setup)?
-  3. Session-Rotation: rotiert das Session-Token beim `admin_verified`-
-     Step-up, oder bleibt es über den Schritt hinweg gleich?
-  4. Upload-Endpunkte (Logo, TLS-Zertifikat): Content-Type-/Größen-
-     Validierung, Path-Traversal in Dateinamen-Handling.
-  5. TSE-nahe Endpunkte: sicherstellen, dass keine echte Signier-/Wartungs-
-     Operation ohne korrekte Auth-/Besitzprüfung auslösbar ist.
-
 
 - [Task] **#47** Vollen manuellen Regressionstest durchführen (inkl. DSFinV-K)
   **Umfasst auch Task #102** (2026-09-01 dorthin verschoben, Nutzereinordnung:
@@ -275,4 +241,8 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 - [Finding] **D-076** (niedrig, Backend / Kassenabschluss) — Gefunden 2026-09-12 — Kontext: Während der D-075-Diskussion zum "Ausstehende Tagesabschlüsse"-Banner (Task #146) aufgefallen
   `closing/pending-db.ts`s neue `daysWithUnlinkedRows`-Abfrage (D-075) bucketet Kalendertage über `to_char(created_at::date, 'YYYY-MM-DD')` — folgt damit der **Postgres-Session-Zeitzone**. `closing/pending.ts`s `localDateString()` (für den Tage-Walk und den `closedDays`-Vergleich) bucketet dagegen über die **Node-Prozess-Zeitzone**. Weichen beide Zeitzonen voneinander ab, könnte eine Buchung nahe Mitternacht serverseitig einem anderen Kalendertag zugeordnet werden als clientseitig erwartet — betrifft potenziell auch die schon bestehende `created_at::date = $2::date`-Filterung beim tageweisen Abschluss (`routes/admin/closings.ts`) und den `business_date`-Fallback auf Postgres' `current_date`.
   **Niedrige Priorität (Nutzereinordnung 2026-09-12):** nur relevant, wenn die Datenbank auf einem anderen Host als die Anwendung läuft (unterschiedliche Systemzeitzonen möglich) — im dokumentierten Produktivbetrieb läuft Postgres nativ auf demselben Ubuntu-Host wie der Node-Prozess (`docs/SETUP.md`), beide erben dieselbe OS-Zeitzone, kein praktisches Risiko. Nur in der lokalen Docker-Dev-Umgebung potenziell divergent (Alpine-Postgres-Container ohne gesetztes `TZ`, vermutlich UTC, gegen die Zeitzone des Host-Rechners). Kein Handlungsbedarf jetzt — ggf. später durch ein explizites `SET timezone`/`TZ`-Env auf dem DB-Pool vereinheitlichen, falls sich das Deployment-Modell je ändert.
+
+- [Finding] **D-078** (mittel, Backend / Auth; **Priorisierung: Post-Release**, Nutzervorgabe 2026-09-15 — kein Release-Blocker) — Gefunden 2026-09-15 — Kontext: Task #33, zweite (authentifizierte) Runde des Security-Tests gegen die Produktivinstanz des Nutzers
+  `POST /api/auth/admin/verify` (Admin-Step-up, Task #90) rotiert das Session-Token nicht — es wird lediglich das `admin_verified`-Flag auf derselben Session-Zeile umgeschaltet (`auth/session.ts::setAdminVerified()`), das signierte Cookie selbst bleibt vor und nach der Passworteingabe byte-identisch. Praktisches Risiko: ein bereits vor dem Step-up entwendetes Session-Cookie (z. B. via XSS, Sniffing auf ungesichertem Netz, physischer Zugriff aufs Gerät) wird automatisch admin-fähig, sobald sich der legitime Nutzer selbst verifiziert — ohne dass sich am Cookie irgendetwas ändert, das ein Angreifer neu abgreifen müsste. Kein Bug im eigentlichen Sinne (das ursprüngliche Auth-Design von Task #90 sah das so vor), aber ein reales Risiko bei Cookie-Diebstahl.
+  **Empfehlung, noch nicht umgesetzt:** beim erfolgreichen Step-up ein neues Session-Token ausstellen (alte Session invalidieren, neues signiertes Cookie setzen) statt nur das Flag auf der bestehenden Session zu ändern — analog zum verbreiteten "session regeneration on privilege escalation"-Muster.
 
