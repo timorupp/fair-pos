@@ -6040,6 +6040,11 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   eine Kasse einer anderen, inaktiven Veranstaltung mit offener Rechnung
   taucht nicht mehr in `/closings/pending` auf.
 
+  **Live bestätigt (2026-09-15):** beide Fixes auf dem Produktivsystem
+  nachvollzogen — Banner/Kachel zeigen jetzt korrekt nur noch Kassen der
+  aktiven Veranstaltung, "Tagesumsatz"-Kachel führt zu "Kassen" statt ins
+  Leere.
+
 - [Task] **#147** Rechnungsvorschau im Checkout-Screen (Rückgeldrechner)
   **Klassifikation: Feature/Nutzerwunsch, angelegt und umgesetzt 2026-09-15.**
 
@@ -6080,4 +6085,155 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Testblock: liefert Blöcke ohne Print-Job zu erzeugen, 404 bei
   unbekannter Rechnung, 403 bei fremder Kasse. `svelte-check` sauber
   (455 Dateien, 0 Fehler).
+
+  **Nachbesserung nach Live-Test (2026-09-15, Nutzerfeedback):** Der
+  Öffnen-Button war als reine unscheinbare Textzeile zu leicht zu
+  übersehen — zu einem deutlich sichtbaren, umrahmten Button mit Icon und
+  rotierendem Chevron umgebaut, und von oberhalb auf unterhalb der beiden
+  Aktionsbuttons ("Kunde wünscht keinen Beleg"/"Rechnung drucken")
+  verschoben. Live auf Produktivhardware bestätigt und für gut befunden.
+
+- [Task] **#148** Versionsnummer-Schema eingeführt und dokumentiert
+  **Klassifikation: Prozess/Feature, angelegt und umgesetzt 2026-09-15.**
+
+  **Schema (Nutzerentscheidung):** `[Major].[Release].[Build]` in der Datei
+  `VERSION` (Repo-Root) — vollständig dokumentiert in `AGENTS.md` Abschnitt
+  "Versionsnummer" (Kaskaden-Reset wie bei Semver: ein Major-Inkrement
+  setzt Release UND Build auf 0, ein Release-Inkrement setzt Build auf 0;
+  Release erhöht sich bei jedem Squash-Merge `develop`→`master`, Build bei
+  jedem `develop`-Commit).
+
+  **Umgesetzt:**
+  - `config.ts` liest `VERSION` beim Start (`readVersion()`, Fallback
+    `'0.0.0'` statt Absturz bei fehlender Datei).
+  - `GET /api/auth/admin/me` und `GET /api/auth/register/me` liefern
+    `version` mit aus — kein zusätzlicher Request nötig, beide Layouts
+    rufen ohnehin eine der beiden Routen beim Mounten auf.
+  - Anzeige: Admin-Bereich oben neben dem "FairPOS"-Schriftzug in der
+    Seitenleiste, Kassen-Topbar neben dem FairPOS-Logo (Bonkasse/
+    Bedienungskasse) — nach Live-Feedback 2026-09-15 von der ursprünglich
+    vorgesehenen Sidebar-Footer-Position dorthin verschoben, um mit der
+    Kassen-Ansicht konsistent zu sein.
+
+  **Live-Test (2026-09-15):** Position/Prominenz in beiden Bereichen auf
+  Produktivhardware bestätigt und für gut befunden — Prototyp-Status damit
+  aufgehoben, Platzierung gilt als final.
+
+  **Tests:** `routes/auth.integration.test.ts` — neuer Test prüft, dass
+  `version` in der `register/me`-Antwort als nicht-leerer String vorliegt.
+  `svelte-check` sauber (455 Dateien, 0 Fehler).
+
+  **Bewusst offengelassen, nicht blockierend für den Abschluss:**
+  Format-Feinheiten (`git tag` auf `master` bei jedem Release?), ob eine
+  technische Durchsetzung (Git-Hook) später sinnvoll wird — aktuell reine
+  Konvention, der der KI-Agent bei jedem Commit/Squash-Merge manuell folgt.
+
+- [Task] **#137** Kassenjournal — ursprüngliche Anforderung durch Entfernung von Einlage/Entnahme obsolet geworden, final abgeschlossen
+  **Ursprüngliche Anforderung (angelegt 2026-09-12, Pre-Release
+  priorisiert):** ein "Kassenjournal" — eine kombinierte, chronologische
+  Ansicht aus Einlagen/Entnahmen (`cash_transaction`) und Bareinnahmen aus
+  Rechnungen —, weil die zwei damals existierenden Ansichten
+  (`GET /:id/transactions` je Kasse, `/cash-balance` "Soll-Kassenstand" nur
+  als Summen) beide unvollständig waren.
+
+  **Was sich seitdem geändert hat:** Bei der Umsetzungsdiskussion (konkret
+  bei der Frage, ob `cash_transaction` eine `daily_closing_id`-Referenz
+  bekommen sollte) kam heraus, dass Kassenbewegungen strukturell nie an
+  den Kassenabschluss angebunden waren — keine TSE-Signatur, keine
+  Z-Bon-Summe, kein DSFinV-K-Export, trotz bereits dokumentierter
+  GV_TYP-Zuordnung (Einzahlung/Auszahlung/Anfangsbestand) in
+  `docs/Rechtliche-Anforderungen.md`. Der Nutzer hat daraufhin entschieden,
+  die Einlage/Entnahme-Funktion und den "Soll-Kassenstand"-Report komplett
+  zu entfernen, statt sie nachträglich compliance-konform auszubauen —
+  siehe **Task #143** (Entfernung inkl. `cash_transaction`-`DROP TABLE`-
+  Migration) und **Task #144** (Entfernung des Soll-Kassenstand-Reports).
+
+  An die Stelle der beiden alten Ansichten ist eine einfachere Lösung
+  getreten: die Kassen-Detailseite zeigt seitdem unter "Offen seit letztem
+  Tagesabschluss" je Zahlungsart (Bar/Karte) die Summe aller noch nicht
+  einem Z-Bon zugeordneten Rechnungen dieser Kasse (`computeClosingTotals()`,
+  dieselbe Aggregation wie der echte Tagesabschluss selbst).
+
+  **Final entschieden (2026-09-15, Nutzerbestätigung):** "Offen seit
+  letztem Tagesabschluss" deckt den Bedarf vollständig ab — aktuell kein
+  weiterer Bedarf an einer chronologischen Einzelpositions-Ansicht oder
+  einem Excel-Export dazu. Task damit endgültig abgeschlossen; eine
+  spätere, davon unabhängige Anforderung in diesem Bereich würde als neuer,
+  eigener Task angelegt, nicht unter dieser Nummer.
+
+- [Finding] **D-077** (hoch → behoben, Backend / Sicherheit) — Gefunden 2026-09-15 — Kontext: erste (unauthentifizierte) Runde von Task #33s Security-Test, live gegen die Produktivinstanz des Nutzers
+  **Hauptfund (HOCH): Login-Rate-Limiter sperrte global, nicht pro
+  Angreifer.** `auth/rateLimit.ts` sperrt nach `request.ip` — im Backend war
+  aber nirgends `trustProxy` gesetzt, obwohl nginx als Reverse-Proxy davor
+  läuft (`proxy_pass http://127.0.0.1:3000`, siehe
+  `docs/Installationsanleitung.md`). Fastify vertraut `X-Forwarded-For`/
+  `X-Real-IP` ohne `trustProxy` grundsätzlich nicht — `request.ip` war damit
+  für **jeden** externen Besucher identisch (die Loopback-Adresse von
+  nginx). Live bestätigt: 3 fehlgeschlagene `POST /api/auth/pin`-Versuche
+  (ein Injection-Payload, ein 5000-Zeichen-Payload, ein leerer Body)
+  lösten die 15-Minuten-Sperre für die **komplette Seite** aus, nicht nur
+  für die Testquelle — ein anonymer Besucher konnte mit drei trivialen
+  Requests alle 15 Minuten den Login für alle Mitarbeitenden lahmlegen.
+  War kein bewusster DoS-Test, sondern die im Vorfeld vereinbarte,
+  begrenzte Prüfung des Rate-Limiters selbst — das Auslösen der globalen
+  Sperre war der Fund.
+
+  **Weitere Funde (niedrig/info):**
+  - Fehlende Security-Header (CSP, HSTS, X-Frame-Options,
+    X-Content-Type-Options, Referrer-Policy) auf allen Antworten.
+  - TLS-Zertifikatskette unvollständig ausgeliefert (nur Leaf-Zertifikat,
+    `openssl s_client -showcerts` liefert 1 statt 2+ Zertifikate,
+    `Verify return code: 21`) — betrifft laut Nutzereinordnung primär die
+    aktuelle Serverkonfiguration, aber `system/tlsCert.ts`s
+    Upload-Validierung warnt auch nicht vor einem alleinigen Leaf-Zertifikat
+    (siehe **Task #150**, dort als eigener Punkt weitergeführt).
+  - Session-Cookie ohne explizites `secure: true` (funktionierte nur
+    inzident über den HTTP→HTTPS-Redirect).
+  - nginx-Version im `Server`-Header sichtbar (kein echtes Risiko, aber
+    kostenlos zu unterdrücken).
+  - (Kein echter Fund, gegengeprüft) `/.env`/`/.git/config` liefern 200,
+    sind aber nur der SPA-Fallback (`index.html`), keine echten Dateien.
+
+  **Bestätigt solide:** 12 stichprobenartig geprüfte Admin-/Register-
+  Session-Routen liefern durchgängig 401 ohne Datenleck; PIN-Eingabe wird
+  vor der parametrisierten Query normalisiert — Injection- und
+  Oversized-Payloads beide sauber mit 401 abgewiesen, kein 500, kein
+  Timing-Leck; keine CORS-Fehlkonfiguration; korrekter HTTP→HTTPS-Redirect;
+  keine Stack-Traces in Fehlerantworten; PIN-Keyspace (9 Zeichen, 36
+  Symbole) ohnehin brute-force-resistent.
+
+  **Behoben (Nutzerentscheidung: alles einfach Umsetzbare sofort, Rest als
+  Task):**
+  - `app.ts`: `trustProxy: '127.0.0.1'` — bewusst auf die Loopback-Adresse
+    beschränkt statt pauschal `true`, damit ein Client, der das Backend
+    direkt erreicht (unter Umgehung von nginx), seine IP nicht per Header
+    fälschen kann.
+  - `app.ts`: `@fastify/helmet` (MIT-lizenziert, mit AGPL kompatibel)
+    registriert — `contentSecurityPolicy: false` bewusst vorerst
+    deaktiviert (Begründung + Folge-Task siehe **Task #149**), alle
+    anderen Standard-Header (HSTS, X-Content-Type-Options, X-Frame-Options,
+    Referrer-Policy etc.) aktiv.
+  - `auth/session.ts`: `secure: !config.isDev` auf dem Session-Cookie
+    (nicht pauschal `true`, sonst würde die lokale Entwicklung über
+    `http://localhost` brechen).
+  - `docs/Installationsanleitung.md`: `server_tokens off;` in der
+    dokumentierten nginx-Konfiguration ergänzt (gilt für künftige
+    Neuinstallationen; auf dem bestehenden Produktivserver muss die Zeile
+    manuell nachgetragen und `nginx` neu geladen werden).
+  - TLS-Zertifikatsketten-Hinweis und CSP-Design bewusst **nicht** sofort
+    umgesetzt, da beides echte Design-Entscheidungen braucht — siehe
+    **Task #150** bzw. **Task #149**.
+
+  **Tests:** `routes/auth.integration.test.ts` — zwei neue Tests belegen,
+  dass unterschiedliche `X-Forwarded-For`-Werte vom vertrauenswürdigen
+  Proxy aus unabhängig gesperrt werden (nicht mehr global) und dass ein
+  gefälschter `X-Forwarded-For` von einer nicht-vertrauten Gegenstelle
+  ignoriert wird (keine Umgehung per Spoofing); ein weiterer Test prüft das
+  `Secure`-Flag des Session-Cookies gegen `config.isDev`. Neue Datei
+  `app.integration.test.ts` prüft die aktiven Helmet-Header. Voller
+  Unit-/Integrationstest-Lauf grün.
+
+  **Live-Hinweis:** Die aktive Sperre auf der Produktivinstanz (durch den
+  Test selbst ausgelöst) läuft nach 15 Minuten automatisch ab oder wird
+  durch einen Dienst-Neustart sofort gelöscht (In-Memory-Zähler).
 

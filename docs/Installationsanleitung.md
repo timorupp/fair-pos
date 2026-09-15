@@ -668,6 +668,10 @@ server {
     listen [::]:443 ssl;
     server_name _;
 
+    # Verhindert, dass die nginx-Version im Server-Header preisgegeben wird
+    # (D-077, 2026-09-15, live Security-Test).
+    server_tokens off;
+
     ssl_certificate     /etc/nginx/ssl/fairpos.crt;
     ssl_certificate_key /etc/nginx/ssl/fairpos.key;
 

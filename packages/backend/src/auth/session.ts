@@ -20,15 +20,26 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { query } from '../db/client.js';
+import { config } from '../config.js';
 
 /** Name of the single session cookie. */
 const SESSION_COOKIE = 'session';
 /** Sliding inactivity timeout — a session with no activity for this long is treated as expired. */
 export const SESSION_INACTIVITY_INTERVAL = '4 hours';
 
-/** Cookie options — `httpOnly` + signed + `sameSite=lax`, matching the previous two cookies. */
+/**
+ * Cookie options — `httpOnly` + signed + `sameSite=lax`, matching the
+ * previous two cookies. `secure` was previously left unset (D-077,
+ * 2026-09-15, found via live security testing) — practical exposure was low
+ * since production already redirects HTTP→HTTPS, but the flag should be
+ * explicit rather than relying on that redirect always being in place.
+ * `!config.isDev` rather than unconditionally `true` — local dev runs on
+ * plain `http://localhost`, where a `secure` cookie would simply never be
+ * sent, breaking login entirely outside of production.
+ */
 const COOKIE_OPTIONS = {
   httpOnly: true,
+  secure: !config.isDev,
   sameSite: 'lax' as const,
   path: '/',
   signed: true,

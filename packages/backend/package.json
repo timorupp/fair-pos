@@ -19,6 +19,7 @@
   "dependencies": {
     "@fairpos/shared": "*",
     "@fastify/cookie": "^10.0.0",
+    "@fastify/helmet": "^13.1.1",
     "@fastify/multipart": "^10.0.0",
     "@fastify/static": "^10.1.3",
     "archiver": "^8.0.0",

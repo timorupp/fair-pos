@@ -4,6 +4,7 @@
  */
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyCookie from '@fastify/cookie';
+import fastifyHelmet from '@fastify/helmet';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import path from 'node:path';
@@ -51,6 +52,18 @@ const PUBLIC_DIR = path.join(
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.isDev ? 'info' : 'warn' },
+    // D-077 (2026-09-15, found via live security testing): without this,
+    // `request.ip` is always the TCP peer address — in production that's
+    // nginx's own loopback connection (`proxy_pass http://127.0.0.1:3000`,
+    // see docs/Installationsanleitung.md), identical for every real visitor.
+    // That made auth/rateLimit.ts's per-IP PIN-login lockout a single
+    // *global* bucket shared by every external client — three bad requests
+    // from anyone anywhere locked login out for the whole site, confirmed
+    // live. Scoped to the loopback address (not a blanket `true`) rather
+    // than trusting X-Forwarded-For from any peer, so a client that somehow
+    // reaches this process directly (bypassing nginx) can't spoof its own
+    // IP via that header.
+    trustProxy: '127.0.0.1',
   });
 
   // Overlay `config`'s TSE fields with whatever the admin has configured via
@@ -62,6 +75,16 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(fastifyCookie, {
     secret: config.sessionSecret,
+  });
+
+  // D-077 (2026-09-15, live security testing): baseline security headers
+  // (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, etc.)
+  // were missing entirely. `contentSecurityPolicy: false` is deliberate for
+  // now — the SPA's exact script/style-src needs haven't been audited yet,
+  // and shipping an untuned CSP risks silently breaking the live frontend;
+  // see BACKLOG.md for the follow-up task to design a properly scoped one.
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
   });
 
   // Multipart parsing is only needed by the logo-upload endpoint. The plugin

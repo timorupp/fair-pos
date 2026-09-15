@@ -7,6 +7,39 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 ## Tasks
 
 - [Task] **#33** KI-basierte Security-Attack-Tests gegen installierte Anwendung
+  **Status (2026-09-15): erste Runde (unauthentifiziert) durchgeführt, live
+  gegen die Produktivinstanz des Nutzers** (Nutzerfreigabe:
+  "aktuell sind dort noch Testdaten und nichts zu befürchten"). Geprüft aus
+  Außentäter-Perspektive: Security-Header, Auth-Endpunkte (PIN-Login,
+  Admin-Step-up)/Rate-Limiting, unautorisierte Zugriffe auf 12 stichproben-
+  artig gewählte Admin-/Register-Session-Routen, SQL-Injection-Sondierung
+  (sichere, nicht-destruktive Payloads), Informationslecks (Fehlerantworten,
+  Server-Header, vermeintlich exponierte Dateien). Alle Funde + die daraus
+  entstandenen Fixes: siehe **D-077** in `BACKLOG-DONE.md`.
+
+  **Bestätigt solide (kein Fund):** durchgängig korrekte 401-Antworten ohne
+  Datenleck auf allen geprüften geschützten Routen, parametrisierte
+  PIN-Abfrage bereits injection-sicher, keine CORS-Fehlkonfiguration,
+  korrekter HTTP→HTTPS-Redirect, keine Stack-Traces in Fehlerantworten,
+  PIN-Keyspace ohnehin brute-force-resistent.
+
+  **Noch offen — authentifizierte Runde** (Test-Zugangsdaten liegen vor,
+  aber die Rate-Limiter-Sperre aus D-077 musste erst durch den `trustProxy`-
+  Fix behoben werden, bevor sinnvoll weitergetestet werden kann):
+  1. IDOR-Kandidaten: `:id`-Routen (Kasse, Rechnung, Abschluss, Artikel) —
+     kann eine Veranstaltungs-Administrator- oder Kassierer-Session Daten
+     einer anderen Veranstaltung/Kasse über erratene/hochgezählte UUIDs
+     erreichen?
+  2. Admin-Rollen-Grenze: liefert eine Nicht-Admin-Session korrekt 403 (nicht
+     401) auf System-Administrator-exklusive Endpunkte (Backup, Nutzer-
+     verwaltung, TSE-Setup)?
+  3. Session-Rotation: rotiert das Session-Token beim `admin_verified`-
+     Step-up, oder bleibt es über den Schritt hinweg gleich?
+  4. Upload-Endpunkte (Logo, TLS-Zertifikat): Content-Type-/Größen-
+     Validierung, Path-Traversal in Dateinamen-Handling.
+  5. TSE-nahe Endpunkte: sicherstellen, dass keine echte Signier-/Wartungs-
+     Operation ohne korrekte Auth-/Besitzprüfung auslösbar ist.
+
 
 - [Task] **#47** Vollen manuellen Regressionstest durchführen (inkl. DSFinV-K)
   **Umfasst auch Task #102** (2026-09-01 dorthin verschoben, Nutzereinordnung:
@@ -194,80 +227,36 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Bonstorno-Bugfixes (Aggregation in `closing/totals.ts`, `/cash-balance`,
   Excel-Export) — daher zuerst hier klären, dann den Bugfix angehen.
 
-- [Task] **#137** Kassenjournal — ursprüngliche Anforderung durch Entfernung von Einlage/Entnahme obsolet geworden, offen bis Live-Bestätigung
-  **Status (2026-09-12): noch offen — bewusst nicht abgeschlossen**, bis der
-  Nutzer live bestätigt, dass die neue Lösung (siehe unten) den
-  ursprünglichen Bedarf tatsächlich deckt. Erst nach dieser Bestätigung
-  schließen und nach `BACKLOG-DONE.md` verschieben, dort die
-  Entscheidung/Anforderungsänderung dokumentieren.
+- [Task] **#149** Content-Security-Policy für die SPA entwerfen
+  **Klassifikation: Sicherheit/Feature, angelegt 2026-09-15** — Nebenbefund
+  aus dem Security-Test D-077 (`BACKLOG-DONE.md`).
 
-  **Ursprüngliche Anforderung (angelegt 2026-09-12, Pre-Release
-  priorisiert):** ein "Kassenjournal" — eine kombinierte, chronologische
-  Ansicht aus Einlagen/Entnahmen (`cash_transaction`) und Bareinnahmen aus
-  Rechnungen —, weil die zwei damals existierenden Ansichten
-  (`GET /:id/transactions` je Kasse, `/cash-balance`
-  "Soll-Kassenstand" nur als Summen) beide unvollständig waren.
+  `@fastify/helmet` ist seit D-077 aktiv, aber mit `contentSecurityPolicy:
+  false` — die genauen Script-/Style-Src-Anforderungen der per
+  `adapter-static` gebauten SvelteKit-SPA (Inline-Styles? Nonces nötig?)
+  wurden noch nicht geprüft, ein pauschal aktivierter Standard-CSP hätte das
+  Risiko, die Live-Anwendung ungetestet zu brechen. Braucht einen echten
+  Blick in den gebauten Output (`packages/frontend/build/`) plus einen
+  Live-Test im Browser, bevor eine engere Policy scharf geschaltet wird.
 
-  **Was sich seitdem geändert hat:** Bei der Umsetzungsdiskussion (konkret
-  bei der Frage, ob `cash_transaction` eine `daily_closing_id`-Referenz
-  bekommen sollte) kam heraus, dass Kassenbewegungen strukturell nie an
-  den Kassenabschluss angebunden waren — keine TSE-Signatur, keine
-  Z-Bon-Summe, kein DSFinV-K-Export, trotz bereits dokumentierter
-  GV_TYP-Zuordnung (Einzahlung/Auszahlung/Anfangsbestand) in
-  `docs/Rechtliche-Anforderungen.md`. Der Nutzer hat daraufhin
-  entschieden, die Einlage/Entnahme-Funktion und den "Soll-Kassenstand"-
-  Report komplett zu entfernen, statt sie nachträglich compliance-konform
-  auszubauen — siehe **Task #143** (Entfernung inkl. `cash_transaction`-
-  `DROP TABLE`-Migration) und **Task #144** (Entfernung des
-  Soll-Kassenstand-Reports), beide bereits umgesetzt und committed
-  (Details in `BACKLOG-DONE.md`).
+- [Task] **#150** TLS-Zertifikat-Upload: Hinweis bei unvollständiger Zertifikatskette
+  **Klassifikation: Sicherheit/UX, angelegt 2026-09-15** — Nebenbefund aus
+  dem Security-Test D-077 (`BACKLOG-DONE.md`).
 
-  An die Stelle der beiden alten Ansichten ist eine einfachere,
-  bereits umgesetzte Lösung getreten: die Kassen-Detailseite zeigt jetzt
-  unter "Offen seit letztem Tagesabschluss" je Zahlungsart (Bar/Karte) die
-  Summe aller noch nicht einem Z-Bon zugeordneten Rechnungen dieser Kasse
-  (`computeClosingTotals()`, dieselbe Aggregation wie der echte
-  Tagesabschluss selbst).
+  `system/tlsCert.ts`s `validateCertKeyPair()` akzeptiert laut eigenem
+  Doc-Kommentar ausdrücklich sowohl ein einzelnes Leaf-Zertifikat als auch
+  eine vollständige Kette ("nginx accepts both") — ohne jeden Hinweis an den
+  Admin, dass ein alleiniges Leaf-Zertifikat bei manchen Clients (ältere/
+  eingebettete Browser ohne AIA-Chasing) zu TLS-Warnungen führen kann. Live
+  am Produktivsystem genau so aufgetreten (nur Leaf-Zertifikat hochgeladen,
+  `openssl s_client` liefert nur 1 statt 2+ Zertifikate in der Kette).
 
-  **Offene Frage, die die Live-Bestätigung klären soll:** Deckt "Offen
-  seit letztem Tagesabschluss" den ursprünglichen Bedarf vollständig ab,
-  oder besteht doch noch Bedarf an einer chronologischen
-  Einzelpositions-Ansicht bzw. einem Excel-Export dazu? Falls Letzteres:
-  neue, eigene Anforderung als separaten Task anlegen — nicht mehr unter
-  #137, da die ursprüngliche Grundlage (Einlagen/Entnahmen) nicht mehr
-  existiert.
-
-- [Task] **#148** Versionsnummer-Schema — implementiert, bleibt offen bis Live-Bestätigung auf echter Hardware
-  **Status (2026-09-15): umgesetzt, aber ausdrücklich als Prototyp/
-  experimentell zu behandeln (Nutzervorgabe)** — bleibt offen, bis auf dem
-  Produktivsystem an echter Hardware geprüft wurde, ob die Anzeige-Position
-  Sinn ergibt oder zu prominent wirkt; danach ggf. Korrekturen, dann
-  abschließen und nach `BACKLOG-DONE.md` verschieben.
-
-  **Umgesetztes Schema:** `[Major].[Release].[Build]` in der Datei
-  `VERSION` (Repo-Root) — siehe `AGENTS.md` Abschnitt "Versionsnummer" für
-  die vollständige, verbindliche Dokumentation (Kaskaden-Reset,
-  Durchsetzung, Sichtbarkeit). Aktueller Stand: `0.0.0` (wird beim nächsten
-  Commit gemäß Konvention auf `0.0.1` erhöht).
-
-  **Umgesetzt:**
-  - `config.ts` liest `VERSION` beim Start (`readVersion()`, Fallback
-    `'0.0.0'` statt Absturz bei fehlender Datei).
-  - `GET /api/auth/admin/me` und `GET /api/auth/register/me` liefern
-    `version` mit aus — kein zusätzlicher Request nötig, beide Layouts
-    rufen ohnehin eine der beiden Routen beim Mounten auf.
-  - Anzeige (Prototyp): Admin-Sidebar-Footer (`admin/+layout.svelte`,
-    unauffällig unter dem Benutzernamen) und Kassen-Topbar
-    (`register/+layout.svelte`, neben dem FairPOS-Logo) — bewusst dezent
-    (`opacity: 0.7`, kleine Schrift), um im Betrieb nicht zu stören.
-
-  **Tests:** `routes/auth.integration.test.ts` — neuer Test prüft, dass
-  `version` in der `register/me`-Antwort als nicht-leerer String vorliegt.
-  `svelte-check` sauber (455 Dateien, 0 Fehler).
-
-  **Noch offen (bewusst nicht vorab entschieden):** Format-Feinheiten
-  (`git tag` auf `master` bei jedem Release?), ob eine technische
-  Durchsetzung (Git-Hook) später sinnvoll wird — aktuell reine Konvention.
+  **Noch zu entscheiden:** wie eine sinnvolle Warnung aussieht, ohne
+  legitime Einzel-Leaf-Uploads (z. B. manche CAs, Übergangs-/Platzhalter-
+  Zertifikate) fälschlich als Fehler zu behandeln — vermutlich ein reiner
+  Hinweistext beim Upload ("nur ein Zertifikat erkannt — falls deine CA eine
+  Zwischenzertifikat-Kette verlangt, prüfe, ob die Datei vollständig ist"),
+  kein hartes Ablehnen.
 
 ## Findings
 
