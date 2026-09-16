@@ -5,6 +5,7 @@ import { pool } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 import { makeLabels } from './tables.helpers.js';
+import { NO_ACTIVE_EVENT_ERROR } from '../../system/activeEvent.js';
 
 /** Shape returned by every endpoint that lists the full floor plan. */
 interface FloorPlanRow {
@@ -69,6 +70,9 @@ export async function tablesRoutes(app: FastifyInstance) {
       replace: boolean;
     };
   }>('/generate', async (req, reply) => {
+    if (!config.activeEventId) {
+      return reply.status(400).send({ error: NO_ACTIVE_EVENT_ERROR });
+    }
     const { cols, rows, replace } = req.body;
     if (cols.count < 1 || cols.count > 26 || rows.count < 1 || rows.count > 26) {
       return reply.status(400).send({ error: 'Anzahl muss zwischen 1 und 26 liegen.' });
@@ -215,6 +219,9 @@ export async function tablesRoutes(app: FastifyInstance) {
    * @returns The full updated floor plan.
    */
   app.post<{ Body: { label: string } }>('/columns', async (req, reply) => {
+    if (!config.activeEventId) {
+      return reply.status(400).send({ error: NO_ACTIVE_EVENT_ERROR });
+    }
     const label = req.body.label?.trim();
     if (!label) return reply.status(400).send({ error: 'Beschriftung erforderlich' });
     const eventId = config.activeEventId;
@@ -283,6 +290,9 @@ export async function tablesRoutes(app: FastifyInstance) {
    * @returns The full updated floor plan.
    */
   app.post<{ Body: { label: string } }>('/rows', async (req, reply) => {
+    if (!config.activeEventId) {
+      return reply.status(400).send({ error: NO_ACTIVE_EVENT_ERROR });
+    }
     const label = req.body.label?.trim();
     if (!label) return reply.status(400).send({ error: 'Beschriftung erforderlich' });
     const eventId = config.activeEventId;

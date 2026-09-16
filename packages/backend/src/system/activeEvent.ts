@@ -11,6 +11,17 @@ import { config } from '../config.js';
 /** The `system_setting` key holding the active event's id. */
 const ACTIVE_EVENT_KEY = 'active_event_id';
 
+/**
+ * Shared 400 message for every event-scoped admin create-endpoint
+ * (registers, articles, categories, register layouts, cancellation
+ * reasons, floor plan) when `config.activeEventId` is `null` — every one
+ * of the underlying tables has `event_id NOT NULL` (Task #95), so without
+ * this guard the insert instead fails as an unhandled 500 database
+ * constraint violation (D-080).
+ */
+export const NO_ACTIVE_EVENT_ERROR =
+  'Keine aktive Veranstaltung — zuerst unter „Organisation → Veranstaltungen" eine Veranstaltung anlegen und aktivieren.';
+
 /** An event as shown in the admin UI. */
 export interface EventInfo {
   id: string;

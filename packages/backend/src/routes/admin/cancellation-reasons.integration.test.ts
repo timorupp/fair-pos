@@ -1,6 +1,7 @@
 /** Integration tests for the cancellation-reasons admin CRUD route, including event scoping (Task #95). */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
+import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
 import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
 import { createTestUser } from '../../test/fixtures.js';
@@ -56,6 +57,22 @@ describe('Admin cancellation reasons CRUD', () => {
       payload: { name: 'X', booking_type: 'refund' },
     });
     expect(response.statusCode).toBe(400);
+  });
+
+  it('returns a clean 400 instead of a raw 500 constraint violation without an active event (D-080)', async () => {
+    const app = await getTestApp();
+    const previousEventId = config.activeEventId;
+    config.activeEventId = null;
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/cancellation-reasons',
+        headers: { cookie: adminCookie },
+        payload: { name: 'Verschüttet', booking_type: 'cancellation' },
+      });
+      expect(response.statusCode).toBe(400);
+    } finally {
+      config.activeEventId = previousEventId;
+    }
   });
 });
 

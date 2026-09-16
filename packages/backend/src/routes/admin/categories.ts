@@ -3,6 +3,7 @@ import type { TaxCategory } from '@fairpos/shared';
 import { query, isPgErrorCode } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
+import { NO_ACTIVE_EVENT_ERROR } from '../../system/activeEvent.js';
 
 /** The only valid `tax_category` values (Task #110) — free-text `tax_rate` was replaced by this fixed set so an admin can never enter a rate the rest of the system doesn't recognise. */
 const TAX_CATEGORIES: readonly TaxCategory[] = ['zero', 'reduced', 'standard'];
@@ -26,6 +27,9 @@ export async function categoriesAdminRoute(app: FastifyInstance): Promise<void> 
 
   /** POST /api/admin/categories — create a category in the active event. */
   app.post('/', async (req, reply) => {
+    if (!config.activeEventId) {
+      return reply.status(400).send({ error: NO_ACTIVE_EVENT_ERROR });
+    }
     const body = req.body as { name?: string; tax_category?: TaxCategory };
     if (!body.name || body.tax_category === undefined) {
       return reply.status(400).send({ error: 'Name und Steuersatz erforderlich' });

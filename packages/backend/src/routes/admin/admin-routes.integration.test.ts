@@ -82,6 +82,22 @@ describe('Admin categories', () => {
     const names = (list.json() as { name: string }[]).map((c) => c.name);
     expect(names).toEqual(['Getränke']);
   });
+
+  it('returns a clean 400 instead of a raw 500 constraint violation without an active event (D-080)', async () => {
+    const app = await getTestApp();
+    const previousEventId = config.activeEventId;
+    config.activeEventId = null;
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/categories',
+        headers: { cookie: adminCookie },
+        payload: { name: 'Getränke', tax_category: 'standard' },
+      });
+      expect(response.statusCode).toBe(400);
+    } finally {
+      config.activeEventId = previousEventId;
+    }
+  });
 });
 
 describe('Admin articles', () => {
@@ -149,6 +165,23 @@ describe('Admin articles', () => {
       headers: { cookie: adminCookie },
     });
     expect(deleteResponse.statusCode).toBe(404);
+  });
+
+  it('returns a clean 400 instead of a raw 500 constraint violation without an active event (D-080)', async () => {
+    const cat = await createTestCategory();
+    const app = await getTestApp();
+    const previousEventId = config.activeEventId;
+    config.activeEventId = null;
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/articles',
+        headers: { cookie: adminCookie },
+        payload: { name: 'X', category_id: cat.id, price: 5 },
+      });
+      expect(response.statusCode).toBe(400);
+    } finally {
+      config.activeEventId = previousEventId;
+    }
   });
 });
 
@@ -686,6 +719,22 @@ describe('Admin layouts', () => {
     });
     expect(response.statusCode).toBe(400);
   });
+
+  it('returns a clean 400 instead of a raw 500 constraint violation without an active event (D-080)', async () => {
+    const app = await getTestApp();
+    const previousEventId = config.activeEventId;
+    config.activeEventId = null;
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/layouts',
+        headers: { cookie: adminCookie },
+        payload: { name: 'L' },
+      });
+      expect(response.statusCode).toBe(400);
+    } finally {
+      config.activeEventId = previousEventId;
+    }
+  });
 });
 
 describe('Admin tables (floor plan)', () => {
@@ -769,6 +818,40 @@ describe('Admin tables (floor plan)', () => {
       },
     });
     expect(genResponse.statusCode).toBe(200);
+  });
+
+  it('returns a clean 400 instead of a raw 500 constraint violation without an active event (D-080)', async () => {
+    const app = await getTestApp();
+    const previousEventId = config.activeEventId;
+    config.activeEventId = null;
+    try {
+      const generate = await app.inject({
+        method: 'POST', url: '/api/admin/tables/generate',
+        headers: { cookie: adminCookie },
+        payload: {
+          cols: { count: 1, label_type: 'alpha', order: 'asc' },
+          rows: { count: 1, label_type: 'numeric', order: 'asc' },
+          replace: true,
+        },
+      });
+      expect(generate.statusCode).toBe(400);
+
+      const columns = await app.inject({
+        method: 'POST', url: '/api/admin/tables/columns',
+        headers: { cookie: adminCookie },
+        payload: { label: 'B' },
+      });
+      expect(columns.statusCode).toBe(400);
+
+      const rows = await app.inject({
+        method: 'POST', url: '/api/admin/tables/rows',
+        headers: { cookie: adminCookie },
+        payload: { label: '2' },
+      });
+      expect(rows.statusCode).toBe(400);
+    } finally {
+      config.activeEventId = previousEventId;
+    }
   });
 });
 

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
+import { NO_ACTIVE_EVENT_ERROR } from '../../system/activeEvent.js';
 
 /**
  * Admin routes for cancellation reason management. Scoped to the active event (Task #95).
@@ -22,6 +23,9 @@ export async function cancellationReasonsAdminRoute(app: FastifyInstance): Promi
 
   /** POST /api/admin/cancellation-reasons — create a reason in the active event. */
   app.post('/', async (req, reply) => {
+    if (!config.activeEventId) {
+      return reply.status(400).send({ error: NO_ACTIVE_EVENT_ERROR });
+    }
     const body = req.body as { name?: string; booking_type?: string; is_active?: boolean };
     if (!body.name || !body.booking_type) {
       return reply.status(400).send({ error: 'Name und Buchungsart erforderlich' });

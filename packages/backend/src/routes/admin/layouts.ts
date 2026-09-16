@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { query, withTransaction } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
+import { NO_ACTIVE_EVENT_ERROR } from '../../system/activeEvent.js';
 
 /**
  * Admin routes for register layout management. Scoped to the active event (Task #95).
@@ -46,6 +47,9 @@ export async function layoutsAdminRoute(app: FastifyInstance): Promise<void> {
 
   /** POST /api/admin/layouts — create a new empty layout in the active event. */
   app.post('/', async (req, reply) => {
+    if (!config.activeEventId) {
+      return reply.status(400).send({ error: NO_ACTIVE_EVENT_ERROR });
+    }
     const body = req.body as { name?: string; grid_cols?: number; grid_rows?: number };
     if (!body.name) return reply.status(400).send({ error: 'Name erforderlich' });
 

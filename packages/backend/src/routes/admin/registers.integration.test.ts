@@ -59,6 +59,24 @@ describe('DELETE /api/admin/registers/:id', () => {
   });
 });
 
+describe('POST /api/admin/registers without an active event (D-080)', () => {
+  it('returns a clean 400 instead of a raw 500 constraint violation', async () => {
+    const app = await getTestApp();
+    const previousEventId = config.activeEventId;
+    config.activeEventId = null;
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/admin/registers',
+        headers: { cookie: adminCookie },
+        payload: { name: 'K1', type: 'receipt_register' },
+      });
+      expect(response.statusCode).toBe(400);
+    } finally {
+      config.activeEventId = previousEventId;
+    }
+  });
+});
+
 describe('register.is_active (Task #55)', () => {
   it('creates a register active by default', async () => {
     const app = await getTestApp();

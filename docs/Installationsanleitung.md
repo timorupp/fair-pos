@@ -332,82 +332,74 @@ verzeichnis vor Abschluss des asynchronen Mounts; `systemd-mount --no-block`
 gibt sofort zurück, ohne auf den tatsächlichen Mount-Abschluss zu warten —
 bei Bedarf `lsblk`/`stat` einfach nach einer Sekunde erneut ausführen).
 
-### 8.3 Einmalige Hardware-Inbetriebnahme (`setup`)
+### 8.3 Einmalige Hardware-Inbetriebnahme (`setup`) — über die Admin-UI
 
-**Reihenfolge wichtig: dieser Schritt zuerst, Abschnitt 8.4 (Admin-UI)
-erst danach.** Würde die TSE zuerst in der Admin-UI eingetragen (Mount-
-Pfad, Client-ID, TimeAdmin-PIN) und erst anschließend per `setup`
-initialisiert, beginnt der automatische Hintergrund-Health-Job
-(`docs/TSE-Integration.md` Abschnitt 6) sofort nach dem Speichern, die
-noch uninitialisierte TSE mit der bereits eingetragenen TimeAdmin-PIN
-anzusprechen — eine TSE, die diese PIN noch gar nicht kennt, quittiert das
-mit Fehlversuchen und riskiert dieselbe Sperre wie unten beschrieben
-(siehe `BACKLOG.md` D-055 zum Health-Job-Risiko). Deshalb: TSE zuerst
-per `setup` initialisieren, danach dieselben Werte in der Admin-UI
-eintragen.
+**Korrektur (2026-09-16):** Frühere Fassungen dieses Abschnitts
+beschrieben `setup` als reinen CLI-Schritt ("kein Admin-UI-Schritt").
+Das ist seit **Task #131** überholt — `setup` läuft komplett über die
+Admin-UI (Einstellungen → TSE → TSE-Tools → Button "TSE initialisieren"),
+mit demselben zugrunde liegenden `worm_tse_setup_ext`-Aufruf wie zuvor
+über `tseCli` (Referenz weiterhin in `docs/TSE-CLI-Referenz.md`, falls
+`setup` je gescriptet/headless aufgerufen werden muss).
 
-**Kein Admin-UI-Schritt** — bewusst nicht Teil der UI (siehe
-`docs/TSE-Integration.md` Abschnitt 7): die einmalige Aktivierung der TSE
-läuft direkt über die `tseCli`-Binary. Zugangsdaten dafür, laut
-KassenSichV-Vorgabe nirgends dauerhaft speicherbar (auch nicht in der
-Bash-History):
-
-- **Credential-Seed** — kommt **nicht** vom TSE-Hersteller direkt, sondern
-  wird vom TSE-**Händler** vergeben (häufig, aber nicht garantiert,
-  `SwissbitSwissbit`) — im Zweifel immer beim Händler nachfragen, nicht
-  raten.
-- **Admin-PUK/Admin-PIN** — jede TSE hat werksseitig einen ursprünglichen
-  PUK/PIN, der bei diesem `setup`-Aufruf aber zwingend durch neue,
-  selbst gewählte Werte ersetzt wird. Die hier übergebenen `<admin-puk>`/
-  `<admin-pin>` sind also die **neuen**, vom Verein selbst festgelegten
-  Werte — nicht Werte aus irgendwelchen Herstellerunterlagen. **Feste
-  Längen, von der TSE hart geprüft:** `<admin-puk>` muss genau **6-stellig**
-  sein, `<admin-pin>` und `<time-admin-pin>` müssen genau **5-stellig**
-  sein — jeweils nur Ziffern. Eine falsche Länge lässt `setup` sofort mit
-  `WORM_ERROR_TSE_INVALID_PARAMETER` (Fehlercode `4103`) fehlschlagen.
-- **Client-ID** — frei wählbar (z.B. `FairPOS-1`), aber nur bei diesem
-  einen, allerersten `setup`-Aufruf: `setup` bricht danach für immer mit
-  `"TSE is already set up"` ab, sobald die TSE einmal erfolgreich
-  eingerichtet wurde — unabhängig vom Zustand von PIN/PUK. **Korrektur
-  (2026-09-10):** Ein erneuter `setup`-Aufruf ist entgegen einer früheren
-  Annahme in diesem Dokument **kein** Weg, eine gesperrte PIN
-  zurückzusetzen oder die Client-ID nachträglich zu ändern — die TSE lässt
-  sich damit nicht "zurücksetzen". Für eine gesperrte Admin-PIN oder
-  TimeAdmin-PIN gibt es aktuell **keine unterstützte Möglichkeit** in
-  FairPOS (`worm_user_unblock` ist im `tseCli` bisher nicht implementiert),
-  siehe Task #131.
-
-```bash
-sudo -u fairpos /opt/fairpos/packages/backend/native/tse-cli/vendor/bin/tseCli \
-  <mount-pfad> setup <client-id> <credential-seed> <admin-puk> <admin-pin> <time-admin-pin>
-```
+**Reihenfolge:**
+1. **Erst** den Mount-Pfad auf der "TSE-Verbindung"-Karte eintragen und
+   speichern ("Auto-erkennen" klickt sich durch alle aktuell gemounteten
+   Wechseldatenträger) — der `setup`-Dialog setzt einen bereits
+   gespeicherten Mount-Pfad voraus und lehnt sonst mit einer
+   Fehlermeldung ab.
+2. **Dann** "TSE initialisieren" in den TSE-Tools öffnen und ausfüllen:
+   - **Client-ID** — eigenes Feld in diesem Dialog, frei wählbar (z. B.
+     `FairPOS-1`), bewusst unabhängig von der auf der Verbindungskarte
+     gespeicherten Client-ID (relevant beim Registrieren einer *zweiten*
+     TSE). Nur bei diesem einen, allerersten `setup`-Aufruf frei wählbar
+     — `setup` bricht danach für immer mit `"TSE is already set up"` ab,
+     sobald die TSE einmal erfolgreich eingerichtet wurde, unabhängig
+     vom Zustand von PIN/PUK. Es gibt keinen Weg, die Client-ID
+     nachträglich zu ändern, ohne die TSE zuvor per "Werkseinstellung
+     (Entwickler-TSE)" zurückzusetzen (nur auf Entwickler-TSEs möglich).
+   - **CredentialSeed** — im Dialog mit `SwissbitSwissbit` vorbefüllt
+     (häufigster Wert, aber nicht garantiert) — im Zweifel beim
+     TSE-**Händler** verifizieren, nicht raten.
+   - **Admin-PUK** (6-stellig) sowie **Admin-PIN**/**TimeAdmin-PIN**
+     (je 5-stellig, nur Ziffern) — die **neuen**, vom Verein selbst
+     festgelegten Werte, jeweils mit Bestätigungsfeld gegen Tippfehler.
+   - Erfolgreiche Ausführung übernimmt die neue Client-ID **automatisch**
+     auf die "TSE-Verbindung"-Karte (`tse_client_id`-Einstellung wird vom
+     Backend selbst gesetzt) — dieses Feld muss danach **nicht** manuell
+     nachgetragen werden.
+3. **Danach** auf der "TSE-Verbindung"-Karte zusätzlich noch die
+   **TimeAdmin-PIN** eintragen (exakt derselbe Wert wie im
+   `setup`-Dialog) und speichern — die wird von `setup` **nicht**
+   automatisch übernommen. **Reihenfolge wichtig:** diesen Schritt erst
+   *nach* erfolgreichem `setup` ausführen, nicht vorher — sonst spricht
+   der automatische Hintergrund-Health-Job
+   (`docs/TSE-Integration.md` Abschnitt 6) die noch uninitialisierte TSE
+   mit einer ihr noch unbekannten PIN an und riskiert eine Sperre (siehe
+   `BACKLOG.md` D-055 zum Health-Job-Risiko).
+4. Über "TSE testen" verifizieren (`hasPassedSelfTest: true` erwartet)
+   und zusätzlich über "Signatur testen" eine echte Testtransaktion
+   auslösen — ein grüner Status bei "TSE testen" allein beweist noch
+   **nicht**, dass die Client-ID auch tatsächlich auf der TSE registriert
+   ist (reiner Lesevorgang, prüft keine Transaktion).
 
 > ⚠️ **Ein falscher Credential-Seed kann die TSE unwiderruflich sperren.**
 > `setup` versucht mit dem angegebenen Credential-Seed den werksseitigen
 > PUK zu ändern. Ist der Credential-Seed falsch (Tippfehler), wird daraus
 > der falsche ursprüngliche PUK abgeleitet — der Änderungsversuch schlägt
 > fehl. Nach **drei** solchen Fehlversuchen ist die TSE **dauerhaft und
-> unwiderruflich gesperrt** (keine Wiederherstellung möglich). Vor dem
-> ersten `setup`-Aufruf den Credential-Seed daher unbedingt beim
-> TSE-Händler verifizieren, nicht aus dem Gedächtnis oder einer Vermutung
-> eintragen.
+> unwiderruflich gesperrt** (keine Wiederherstellung möglich, außer bei
+> einer Entwickler-TSE per Werkseinstellung). Vor dem ersten
+> `setup`-Aufruf den Credential-Seed daher unbedingt beim TSE-Händler
+> verifizieren, nicht aus dem Gedächtnis oder einer Vermutung eintragen.
+>
+> **Feste Längen, von der TSE hart geprüft:** eine falsche Länge bei PUK/
+> PIN lässt `setup` sofort mit `WORM_ERROR_TSE_INVALID_PARAMETER`
+> (Fehlercode `4103`) fehlschlagen.
 
-Die hier verwendeten Werte für `<mount-pfad>`, `<client-id>` und
-`<time-admin-pin>` werden im nächsten Schritt (Abschnitt 8.4) identisch in
-die Admin-UI übertragen. Vollständige Befehlsreferenz für `tseCli` (alle
-Befehle, Fehlercodes, Entwickler-TSE-Reset): `docs/TSE-CLI-Referenz.md`.
-
-### 8.4 TSE in der Admin-UI konfigurieren
-
-Nach dem ersten Start des Backends (Abschnitt 10) **und** nach der
-Hardware-Inbetriebnahme (Abschnitt 8.3): Einstellungen → System →
-"Auto-erkennen" klickt sich durch alle aktuell gemounteten
-Wechseldatenträger und trägt den ersten Treffer automatisch ein. Danach
-Client-ID und TimeAdmin-PIN **exakt identisch zu den beim `setup`-Aufruf
-verwendeten Werten** eintragen und speichern — abweichende Werte hier
-lösen denselben Sperrrisiko-Mechanismus aus, der oben die Reihenfolge
-begründet. Danach über "TSE testen" verifizieren (`hasPassedSelfTest:
-true` erwartet).
+Für eine gesperrte Admin-PIN oder TimeAdmin-PIN gibt es die Buttons
+"Admin-PIN entsperren"/"TimeAdmin-PIN entsperren" in denselben TSE-Tools
+(Task #109/#131, `worm_user_unblock`).
 
 ---
 

@@ -3,6 +3,7 @@ import { query, isPgErrorCode } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 import { computeClosingTotals, type ClosingInvoice, type ClosingItem } from '../../closing/totals.js';
+import { NO_ACTIVE_EVENT_ERROR } from '../../system/activeEvent.js';
 
 /**
  * Sums, per payment method, everything for a register still awaiting its
@@ -155,6 +156,9 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
 
   /** POST /api/admin/registers — create a register in the active event. */
   app.post('/', async (req, reply) => {
+    if (!config.activeEventId) {
+      return reply.status(400).send({ error: NO_ACTIVE_EVENT_ERROR });
+    }
     const body = req.body as {
       name?: string; type?: string; printer_id?: string | null; layout_id?: string | null;
       is_active?: boolean; is_training?: boolean;
