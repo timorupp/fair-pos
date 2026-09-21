@@ -6322,3 +6322,54 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   zurückgegeben wird. Voller Unit-/gezielter Integrationstest-Lauf sowie
   `tsc --noEmit`/`svelte-check` grün.
 
+- [Finding] **D-080** (mittel, Backend / Veranstaltungs-Scoping) — Gefunden 2026-09-16 — **Behoben 2026-09-16** — Kontext: Live-Bugreport nach einem kompletten DB-Reset des Produktivservers ("internal server error beim Anlegen einer Kasse"), noch bevor die erste Veranstaltung angelegt/aktiviert war
+  Jede Tabelle mit `event_id NOT NULL` (Task #95: `article`,
+  `article_category`, `register_layout`, `register`,
+  `cancellation_reason`, `floor_plan_column`, `floor_plan_row`,
+  `dining_table`) konnte ohne aktive Veranstaltung
+  (`config.activeEventId === null`) angelegt werden — kein einziger der
+  zugehörigen `POST`-Create-Endpoints prüfte das vorher. Live bestätigt
+  per `journalctl`: `POST /api/admin/registers` warf eine rohe
+  `DatabaseError` ("null value in column \"event_id\" ... violates
+  not-null constraint", Code `23502`) als unbehandelten 500 statt einer
+  sauberen Fehlermeldung. Kein Einzelfall — dieselbe Lücke bestand
+  identisch in `articles.ts`, `categories.ts`, `layouts.ts`,
+  `cancellation-reasons.ts` und drei Endpunkten in `tables.ts`
+  (`/generate`, `/columns`, `/rows`). Nur die rein lesenden Pfade in
+  `exports.ts`/`reports.ts` hatten bereits einen Guard
+  (`if (!config.activeEventId) return null`).
+  **Nutzerentscheidung:** Menüpunkte ("Wirtschaftsbetrieb"/
+  "Auswertungen") bei fehlender aktiver Veranstaltung **nicht**
+  ausblenden — eine klare Fehlermeldung am Endpunkt reicht aus, ein
+  zusätzlicher Frontend-Schutzwall wurde als nicht notwendig eingestuft.
+  **Behoben:** neue geteilte Konstante `NO_ACTIVE_EVENT_ERROR` in
+  `system/activeEvent.ts`; explizite Guards (`if (!config.activeEventId)
+  return reply.status(400).send({ error: NO_ACTIVE_EVENT_ERROR })`) am
+  Anfang jedes betroffenen `POST`-Handlers in `registers.ts`,
+  `articles.ts`, `categories.ts`, `layouts.ts`,
+  `cancellation-reasons.ts` und den drei Handlern in `tables.ts`. `PUT`/
+  `DELETE`-Endpunkte brauchten keinen Guard — deren `WHERE event_id = $n`-
+  Filter liefert bei `null` ohnehin nur ein leeres Ergebnis (404), nie
+  einen Constraint-Verstoß, da dabei nichts neu eingefügt wird.
+  **Tests:** sechs neue Integrationstests (je einer pro betroffenem
+  Endpunkt/Datei, `tables.ts` deckt alle drei Handler in einem Test ab)
+  bestätigen 400 statt 500 ohne aktive Veranstaltung. Voller
+  Unit-Testlauf (402 grün) und die drei betroffenen Integrationstest-
+  Dateien (98 grün) sowie `tsc --noEmit` grün.
+
+- [Finding] **DOC-002** (niedrig, Dokumentation) — Gefunden 2026-09-16 — **Behoben 2026-09-16** — Kontext: TSE-Signatur-Fehler 4113 nach DB-Reset, live untersucht
+  `docs/Installationsanleitung.md` Abschnitt 8.3 beschrieb `setup` (TSE-
+  Erstinbetriebnahme) noch als reinen CLI-Schritt ("Kein Admin-UI-Schritt
+  — bewusst nicht Teil der UI") — seit **Task #131** ist `setup`
+  vollständig über die Admin-UI erreichbar (Button "TSE initialisieren"
+  in den TSE-Tools, `routes/admin/tse.ts:316` `POST
+  /api/admin/tse/setup`). Die veraltete Doku hätte bei einem TSE-Reset
+  fälschlich zu einem CLI-Umweg über SSH geführt.
+  **Behoben:** Abschnitt 8.3 komplett neu geschrieben — beschreibt jetzt
+  den tatsächlichen UI-Ablauf (Mount-Pfad zuerst speichern → "TSE
+  initialisieren" ausfüllen, Client-ID wird danach automatisch auf die
+  Verbindungskarte übernommen → TimeAdmin-PIN dort zusätzlich manuell
+  nachtragen, da `setup` diese nicht persistiert → "TSE testen" **und**
+  "Signatur testen" verifizieren, da ein grüner Status allein keine
+  Client-Registrierung beweist).
+

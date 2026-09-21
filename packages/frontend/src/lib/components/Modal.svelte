@@ -34,13 +34,34 @@
   function onKeydown(e: KeyboardEvent) {
     if (open && e.key === 'Escape') close();
   }
+
+  /**
+   * Whether the mousedown that started the current click gesture landed
+   * directly on the backdrop itself (not inside `.modal`). Needed because a
+   * click's `target` is resolved from the common ancestor of its mousedown
+   * and mouseup targets — dragging a text selection from inside the dialog
+   * out past its edge before releasing the mouse button therefore fires a
+   * `click` whose target is the backdrop too, even though the gesture never
+   * intended to dismiss the dialog (found live, 2026-09-16). Tracking where
+   * the mousedown itself landed distinguishes that drag-out case from an
+   * actual click on the backdrop.
+   */
+  let backdropMouseDown = false;
+
+  function onBackdropMouseDown(e: MouseEvent): void {
+    backdropMouseDown = e.target === e.currentTarget;
+  }
+
+  function onBackdropClick(e: MouseEvent): void {
+    if (backdropMouseDown && e.target === e.currentTarget) close();
+  }
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-  <div class="backdrop" role="presentation" onclick={close}>
+  <div class="backdrop" role="presentation" onmousedown={onBackdropMouseDown} onclick={onBackdropClick}>
     <div class="modal" style="max-width: {maxWidth}" role="dialog" aria-modal="true" tabindex="-1" onclick={stopPropagation(bubble('click'))}>
       <div class="modal-header">
         <h2>{title}</h2>

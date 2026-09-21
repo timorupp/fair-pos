@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { query, isPgErrorCode } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
+import { NO_ACTIVE_EVENT_ERROR } from '../../system/activeEvent.js';
 
 /**
  * Confirms a category id belongs to the active event, so an article can
@@ -45,6 +46,9 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
 
   /** POST /api/admin/articles — create an article in the active event. */
   app.post('/', async (req, reply) => {
+    if (!config.activeEventId) {
+      return reply.status(400).send({ error: NO_ACTIVE_EVENT_ERROR });
+    }
     const body = req.body as {
       name?: string;
       category_id?: string;
