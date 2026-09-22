@@ -6,6 +6,208 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 
 ## Tasks
 
+- [Task] **#151** Kasse stilllegen (mit wählbarem, auch rückwirkendem Schließdatum)
+  **Klassifikation: Feature (aktuell nicht unterstützt), angelegt 2026-09-21
+  (Nutzerwunsch).**
+
+  **Problem:** Wird eine Kasse nicht mehr benutzt, verlangt FairPOS
+  trotzdem weiterhin täglich einen neuen Z-Bon für sie — die
+  "Ausstehende Tagesabschlüsse"-Logik (`closing/pending.ts`/
+  `pending-db.ts`) kennt keinen Zustand "wird nie wieder benutzt" und
+  akkumuliert unbegrenzt weitere offene Tage. Das bestehende
+  `register.is_active`-Flag (Task #55) löst das **nicht** — es ist laut
+  Code/Doc-Kommentar (`routes/admin/registers.ts`) bewusst nur ein reiner
+  Anzeige-/Auswahlfilter (blendet die Kasse aus der Bedienoberfläche
+  aus), hat aber keine Wirkung auf die Tagesabschluss-Pflicht.
+  **Nebenbefund dabei:** selbst `is_active = false` sperrt Checkout/
+  Bestellung nicht wirklich — nur die beiden lesenden Discovery-Endpunkte
+  (`GET /register-session/me`, `GET /register-session/registers/:id`)
+  prüfen es; eine bereits offene Session mit bekannter Register-id könnte
+  über `checkout`/`orders`/`tables/:tableId/checkout` theoretisch
+  weiterbuchen. Das müsste im Zuge dieses Tasks für den neuen
+  "stillgelegt"-Zustand zwingend mitgelöst werden (echter Hard-Lock in
+  diesen Endpunkten), sonst wäre die Stilllegung wirkungslos, sobald eine
+  Pending-Days-Sperre (die für einen stillgelegten, künftig immer
+  0-Tage-Pending-Zustand nicht mehr greift) wegfällt.
+
+  **Gewünschtes Verhalten:**
+  - Neue Funktion **"Kasse stilllegen"** (Bezeichnung final, Nutzerwahl
+    2026-09-21) mit einem wählbaren **Schließdatum** — nicht zwingend
+    "heute", auch **rückwirkend** auf ein vergangenes Datum setzbar.
+  - **Validierung beim Setzen (beide Bedingungen zwingend, sonst
+    Ablehnung mit klarer Fehlermeldung):**
+    1. **Vor** dem Schließdatum dürfen keine offenen Tagesabschlüsse
+       mehr ausstehen — alle Tage vor dem Schließdatum müssen bereits
+       einen Z-Bon haben (Admin muss ggf. erst nachholen, bestehender
+       "Alle N Z-Bons jetzt erstellen"-Button auf der Kassendetailseite
+       deckt das ab).
+    2. **Nach** dem Schließdatum dürfen weder Buchungen (`invoice`/
+       `service_order`/`order_cancellation`) noch Kassenabschlüsse
+       (`daily_closing`) existieren — sonst ist das gewählte Datum
+       ungültig (zu früh gewählt für eine bereits weiterlaufende Kasse).
+       Am Schließdatum selbst darf noch gebucht/abgeschlossen worden
+       sein (Schließdatum = letzter erlaubter Nutzungstag, inklusiv).
+  - **Wirkung nach dem Stilllegen:**
+    - Kasse verschwindet aus der Kassenwahl (wie bisher `is_active`),
+      bleibt aber unverändert in Historie/Exporten/DSFinV-K sichtbar.
+    - Kein weiterer Tagesabschluss wird für Tage nach dem Schließdatum
+      verlangt — der Tage-Walk in `pendingClosingDays()`
+      (`closing/pending.ts:56`, aktuell hart bis "heute") muss am
+      Schließdatum statt an "heute" enden, wenn die Kasse stillgelegt
+      ist.
+    - Echter Hard-Lock gegen jede weitere Nutzung (Checkout/Bestellung)
+      ab dem Tag nach dem Schließdatum — nicht nur ein Anzeigefilter wie
+      bei `is_active`.
+  - **Reversibilität (Nutzerentscheidung 2026-09-21):** ein
+    System-Administrator kann eine stillgelegte Kasse wieder
+    reaktivieren (Fehlbedienungsschutz) — keine wirklich unumkehrbare
+    Aktion.
+
+  **Noch offen für die Umsetzung:** genaues Schema (vermutlich ein
+  `DATE`-Feld für das Schließdatum statt `TIMESTAMPTZ`, da es sich um
+  ein Kalenderdatum und nicht um einen Ausführungszeitpunkt handelt —
+  passend zum bestehenden `business_date`-Konzept), genaue
+  Fehlermeldungstexte, UI-Platzierung (vermutlich Kassendetailseite,
+  analog zum bestehenden Sperr-Banner).
+
+- [Task] **#152** Artikelgruppe beim Artikel-Anlegen standardmäßig leer statt vorbelegt
+  **Klassifikation: UX-Fehlerquelle, angelegt 2026-09-21 (Nutzerwunsch).**
+
+  `packages/frontend/src/routes/admin/articles/+page.svelte:66`
+  (`openCreate()`) belegt `formCategoryId` beim Öffnen des
+  "Artikel anlegen"-Dialogs mit `categories[0]?.id` vor — die erste
+  Artikelgruppe (alphabetisch) ist damit schon ausgewählt, bevor der
+  Anwender überhaupt etwas gemacht hat. Führt laut Nutzer leicht zu
+  Fehleingaben (übersehene, falsch vorbelegte Artikelgruppe).
+
+  **Gewünscht:** `formCategoryId` beim Öffnen leer lassen (`''`), das
+  `<select id="art-cat">` (Zeile 208, bereits `required`) zwingt den
+  Anwender dann zur expliziten Auswahl, bevor gespeichert werden kann.
+
+- [Task] **#153** "Offen seit letztem Tagesabschluss" auch für Übungskassen anzeigen
+  **Klassifikation: Bug/UX-Lücke, angelegt 2026-09-21 (Nutzerwunsch).**
+
+  **Vor der Umsetzung erst bewerten, ob die Anforderung so überhaupt
+  sinnvoll ist** (Nutzervorgabe 2026-09-21) — nicht direkt umsetzen.
+  Offene Frage dabei z. B.: rechtfertigt der Testnutzen wirklich einen
+  Sonderpfad in der gemeinsamen `computeClosingTotals`-Aggregation, oder
+  gibt es einen einfacheren Weg, den Z-Bon-Ablauf über eine Übungskasse
+  testbar zu machen, ohne die Anzeige-Logik selbst anzufassen.
+
+  Root Cause per Code bestätigt: `loadOpenSinceLastClosing()`
+  (`packages/backend/src/routes/admin/registers.ts:22-58`) füttert alle
+  noch unverknüpften Rechnungen der Kasse in `computeClosingTotals()`
+  (`closing/totals.ts`). Diese Funktion überspringt
+  `receipt_type === 'training'`-Rechnungen bewusst komplett
+  (`closing/totals.ts:109`, Task #130 — korrekt für den echten Z-Bon,
+  Übungsbuchungen dürfen nie in die echten Finanz-Summen einfließen).
+  Da bei einer Übungskasse **jede** Rechnung `receipt_type = 'training'`
+  ist, liefert `loadOpenSinceLastClosing()` für sie immer `{ cash: 0,
+  card: 0 }` — die Kachel zeigt nie den tatsächlichen offenen Saldo.
+
+  **Gewünscht (Nutzerwunsch):**
+  - Die "Offen seit letztem Tagesabschluss"-Anzeige auf der
+    Kassendetailseite soll auch für Übungskassen den tatsächlichen
+    offenen Saldo zeigen.
+  - Zusätzlicher Zweck: die gesamte Funktion (Anzeige + der zugehörige
+    Z-Bon-Ablauf) soll sich **komplett über eine Übungskasse testen
+    lassen**, ohne echte Buchungen/echtes Geld zu benötigen.
+
+  **Zu beachten bei der Umsetzung:** `computeClosingTotals()` ist
+  bewusst die gemeinsame, einzige Aggregationsfunktion für den echten
+  Z-Bon UND diese Anzeige (Doc-Kommentar in `registers.ts:9-17` —
+  garantiert, dass die Kachel immer zum nächsten echten Z-Bon passt).
+  Ein einfaches Entfernen des `training`-Skips in `computeClosingTotals`
+  selbst wäre falsch — das würde Übungsbuchungen in die echten
+  Z-Bon-Summen einer gemischt genutzten Kasse einfließen lassen. Der Fix
+  muss also entweder eine separate Aggregation für den Übungsfall
+  ergänzen, oder `computeClosingTotals`/`loadOpenSinceLastClosing` um
+  einen expliziten "Übungsmodus"-Parameter erweitern, ohne die
+  bestehende Garantie (Kachel == nächster echter Z-Bon) für normale
+  Kassen zu verändern.
+
+- [Task] **#154** Sammel-Maske "Angaben zum elektronischen Aufzeichnungssystem (eAs)" für die ELSTER-Anmeldung
+  **Klassifikation: Feature, angelegt 2026-09-21 (Nutzerwunsch)** —
+  aufgefallen beim tatsächlichen Anmelden von FairPOS beim Finanzamt
+  (Mitteilung nach § 146a Abs. 4 AO, ELSTER-Formular "Angaben zum
+  elektronischen Aufzeichnungssystem (eAs)", Screenshot vom Nutzer
+  beigefügt).
+
+  **Nutzer-Interpretation der Feldbelegung** (DSFinV-K-Terminologie in
+  Klammern):
+  - **Software des eAs** (`Stamm_Kassen`/`KASSE_SW_BRAND` bzw.
+    `Stamm_Terminals`/`TERMINAL_SW_BRAND`) → `"FairPOS"`
+  - **Software-Version des eAs** (`KASSE_SW_VERSION`/
+    `TERMINAL_SW_VERSION`) → die aktuelle Versionsnummer (Task #148,
+    `VERSION`-Datei)
+  - **Hersteller des eAs** (`KASSE_BRAND`/`TERMINAL_BRAND`, bei DSFinV-TW
+    `TW_HERSTELLER`) → `"FairPOS Community"`
+  - **Seriennummer des eAs / Software-App** → vermutlich der bereits
+    bestehende `system_serial` (`FairPOS-<Jahr>-<10 alphanum.>`,
+    `system/serial.ts`, bereits unter Einstellungen → System sichtbar)
+  - Weitere Felder im ELSTER-Formular laut Screenshot: **Art des eAs**
+    (Dropdown, Vorschlag "Computergestützte/PC-Kassensysteme"),
+    **Anschaffung des eAs**/**Inbetriebnahme des eAs** (Datumsfelder) —
+    Screenshot war nach diesem Punkt abgeschnitten, es folgen im echten
+    Formular vermutlich noch weitere Felder (z. B. TSE-bezogene
+    Angaben) — vor der Umsetzung das vollständige ELSTER-Formular
+    durchgehen, nicht nur den Screenshot-Ausschnitt.
+  - **Modell des eAs — Pflichtfeld (Nutzerhinweis 2026-09-21).**
+    DSFinV-K-Pendant: `Stamm_Kassen`/`KASSE_MODELL` bzw.
+    `Stamm_Terminals`/`TERMINAL_MODELL` (DSFinV-TW: `Stamm_Fahrzeuge`/
+    `TW_MODELL`).
+    **Bug bereits behoben (2026-09-21):** `KASSE_MODELL` wurde in
+    `rows.ts` mit `source.registerName` befüllt — also dem vom Bediener
+    frei gewählten Kassennamen (z. B. "Theke 1") statt der
+    Produkt-Modellbezeichnung; die Kassen-Identität pro Zeile steckt
+    bereits korrekt im Schlüsselfeld `Z_KASSE_ID`. Jetzt fest auf
+    `'FairPOS'` gesetzt (analog `KASSE_BRAND`/`KASSE_SW_BRAND`), mit
+    Regressionstest (`rows.test.ts`, "KASSE_MODELL is the product model
+    designation, never the operator-chosen register name"). `source.
+    registerName` selbst blieb erhalten — wird unabhängig davon für den
+    ZIP-Download-Dateinamen gebraucht (`routes/admin/exports.ts:355`).
+    **Unverbindlich, noch zu klären:** ob `'FairPOS'` der inhaltlich
+    richtige Wert für die ELSTER-Meldung ist (keine offizielle Quelle
+    geprüft) — vor Verwendung in der echten Anmeldung mit ELSTER-
+    Hilfetext/BZSt/Steuerberater gegenprüfen.
+
+  **Dringlichkeitsprüfung (2026-09-22, Nutzerauftrag: prüfen, ob etwas
+  davon dringend ist oder warten kann):** Original der offiziellen
+  BZSt-Spezifikation direkt von bzst.de geladen und geprüft
+  (`dsfinv_k_v_2_4.zip`, Dokument `20231215_DSFinV_K_2_4.pdf`) — der
+  eigene Feldkatalog des Dokuments markiert optionale Felder explizit
+  mit dem Zusatz "(optional)" (Beispiel: `TSE_VORGANGSDATEN Zeichen
+  Daten des Vorgangs (optional)`). **Kein** `KASSE_*`-Feld in
+  `Stamm_Kassen` trägt diesen Zusatz — alle sind laut der Spezifikation
+  selbst Pflichtfelder, nicht optional.
+
+  **Daraus 1 dringender, bereits behobener Fund:**
+  - **`KASSE_SW_VERSION: ''`** (`rows.ts`, war hart auf einen leeren
+    String gesetzt) — ein Pflichtfeld, das leer exportiert wurde.
+    **Behoben 2026-09-22:** neues `DsfinvkSource.softwareVersion`
+    (`config.version`, Task #148) durchgereicht von `load.ts` bis
+    `rows.ts`; Regressionstest in `rows.test.ts` ("KASSE_SW_VERSION is
+    never empty"). Voller Unit-Testlauf (404) + gezielter
+    Integrationstest grün, `tsc --noEmit` sauber.
+
+  **Ein offener, nicht dringender Punkt** (schon nicht-leer befüllt,
+  daher kein Compliance-Verstoß, nur eine Wortlaut-/Konsistenzfrage —
+  kann warten, wie vom Nutzer vorgegeben):
+  - **`KASSE_BRAND: 'FairPOS'`** (`rows.ts`) — exportiert denselben Wert
+    wie `KASSE_SW_BRAND` (ebenfalls `'FairPOS'`). Widerspricht der
+    eigenen Nutzer-Interpretation oben, wo **Hersteller** ("FairPOS
+    Community") und **Software-Marke** ("FairPOS") bewusst
+    unterschiedliche Werte sein sollen. Noch zu klären: soll
+    `KASSE_BRAND` im Export ebenfalls auf `"FairPOS Community"`
+    geändert werden (Konsistenz mit der ELSTER-Meldung), oder ist die
+    Unterscheidung nur für das ELSTER-Formular relevant und der Export
+    bleibt bewusst bei `"FairPOS"`? Vor der Umsetzung entscheiden.
+
+  **Gewünscht:** eine Admin-UI-Maske, die alle diese Angaben **gesammelt
+  und in der Reihenfolge des ELSTER-Formulars** anzeigt (Copy-Paste-
+  Hilfe bei der Anmeldung) — wo möglich mit den bereits im System
+  vorhandenen, sich selbst aktuell haltenden Werten (Version,
+  Seriennummer) statt einer weiteren manuell zu pflegenden Kopie.
 
 - [Task] **#47** Vollen manuellen Regressionstest durchführen (inkl. DSFinV-K)
   **Umfasst auch Task #102** (2026-09-01 dorthin verschoben, Nutzereinordnung:
@@ -223,6 +425,37 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Hinweistext beim Upload ("nur ein Zertifikat erkannt — falls deine CA eine
   Zwischenzertifikat-Kette verlangt, prüfe, ob die Datei vollständig ist"),
   kein hartes Ablehnen.
+
+- [Finding] **D-081** (hoch, Frontend / Veranstaltungsverwaltung) — Gefunden 2026-09-21 — Kontext: Live-Bugreport ("Uhrzeit beim Bearbeiten einer Veranstaltung wird beim Speichern um -2h verschoben")
+  Root Cause bereits per Code lokalisiert (nicht nur Vermutung — bestätigt): `packages/frontend/src/routes/admin/events/+page.svelte:54-55`,
+  ```js
+  function toLocalInput(iso: string) {
+    return new Date(iso).toISOString().slice(0, 16);
+  }
+  ```
+  `toISOString()` formatiert immer in **UTC**, nicht in der lokalen
+  Zeitzone — trotz des Funktionsnamens "toLocalInput". Beim Öffnen des
+  Bearbeiten-Dialogs (Zeile 65) wird der gespeicherte UTC-Zeitstempel
+  damit fälschlich als lokale Uhrzeit ins `<input type="datetime-local">`
+  (Zeile 144/148) geschrieben — bei UTC+2 (Sommerzeit) erscheint dort
+  bereits beim Öffnen eine um 2h zu frühe Uhrzeit, ganz ohne dass der
+  Nutzer etwas geändert hat.
+  Beim Speichern (Zeile 73) verstärkt sich das: `new Date(formStart)`
+  interpretiert den zeitzonenlosen `datetime-local`-String korrekterweise
+  als **lokale** Zeit, `.toISOString()` wandelt danach korrekt nach UTC —
+  dieser Teil ist für sich genommen richtig. Da `formStart` aber durch
+  den Anzeige-Bug bereits die falsche (um 2h zu frühe) Uhrzeit enthält,
+  wird exakt diese falsche Zeit erneut als "lokal" interpretiert und
+  gespeichert — der Fehler kumuliert sich nicht bei jedem Speichern
+  weiter, sondern die einmal falsch angezeigte Zeit wird 1:1 übernommen,
+  sobald der Nutzer den Dialog öffnet und ohne (sichtbare) Änderung
+  speichert.
+  **Fix (noch nicht umgesetzt):** `toLocalInput()` muss die lokalen
+  Datums-/Zeitkomponenten (`getFullYear`/`getMonth`/`getDate`/
+  `getHours`/`getMinutes`) zusammensetzen statt `toISOString()` zu
+  verwenden — analog zum bereits bestehenden Muster `localDateString()`
+  in `packages/backend/src/closing/pending.ts:10-13` (dort für Tage,
+  hier zusätzlich mit Uhrzeit).
 
 ## Findings
 

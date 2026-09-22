@@ -277,10 +277,12 @@ Für FairPOS relevante Typen:
 | `Umsatz` | Normaler Artikelverkauf |
 | `Pfand` | Artikel mit positivem Pfandbetrag |
 | `PfandRueckzahlung` | Artikel mit negativem Pfandbetrag (Leergutrückgabe) |
-| `Anfangsbestand` | Wechselgeldeinlage / Startgeld |
-| `Einzahlung` | Allgemeine Einzahlung in die Kasse |
-| `Auszahlung` | Entnahme aus der Kasse |
-| `DifferenzSollIst` | Kassendifferenz beim Abschluss |
+
+**Korrektur (2026-09-16, Task #143/#144):** `Anfangsbestand`,
+`Einzahlung`, `Auszahlung` und `DifferenzSollIst` standen hier ursprünglich
+für die geplante Einlage/Entnahme-Funktion und den Soll/Ist-Abgleich beim
+Kassenabschluss — beide wurden ersatzlos entfernt (nie an TSE/Z-Bon/
+DSFinV-K angebunden). FairPOS erzeugt keinen dieser vier GV_TYP-Werte.
 
 ### 6.4 UST_SCHLUESSEL-Schema (Stamm_USt, S. 26–27)
 

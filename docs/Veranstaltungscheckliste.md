@@ -109,8 +109,9 @@ nachschlagen.
 
 ## 2. Jeden Veranstaltungstag — vor Beginn
 
-- [ ] Kassen bestücken, Wechselgeldeinlage buchen (Kassen → jeweilige Kasse
-      → "+ Einlage / Wechselgeld").
+- [ ] Kassen mit Wechselgeld bestücken (rein physisch — eine Buchung in
+      FairPOS dafür gibt es nicht mehr: die Einlage/Entnahme-Funktion wurde
+      entfernt, siehe Task #143 in `BACKLOG-DONE.md`).
 - [ ] Dashboard von FairPOS prüfen, dass keine Fehler vorliegen —
       insbesondere die Kacheln **TSE-Zustand**, **Druckwarteschlange**,
       **Ausstehende Tagesabschlüsse**, **Offene Rechnungen** sowie die

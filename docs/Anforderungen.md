@@ -63,11 +63,7 @@ Administrator
 │   ├── Stornogründe
 │   ├── Kassen
 │   │   └── [Kassendetail]
-│   │       ├── Kassenstand
-│   │       ├── Wechselgeldeinlage
-│   │       ├── Entnahme
-│   │       ├── Transaktionshistorie
-│   │       ├── Kassenabschluss
+│   │       ├── Offen seit letztem Tagesabschluss
 │   │       └── Tagesabschluss
 │   ├── Kassenlayouts
 │   └── Bonstorno  ← eigener Menüpunkt, nicht unter Kassen
@@ -75,7 +71,6 @@ Administrator
 ├── Auswertungen
 │   ├── Offene Positionen je Tisch
 │   ├── Erstellte Rechnungen
-│   ├── Soll-Kassenstand
 │   ├── Stornos & kostenfreie Abgaben
 │   ├── TSE-Ausfall-Log
 │   ├── Excel-Export (Tagesexport / Veranstaltungsexport)
@@ -194,10 +189,16 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
     - Zugeordneter Drucker (nur bei Typ Bonkasse; aus den konfigurierten Bondruckern)
     - Zugeordnetes Kassenlayout (optional, für alle Typen; überschreibt das Standardlayout des Typs)
   - Funktionen in der Kassendetailansicht:
-    - **Kassenstand anzeigen** — aktueller Soll-Kassenstand (Startgeld + Einnahmen − Entnahmen)
-    - **Wechselgeldeinlage** — manuelle Transaktion zur Einlage von Startgeld/Wechselgeld
-    - **Entnahme** — manuelle Transaktion zur Zwischenentnahme
-    - **Transaktionshistorie** — Übersicht aller Einlagen und Entnahmen der Kasse
+    - **Offen seit letztem Tagesabschluss** — Summe je Zahlungsart (Bar/Karte)
+      aller noch nicht einem Z-Bon zugeordneten Rechnungen dieser Kasse
+      (dieselbe Aggregation wie der Tagesabschluss selbst)
+    - **Tagesabschluss** — löst den Z-Bon für diese Kasse aus
+    - **Korrektur (2026-09-16, Task #143/#144):** Einlage/Entnahme
+      (manuelle Bargeld-Transaktionen) und der "Soll-Kassenstand"-Report
+      wurden ersatzlos entfernt — beide waren strukturell nie an den
+      Kassenabschluss angebunden (keine TSE-Signatur, kein Z-Bon, kein
+      DSFinV-K-Export). Wechselgeld wird seitdem rein physisch außerhalb
+      von FairPOS gehandhabt (siehe `docs/Veranstaltungscheckliste.md`).
   - **Aktiv/Archiviert (Schalter):** Eine Kasse, die bereits in einer Transaktion verwendet wurde, kann aus fiskalischen Gründen nicht mehr gelöscht werden (der Löschen-Button liefert dann eine entsprechende Fehlermeldung). Stattdessen kann sie über diesen Schalter archiviert werden — sie verschwindet aus dem Kassen-Login der Bedienoberfläche, bleibt aber unverändert in Auswertungen und im DSFinV-K-Export sichtbar (Task #55)
 
 - **Benutzerverwaltung:** Administrator kann Benutzer anlegen und verwalten
@@ -250,7 +251,6 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
 - **Auswertungen:** Der Administrator hat Einsicht in folgende Übersichten; alle Auswertungsfunktionen zeigen ausschließlich Daten der aktuell **aktiven** Veranstaltung (Task #95) — keine Veranstaltungsauswahl mehr pro Seite. Um eine andere (z. B. vergangene) Veranstaltung einzusehen, muss diese zuerst unter „Organisation → Veranstaltungen" aktiviert werden
   - **Offene Positionen je Tisch** — alle bestellten aber noch nicht bezahlten Artikel, gruppiert nach Tisch; bewusst **nicht** nach Veranstaltung gefiltert, damit offene (noch nicht kassierte) Positionen beim Veranstaltungswechsel nie aus dem Blick geraten
   - **Erstellte Rechnungen** — alle erzeugten Rechnungen der aktiven Veranstaltung; je Rechnung ist ein PDF-Download der Rechnung möglich
-  - **Soll-Kassenstand** — zeigt je Kasse der aktiven Veranstaltung einen einzigen Betrag (Startgeld + Einnahmen − Entnahmen); Details über Einlagen/Entnahmen sind in der Kassenverwaltung einsehbar
   - **Stornos & kostenfreie Abgaben** — Übersicht aller stornierten und kostenfreien Positionen der aktiven Veranstaltung; gefiltert nach Bedienung; Spalten: Datum/Uhrzeit, Bedienung, Tisch, Artikel, Menge, Normalpreis, Stornogrund, Buchungsart (Storno / 100% Rabatt); dient der Kontrolle, dass die Funktion nicht missbraucht wird
     - Oben: Zusammenfassungstabelle mit Anzahl Artikel und Gesamtbetrag je Bedienung (gefiltert nach aktiver Filterauswahl)
 
@@ -844,8 +844,14 @@ Beim Klick auf „Kassieren" werden **immer** Selbstabholerbons gedruckt — una
     Veranstaltungsort mitnehmen — die manuelle Download-Funktion ist genau dafür gedacht
 
 - ~~**Kassenabrechnung**~~ — **Entschieden:**
-  - **Kassenabschluss:** Manuell on-demand vom Administrator auslösbar; erfasst Ist-Bestand (manuell eingetippt), berechnet automatisch Soll-Bestand und Differenz; kein Abschlussbon
-  - **TSE-Protokollierung:** Einlagen → `Anfangsbestand`/`Einzahlung`, Entnahmen → `Auszahlung` (gesetzlich vorgegeben, keine weiteren Entscheidungen nötig)
+  - **Kassenabschluss:** Manuell on-demand vom Administrator auslösbar; TSE-signierter Z-Bon
+  - **Korrektur (2026-09-16, Task #143/#144):** So nie umgesetzt wie ursprünglich
+    hier notiert — es gibt keine manuelle Ist-Bestand-Eingabe und keinen
+    Soll/Ist-Differenzvergleich; der Kassenabschluss berechnet die Summen
+    ausschließlich automatisch aus den seit dem letzten Z-Bon gebuchten
+    Rechnungen (`computeClosingTotals()`). Einlagen/Entnahmen (und damit
+    die geplante `Anfangsbestand`/`Einzahlung`/`Auszahlung`-Protokollierung)
+    wurden ersatzlos entfernt, siehe Korrektur oben bei „Kassenverwaltung".
 
 - **Storno**
   - ~~**Ebene 1 — Bestellung stornieren**~~ — **Entschieden:** Zweiter Button „Stornieren / Kostenfrei" in Schritt 3 der Bedienung (vor Verbuchung); Stornogrund Pflichtfeld; Buchungsart je Grund: Storno (kein Beleg) oder 100% Rabatt (0€-Beleg); Stornogründe in Einstellungen pflegbar

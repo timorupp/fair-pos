@@ -14,6 +14,7 @@ function baseSource(vorgaenge: SourceVorgang[]): DsfinvkSource {
     registerId: 'reg-1',
     registerName: 'Theke',
     systemSerial: 'FairPOS-2026-AAAAAAAAAA',
+    softwareVersion: '0.1.3',
     tseClientId: 'FairPOS-1',
     tseSerial: 'aabbcc',
     tseCertificate: {
@@ -72,6 +73,18 @@ describe('buildDsfinvkExport', () => {
     expect(out['transactions.csv'][0]).toMatchObject({
       BON_START: '2026-08-05T18:00:00.000Z', BON_ENDE: '2026-08-05T18:00:00.000Z',
     });
+  });
+
+  it('KASSE_MODELL is the product model designation, never the operator-chosen register name (found live 2026-09-21)', () => {
+    const out = buildDsfinvkExport(baseSource([beleg()]));
+    expect(out['cashregister.csv']).toHaveLength(1);
+    expect(out['cashregister.csv'][0]!.KASSE_MODELL).toBe('FairPOS');
+    expect(out['cashregister.csv'][0]!.KASSE_MODELL).not.toBe('Theke');
+  });
+
+  it('KASSE_SW_VERSION is never empty — a mandatory field per the official DSFinV-K 2.4 spec (found live 2026-09-22)', () => {
+    const out = buildDsfinvkExport(baseSource([beleg()]));
+    expect(out['cashregister.csv'][0]!.KASSE_SW_VERSION).toBe('0.1.3');
   });
 
   it('splits into Umsatz + Pfand lines when a position carries a positive deposit', () => {

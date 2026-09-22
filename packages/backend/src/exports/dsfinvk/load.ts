@@ -294,6 +294,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     registerId: closing.register_id,
     registerName: closing.register_name,
     systemSerial: settings.get('system_serial') ?? '',
+    softwareVersion: config.version,
     tseClientId: config.tseClientId,
     tseSerial,
     tseCertificate,
