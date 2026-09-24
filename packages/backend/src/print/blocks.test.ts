@@ -92,4 +92,38 @@ describe('renderBlocksToPdf', () => {
     const pdf = await renderBlocksToPdf(blocks, 'Test');
     expect(pdf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
   });
+
+  /** Counts `/Type /Page` object dictionaries in a raw (uncompressed-object) PDF buffer — pdfkit never compresses page dictionaries themselves, only content streams, so this is a reliable page count without a full PDF parser. */
+  function countPdfPages(pdf: Buffer): number {
+    return (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+  }
+
+  it('moves an image block to a fresh page instead of clipping it at the bottom margin (found live 2026-09-24 — a QR code carrying TSE fiscal data was cut off)', async () => {
+    const onePxPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    );
+    // Enough blank lines to push doc.y near the bottom of the A6 page before
+    // the image block is reached, reproducing the live layout (lots of order
+    // lines, then the QR code near the very end of the receipt).
+    const blocks: PrintBlock[] = [
+      ...Array.from({ length: 30 }, (): PrintBlock => ({ kind: 'blank' })),
+      { kind: 'image', pngBase64: onePxPng.toString('base64'), pngWidth: 1, pngHeight: 1, escposRasterBase64: '', widthFactor: 0.9 },
+    ];
+    const pdf = await renderBlocksToPdf(blocks, 'Test');
+    expect(countPdfPages(pdf)).toBe(2);
+  });
+
+  it('does not insert a page break when the image still fits on the current page', async () => {
+    const onePxPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    );
+    const blocks: PrintBlock[] = [
+      { kind: 'text', text: 'Titel' },
+      { kind: 'image', pngBase64: onePxPng.toString('base64'), pngWidth: 1, pngHeight: 1, escposRasterBase64: '', widthFactor: 0.5 },
+    ];
+    const pdf = await renderBlocksToPdf(blocks, 'Test');
+    expect(countPdfPages(pdf)).toBe(1);
+  });
 });

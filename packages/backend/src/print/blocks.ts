@@ -233,6 +233,15 @@ export function renderBlocksToPdf(blocks: PrintBlock[], title: string): Promise<
           const png = Buffer.from(block.pngBase64, 'base64');
           const targetWidth = W * block.widthFactor;
           const targetHeight = targetWidth * block.pngHeight / block.pngWidth;
+          // Unlike doc.text(), PDFKit's doc.image() never paginates on its
+          // own — it draws at the exact y given, even past the bottom
+          // margin, silently clipping at the physical page edge. Found live
+          // 2026-09-24: a QR code (carries the TSE fiscal signature data)
+          // landing near the end of a receipt got cut off mid-code instead
+          // of moving to a fresh page.
+          if (doc.y + targetHeight > doc.page.height - doc.page.margins.bottom) {
+            doc.addPage();
+          }
           const topY = doc.y;
           doc.image(png, x0 + (W - targetWidth) / 2, topY, { width: targetWidth });
           doc.y = topY + targetHeight;
