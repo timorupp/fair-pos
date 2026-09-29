@@ -3,6 +3,8 @@
   import { page } from '$app/stores';
   import { api } from '$lib/api';
   import { refreshPendingClosings } from '$lib/stores/pendingClosings';
+  import { adminUser } from '$lib/stores/user';
+  import Modal from '$lib/components/Modal.svelte';
 
   type RegisterDetail = {
     id: string; name: string; type: string;
@@ -11,6 +13,8 @@
     effective_printer_name: string | null;
     /** Gross totals still open since the last Z-Bon, per payment method (Task #143). */
     open_cash: number; open_card: number;
+    /** Task #151 "Kasse stilllegen" — last usable calendar day, or `null` if not retired. */
+    retired_date: string | null;
   };
 
   type ClosingRow = {
@@ -147,6 +151,52 @@
       reprintingClosingId = null;
     }
   }
+
+  // ── Kasse stilllegen/reaktivieren (Task #151) ───────────────────────────────
+  let retireOpen = $state(false);
+  let retireDate = $state('');
+  let retiring = $state(false);
+  let retireError = $state('');
+
+  /** Opens the "Kasse stilllegen" dialog, pre-filled with the server's current date. */
+  function openRetire(): void {
+    retireDate = serverTodayIso ?? new Date().toISOString().slice(0, 10);
+    retireError = '';
+    retireOpen = true;
+  }
+
+  async function submitRetire(): Promise<void> {
+    if (!retireDate) return;
+    retiring = true; retireError = '';
+    try {
+      await api.admin.registers.retire(id, retireDate);
+      retireOpen = false;
+      await load();
+      await refreshPendingClosings();
+    } catch (e) {
+      retireError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      retiring = false;
+    }
+  }
+
+  let reactivating = $state(false);
+  let reactivateError = $state('');
+
+  /** Reverses "Kasse stilllegen" — System-Administrator only, see the button's own visibility guard below. */
+  async function reactivate(): Promise<void> {
+    if (!confirm('Diese Kasse wieder aktivieren? Sie erscheint danach wieder in der Kassenwahl und kann weiter benutzt werden.')) return;
+    reactivating = true; reactivateError = '';
+    try {
+      await api.admin.registers.reactivate(id);
+      await load();
+      await refreshPendingClosings();
+    } catch (e) {
+      reactivateError = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      reactivating = false;
+    }
+  }
 </script>
 
 <div class="page">
@@ -161,7 +211,23 @@
         <h1>{register.name}</h1>
         <p class="muted">{typeLabel(register.type)}{register.printer_name ? ` · ${register.printer_name}` : ''}</p>
       </div>
+      {#if register.retired_date}
+        <button class="btn-ghost" onclick={reactivate} disabled={reactivating || !$adminUser?.is_admin}
+          title={$adminUser?.is_admin ? '' : 'Nur System-Administratoren können eine stillgelegte Kasse reaktivieren'}>
+          {reactivating ? 'Reaktiviere…' : 'Reaktivieren'}
+        </button>
+      {:else}
+        <button class="btn-ghost" onclick={openRetire}>Kasse stilllegen</button>
+      {/if}
     </div>
+
+    {#if register.retired_date}
+      <p class="retired-banner">
+        🔒 Diese Kasse wurde zum <strong>{fmtBusinessDate(register.retired_date)}</strong> stillgelegt —
+        sie ist seither nicht mehr benutzbar und verlangt keine weiteren Tagesabschlüsse.
+      </p>
+      {#if reactivateError}<p class="error-text small">{reactivateError}</p>{/if}
+    {/if}
 
     <h2 class="section-title">Offen seit letztem Tagesabschluss</h2>
     <div class="balance-card">
@@ -265,9 +331,38 @@
   {/if}
 </div>
 
+<Modal bind:open={retireOpen} title="Kasse stilllegen">
+  <p class="muted small">
+    Letzter erlaubter Nutzungstag (Schließdatum) — auch rückwirkend wählbar. Vor diesem
+    Datum müssen alle Tagesabschlüsse bereits erstellt sein; nach diesem Datum darf es
+    noch keine Buchungen oder Kassenabschlüsse geben.
+  </p>
+  <div class="field">
+    <label for="retire-date">Schließdatum</label>
+    <input id="retire-date" type="date" bind:value={retireDate} disabled={retiring} />
+  </div>
+  {#if retireError}<p class="error-text small">{retireError}</p>{/if}
+  <div class="dialog-footer">
+    <button class="btn-primary" onclick={submitRetire} disabled={retiring || !retireDate}>
+      {retiring ? 'Wird stillgelegt…' : 'Kasse stilllegen'}
+    </button>
+  </div>
+</Modal>
+
 <style>
+  .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
   .back-link { font-size: 0.8rem; color: var(--color-text-muted); text-decoration: none; }
   .back-link:hover { color: var(--color-text); }
+  .retired-banner {
+    background: var(--color-surface-2); border: 1px solid var(--color-border);
+    border-radius: var(--radius); padding: 0.75rem 1rem; margin: 0.75rem 0;
+    font-size: 0.9rem; max-width: 640px;
+  }
+  .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { font-size: 0.85rem; color: var(--color-text-muted); }
+  .field input { width: 100%; max-width: 240px; }
+  .dialog-footer { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border); }
   .balance-card {
     background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: var(--radius); padding: 1.25rem 1.5rem;

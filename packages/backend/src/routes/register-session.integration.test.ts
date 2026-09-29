@@ -945,6 +945,62 @@ describe('Register-Sperre durch ausstehende Tagesabschlüsse', () => {
   });
 });
 
+describe('Stillgelegte Kassen (Task #151)', () => {
+  it('excludes a retired register from GET /me', async () => {
+    await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [registerId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/register-session/me',
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const ids = response.json().registers.map((r: { id: string }) => r.id);
+    expect(ids).not.toContain(registerId);
+    expect(ids).toContain(serviceRegisterId);
+  });
+
+  it('returns 404 for GET /registers/:id on a retired register even though the user is still assigned', async () => {
+    await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [registerId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/registers/${registerId}`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('hard-locks Bonkasse checkout with 409 once the retirement date has passed, even for an already-open session with 0 pending days', async () => {
+    // Retired yesterday, no pending days at all (no activity ever booked) —
+    // the pending-days lock alone would report unlocked; this must still
+    // block, unlike the plain is_active flag (D-151 gap fixed by this hard lock).
+    const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
+    const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+    await pool.query(`UPDATE register SET retired_date = $2 WHERE id = $1`, [registerId, dateStr]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().locked).toBe(true);
+    expect(response.json().error).toMatch(new RegExp(dateStr));
+  });
+
+  it('does not lock checkout on the retirement day itself', async () => {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    await pool.query(`UPDATE register SET retired_date = $2 WHERE id = $1`, [registerId, dateStr]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).not.toBe(409);
+  });
+});
+
 describe('Archivierte Kassen (Task #55)', () => {
   it('excludes an archived register from GET /me', async () => {
     await pool.query('UPDATE register SET is_active = false WHERE id = $1', [registerId]);

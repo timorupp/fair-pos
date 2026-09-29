@@ -6476,3 +6476,111 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Integrationstest (13 Tests) grün, `tsc --noEmit`/`svelte-check`
   sauber.
 
+- [Task] **#152** Artikelgruppe beim Artikel-Anlegen standardmäßig leer statt vorbelegt — **Erledigt 2026-09-29**
+  `openCreate()` (`admin/articles/+page.svelte`) belegte
+  `formCategoryId` beim Öffnen des Dialogs mit der ersten (alphabetisch)
+  Artikelgruppe vor — Ursache für leicht übersehene Fehleingaben.
+  **Umgesetzt:** `formCategoryId` bleibt jetzt leer; zusätzlich eine
+  echte, deaktivierte Platzhalter-Option ("Bitte wählen…") im
+  `<select>` ergänzt — ohne die hätte der Browser mangels passender
+  leerer `<option>` trotzdem optisch die erste Artikelgruppe
+  vorausgewählt (`bind:value` liest den DOM-Wert zurück), was den Fix
+  wirkungslos gemacht hätte. `svelte-check` sauber.
+
+- [Task] **#151** Kasse stilllegen (mit wählbarem, auch rückwirkendem Schließdatum) — **Erledigt 2026-09-29**
+  **Problem:** `register.is_active` (Task #55) ist bewusst nur ein
+  Anzeige-/Auswahlfilter, ohne Wirkung auf die Tagesabschluss-Pflicht
+  oder echten Schreibschutz — eine nicht mehr benutzte Kasse verlangte
+  unbegrenzt weiter tägliche Z-Bons.
+
+  **Umgesetzt:**
+  - Migration `0037_register_retired.sql` — neue Spalte
+    `register.retired_date DATE NULL` (Kalendertag, nicht Zeitstempel —
+    passend zum bestehenden `business_date`-Konzept). `docs/
+    Datenmodell.dbml` entsprechend ergänzt.
+  - `closing/pending.ts::pendingClosingDays()` — neuer optionaler
+    `retiredDate`-Parameter; der Tage-Walk endet am Tag nach dem
+    Schließdatum statt an "heute", wenn gesetzt (der Schließtag selbst
+    zählt weiter als prüfbarer Tag). Rückwärtskompatibel (Default
+    `null`, kein Verhaltensunterschied für bestehende Aufrufer).
+  - `closing/pending-db.ts::findPendingDaysForRegister()` liest
+    `retired_date` jetzt mit (neue geteilte `loadRegisterRetiredDate()`,
+    auch von `register-session.ts` genutzt) und reicht es durch.
+  - Neues Modul `closing/retire.ts` — `retireRegister(registerId,
+    retiredDate)` validiert beide Bedingungen vor dem Setzen (keine
+    offenen Tage vor dem Schließdatum via `findPendingDaysForRegister`;
+    keine Buchungen/Abschlüsse nach dem Schließdatum via eigener
+    UNION-Query über `invoice`/`service_order`/`order_cancellation`/
+    `daily_closing`), sonst `RegisterRetireError` mit klarer,
+    deutschsprachiger Meldung inkl. betroffenem Datum.
+    `reactivateRegister()` setzt `retired_date` ohne weitere Prüfung
+    zurück (reversibel per Nutzerentscheidung).
+  - `routes/admin/registers.ts` — neue Endpunkte `POST /:id/retire`
+    (jeder Admin, wie das bisherige Archivieren) und `POST
+    /:id/reactivate` (System-Administrator only — route-lokaler
+    `preHandler: authenticateSystemAdmin` zusätzlich zum
+    Instanz-weiten `authenticateAdmin`, Fastify führt beide
+    nacheinander aus). `retired_date` in GET-Liste/-Detail/PUT-Response
+    ergänzt.
+  - `routes/register-session.ts` — echter Hard-Lock: `lockedResponse()`
+    (zentrale Sperrprüfung vor jedem Checkout/Bestellung/Storno) prüft
+    jetzt zuerst, ob das Schließdatum bereits verstrichen ist (eigene
+    Prüfung, da die Pending-Days-Zahl für eine stillgelegte Kasse ab
+    dann dauerhaft bei 0 bleibt und diese Sperre sonst nicht mehr
+    greifen würde). `GET /me`/`GET /registers/:id` filtern stillgelegte
+    Kassen zusätzlich zu `is_active` aus der Kassenwahl.
+  - Frontend: `admin/registers/[id]/+page.svelte` — "Kasse
+    stilllegen"-Button + Dialog (Schließdatum, Default = heutiges
+    Server-Datum) im Seitenkopf; nach dem Stilllegen Banner mit Datum
+    + "Reaktivieren"-Button (sichtbar/aktiv nur für
+    `$adminUser?.is_admin`, serverseitig zusätzlich durchgesetzt).
+    `admin/registers/+page.svelte` — "Stillgelegt"-Badge in der
+    Übersicht (Vorrang vor "Archiviert"/Pending-Badge).
+    `packages/shared/src/types.ts` — `Register.retired_date` ergänzt.
+
+  **Tests:** 5 neue Unit-Tests (`pending.test.ts`, `retiredDate`-Block),
+  1 neuer Integrationstest in `pending-db.integration.test.ts` (echte
+  DB-Spalte), 9 neue Integrationstests in `retire.integration.test.ts`
+  (Validierung beider Richtungen, Reaktivierung), 10 neue
+  Integrationstests in `registers.integration.test.ts` (beide
+  Endpunkte, 403 für Veranstaltungs-Administrator bei `/reactivate`,
+  404, 401), 4 neue Integrationstests in `register-session.integration.
+  test.ts` (Discovery-Ausschluss, Hard-Lock inkl. "0-Pending-Days trotz
+  Sperre"-Fall, kein Lock am Schließtag selbst). Voller Unit-Testlauf
+  (414) sowie alle fünf betroffenen Integrationstest-Dateien (115 Tests)
+  grün, `tsc --noEmit`/`svelte-check` sauber.
+
+- [Finding] **D-083** (niedrig, Backend / TSE) — Gefunden 2026-09-29 — **Behoben 2026-09-29** — Kontext: Live-Bugreport, 3 protokollierte TSE-Ausfälle von je ~1 Minute bei der ersten Veranstaltung, alle exakt ~34 Minuten auseinander
+  Root Cause: `worm_transaction_start failed (Code 4098)` =
+  `WORM_ERROR_NO_TIME_SET` — die TSE hat ein internes
+  Zeit-Gültigkeitsfenster, das nach fester Zeitspanne automatisch
+  abläuft. `tse/healthJob.ts` arbeitete rein reaktiv: fragte nur einmal
+  pro Minute den günstigen `info`-Status ab und löste `maintainTse()`
+  erst aus, nachdem `hasValidTime` bereits `false` geworden war —
+  dadurch entstand bei jedem Ablauf ein Fenster von bis zu 60 Sekunden,
+  in dem ein echter Checkout mit `WORM_ERROR_NO_TIME_SET` fehlschlagen
+  konnte, bis der nächste Poll-Tick es bemerkte und behob.
+
+  **Behoben:** Der "gesund"-Zweig in `tick()` prüft jetzt zusätzlich das
+  Countdown-Feld `timeUntilNextTimeSynchronization` — liegt es innerhalb
+  von `PROACTIVE_RESYNC_MARGIN_SECONDS` (2 Poll-Intervalle = 120s) und
+  ist die automatische Wartung aktiv, wird `maintainTse()` proaktiv
+  ausgeführt, statt auf den tatsächlichen Ablauf zu warten. Ein
+  PIN-Authentifizierungsfehler deaktiviert wie beim reaktiven Pfad
+  automatisch die automatische Wartung; jeder andere Fehlerfall bleibt
+  bewusst still (der bestehende reaktive Pfad mit seinem eigenen Cooldown
+  greift ohnehin, sobald das Fenster tatsächlich abläuft — kein
+  doppelter, verwirrender Log-Strom für dasselbe Problem).
+
+  **Kein Compliance-Problem** (TSE-Ausfälle sind laut AEAO zu § 146a AO
+  Nr. 1.14.3 ausdrücklich tolerierter Betriebszustand, automatisch
+  dokumentiert) — der Fix verhindert lediglich einen wiederkehrenden,
+  vermeidbaren Reibungspunkt bei jeder Veranstaltung.
+
+  **Tests:** 6 neue Integrationstests in `healthJob.integration.test.ts`
+  (kein Versuch bei ausreichendem Puffer; proaktiver Erfolg innerhalb
+  der Marge; kein Versuch ohne konfigurierte PIN; kein Versuch bei
+  deaktivierter automatischer Wartung; Deaktivierung bei
+  PIN-Authentifizierungsfehler; stiller Fehlschlag bei anderem
+  Fehlergrund). Voller Integrationstest-Lauf der Datei (18 Tests) grün.
+

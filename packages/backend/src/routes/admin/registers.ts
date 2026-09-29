@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { query, isPgErrorCode } from '../../db/client.js';
-import { authenticateAdmin } from '../../middleware/authenticate.js';
+import { authenticateAdmin, authenticateSystemAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 import { computeClosingTotals, type ClosingInvoice, type ClosingItem } from '../../closing/totals.js';
 import { NO_ACTIVE_EVENT_ERROR } from '../../system/activeEvent.js';
+import { retireRegister, reactivateRegister, RegisterRetireError } from '../../closing/retire.js';
 
 /**
  * Sums, per payment method, everything for a register still awaiting its
@@ -111,7 +112,7 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
   /** GET /api/admin/registers — list registers of the active event with their printer and layout name. */
   app.get('/', async (_req, reply) => {
     const result = await query(`
-      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_active, r.is_training, r.created_at,
+      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_active, r.is_training, r.retired_date, r.created_at,
              p.name AS printer_name, rl.name AS layout_name
       FROM register r
       LEFT JOIN printer p ON p.id = r.printer_id
@@ -135,10 +136,10 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
       printer_id: string | null; printer_name: string | null;
       effective_printer_name: string | null;
       layout_id: string | null; layout_name: string | null;
-      is_active: boolean; is_training: boolean;
+      is_active: boolean; is_training: boolean; retired_date: string | null;
       created_at: Date;
     }>(`
-      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_active, r.is_training, r.created_at,
+      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_active, r.is_training, r.retired_date, r.created_at,
              p.name AS printer_name,
              COALESCE(p.name, dp.name) AS effective_printer_name,
              rl.name AS layout_name
@@ -229,7 +230,7 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
            is_active   = COALESCE($5, is_active),
            is_training = COALESCE($6, is_training)
        WHERE id = $7 AND event_id = $8
-       RETURNING id, name, type, printer_id, layout_id, is_active, is_training, created_at`,
+       RETURNING id, name, type, printer_id, layout_id, is_active, is_training, retired_date, created_at`,
       [body.name ?? null, body.type ?? null,
        body.printer_id !== undefined ? body.printer_id : null,
        body.layout_id !== undefined ? body.layout_id : null,
@@ -240,6 +241,55 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
 
     if (result.rows.length === 0) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
     return reply.send(result.rows[0]);
+  });
+
+  /**
+   * POST /api/admin/registers/:id/retire — "Kasse stilllegen" (Task #151).
+   * Body: `{ retired_date: "YYYY-MM-DD" }` — the last calendar day this
+   * register may still be used (inclusive), possibly in the past. Rejects
+   * with 400 (see `RegisterRetireError`) when either validation in
+   * `retireRegister()` fails. Any admin may retire a register (same level
+   * as archiving via `is_active`) — only reactivating one afterward is
+   * restricted to a System-Administrator, see below.
+   */
+  app.post<{ Params: { id: string }; Body: { retired_date?: string } }>('/:id/retire', async (req, reply) => {
+    const { id } = req.params;
+    const dateStr = req.body?.retired_date;
+    if (!dateStr || Number.isNaN(new Date(dateStr).getTime())) {
+      return reply.status(400).send({ error: 'Gültiges Schließdatum erforderlich (YYYY-MM-DD)' });
+    }
+    const exists = await query('SELECT 1 FROM register WHERE id = $1 AND event_id = $2', [id, config.activeEventId]);
+    if (exists.rowCount === 0) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
+
+    try {
+      // Local midnight, not UTC — a plain "YYYY-MM-DD" parses as UTC
+      // midnight in JS, which would shift the intended calendar day
+      // backwards in timezones east of UTC (see D-081 for the same class
+      // of bug elsewhere).
+      const [y, m, d] = dateStr.split('-').map(Number);
+      await retireRegister(id, new Date(y!, m! - 1, d!));
+    } catch (e) {
+      if (e instanceof RegisterRetireError) return reply.status(e.httpStatus).send({ error: e.message });
+      throw e;
+    }
+    return reply.status(204).send();
+  });
+
+  /**
+   * POST /api/admin/registers/:id/reactivate — reverses a "Kasse
+   * stilllegen" (Task #151). System-Administrator only (Nutzerentscheidung
+   * 2026-09-21) — deliberately stricter than `authenticateAdmin` above,
+   * which every other endpoint in this file uses; Fastify runs this
+   * route-level `preHandler` after the instance-level one, so both checks
+   * apply. No further validation needed: clearing `retired_date` can never
+   * create an inconsistent state.
+   */
+  app.post<{ Params: { id: string } }>('/:id/reactivate', { preHandler: authenticateSystemAdmin }, async (req, reply) => {
+    const { id } = req.params;
+    const exists = await query('SELECT 1 FROM register WHERE id = $1 AND event_id = $2', [id, config.activeEventId]);
+    if (exists.rowCount === 0) return reply.status(404).send({ error: 'Kasse nicht gefunden' });
+    await reactivateRegister(id);
+    return reply.status(204).send();
   });
 
   /**

@@ -67,6 +67,13 @@ export interface Register {
    * `routes/admin/registers.ts`.
    */
   is_training: boolean;
+  /**
+   * Task #151 "Kasse stilllegen": last calendar day (`YYYY-MM-DD`) this
+   * register may still be used/closed, or `null` if it isn't retired. Once
+   * past, no further booking is required or accepted — see
+   * `routes/admin/registers.ts`/`routes/register-session.ts`.
+   */
+  retired_date: string | null;
   created_at: string;
 }
 

@@ -382,3 +382,148 @@ describe('GET /api/admin/registers/:id — open since last closing (Task #143, r
     expect(response.json().open_cash).toBe(6); // 10 - 4
   });
 });
+
+describe('Kasse stilllegen/reaktivieren (Task #151)', () => {
+  async function insertInvoiceAt(registerId: string, receiptNumber: number, createdAt: string): Promise<string> {
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
+       VALUES ($1, $2, 'sales_receipt', 'cash', $3) RETURNING id`,
+      [registerId, receiptNumber, createdAt],
+    );
+    return inv.rows[0]!.id;
+  }
+
+  describe('POST /:id/retire', () => {
+    it('retires a register with no activity, any admin may do this', async () => {
+      const register = await createTestRegister();
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/${register.id}/retire`,
+        headers: { cookie: adminCookie },
+        payload: { retired_date: '2026-06-20' },
+      });
+      expect(response.statusCode).toBe(204);
+      const row = await pool.query<{ retired_date: string }>(
+        `SELECT to_char(retired_date, 'YYYY-MM-DD') AS retired_date FROM register WHERE id = $1`, [register.id],
+      );
+      expect(row.rows[0]!.retired_date).toBe('2026-06-20');
+    });
+
+    it('rejects a missing/invalid date with 400', async () => {
+      const register = await createTestRegister();
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/${register.id}/retire`,
+        headers: { cookie: adminCookie },
+        payload: {},
+      });
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('rejects with 400 and a clear message when a day before the retirement date is still open', async () => {
+      const register = await createTestRegister();
+      await insertInvoiceAt(register.id, 1, '2026-06-19 18:00:00');
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/${register.id}/retire`,
+        headers: { cookie: adminCookie },
+        payload: { retired_date: '2026-06-20' },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toMatch(/2026-06-19/);
+    });
+
+    it('rejects with 400 when a booking already exists after the chosen date', async () => {
+      const register = await createTestRegister();
+      await insertInvoiceAt(register.id, 1, '2026-06-21 09:00:00');
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/${register.id}/retire`,
+        headers: { cookie: adminCookie },
+        payload: { retired_date: '2026-06-20' },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toMatch(/2026-06-21/);
+    });
+
+    it('returns 404 for a register that does not exist', async () => {
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/00000000-0000-0000-0000-000000000000/retire`,
+        headers: { cookie: adminCookie },
+        payload: { retired_date: '2026-06-20' },
+      });
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('rejects unauthenticated requests with 401', async () => {
+      const register = await createTestRegister();
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/${register.id}/retire`,
+        payload: { retired_date: '2026-06-20' },
+      });
+      expect(response.statusCode).toBe(401);
+    });
+  });
+
+  describe('POST /:id/reactivate', () => {
+    it('reactivates a retired register (System-Administrator)', async () => {
+      const register = await createTestRegister();
+      await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [register.id]);
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/${register.id}/reactivate`,
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(204);
+      const row = await pool.query<{ retired_date: string | null }>(
+        `SELECT retired_date FROM register WHERE id = $1`, [register.id],
+      );
+      expect(row.rows[0]!.retired_date).toBeNull();
+    });
+
+    it('rejects a Veranstaltungs-Administrator (event-admin-only) with 403 — System-Administrator only', async () => {
+      const register = await createTestRegister();
+      await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [register.id]);
+      const eventAdmin = await createTestUser({ isAdmin: false, isEventAdmin: true, password: 'pw' });
+      const eventAdminCookie = await loginAsAdmin(await getTestApp(), eventAdmin.pin, eventAdmin.password);
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/${register.id}/reactivate`,
+        headers: { cookie: eventAdminCookie },
+      });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('returns 404 for a register that does not exist', async () => {
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/00000000-0000-0000-0000-000000000000/reactivate`,
+        headers: { cookie: adminCookie },
+      });
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('rejects unauthenticated requests with 401', async () => {
+      const register = await createTestRegister();
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'POST', url: `/api/admin/registers/${register.id}/reactivate`,
+      });
+      expect(response.statusCode).toBe(401);
+    });
+  });
+
+  it('GET / list includes retired_date', async () => {
+    const register = await createTestRegister();
+    await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [register.id]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/registers',
+      headers: { cookie: adminCookie },
+    });
+    const row = response.json().find((r: { id: string }) => r.id === register.id);
+    expect(row.retired_date).toBeTruthy();
+  });
+});

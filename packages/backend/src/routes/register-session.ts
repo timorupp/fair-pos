@@ -30,7 +30,7 @@ import {
 } from '../tse/processData.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../receipt/format-receipt-number.js';
 import { makeGroupKey, pickItemsToCharge } from '../order/grouping.js';
-import { isRegisterUnlocked, findPendingDaysForRegister } from '../closing/pending-db.js';
+import { isRegisterUnlocked, findPendingDaysForRegister, loadRegisterRetiredDate, localDateString } from '../closing/pending-db.js';
 import { config } from '../config.js';
 
 /**
@@ -91,6 +91,25 @@ async function receiptTypeForRegister(registerId: string): Promise<'training' | 
  * @returns The error payload to send, or `null` to proceed.
  */
 async function lockedResponse(registerId: string): Promise<{ status: 409; body: { error: string; pending_days: string[]; locked: true } } | null> {
+  // Task #151 "Kasse stilllegen" — a real hard lock, unlike is_active (which
+  // is only a display filter on the two discovery endpoints below): once a
+  // retired register's own retirement day has passed, no further booking is
+  // allowed, even from an already-open session that still knows the
+  // register's id. Checked ahead of the pending-days lock below because a
+  // retired register's pending-days count stops growing past its retirement
+  // date (see pendingClosingDays), so that check alone would no longer catch it.
+  const retiredDate = await loadRegisterRetiredDate(registerId);
+  if (retiredDate && localDateString(new Date()) > localDateString(retiredDate)) {
+    return {
+      status: 409,
+      body: {
+        error: `Diese Kasse wurde zum ${localDateString(retiredDate)} stillgelegt und kann nicht mehr verwendet werden.`,
+        pending_days: [],
+        locked: true,
+      },
+    };
+  }
+
   const pending = await findPendingDaysForRegister(registerId);
   if (pending.length === 0) return null;
   return {
@@ -117,9 +136,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    * GET /me — current user plus the list of registers they may operate.
    * Each register is annotated with its pending-Z-Bon state so the UI can
    * show a "locked" indicator on the chooser screen. Archived registers
-   * (`is_active = false`, Task #55) are excluded entirely — they stay
-   * assigned in `user_register` but no longer appear as choosable. Task #95:
-   * also excludes registers of an event other than the active one.
+   * (`is_active = false`, Task #55) and retired registers
+   * (`retired_date IS NOT NULL`, Task #151) are excluded entirely — they
+   * stay assigned in `user_register` but no longer appear as choosable.
+   * Task #95: also excludes registers of an event other than the active one.
    */
   app.get('/me', async (req, reply) => {
     const result = await query<{
@@ -129,7 +149,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_training
         FROM register r
         JOIN user_register ur ON ur.register_id = r.id
-       WHERE ur.user_id = $1 AND r.is_active = true AND r.event_id = $2
+       WHERE ur.user_id = $1 AND r.is_active = true AND r.retired_date IS NULL AND r.event_id = $2
        ORDER BY r.name
     `, [req.registerUser.id, config.activeEventId]);
 
@@ -150,9 +170,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
   /**
    * GET /registers/:id — full operating context for the active register (layout, articles).
-   * An archived register (Task #55) is treated as not found — it has already
-   * disappeared from `GET /me`, so reaching this by a stale/typed-in id should
-   * behave the same as a deleted register, not silently allow operating it.
+   * An archived (Task #55) or retired (Task #151) register is treated as
+   * not found — it has already disappeared from `GET /me`, so reaching this
+   * by a stale/typed-in id should behave the same as a deleted register,
+   * not silently allow operating it.
    * Task #95: same treatment for a register of a different (non-active) event.
    */
   app.get('/registers/:id', async (req, reply) => {
@@ -165,7 +186,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       id: string; name: string; type: RegisterType;
       printer_id: string | null; layout_id: string | null; is_training: boolean;
     }>(
-      `SELECT id, name, type, printer_id, layout_id, is_training FROM register WHERE id = $1 AND is_active = true AND event_id = $2`,
+      `SELECT id, name, type, printer_id, layout_id, is_training FROM register WHERE id = $1 AND is_active = true AND retired_date IS NULL AND event_id = $2`,
       [id, config.activeEventId],
     );
     const register = regResult.rows[0];

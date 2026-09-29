@@ -293,6 +293,12 @@ export const api = {
       update: (id: string, data: Partial<Register>): Promise<Register> =>
         request('PUT', `/admin/registers/${id}`, data),
       delete: (id: string): Promise<void> => request('DELETE', `/admin/registers/${id}`),
+      /** "Kasse stilllegen" (Task #151) — `retiredDate` is the last usable calendar day (`YYYY-MM-DD`), inclusive, possibly in the past. */
+      retire: (id: string, retiredDate: string): Promise<void> =>
+        request('POST', `/admin/registers/${id}/retire`, { retired_date: retiredDate }),
+      /** Reverses "Kasse stilllegen" (Task #151) — System-Administrator only. */
+      reactivate: (id: string): Promise<void> =>
+        request('POST', `/admin/registers/${id}/reactivate`),
     },
 
     events: {

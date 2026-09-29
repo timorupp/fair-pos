@@ -63,7 +63,10 @@
 
   function openCreate() {
     editing = null;
-    formName = ''; formCategoryId = categories[0]?.id ?? '';
+    // Deliberately left empty (Task #152) — a pre-selected category (e.g.
+    // the alphabetically first one) invited accidental wrong-category
+    // entries; the required <select> now forces an explicit choice.
+    formName = ''; formCategoryId = '';
     formPrice = ''; formDepositPrice = ''; formPrintDepositReceipt = false;
     formPrinterId = ''; formActive = true; formSkipPickupSlip = false; formError = '';
     options = []; newOptionName = '';
@@ -206,6 +209,7 @@
     <div class="field">
       <label for="art-cat">Artikelgruppe</label>
       <select id="art-cat" bind:value={formCategoryId} required disabled={saving || deleting}>
+        <option value="" disabled>Bitte wählen…</option>
         {#each categories as c}
           <option value={c.id}>{c.name} ({TAX_CATEGORY_LABELS[c.tax_category]})</option>
         {/each}

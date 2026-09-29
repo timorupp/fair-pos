@@ -251,4 +251,108 @@ describe('tick()', () => {
     delete process.env['TSE_STUB_MAINTAIN_FAILS'];
     delete process.env['TSE_STUB_MAINTAIN_ERROR_CODE'];
   });
+
+  describe('proactive re-sync ahead of the time-sync deadline (D-083)', () => {
+    /** `info` envelope with an explicit `timeUntilNextTimeSynchronization`, unlike the module-level `infoEnvelope()` helper above. */
+    function infoWithDeadline(secondsRemaining: number): string {
+      return JSON.stringify({
+        ok: true,
+        result: { hasPassedSelfTest: true, hasValidTime: true, timeUntilNextTimeSynchronization: secondsRemaining },
+      });
+    }
+
+    it('does not re-sync while still comfortably far from the deadline', async () => {
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      await pool.query(`INSERT INTO system_setting (key, value) VALUES ('tse_time_admin_pin', '123456')`);
+      process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-proactive-far.log';
+      const fs = await import('node:fs');
+      fs.writeFileSync('/tmp/tsecli-proactive-far.log', '');
+      process.env['TSE_STUB_STDOUT'] = infoWithDeadline(34 * 60);
+
+      await tick();
+
+      const calls = fs.readFileSync('/tmp/tsecli-proactive-far.log', 'utf8').trim().split('\n').filter(Boolean);
+      expect(calls.some((c) => c.includes(' maintain '))).toBe(false);
+      expect(await logRows()).toEqual([]);
+      delete process.env['TSE_STUB_LOG_FILE'];
+    });
+
+    it('proactively re-syncs once within the safety margin, while still healthy', async () => {
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      await pool.query(`INSERT INTO system_setting (key, value) VALUES ('tse_time_admin_pin', '123456')`);
+      process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-proactive-near.log';
+      const fs = await import('node:fs');
+      fs.writeFileSync('/tmp/tsecli-proactive-near.log', '');
+      process.env['TSE_STUB_STDOUT'] = infoWithDeadline(90);
+
+      await tick();
+
+      const calls = fs.readFileSync('/tmp/tsecli-proactive-near.log', 'utf8').trim().split('\n').filter(Boolean);
+      expect(calls.some((c) => c.includes(' maintain '))).toBe(true);
+      const rows = await logRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ severity: 'info', category: 'tse_health' });
+      expect(rows[0]!.message).toMatch(/[Pp]roaktive/);
+      delete process.env['TSE_STUB_LOG_FILE'];
+    });
+
+    it('does not attempt without a configured TimeAdmin PIN, and stays silent', async () => {
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      process.env['TSE_STUB_STDOUT'] = infoWithDeadline(30);
+
+      await tick();
+
+      expect(await logRows()).toEqual([]);
+    });
+
+    it('does not attempt when automatic maintenance is disabled', async () => {
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      config.tseAutoMaintainEnabled = false;
+      await pool.query(`INSERT INTO system_setting (key, value) VALUES ('tse_time_admin_pin', '123456')`);
+      process.env['TSE_STUB_LOG_FILE'] = '/tmp/tsecli-proactive-disabled.log';
+      const fs = await import('node:fs');
+      fs.writeFileSync('/tmp/tsecli-proactive-disabled.log', '');
+      process.env['TSE_STUB_STDOUT'] = infoWithDeadline(30);
+
+      await tick();
+
+      const calls = fs.readFileSync('/tmp/tsecli-proactive-disabled.log', 'utf8').trim().split('\n').filter(Boolean);
+      expect(calls.some((c) => c.includes(' maintain '))).toBe(false);
+      delete process.env['TSE_STUB_LOG_FILE'];
+    });
+
+    it('disables auto-maintain when a proactive attempt fails with a PIN authentication error', async () => {
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      await pool.query(`INSERT INTO system_setting (key, value) VALUES ('tse_time_admin_pin', '123456')`);
+      process.env['TSE_STUB_STDOUT'] = infoWithDeadline(30);
+      process.env['TSE_STUB_MAINTAIN_FAILS'] = '1';
+      process.env['TSE_STUB_MAINTAIN_ERROR_CODE'] = '4352';
+
+      await tick();
+
+      expect(config.tseAutoMaintainEnabled).toBe(false);
+      const rows = await logRows();
+      expect(rows.some((r) => r.severity === 'error' && /deaktiviert/.test(r.message))).toBe(true);
+      delete process.env['TSE_STUB_MAINTAIN_FAILS'];
+      delete process.env['TSE_STUB_MAINTAIN_ERROR_CODE'];
+    });
+
+    it('stays silent (no extra log entry) when a proactive attempt fails for a non-PIN reason — the reactive path covers it once the deadline actually passes', async () => {
+      config.tseMountPoint = '/mnt/fake-tse';
+      config.tseClientId = 'FairPOS-Test';
+      await pool.query(`INSERT INTO system_setting (key, value) VALUES ('tse_time_admin_pin', '123456')`);
+      process.env['TSE_STUB_STDOUT'] = infoWithDeadline(30);
+      process.env['TSE_STUB_MAINTAIN_FAILS'] = '1';
+
+      await tick();
+
+      expect(await logRows()).toEqual([]);
+      delete process.env['TSE_STUB_MAINTAIN_FAILS'];
+    });
+  });
 });

@@ -48,6 +48,15 @@
  * (driven by the newest `tse_health` row) could keep showing a stale
  * "Gesund" from before the TSE became unhealthy, for as long as those
  * safeguards stayed silent.
+ *
+ * D-083 (2026-09-29): the healthy branch also proactively re-syncs once
+ * `timeUntilNextTimeSynchronization` drops within
+ * {@link PROACTIVE_RESYNC_MARGIN_SECONDS} of expiry, instead of waiting for
+ * it to actually lapse first. Live data at the first real event showed three
+ * real checkouts failing with `WORM_ERROR_NO_TIME_SET`, each time for almost
+ * exactly one `POLL_INTERVAL_MS` — the purely reactive design only ever
+ * notices, and fixes, the problem on the *next* tick after the window had
+ * already expired, leaving a real (if short) gap for an in-flight sale.
  */
 import { config } from '../config.js';
 import { query } from '../db/client.js';
@@ -68,6 +77,14 @@ const LOG_CATEGORY = 'tse_health';
  * (unaffected by this cooldown) so a transient blip still recovers fast.
  */
 export const MAINTAIN_RETRY_COOLDOWN_MS = 15 * 60_000;
+
+/**
+ * Seconds of headroom before the TSE's own mandatory time-sync deadline at
+ * which the health job proactively re-syncs (D-083) — two poll intervals so
+ * one delayed/skipped tick (e.g. a slow `info` call) still leaves a second
+ * chance before the window actually lapses.
+ */
+export const PROACTIVE_RESYNC_MARGIN_SECONDS = 2 * (POLL_INTERVAL_MS / 1000);
 
 /** Whether the most recent tick found the TSE healthy — tracked so we only log/act on changes, not every tick. */
 let wasHealthy = true;
@@ -176,6 +193,40 @@ export async function tick(): Promise<void> {
     }
     lastMaintainAttemptAt = null;
     loggedAutoMaintainDisabled = false;
+
+    // D-083: still healthy, but close enough to the TSE's own time-sync
+    // deadline to re-sync now rather than wait for it to actually lapse.
+    if (
+      info.timeUntilNextTimeSynchronization <= PROACTIVE_RESYNC_MARGIN_SECONDS &&
+      config.tseAutoMaintainEnabled
+    ) {
+      const pinResult = await query<{ value: string }>(
+        `SELECT value FROM system_setting WHERE key = 'tse_time_admin_pin'`,
+      );
+      const timeAdminPin = pinResult.rows[0]?.value;
+      if (timeAdminPin) {
+        try {
+          await maintainTse(timeAdminPin);
+          await logSystemEvent(
+            'info', LOG_CATEGORY,
+            'Proaktive Zeit-Synchronisation vor Ablauf des TSE-Zeitfensters erfolgreich.',
+          );
+        } catch (e) {
+          if (isPinAuthError(e)) {
+            await logSystemEvent(
+              'warning', LOG_CATEGORY,
+              `Proaktive Zeit-Synchronisation fehlgeschlagen: ${describeTseError(e)}`,
+            );
+            await disableAutoMaintain();
+          }
+          // Any other failure stays silent here — the existing reactive
+          // path below logs it properly (with its own cooldown) once
+          // hasValidTime actually flips false, at most
+          // PROACTIVE_RESYNC_MARGIN_SECONDS later. Avoids a second,
+          // parallel warning stream for the same underlying problem.
+        }
+      }
+    }
     return;
   }
 
