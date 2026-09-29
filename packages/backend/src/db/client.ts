@@ -2,10 +2,35 @@ import pg from 'pg';
 import { config } from '../config.js';
 
 /**
+ * Node's own resolved timezone (IANA name, e.g. `Europe/Berlin`, or `UTC`) —
+ * applied to every new pool connection below (D-076). Without this,
+ * Postgres-side calendar-day bucketing (`created_at::date` casts,
+ * `current_date` defaults) follows Postgres' own session timezone, which
+ * could silently diverge from the Node-side bucketing every closing/pending
+ * calculation otherwise uses (`closing/pending.ts`'s `localDateString()`,
+ * built from `Date`'s local getters) — e.g. a booking near midnight could
+ * land on a different calendar day depending on which side computed it.
+ */
+const NODE_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/**
  * Shared PostgreSQL connection pool.
  * One pool instance is reused across the entire application lifetime.
+ *
+ * `options: '-c timezone=...'` (D-076) sets the session timezone as part of
+ * the connection's own startup handshake — a libpq/Postgres startup
+ * parameter, not a follow-up query. A first attempt ran `SET timezone = ...`
+ * from a `pool.on('connect', ...)` handler instead; that raced the pool's
+ * own next query on the same freshly-opened client (pg's "client.query()
+ * when the client is already executing a query" deprecation warning, found
+ * live) — this way there is no second query to race in the first place.
+ * IANA zone names never contain characters `-c NAME=VALUE` can't carry
+ * (no spaces, no `=`), so no escaping is needed here.
  */
-export const pool = new pg.Pool({ connectionString: config.databaseUrl });
+export const pool = new pg.Pool({
+  connectionString: config.databaseUrl,
+  options: `-c timezone=${NODE_TIMEZONE}`,
+});
 
 /**
  * Executes a single SQL query against the shared pool. Use this for simple

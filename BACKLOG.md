@@ -348,37 +348,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   Zwischenzertifikat-Kette verlangt, prüfe, ob die Datei vollständig ist"),
   kein hartes Ablehnen.
 
-- [Finding] **D-081** (hoch, Frontend / Veranstaltungsverwaltung) — Gefunden 2026-09-21 — Kontext: Live-Bugreport ("Uhrzeit beim Bearbeiten einer Veranstaltung wird beim Speichern um -2h verschoben")
-  Root Cause bereits per Code lokalisiert (nicht nur Vermutung — bestätigt): `packages/frontend/src/routes/admin/events/+page.svelte:54-55`,
-  ```js
-  function toLocalInput(iso: string) {
-    return new Date(iso).toISOString().slice(0, 16);
-  }
-  ```
-  `toISOString()` formatiert immer in **UTC**, nicht in der lokalen
-  Zeitzone — trotz des Funktionsnamens "toLocalInput". Beim Öffnen des
-  Bearbeiten-Dialogs (Zeile 65) wird der gespeicherte UTC-Zeitstempel
-  damit fälschlich als lokale Uhrzeit ins `<input type="datetime-local">`
-  (Zeile 144/148) geschrieben — bei UTC+2 (Sommerzeit) erscheint dort
-  bereits beim Öffnen eine um 2h zu frühe Uhrzeit, ganz ohne dass der
-  Nutzer etwas geändert hat.
-  Beim Speichern (Zeile 73) verstärkt sich das: `new Date(formStart)`
-  interpretiert den zeitzonenlosen `datetime-local`-String korrekterweise
-  als **lokale** Zeit, `.toISOString()` wandelt danach korrekt nach UTC —
-  dieser Teil ist für sich genommen richtig. Da `formStart` aber durch
-  den Anzeige-Bug bereits die falsche (um 2h zu frühe) Uhrzeit enthält,
-  wird exakt diese falsche Zeit erneut als "lokal" interpretiert und
-  gespeichert — der Fehler kumuliert sich nicht bei jedem Speichern
-  weiter, sondern die einmal falsch angezeigte Zeit wird 1:1 übernommen,
-  sobald der Nutzer den Dialog öffnet und ohne (sichtbare) Änderung
-  speichert.
-  **Fix (noch nicht umgesetzt):** `toLocalInput()` muss die lokalen
-  Datums-/Zeitkomponenten (`getFullYear`/`getMonth`/`getDate`/
-  `getHours`/`getMinutes`) zusammensetzen statt `toISOString()` zu
-  verwenden — analog zum bereits bestehenden Muster `localDateString()`
-  in `packages/backend/src/closing/pending.ts:10-13` (dort für Tage,
-  hier zusätzlich mit Uhrzeit).
-
 ## Findings
 
 - [Finding] **D-033** (mittel, Backend / Excel-Export) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
@@ -392,10 +361,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 - [Finding] **D-052** (niedrig, Backend / Tests) — Gefunden 2026-08-31 — Kontext: Während Task #94/#95-Umsetzung (Zwei-Stufen-Admin, Veranstaltung als Hierarchieebene) gefunden
   `settings.receipt-preview.integration.test.ts` — Test `renders identically whether no logo is stored at all, or one is stored but the flag stays off (default)` ist zeitabhängig-flaky, reproduzierbar aber mit jeweils unterschiedlicher Byte-Differenz (einmal 6329 vs. 6328, dann 6327 vs. 6326). Ursache: `receipt/demo.ts`s `buildDemoReceipt(now: Date = new Date())` nutzt beim Aufruf ohne explizites Argument den echten aktuellen Zeitpunkt; die Route ruft sie ohne Override auf, und der Test macht zwei sequentielle `fetchPreview()`-HTTP-Aufrufe, die dadurch minimal unterschiedliche Zeitstempel einbetten — vermutlich wirkt sich das über schriftgrößen-/kerning-abhängige Fließkomma-Koordinaten im PDF-Content-Stream auf die Byte-Länge aus. Kein Zusammenhang mit Task #94/#95 — nur während der Vollständigkeits-Testläufe für Phase 2.3 aufgefallen (Test lief davor offenbar nie zufällig zu einem ungünstigen Zeitpunkt).
   Der Test sollte einen festen `now`-Zeitpunkt injizieren (z. B. Route-Parameter oder Test-Override) statt sich auf `new Date()` zu verlassen — noch nicht umgesetzt, da unabhängig vom aktuellen Task.
-
-- [Finding] **D-076** (niedrig, Backend / Kassenabschluss) — Gefunden 2026-09-12 — Kontext: Während der D-075-Diskussion zum "Ausstehende Tagesabschlüsse"-Banner (Task #146) aufgefallen
-  `closing/pending-db.ts`s neue `daysWithUnlinkedRows`-Abfrage (D-075) bucketet Kalendertage über `to_char(created_at::date, 'YYYY-MM-DD')` — folgt damit der **Postgres-Session-Zeitzone**. `closing/pending.ts`s `localDateString()` (für den Tage-Walk und den `closedDays`-Vergleich) bucketet dagegen über die **Node-Prozess-Zeitzone**. Weichen beide Zeitzonen voneinander ab, könnte eine Buchung nahe Mitternacht serverseitig einem anderen Kalendertag zugeordnet werden als clientseitig erwartet — betrifft potenziell auch die schon bestehende `created_at::date = $2::date`-Filterung beim tageweisen Abschluss (`routes/admin/closings.ts`) und den `business_date`-Fallback auf Postgres' `current_date`.
-  **Niedrige Priorität (Nutzereinordnung 2026-09-12):** nur relevant, wenn die Datenbank auf einem anderen Host als die Anwendung läuft (unterschiedliche Systemzeitzonen möglich) — im dokumentierten Produktivbetrieb läuft Postgres nativ auf demselben Ubuntu-Host wie der Node-Prozess (`docs/SETUP.md`), beide erben dieselbe OS-Zeitzone, kein praktisches Risiko. Nur in der lokalen Docker-Dev-Umgebung potenziell divergent (Alpine-Postgres-Container ohne gesetztes `TZ`, vermutlich UTC, gegen die Zeitzone des Host-Rechners). Kein Handlungsbedarf jetzt — ggf. später durch ein explizites `SET timezone`/`TZ`-Env auf dem DB-Pool vereinheitlichen, falls sich das Deployment-Modell je ändert.
 
 - [Finding] **D-078** (mittel, Backend / Auth; **Priorisierung: Post-Release**, Nutzervorgabe 2026-09-15 — kein Release-Blocker) — Gefunden 2026-09-15 — Kontext: Task #33, zweite (authentifizierte) Runde des Security-Tests gegen die Produktivinstanz des Nutzers
   `POST /api/auth/admin/verify` (Admin-Step-up, Task #90) rotiert das Session-Token nicht — es wird lediglich das `admin_verified`-Flag auf derselben Session-Zeile umgeschaltet (`auth/session.ts::setAdminVerified()`), das signierte Cookie selbst bleibt vor und nach der Passworteingabe byte-identisch. Praktisches Risiko: ein bereits vor dem Step-up entwendetes Session-Cookie (z. B. via XSS, Sniffing auf ungesichertem Netz, physischer Zugriff aufs Gerät) wird automatisch admin-fähig, sobald sich der legitime Nutzer selbst verifiziert — ohne dass sich am Cookie irgendetwas ändert, das ein Angreifer neu abgreifen müsste. Kein Bug im eigentlichen Sinne (das ursprüngliche Auth-Design von Task #90 sah das so vor), aber ein reales Risiko bei Cookie-Diebstahl.

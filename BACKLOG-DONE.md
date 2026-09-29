@@ -6584,3 +6584,57 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   PIN-Authentifizierungsfehler; stiller Fehlschlag bei anderem
   Fehlergrund). Voller Integrationstest-Lauf der Datei (18 Tests) grün.
 
+- [Finding] **D-081** (hoch, Frontend / Veranstaltungsverwaltung) — Gefunden 2026-09-21 — **Behoben 2026-09-29** — Kontext: Live-Bugreport ("Uhrzeit beim Bearbeiten einer Veranstaltung wird beim Speichern um -2h verschoben")
+  Root Cause: `admin/events/+page.svelte`s `toLocalInput()` nutzte
+  `new Date(iso).toISOString().slice(0, 16)` — `toISOString()` formatiert
+  immer in UTC, trotz des Funktionsnamens. Der gespeicherte
+  UTC-Zeitstempel wurde dadurch beim Öffnen des Bearbeiten-Dialogs
+  fälschlich als lokale Uhrzeit angezeigt (bei UTC+2 sofort 2h zu früh),
+  und beim Speichern ohne sichtbare Änderung wurde exakt diese falsche
+  Zeit übernommen.
+  **Behoben:** Die Funktion in ein neues, testbares Modul
+  `lib/datetime.ts` extrahiert (`toLocalDateTimeInput()`) und auf lokale
+  Datums-/Zeitkomponenten (`getFullYear`/`getMonth`/`getDate`/
+  `getHours`/`getMinutes`) umgestellt, analog zum bereits bestehenden
+  `localDateString()`-Muster in `closing/pending.ts`. Die zweite,
+  bereits korrekte Instanz derselben Idee (`admin/settings/system/
+  +page.svelte`s `toDatetimeLocal()`) bewusst unangetastet gelassen —
+  kein Bug dort, keine Notwendigkeit für eine Refaktorierung im Zuge
+  dieses Fixes.
+  **Tests:** 3 neue Unit-Tests in `lib/datetime.test.ts` (Rundreise
+  lokaler Komponenten zeitzonen-unabhängig, Nullen-Padding, expliziter
+  Vergleich gegen die alte UTC-basierte Fehlberechnung). Volle
+  Frontend-Testsuite (86 Tests) grün, `svelte-check` sauber.
+
+- [Finding] **D-076** (niedrig, Backend / Kassenabschluss) — Gefunden 2026-09-12 — **Behoben 2026-09-29** — Kontext: Während der D-075-Diskussion zum "Ausstehende Tagesabschlüsse"-Banner (Task #146) aufgefallen
+  Zwei unabhängige Uhren bucketeten Kalendertage: `closing/pending-db.ts`s
+  `daysWithUnlinkedRows`-Abfrage über `to_char(created_at::date, ...)`
+  folgte der Postgres-Session-Zeitzone, `closing/pending.ts`s
+  `localDateString()` der Node-Prozess-Zeitzone — betraf potenziell auch
+  `created_at::date = $2::date`-Filterungen beim tageweisen Abschluss
+  und den `business_date`-Fallback auf Postgres' `current_date`.
+  **Behoben — an der Wurzel statt an jeder einzelnen betroffenen Query:**
+  `db/client.ts`s gemeinsamer `pg.Pool` bekommt jetzt
+  `options: '-c timezone=<Node-Zeitzone>'` — ein libpq-Startup-Parameter,
+  der die Postgres-Session-Zeitzone bei jeder neuen Verbindung exakt auf
+  `Intl.DateTimeFormat().resolvedOptions().timeZone` fixiert. Damit
+  stimmen alle bestehenden `::date`-Casts und `current_date`-Aufrufe
+  automatisch mit der Node-seitigen Bucketing-Logik überein, ohne dass
+  eine einzige der potenziell betroffenen Queries (`pending-db.ts`,
+  `routes/admin/closings.ts`, `closing/retire.ts`) angefasst werden
+  musste.
+  **Verworfener erster Ansatz:** `pool.on('connect', client =>
+  client.query('SET timezone = ...'))` — live ein
+  Deprecation-Warning ausgelöst ("Calling client.query() when the
+  client is already executing a query is deprecated"), da diese
+  Nachfolge-Query mit der vom Pool direkt danach auf derselben
+  Verbindung ausgeführten eigentlichen Anfrage um dieselbe Verbindung
+  konkurrierte. Der Startup-Parameter-Ansatz braucht keine
+  Nachfolge-Query und hat dieses Problem nicht.
+  **Tests:** 2 neue Integrationstests in `db/client.integration.test.ts`
+  (Session-Zeitzone mehrerer Pool-Verbindungen == Node-Zeitzone;
+  Postgres-`::date`-Cast stimmt für denselben Zeitpunkt mit
+  Node-seitigem Bucketing überein). Voller Unit-Testlauf (414) sowie die
+  komplette Integrationstest-Suite (34 Dateien, 447 Tests) grün,
+  `tsc --noEmit` sauber.
+
