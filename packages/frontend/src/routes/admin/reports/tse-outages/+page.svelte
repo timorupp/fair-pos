@@ -79,12 +79,25 @@
     const minutes = totalMinutes % 60;
     return hours > 0 ? `${hours} Std ${minutes} Min` : `${minutes} Min`;
   }
+
+  /** Navigates to the PDF export (Task #157) via a hidden anchor, same pattern as the Excel export page — a plain browser navigation carries the session cookie and lets the `Content-Disposition: attachment` header trigger the save dialog. */
+  function downloadPdf() {
+    const a = document.createElement('a');
+    a.href = '/api/admin/reports/tse-outages/pdf';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
 </script>
 
 <div class="page">
   <div class="page-header">
     <h1>TSE-Ausfall-Log</h1>
-    <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
+    <div class="header-actions">
+      <button class="btn-ghost" onclick={downloadPdf}>PDF-Export</button>
+      <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
+    </div>
   </div>
 
   <p class="hint">Automatische Aktualisierung alle 30&nbsp;Sekunden. Anzeige auf die 500 neuesten Einträge begrenzt.</p>
@@ -118,6 +131,7 @@
 </div>
 
 <style>
+  .header-actions { display: flex; gap: 0.5rem; align-items: center; }
   .hint { font-size: 0.8rem; color: var(--color-text-muted); margin: 0 0 1rem 0; }
   table { width: 100%; font-size: 0.9rem; }
   tr.row-open { background: rgba(255, 79, 79, 0.05); }

@@ -196,7 +196,7 @@ function dayRange(dateStr: string): { from: string; to: string } | null {
  * @param input - Raw filename including extension.
  * @returns Filename with whitespace collapsed and disallowed characters stripped.
  */
-function safeFilename(input: string): string {
+export function safeFilename(input: string): string {
   return input.replace(/[\s/\\:*?"<>|]+/g, '_').replace(/_+/g, '_');
 }
 

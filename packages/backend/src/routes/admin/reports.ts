@@ -11,6 +11,8 @@ import { query } from '../../db/client.js';
 import { authenticateAdmin } from '../../middleware/authenticate.js';
 import { config } from '../../config.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../../receipt/format-receipt-number.js';
+import { renderTseOutagesPdf, type TseOutageRow } from '../../reports/tseOutagesPdf.js';
+import { safeFilename } from './exports.js';
 
 /**
  * Loads the active event's own id/start/end, or `null` when no event is
@@ -28,6 +30,25 @@ async function loadActiveEvent(): Promise<{ id: string; start: string; end: stri
   const row = result.rows[0];
   if (!row) return null;
   return { id: row.id, start: row.start_time.toISOString(), end: row.end_time.toISOString() };
+}
+
+/**
+ * Loads the TSE outage log (Task #72), newest first, capped at the 500 most
+ * recent rows — shared by both the JSON endpoint (admin UI's live table) and
+ * the PDF export (Task #157), so the two can never disagree on the data.
+ *
+ * @returns Outage rows, newest first.
+ */
+async function loadTseOutages(): Promise<TseOutageRow[]> {
+  const result = await query<{ id: string; started_at: Date; ended_at: Date | null; reason: string }>(
+    `SELECT id, started_at, ended_at, reason
+       FROM tse_outage
+      ORDER BY started_at DESC
+      LIMIT 500`,
+  );
+  return result.rows.map((r) => ({
+    id: r.id, startedAt: r.started_at, endedAt: r.ended_at, reason: r.reason,
+  }));
 }
 
 /**
@@ -272,19 +293,32 @@ export async function reportsAdminRoute(app: FastifyInstance): Promise<void> {
    * Veranstaltung. Capped at the 500 most recent rows, newest first.
    */
   app.get('/tse-outages', async (_req, reply) => {
-    const result = await query<{ id: string; started_at: Date; ended_at: Date | null; reason: string }>(
-      `SELECT id, started_at, ended_at, reason
-         FROM tse_outage
-        ORDER BY started_at DESC
-        LIMIT 500`,
-    );
+    const rows = await loadTseOutages();
     return reply.send(
-      result.rows.map((r) => ({
+      rows.map((r) => ({
         id: r.id,
-        started_at: r.started_at.toISOString(),
-        ended_at: r.ended_at?.toISOString() ?? null,
+        started_at: r.startedAt.toISOString(),
+        ended_at: r.endedAt?.toISOString() ?? null,
         reason: r.reason,
       })),
     );
+  });
+
+  /**
+   * GET /api/admin/reports/tse-outages/pdf — the same outage log as an A4
+   * PDF (Task #157), e.g. to hand to a Betriebsprüfer as documentation of
+   * TSE outages (AEAO zu § 146a AO Nr. 1.14.2).
+   */
+  app.get('/tse-outages/pdf', async (_req, reply) => {
+    const rows = await loadTseOutages();
+    const companyName = (
+      await query<{ value: string }>(`SELECT value FROM system_setting WHERE key = 'company_name'`)
+    ).rows[0]?.value ?? '';
+    const pdf = await renderTseOutagesPdf(rows, companyName, new Date());
+    const filename = safeFilename(`tse-ausfall-log_${new Date().toISOString().slice(0, 10)}.pdf`);
+    return reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(pdf);
   });
 }

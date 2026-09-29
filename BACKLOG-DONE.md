@@ -6373,3 +6373,106 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   "Signatur testen" verifizieren, da ein grüner Status allein keine
   Client-Registrierung beweist).
 
+- [Finding] **D-082** (hoch, Backend / PDF-Rendering) — Gefunden 2026-09-24 — **Behoben 2026-09-24, live auf dem Produktivserver mit der ursprünglich meldenden Rechnung bestätigt** — Kontext: Live-Bugreport, QR-Code auf einer PDF-Rechnung unten abgeschnitten, enthält TSE-Fiskaldaten
+  Root Cause: `print/blocks.ts`s `renderBlocksToPdf()` zeichnete ein
+  `ImageBlock` (Firmenlogo oder QR-Code) immer an der aktuellen
+  Cursor-Position (`doc.y`), ohne zu prüfen, ob es noch auf die Seite
+  passt. PDFKits `doc.text()` paginiert automatisch, `doc.image()`
+  dagegen nie — ein Bild, das über den unteren Rand hinausragt, wird
+  einfach an der physischen Seitenkante abgeschnitten statt auf eine
+  neue Seite zu wandern. Live reproduziert: eine lange Rechnung (17
+  Positionen, Beleg F00001) schob den Cursor bis kurz vor den QR-Code
+  fast an den Seitenrand; nachfolgender Text ("Danke für Ihren
+  Einkauf!") rutschte korrekt auf Seite 2, das bereits gezeichnete
+  QR-Bild blieb aber abgeschnitten auf Seite 1.
+  **Behoben:** Vor dem Zeichnen prüft `renderBlocksToPdf()` jetzt, ob
+  `doc.y + targetHeight` die verbleibende Seitenhöhe überschreitet, und
+  fügt in dem Fall vorher einen Seitenumbruch (`doc.addPage()`) ein.
+  Betrifft jedes PDF, das über diesen gemeinsam genutzten Renderer läuft
+  (Rechnung, Z-Bon, Bestellzettel, Testdruck, PIN-Zettel), nicht nur die
+  Kundenrechnung.
+  **Tests:** zwei neue Tests in `blocks.test.ts` — Überlauf-Fall (viele
+  Blank-Zeilen vor dem Bild → jetzt 2 Seiten statt abgeschnitten) und
+  Normalfall (Bild passt noch → weiterhin 1 Seite, keine Regression).
+  Zusätzlich mit der echten `buildDemoReceipt()`-Pipeline gerendert und
+  visuell verifiziert. Voller Unit-Testlauf (406) grün, `tsc --noEmit`
+  sauber.
+
+- [Task] **#155** Z-Bon-PDF-Dateiname soll den Kassennamen enthalten — **Erledigt 2026-09-29**
+  Root Cause/Fundstelle: `GET /api/admin/closings/:id/pdf`
+  (`routes/admin/closings.ts`) setzte den Dateinamen nur auf
+  `z-bon-${z_number}.pdf` — ohne Kassennamen. Der Kassenname lag bereits
+  in `stored.ctx.register_name` vor (`closing/load.ts`), genau wie
+  `source.registerName` beim DSFinV-K-ZIP-Download
+  (`routes/admin/exports.ts`, `dsfinvk_${registerName}_z${zNumber}.zip`).
+  **Umgesetzt:** `safeFilename()` aus `exports.ts` exportiert und in
+  `closings.ts` wiederverwendet; neuer Dateiname
+  `z-bon_${register_name}_z${z_number}.pdf` (Sonderzeichen/Leerzeichen
+  im Kassennamen dadurch abgesichert, wie beim DSFinV-K-Download).
+  **Tests:** neuer Integrationstest in `closings.integration.test.ts`
+  ("names the download after the register and Z-number") prüft den
+  exakten `Content-Disposition`-Header. Voller Testlauf der Datei (20
+  Tests) grün, `tsc --noEmit` sauber.
+
+- [Task] **#156** Rechnungs-PDFs verkleinern (Archivierbarkeit großer Stückzahlen) — **Erledigt 2026-09-29**
+  **Analyse:** Zwei eingebettete Rastergrafiken pro Rechnungs-PDF — der
+  QR-Code (220×220px, reines Schwarz/Weiß, ohnehin verlustfrei sehr gut
+  komprimierbar, kein nennenswerter Größentreiber) und das Firmenlogo
+  (`logo/logo.ts`), das bei Standard-Zoom (100 %) bis zu 1200×1800px
+  groß gerendert wurde (~290 dpi, auf Druckqualität ausgelegt) und
+  **vollständig und unabhängig in jede einzelne Rechnungs-PDF
+  eingebettet** wird (kein Shared-Ressourcen-Mechanismus über
+  PDF-Dateigrenzen hinweg möglich) — bei tausenden Rechnungen pro
+  Veranstaltung der Haupttreiber der Gesamtarchivgröße, sofern ein Logo
+  konfiguriert ist.
+  **Nutzerentscheidung 2026-09-29: 150 dpi reichen.**
+  **Umgesetzt:** `PDF_BASE_WIDTH` in `logo/logo.ts` von 1200px auf 545px
+  gesenkt (261,64pt druckbare A6-Breite ÷ 72 pt/inch × 150 dpi ≈ 545px),
+  `PDF_MAX_HEIGHT` proportional (gleiches 1,5-fache Breite:Höhe-
+  Verhältnis wie zuvor) von 1800px auf 820px. Die ESC/POS-Variante fürs
+  Thermopapier (`ESCPOS_BASE_WIDTH`/`ESCPOS_MAX_HEIGHT`) bewusst
+  unangetastet gelassen — die braucht weiterhin die volle Auflösung für
+  den Rasterdruck. Betrifft nur die PDF-Variante des Firmenlogos.
+  **Tests:** kein bestehender Test hing an den konkreten
+  1200/1800-Werten (nur an relativer Skalierung); voller Unit-Testlauf
+  (409 Tests) sowie gezielte Integrationstests
+  (`logo.integration.test.ts`, `settings.integration.test.ts`, 8 Tests)
+  grün, `tsc --noEmit` sauber.
+
+- [Task] **#157** PDF-Export des TSE-Ausfallberichts — **Erledigt 2026-09-29**
+  Root Cause/Fundstelle: "TSE-Ausfall-Log" (Task #72,
+  `admin/reports/tse-outages/+page.svelte`,
+  `GET /api/admin/reports/tse-outages`) war eine reine
+  Bildschirm-Tabelle ohne jeden Export — weder Excel noch PDF, anders
+  als andere Auswertungen. Für eine Betriebsprüfung (Beleg der
+  ordnungsgemäßen Dokumentation von TSE-Ausfällen nach AEAO zu § 146a AO
+  Nr. 1.14.2) gab es keinen Weg, die Liste als eigenständiges Dokument
+  zu sichern.
+  **Umgesetzt — bewusst NICHT über den gemeinsamen A6-Block-Renderer
+  (`print/blocks.ts::renderBlocksToPdf`)**, wie ursprünglich im Task
+  vorgeschlagen: der ist auf ein schmales, thermodruckerförmiges
+  Dokument zugeschnitten und kennt kein mehrspaltiges Tabellen-Primitiv
+  — beides passt nicht zu einer potenziell langen (bis zu 500 Zeilen)
+  Prüfliste. Stattdessen neuer, eigenständiger A4-Tabellen-Renderer
+  `reports/tseOutagesPdf.ts` (reine Funktion, direktes `pdfkit`,
+  Helvetica statt der beleg-typischen Courier-Schriftart, da dieses
+  Dokument nie auf einem Thermodrucker landet und nichts optisch
+  nachbilden muss). Eigene manuelle Seitenumbruch-Logik inkl.
+  Tabellenkopf-Wiederholung auf jeder neuen Seite. `routes/admin/
+  reports.ts`: gemeinsamer `loadTseOutages()`-Loader für JSON- und
+  PDF-Endpunkt (können nie auseinanderlaufen); neue Route `GET
+  /api/admin/reports/tse-outages/pdf` (`attachment`,
+  `tse-ausfall-log_<Datum>.pdf` über `safeFilename()`). Frontend:
+  "PDF-Export"-Button neben "Aktualisieren" auf der TSE-Ausfall-Log-Seite,
+  gleiches Anker-Klick-Muster wie beim Excel-Export.
+  **Tests:** 3 neue Unit-Tests in `tseOutagesPdf.test.ts` (leere Liste →
+  1 Seite; 80 Zeilen → Umbruch auf mehrere Seiten; offener Ausfall →
+  "läuft noch" + Dauer bis `generatedAt`, PDF-Validität/Seitenzahl per
+  `/Type /Page`-Zählung, da PDFKit Content-Streams komprimiert und Text
+  nicht direkt grep-bar ist). 2 neue Integrationstests in
+  `reports.integration.test.ts` (Content-Type/Disposition/PDF-Signatur;
+  401 ohne Admin-Session, in die bestehende Auth-Sammelprüfung
+  aufgenommen). Voller Unit-Testlauf (409) sowie gezielter
+  Integrationstest (13 Tests) grün, `tsc --noEmit`/`svelte-check`
+  sauber.
+

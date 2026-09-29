@@ -459,6 +459,41 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 
 ## Findings
 
+- [Finding] **D-083** (niedrig, Backend / TSE) — Gefunden 2026-09-29 — Kontext: Live-Bugreport, 3 protokollierte TSE-Ausfälle von je ~1 Minute bei der ersten Veranstaltung
+  **Root Cause analysiert (nicht nur Vermutung — live per Zeitstempel
+  bestätigt):** Die drei Ausfälle (Beginn 26.09.26 15:16:41 / 15:50:50 /
+  16:24:54) liegen fast exakt 34 Minuten auseinander (34:09 / 34:04) —
+  keine zufällige Häufung, sondern periodisch. `reason` bei allen drei:
+  `worm_transaction_start failed (Code 4098)` =
+  `WORM_ERROR_NO_TIME_SET` (siehe `docs/TSE-CLI-Referenz.md:404`,
+  historisch bereits einmal aufgetreten, siehe D-038-Fortsetzung in
+  `BACKLOG-DONE.md`). `journalctl` zeigt im jeweiligen Fenster nichts
+  Auffälliges — kein Hardware-Defekt, kein Neustart.
+
+  Ursache: Die TSE hat ein internes Zeit-Gültigkeitsfenster (Feld
+  `timeUntilNextTimeSynchronization` im TSE-Status), das nach fester
+  Zeitspanne automatisch abläuft. `tse/healthJob.ts` arbeitet **rein
+  reaktiv**: fragt nur einmal pro Minute (`POLL_INTERVAL_MS = 60_000`)
+  den günstigen `info`-Status ab und löst `maintainTse()` (Zeitsync)
+  erst aus, **nachdem** `hasValidTime` bereits `false` geworden ist —
+  der bevorstehende Ablauf wird nirgends proaktiv anhand des Countdowns
+  vorhergesehen. Dadurch entsteht bei jedem Ablauf ein Fenster von bis
+  zu 60 Sekunden, in dem ein echter Checkout mit `WORM_ERROR_NO_TIME_SET`
+  fehlschlägt, bis der nächste Poll-Tick es bemerkt und behebt — exakt
+  das beobachtete Muster (~1 Minute Dauer, alle ~34 Minuten).
+
+  **Kein Compliance-Problem** (TSE-Ausfälle sind laut AEAO zu § 146a AO
+  Nr. 1.14.3 ausdrücklich tolerierter Betriebszustand, automatisch
+  dokumentiert), aber ein echter, vermeidbarer Reibungspunkt bei jeder
+  Veranstaltung — ein Kassiervorgang kann in diesem Fenster ohne
+  TSE-Signatur kassiert werden müssen.
+
+  **Lösungsrichtung (noch nicht umgesetzt):** `tse/healthJob.ts`
+  proaktiv machen — `maintainTse()` anhand des Countdown-Felds
+  `timeUntilNextTimeSynchronization` auslösen, **bevor** es auf 0 läuft
+  (z. B. mit Sicherheitsmarge von ein bis zwei Poll-Intervallen), statt
+  erst auf die bereits eingetretene Ungültigkeit zu reagieren.
+
 - [Finding] **D-033** (mittel, Backend / Excel-Export) — Gefunden 2026-08-25 — Kontext: Während npm-Dependency-Cleanup (Task #68) gefunden
   `exceljs` (Produktions-Abhängigkeit für Task #10/#32) bündelt intern `uuid@^8.3.0` — betroffen von GHSA-w5hq-g745-h8pq (fehlende Buffer-Bounds-Prüfung in `uuid` v3/v5/v6 bei übergebenem `buf`-Parameter). Verifiziert: `npm view exceljs dist-tags` → `latest: 4.4.0`, identisch mit der installierten Version — es gibt aktuell **keine** neuere `exceljs`-Version, die ein aktuelleres `uuid` zieht. `npm audit fix --force` schlägt widersinnig ein *Downgrade* auf `exceljs@3.4.0` vor (npms generischer Lösungsversuch, kein echter Fix). Praktische Ausnutzbarkeit gering: eigener Code ruft `uuid` nie direkt auf, nur `exceljs` intern. Dieselbe exceljs-interne Abhängigkeitskette ist auch Ursache der `npm ci`-Deprecation-Warnungen `inflight`, `rimraf@2`, `lodash.isequal`, `glob@7` (über `archiver`/`fast-csv`/`unzipper`) — nicht eigenständig behebbar.
   Kein Handlungsbedarf jetzt. exceljs-Upstream beobachten (öffentlich bekanntes Problem, kein eigenes Issue nötig); sobald exceljs `uuid` intern anhebt, zieht ein normales `npm update` den Fix automatisch.

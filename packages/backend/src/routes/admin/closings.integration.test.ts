@@ -48,8 +48,12 @@ const YESTERDAY = fmtDay(new Date(Date.now() - 24 * 3600 * 1000));
 /**
  * Inserts an invoice + one paid order_item to give the register some turnover.
  * Returns the invoice id.
+ *
+ * @param date - Booking timestamp.
+ * @param gross - Gross price of the one order_item.
+ * @param forRegisterId - Register to book against — defaults to the outer `registerId` fixture.
  */
-async function insertPaidInvoice(date: string, gross: number): Promise<string> {
+async function insertPaidInvoice(date: string, gross: number, forRegisterId: string = registerId): Promise<string> {
   const counter = await pool.query<{ value: string }>(
     `UPDATE system_setting SET value = (value::int + 1)::text
       WHERE key = 'receipt_counter' RETURNING value`,
@@ -59,14 +63,14 @@ async function insertPaidInvoice(date: string, gross: number): Promise<string> {
     `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
      VALUES ($1, $2, 'sales_receipt', 'cash', $3)
      RETURNING id`,
-    [registerId, num, date],
+    [forRegisterId, num, date],
   );
   await pool.query(
     `INSERT INTO order_item (
        invoice_id, register_id, article_name, article_category_name,
        tax_rate, tax_category, price, deposit_price, status, created_at
      ) VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', $3, NULL, 'paid', $4)`,
-    [inv.rows[0]!.id, registerId, gross, date],
+    [inv.rows[0]!.id, forRegisterId, gross, date],
   );
   return inv.rows[0]!.id;
 }
@@ -290,6 +294,26 @@ describe('POST /api/admin/registers/:id/closings', () => {
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
     });
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('GET /api/admin/closings/:id/pdf', () => {
+  it('names the download after the register and Z-number (Task #155)', async () => {
+    const app = await getTestApp();
+    const register = await createTestRegister({ name: 'Theke 1', printerId, type: 'receipt_register' });
+    await insertPaidInvoice(`${TODAY} 12:00:00`, 10, register.id);
+    const created = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${register.id}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    const closingId = created.json().closings[0].closing_id;
+
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/closings/${closingId}/pdf`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-disposition']).toContain('filename="z-bon_Theke_1_z1.pdf"');
   });
 });
 

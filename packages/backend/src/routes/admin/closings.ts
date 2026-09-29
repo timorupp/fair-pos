@@ -28,6 +28,7 @@ import { renderZBonPdf } from '../../closing/pdf.js';
 import { enqueuePrintJob } from '../../print/enqueue.js';
 import { renderBlocksToEscPos } from '../../print/blocks.js';
 import { resolvePrinterForRegister } from '../../print/resolve-printer.js';
+import { safeFilename } from './exports.js';
 
 /** Result of one successful closing call. */
 interface CloseResult {
@@ -405,7 +406,7 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
     const pdf = await renderZBonPdf(stored.ctx, stored.totals, stored.business_date, stored.logo);
     return reply
       .header('Content-Type', 'application/pdf')
-      .header('Content-Disposition', `inline; filename="z-bon-${stored.ctx.z_number}.pdf"`)
+      .header('Content-Disposition', `inline; filename="${safeFilename(`z-bon_${stored.ctx.register_name}_z${stored.ctx.z_number}.pdf`)}"`)
       .header('Cache-Control', 'no-store')
       .send(pdf);
   });
