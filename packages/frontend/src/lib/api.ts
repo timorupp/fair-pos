@@ -626,6 +626,13 @@ export const api = {
        */
       reprint: (id: string, printerId?: string): Promise<{ print_job_id: string }> =>
         request('POST', `/admin/print-jobs/${id}/reprint`, printerId ? { printer_id: printerId } : undefined),
+
+      /**
+       * Permanently deletes every print job with status `done` or
+       * `cancelled` — used to shrink the table (and future DB backups)
+       * once old jobs are no longer needed.
+       */
+      deleteInactive: (): Promise<{ deleted: number }> => request('POST', '/admin/print-jobs/delete-inactive'),
     },
 
     logs: {

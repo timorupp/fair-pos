@@ -112,7 +112,8 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
   /** GET /api/admin/registers — list registers of the active event with their printer and layout name. */
   app.get('/', async (_req, reply) => {
     const result = await query(`
-      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_active, r.is_training, r.retired_date, r.created_at,
+      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_active, r.is_training,
+             to_char(r.retired_date, 'YYYY-MM-DD') AS retired_date, r.created_at,
              p.name AS printer_name, rl.name AS layout_name
       FROM register r
       LEFT JOIN printer p ON p.id = r.printer_id
@@ -139,7 +140,8 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
       is_active: boolean; is_training: boolean; retired_date: string | null;
       created_at: Date;
     }>(`
-      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_active, r.is_training, r.retired_date, r.created_at,
+      SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_active, r.is_training,
+             to_char(r.retired_date, 'YYYY-MM-DD') AS retired_date, r.created_at,
              p.name AS printer_name,
              COALESCE(p.name, dp.name) AS effective_printer_name,
              rl.name AS layout_name
@@ -230,7 +232,8 @@ export async function registersAdminRoute(app: FastifyInstance): Promise<void> {
            is_active   = COALESCE($5, is_active),
            is_training = COALESCE($6, is_training)
        WHERE id = $7 AND event_id = $8
-       RETURNING id, name, type, printer_id, layout_id, is_active, is_training, retired_date, created_at`,
+       RETURNING id, name, type, printer_id, layout_id, is_active, is_training,
+                 to_char(retired_date, 'YYYY-MM-DD') AS retired_date, created_at`,
       [body.name ?? null, body.type ?? null,
        body.printer_id !== undefined ? body.printer_id : null,
        body.layout_id !== undefined ? body.layout_id : null,

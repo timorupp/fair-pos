@@ -22,7 +22,7 @@ import {
 } from '../../closing/totals.js';
 import { buildZBonBlocks } from '../../closing/blocks.js';
 import { localDateString } from '../../closing/pending.js';
-import { findPendingDaysForRegister } from '../../closing/pending-db.js';
+import { findPendingDaysForRegister, loadRegisterRetiredDate } from '../../closing/pending-db.js';
 import { loadClosingById } from '../../closing/load.js';
 import { renderZBonPdf } from '../../closing/pdf.js';
 import { enqueuePrintJob } from '../../print/enqueue.js';
@@ -248,6 +248,15 @@ async function closePastPendingDays(
  * already closed before — same-day interim closings remain possible, only
  * the pointless repeat-Nullabschluss case is suppressed.
  *
+ * Task #151 "Kasse stilllegen" (found live 2026-09-30): a register retired
+ * days ago has nothing to catch up (`closePastPendingDays` above already
+ * stops at the day after `retired_date`), but this function's own "close
+ * whatever's outstanding" step doesn't know that — it would still mint a
+ * fresh Nullabschluss dated *today*, days after the register's last usable
+ * day, producing exactly the kind of dateless gap in the Z-Bon sequence
+ * retiring a register is supposed to prevent. So: once today is already
+ * past the register's retirement date, this is a no-op.
+ *
  * @param registerId - The register to close.
  * @param userName - Name of the administrator performing the closing.
  * @param today - Reference "now"; injected for testability.
@@ -256,6 +265,9 @@ async function closePastPendingDays(
 async function closeTodayUnlessAlreadyClosed(
   registerId: string, userName: string, today: Date = new Date(),
 ): Promise<CloseResult | null> {
+  const retiredDate = await loadRegisterRetiredDate(registerId);
+  if (retiredDate && localDateString(today) > localDateString(retiredDate)) return null;
+
   const unassigned = await query(
     `SELECT 1 FROM invoice WHERE register_id = $1 AND daily_closing_id IS NULL LIMIT 1`,
     [registerId],

@@ -288,6 +288,31 @@ describe('POST /api/admin/registers/:id/closings', () => {
     expect(count.rows[0]!.n).toBe(1);
   });
 
+  it('does not mint a new Nullabschluss dated today for a register retired days ago (Task #151 — found live 2026-09-30: produced a dateless gap in the Z-Bon sequence between the retirement date and today)', async () => {
+    const app = await getTestApp();
+    await pool.query(`UPDATE register SET retired_date = (current_date - interval '5 days')::date WHERE id = $1`, [registerId]);
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().closings).toEqual([]);
+    const count = await pool.query(`SELECT COUNT(*)::int AS n FROM daily_closing WHERE register_id = $1`, [registerId]);
+    expect(count.rows[0]!.n).toBe(0);
+  });
+
+  it('still closes today normally when the register is retired as of today itself (last usable day, inclusive)', async () => {
+    const app = await getTestApp();
+    await insertPaidInvoice(`${TODAY} 12:00:00`, 10);
+    await pool.query(`UPDATE register SET retired_date = $1::date WHERE id = $2`, [TODAY, registerId]);
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().closings).toHaveLength(1);
+  });
+
   it('rejects unauthenticated requests with 401', async () => {
     const app = await getTestApp();
     const response = await app.inject({

@@ -430,7 +430,7 @@ describe('Kasse stilllegen/reaktivieren (Task #151)', () => {
         payload: { retired_date: '2026-06-20' },
       });
       expect(response.statusCode).toBe(400);
-      expect(response.json().error).toMatch(/2026-06-19/);
+      expect(response.json().error).toMatch(/19\.06\.2026/);
     });
 
     it('rejects with 400 when a booking already exists after the chosen date', async () => {
@@ -443,7 +443,7 @@ describe('Kasse stilllegen/reaktivieren (Task #151)', () => {
         payload: { retired_date: '2026-06-20' },
       });
       expect(response.statusCode).toBe(400);
-      expect(response.json().error).toMatch(/2026-06-21/);
+      expect(response.json().error).toMatch(/21\.06\.2026/);
     });
 
     it('returns 404 for a register that does not exist', async () => {
@@ -515,7 +515,7 @@ describe('Kasse stilllegen/reaktivieren (Task #151)', () => {
     });
   });
 
-  it('GET / list includes retired_date', async () => {
+  it('GET / list includes retired_date as a plain YYYY-MM-DD string, not a full ISO timestamp (found live 2026-09-30 — a raw pg Date serialises via toISOString(), breaking the frontend\'s naive split(\'-\'))', async () => {
     const register = await createTestRegister();
     await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [register.id]);
     const app = await getTestApp();
@@ -524,6 +524,29 @@ describe('Kasse stilllegen/reaktivieren (Task #151)', () => {
       headers: { cookie: adminCookie },
     });
     const row = response.json().find((r: { id: string }) => r.id === register.id);
-    expect(row.retired_date).toBeTruthy();
+    expect(row.retired_date).toBe('2026-06-20');
+  });
+
+  it('GET /:id returns retired_date as a plain YYYY-MM-DD string', async () => {
+    const register = await createTestRegister();
+    await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [register.id]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().retired_date).toBe('2026-06-20');
+  });
+
+  it('PUT /:id returns retired_date as a plain YYYY-MM-DD string', async () => {
+    const register = await createTestRegister();
+    await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [register.id]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'PUT', url: `/api/admin/registers/${register.id}`,
+      headers: { cookie: adminCookie },
+      payload: { name: 'Renamed' },
+    });
+    expect(response.json().retired_date).toBe('2026-06-20');
   });
 });

@@ -14,6 +14,12 @@ export class RegisterRetireError extends Error {
   }
 }
 
+/** Formats a `YYYY-MM-DD` string as the German `DD.MM.YYYY` for user-facing error messages (found live 2026-09-30 showing the raw ISO string instead). */
+function formatGermanDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
 /**
  * Retires a register as of `retiredDate` (its last usable calendar day,
  * inclusive). Validates both directions before persisting anything:
@@ -39,7 +45,7 @@ export async function retireRegister(registerId: string, retiredDate: Date): Pro
     throw new RegisterRetireError(
       `Vor dem Schließdatum liegen noch ${pendingBefore.length} offene ` +
       `Tagesabschluss-Tag${pendingBefore.length === 1 ? '' : 'e'} (ältester: ` +
-      `${pendingBefore[0]}) — erst nachholen, bevor die Kasse stillgelegt werden kann.`,
+      `${formatGermanDate(pendingBefore[0]!)}) — erst nachholen, bevor die Kasse stillgelegt werden kann.`,
     );
   }
 
@@ -61,7 +67,7 @@ export async function retireRegister(registerId: string, retiredDate: Date): Pro
   if (firstAfter) {
     throw new RegisterRetireError(
       `Nach dem gewählten Schließdatum gibt es bereits Buchungen/Kassenabschlüsse ` +
-      `(ab ${firstAfter}) — ein späteres Schließdatum wählen.`,
+      `(ab ${formatGermanDate(firstAfter)}) — ein späteres Schließdatum wählen.`,
     );
   }
 

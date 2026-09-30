@@ -63,6 +63,20 @@
     serverTodayIso === null ? null : closings.find((c) => c.business_date === serverTodayIso) ?? null,
   );
 
+  /**
+   * Whether this register is retired AND its retirement day has already
+   * passed (Task #151 — found live 2026-09-30: the "Tagesabschluss jetzt
+   * durchführen" button otherwise stayed clickable on a long-retired
+   * register and minted a fresh Nullabschluss dated *today*, producing a
+   * dateless gap in the Z-Bon sequence between the retirement date and
+   * today). String-compares two `YYYY-MM-DD` values, safe since that
+   * format sorts lexicographically the same as chronologically.
+   */
+  let retiredAndPast = $derived.by(() => {
+    const r = register;
+    return r?.retired_date != null && serverTodayIso !== null && serverTodayIso > r.retired_date;
+  });
+
   onMount(load);
 
   /** Loads register details, past closings, the pending-day list, AND the server's current date, all in parallel. */
@@ -262,16 +276,23 @@
 
     <h2 class="section-title">Tagesabschluss</h2>
     <div class="closing-actions">
-      <button class="btn-primary" onclick={closeDay} disabled={closing || pendingDays.length > 0}>
-        {closing ? 'Wird abgeschlossen…' : 'Tagesabschluss jetzt durchführen'}
-      </button>
-      {#if pendingDays.length > 0}
-        <p class="warn small">Erst die ausstehenden Tage oben nachholen, dann kann der heutige Tag manuell abgeschlossen werden.</p>
+      {#if retiredAndPast}
+        <p class="muted small">
+          Diese Kasse ist seit ihrem Schließdatum stillgelegt — es wird kein weiterer
+          Tagesabschluss mehr benötigt oder erstellt.
+        </p>
+      {:else}
+        <button class="btn-primary" onclick={closeDay} disabled={closing || pendingDays.length > 0}>
+          {closing ? 'Wird abgeschlossen…' : 'Tagesabschluss jetzt durchführen'}
+        </button>
+        {#if pendingDays.length > 0}
+          <p class="warn small">Erst die ausstehenden Tage oben nachholen, dann kann der heutige Tag manuell abgeschlossen werden.</p>
+        {/if}
+        {#if closedToday}
+          <p class="warn small">Heute wurde für diese Kasse bereits ein Abschluss erstellt (Z-Nr. {closedToday.z_number}). Ein erneuter Abschluss vergibt eine neue Z-Nummer.</p>
+        {/if}
+        <p class="muted small">Der Z-Bon wird nicht automatisch gedruckt, sondern als PDF archiviert — bei Bedarf über „PDF" ansehen oder über „Drucken" manuell ausdrucken.</p>
       {/if}
-      {#if closedToday}
-        <p class="warn small">Heute wurde für diese Kasse bereits ein Abschluss erstellt (Z-Nr. {closedToday.z_number}). Ein erneuter Abschluss vergibt eine neue Z-Nummer.</p>
-      {/if}
-      <p class="muted small">Der Z-Bon wird nicht automatisch gedruckt, sondern als PDF archiviert — bei Bedarf über „PDF" ansehen oder über „Drucken" manuell ausdrucken.</p>
     </div>
     {#if closingError}<p class="error-text">{closingError}</p>{/if}
     {#if lastClosings.length === 1}

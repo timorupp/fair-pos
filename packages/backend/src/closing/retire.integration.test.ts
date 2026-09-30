@@ -104,13 +104,13 @@ describe('retireRegister', () => {
   it('mentions the pending days in the error message', async () => {
     await insertInvoice('2026-06-19 18:00:00');
     await expect(retireRegister(registerId, new Date(2026, 5, 20)))
-      .rejects.toThrow(/2026-06-19/);
+      .rejects.toThrow(/19\.06\.2026/);
   });
 
-  it('mentions the offending later date in the error message', async () => {
+  it('mentions the offending later date in the error message, in German DD.MM.YYYY format (found live 2026-09-30 showing the raw ISO string)', async () => {
     await insertInvoice('2026-06-21 09:00:00');
     await expect(retireRegister(registerId, new Date(2026, 5, 20)))
-      .rejects.toThrow(/2026-06-21/);
+      .rejects.toThrow(/21\.06\.2026/);
   });
 });
 
