@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { computeClosingTotals, type ClosingInvoice, type ClosingItem } from './totals.js';
 
 const item = (overrides: Partial<ClosingItem> = {}): ClosingItem => ({
-  status: 'paid', tax_category: 'standard', price: 5, deposit_price: null, ...overrides,
+  status: 'paid', tax_category: 'standard', price: 5, deposit_price: null, deposit_tax_category: null, ...overrides,
 });
 
 const invoice = (overrides: Partial<ClosingInvoice> = {}): ClosingInvoice => ({
@@ -70,6 +70,15 @@ describe('computeClosingTotals', () => {
     })]);
     expect(t.total_tax_zero).toBe(0);
     expect(t.total_tax_standard).toBe(2);
+  });
+
+  it('buckets a deposit into total_tax_zero when its frozen category is zero (Task #119 — Kleinunternehmer sale)', () => {
+    const t = computeClosingTotals([invoice({
+      items: [item({ price: 4, tax_category: 'zero', deposit_price: 2, deposit_tax_category: 'zero' })],
+    })]);
+    expect(t.total_tax_zero).toBe(6);
+    expect(t.total_tax_standard).toBe(0);
+    expect(t.total_gross).toBe(6);
   });
 
   it('excludes free items from total_gross, adds them to total_free', () => {

@@ -18,6 +18,8 @@ export interface ReceiptPosition {
   taxCategory: TaxCategory;
   /** VAT rate the deposit portion was taxed at — always the Regelsteuersatz in effect at booking time (Task #113), independent of `taxRate`. `null` unless `unitDeposit` is set. */
   depositTaxRate: number | null;
+  /** VAT category the deposit portion was taxed at (Task #119) — `'standard'` (Task #113) unless the sale was made under § 19 UStG, in which case `'zero'`. `null` unless `unitDeposit` is set. */
+  depositTaxCategory: TaxCategory | null;
   /** Total gross for the line: `(unitPrice + unitDeposit) * quantity`. */
   lineGross: number;
 }
@@ -67,6 +69,16 @@ export interface ReceiptData {
    * Bonstorno shows both markers.
    */
   isTraining: boolean;
+
+  /**
+   * True when this invoice was issued under § 19 UStG (Kleinunternehmerregelung,
+   * Task #119) — frozen at sale time (`receipt/data.ts::snapshotCompanyDataForInvoice`)
+   * so a later toggle of the `kleinunternehmer_enabled` system_setting never
+   * changes the legal status of an already-issued receipt. The renderers print
+   * a mandatory hint ("Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.")
+   * when true.
+   */
+  isKleinunternehmer: boolean;
 
   /**
    * Name of the dining table this receipt's items were ordered at, or `null`

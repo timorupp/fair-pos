@@ -21,8 +21,10 @@ export interface ClosingItem {
   tax_category: TaxCategory;
   /** Per-unit gross price (article only, excludes deposit). Signed — see the type doc comment above. */
   price: number;
-  /** Per-unit gross deposit; null when absent. Always taxed at `standard` regardless of `tax_category` (Task #113 — Pfand unterliegt immer dem Regelsteuersatz). Signed — see the type doc comment above. */
+  /** Per-unit gross deposit; null when absent. Signed — see the type doc comment above. */
   deposit_price: number | null;
+  /** VAT category the deposit is taxed at (Task #119) — `'standard'` (Task #113) unless the sale was made under § 19 UStG, in which case `'zero'`. `null` unless `deposit_price` is set. */
+  deposit_tax_category: TaxCategory | null;
 }
 
 /** One invoice that belongs to the closing window — needed to split cash vs. card receipts. */
@@ -128,13 +130,17 @@ export function computeClosingTotals(invoices: ClosingInvoice[]): ClosingTotals 
       // reach a closing at all (routes/admin/closings.ts only selects
       // already-invoiced rows).
       total_gross += lineGross;
-      // Article and deposit are bucketed separately — the deposit always
-      // counts toward `total_tax_standard` (Task #113), independent of
-      // the article's own category.
+      // Article and deposit are bucketed separately by their own frozen
+      // category — the deposit's is `standard` by default (Task #113),
+      // independent of the article's own category, unless the sale was made
+      // under § 19 UStG (Task #119), in which case it's `zero`.
       if (item.tax_category === 'standard') total_tax_standard += item.price;
       else if (item.tax_category === 'reduced') total_tax_reduced += item.price;
       else total_tax_zero += item.price;
-      total_tax_standard += depositGross;
+      const depositCategory = item.deposit_tax_category ?? 'standard';
+      if (depositCategory === 'standard') total_tax_standard += depositGross;
+      else if (depositCategory === 'reduced') total_tax_reduced += depositGross;
+      else total_tax_zero += depositGross;
       invoiceGross += lineGross;
     }
 

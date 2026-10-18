@@ -108,9 +108,11 @@ export function computeTaxBreakdown(positions: ReceiptPosition[]): TaxBreakdownR
   };
   for (const p of positions) {
     add(p.taxRate, p.taxCategory, p.unitPrice * p.quantity);
-    // Deposit is always taxed at the Regelsteuersatz (Task #113), independent of the article's own category.
+    // Deposit's own frozen category (Task #113: `standard` by default; Task
+    // #119: `zero` for a Kleinunternehmer sale) is independent of the
+    // article's own category.
     if (p.unitDeposit && p.depositTaxRate !== null) {
-      add(p.depositTaxRate, 'standard', p.unitDeposit * p.quantity);
+      add(p.depositTaxRate, p.depositTaxCategory ?? 'standard', p.unitDeposit * p.quantity);
     }
   }
 

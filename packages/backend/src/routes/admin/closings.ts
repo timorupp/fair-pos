@@ -97,8 +97,9 @@ async function closeRegister(registerId: string, userName: string, date?: string
       const itemsResult = await client.query<{
         invoice_id: string; status: ClosingItem['status'];
         tax_category: ClosingItem['tax_category']; price: string; deposit_price: string | null;
+        deposit_tax_category: ClosingItem['deposit_tax_category'];
       }>(
-        `SELECT invoice_id, status, tax_category, price::text, deposit_price::text
+        `SELECT invoice_id, status, tax_category, price::text, deposit_price::text, deposit_tax_category
            FROM order_item
           WHERE invoice_id = ANY($1)`,
         [ids],
@@ -111,6 +112,7 @@ async function closeRegister(registerId: string, userName: string, date?: string
           tax_category: row.tax_category,
           price: Number(row.price),
           deposit_price: row.deposit_price === null ? null : Number(row.deposit_price),
+          deposit_tax_category: row.deposit_tax_category,
         });
         itemsByInvoice.set(row.invoice_id, list);
       }

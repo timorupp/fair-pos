@@ -58,6 +58,8 @@ export interface SourceLineItem {
   depositPriceEuros: number | null;
   /** Percent the deposit portion was taxed at — always the Regelsteuersatz in effect at booking time (Task #113), independent of `taxCategory`. `null` unless `depositPriceEuros` is set. */
   depositTaxRate: number | null;
+  /** VAT category the deposit portion was taxed at — `'standard'` (Task #113) unless the sale was made under § 19 UStG (Task #119), in which case `'zero'`. `null` unless `depositPriceEuros` is set. */
+  depositTaxCategory: TaxCategory | null;
 }
 
 /** One fiscal Vorgang — an invoice (Kassenbeleg-V1/Beleg), a service_order (AVBestellung), or an order_cancellation (AVSonstige). */
@@ -340,11 +342,12 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
       }
 
       // Separate Pfand / PfandRueckzahlung line, if this position carries a
-      // deposit — always taxed at `standard` (Task #113: Pfand unterliegt
-      // immer dem Regelsteuersatz), independent of the article's own `key`.
+      // deposit — taxed at its own frozen category (`standard` by default,
+      // Task #113: Pfand unterliegt immer dem Regelsteuersatz; `zero` for a
+      // Kleinunternehmer sale, Task #119), independent of the article's own `key`.
       if (it.depositPriceEuros !== null && it.depositPriceEuros !== 0) {
         posZeile += 1;
-        const depositKey = ustSchluessel('standard');
+        const depositKey = ustSchluessel(it.depositTaxCategory ?? 'standard');
         const depositRate = it.depositTaxRate ?? 0;
         const depositBrutto = it.depositPriceEuros;
         const depositNetto = depositBrutto / (1 + depositRate / 100);

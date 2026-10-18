@@ -173,13 +173,15 @@ describe('POST /api/admin/cancellations', () => {
     const allItems = await pool.query<{
       invoice_id: string; status: ClosingItem['status'];
       tax_category: ClosingItem['tax_category']; price: string; deposit_price: string | null;
-    }>(`SELECT invoice_id, status, tax_category, price::text, deposit_price::text
+      deposit_tax_category: ClosingItem['deposit_tax_category'];
+    }>(`SELECT invoice_id, status, tax_category, price::text, deposit_price::text, deposit_tax_category
           FROM order_item WHERE register_id = $1`, [registerId]);
     const itemsByInvoice = new Map<string, ClosingItem[]>();
     for (const r of allItems.rows) {
       const list = itemsByInvoice.get(r.invoice_id) ?? [];
       list.push({ status: r.status, tax_category: r.tax_category, price: Number(r.price),
-                  deposit_price: r.deposit_price ? Number(r.deposit_price) : null });
+                  deposit_price: r.deposit_price ? Number(r.deposit_price) : null,
+                  deposit_tax_category: r.deposit_tax_category });
       itemsByInvoice.set(r.invoice_id, list);
     }
     const totals = computeClosingTotals(invs.rows.map((i) => ({ ...i, items: itemsByInvoice.get(i.id) ?? [] })));

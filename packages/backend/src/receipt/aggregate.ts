@@ -12,6 +12,8 @@ export interface RawOrderItem {
   deposit_price: number | string | null;
   /** VAT rate the deposit portion was taxed at (Task #113) — `null` unless `deposit_price` is set. */
   deposit_tax_rate: number | string | null;
+  /** VAT category the deposit portion was taxed at (Task #119) — `null` unless `deposit_price` is set. */
+  deposit_tax_category: TaxCategory | null;
   options: string | null;
 }
 
@@ -36,6 +38,7 @@ export function aggregatePositions(items: RawOrderItem[]): ReceiptPosition[] {
       String(item.tax_rate),
       item.tax_category,
       String(item.deposit_tax_rate ?? ''),
+      item.deposit_tax_category ?? '',
     ]);
     const existing = groups.get(key);
     if (existing) existing.count += 1;
@@ -57,6 +60,7 @@ function toPosition(item: RawOrderItem, count: number): ReceiptPosition {
     taxRate: num(item.tax_rate),
     taxCategory: item.tax_category,
     depositTaxRate: item.deposit_tax_rate === null ? null : num(item.deposit_tax_rate),
+    depositTaxCategory: item.deposit_tax_category,
     lineGross: round2(count * (unitPrice + (unitDeposit ?? 0))),
   };
 }

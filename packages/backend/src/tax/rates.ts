@@ -13,26 +13,36 @@ import type { TaxCategory } from '@fairpos/shared';
 const DEFAULT_STANDARD_RATE = 19;
 const DEFAULT_REDUCED_RATE = 7;
 
-/** The two configurable VAT percentages, in percent (e.g. `19`, `7`). */
+/** The two configurable VAT percentages, in percent (e.g. `19`, `7`), plus the Kleinunternehmer flag (Task #119) — read from the same `system_setting` table in one query since every sale-time caller needs both together. */
 export interface TaxRates {
   standard: number;
   reduced: number;
+  /**
+   * Whether the § 19 UStG Kleinunternehmerregelung is currently active
+   * (`kleinunternehmer_enabled` system_setting). Callers freezing a sale
+   * (register-session.ts, admin/cancellations.ts) must force every
+   * `order_item.tax_category` to `'zero'` and every deposit's category to
+   * `'zero'` (instead of the usual `'standard'`, Task #113) whenever this is
+   * true — see `docs/../BACKLOG.md` Task #119 for the full reasoning.
+   */
+  isKleinunternehmer: boolean;
 }
 
 /**
- * Loads the current `vat_rate_standard`/`vat_rate_reduced` settings.
+ * Loads the current `vat_rate_standard`/`vat_rate_reduced`/`kleinunternehmer_enabled` settings.
  *
- * @returns The two configured percentages, falling back to 19/7 if unset.
+ * @returns The two configured percentages (falling back to 19/7 if unset) plus the Kleinunternehmer flag.
  */
 export async function loadTaxRates(): Promise<TaxRates> {
   const result = await query<{ key: string; value: string }>(
     `SELECT key, value FROM system_setting WHERE key = ANY($1)`,
-    [['vat_rate_standard', 'vat_rate_reduced']],
+    [['vat_rate_standard', 'vat_rate_reduced', 'kleinunternehmer_enabled']],
   );
   const map = new Map(result.rows.map((r) => [r.key, r.value]));
   return {
     standard: Number(map.get('vat_rate_standard') ?? DEFAULT_STANDARD_RATE),
     reduced: Number(map.get('vat_rate_reduced') ?? DEFAULT_REDUCED_RATE),
+    isKleinunternehmer: map.get('kleinunternehmer_enabled') === 'true',
   };
 }
 

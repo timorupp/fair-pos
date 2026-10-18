@@ -46,7 +46,7 @@ function beleg(overrides: Partial<SourceVorgang> = {}): SourceVorgang {
       transactionNumber: 7, signatureCounter: 3, signatureHex: 'aa',
       startTime: new Date('2026-08-05T18:00:00.000Z'), endTime: new Date('2026-08-05T18:00:01.000Z'),
     },
-    items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: null, depositTaxRate: null }],
+    items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: null, depositTaxRate: null, depositTaxCategory: null }],
     ...overrides,
   };
 }
@@ -89,7 +89,7 @@ describe('buildDsfinvkExport', () => {
 
   it('splits into Umsatz + Pfand lines when a position carries a positive deposit', () => {
     const v = beleg({
-      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19, depositTaxCategory: 'standard' }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     expect(out['lines.csv']).toHaveLength(2);
@@ -99,7 +99,7 @@ describe('buildDsfinvkExport', () => {
 
   it('uses PfandRueckzahlung for a negative deposit (Leergutrückgabe)', () => {
     const v = beleg({
-      items: [{ articleId: 'art-1', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 0, depositPriceEuros: -2, depositTaxRate: 19 }],
+      items: [{ articleId: 'art-1', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 0, depositPriceEuros: -2, depositTaxRate: 19, depositTaxCategory: 'standard' }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
@@ -108,13 +108,24 @@ describe('buildDsfinvkExport', () => {
 
   it('taxes the Pfand line at UST_SCHLUESSEL 1 (Regelsteuersatz) even when the article itself is reduced-rate (Task #113)', () => {
     const v = beleg({
-      items: [{ articleId: 'art-1', articleName: 'Essen im Pfandglas', categoryName: 'Speisen', taxRate: 7, taxCategory: 'reduced', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+      items: [{ articleId: 'art-1', articleName: 'Essen im Pfandglas', categoryName: 'Speisen', taxRate: 7, taxCategory: 'reduced', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19, depositTaxCategory: 'standard' }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const articleVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === '1');
     const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === '2');
     expect(articleVat!.UST_SCHLUESSEL).toBe(2); // reduced
     expect(pfandVat!.UST_SCHLUESSEL).toBe(1);   // standard, independent of the article
+  });
+
+  it('taxes the Pfand line at UST_SCHLUESSEL 5 (nicht steuerbar) when its frozen category is zero (Task #119 — Kleinunternehmer sale)', () => {
+    const v = beleg({
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 0, taxCategory: 'zero', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 0, depositTaxCategory: 'zero' }],
+    });
+    const out = buildDsfinvkExport(baseSource([v]));
+    const articleVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === '1');
+    const pfandVat = out['lines_vat.csv'].find((r) => r.POS_ZEILE === '2');
+    expect(articleVat!.UST_SCHLUESSEL).toBe(5);
+    expect(pfandVat!.UST_SCHLUESSEL).toBe(5);
   });
 
   it('avoids a rounding mismatch between summed per-line and aggregate net/tax amounts by using 5 decimal places (D-065)', () => {
@@ -124,7 +135,7 @@ describe('buildDsfinvkExport', () => {
     // rounded once — would print 5.02/0.95, a genuine 1-cent mismatch an
     // auditor re-summing the printed lines would hit. At 5 decimals both
     // paths agree exactly.
-    const item = { articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard' as const, priceEuros: 1.99, depositPriceEuros: null, depositTaxRate: null };
+    const item = { articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard' as const, priceEuros: 1.99, depositPriceEuros: null, depositTaxRate: null, depositTaxCategory: null };
     const v = beleg({ items: [item, item, item] });
     const out = buildDsfinvkExport(baseSource([v]));
 
@@ -143,7 +154,7 @@ describe('buildDsfinvkExport', () => {
     // (routes/admin/cancellations.ts negates at creation time) — this
     // function must not flip it a second time.
     const v = beleg({
-      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: -5, depositPriceEuros: null, depositTaxRate: null }],
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: -5, depositPriceEuros: null, depositTaxRate: null, depositTaxCategory: null }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     expect(out['transactions.csv'][0]!.UMS_BRUTTO).toBe('-5.00');
@@ -154,7 +165,7 @@ describe('buildDsfinvkExport', () => {
   it('keeps GV_TYP=Pfand for a Bonstorno reversing a normal (deposit-charging) article, even though the stored amount is now negative (D-069)', () => {
     const v = beleg({
       isBonstorno: true,
-      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: -5, depositPriceEuros: -2, depositTaxRate: 19 }],
+      items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: -5, depositPriceEuros: -2, depositTaxRate: 19, depositTaxCategory: 'standard' }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
@@ -166,7 +177,7 @@ describe('buildDsfinvkExport', () => {
   it('keeps GV_TYP=PfandRueckzahlung for a Bonstorno reversing a Leergutrückgabe article, even though the stored amount is now positive (D-069)', () => {
     const v = beleg({
       isBonstorno: true,
-      items: [{ articleId: 'art-2', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 0, depositPriceEuros: 2, depositTaxRate: 19 }],
+      items: [{ articleId: 'art-2', articleName: 'Leergut', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 0, depositPriceEuros: 2, depositTaxRate: 19, depositTaxCategory: 'standard' }],
     });
     const out = buildDsfinvkExport(baseSource([v]));
     const pfandLine = out['lines.csv'].find((l) => l.GV_TYP.startsWith('Pfand'));
@@ -277,9 +288,9 @@ describe('buildDsfinvkExport', () => {
   it('maps the standard/reduced/zero tax categories to UST_SCHLUESSEL 1/2/5', () => {
     const v = beleg({
       items: [
-        { articleId: 'a', articleName: 'A', categoryName: 'C', taxRate: 19, taxCategory: 'standard', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null },
-        { articleId: 'b', articleName: 'B', categoryName: 'C', taxRate: 7, taxCategory: 'reduced', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null },
-        { articleId: 'c', articleName: 'C', categoryName: 'C', taxRate: 0, taxCategory: 'zero', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null },
+        { articleId: 'a', articleName: 'A', categoryName: 'C', taxRate: 19, taxCategory: 'standard', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null, depositTaxCategory: null },
+        { articleId: 'b', articleName: 'B', categoryName: 'C', taxRate: 7, taxCategory: 'reduced', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null, depositTaxCategory: null },
+        { articleId: 'c', articleName: 'C', categoryName: 'C', taxRate: 0, taxCategory: 'zero', priceEuros: 10, depositPriceEuros: null, depositTaxRate: null, depositTaxCategory: null },
       ],
     });
     const out = buildDsfinvkExport(baseSource([v]));
@@ -298,7 +309,7 @@ describe('buildDsfinvkExport', () => {
     it('still emits full transactions.csv/lines.csv/lines_vat.csv/transactions_vat.csv rows for a training Vorgang', () => {
       const v = beleg({
         bonTyp: 'AVTraining',
-        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19, depositTaxCategory: 'standard' }],
       });
       const out = buildDsfinvkExport(baseSource([v]));
       expect(out['transactions.csv']).toHaveLength(1);
@@ -312,11 +323,11 @@ describe('buildDsfinvkExport', () => {
       const trainingV = beleg({
         id: 'v-training',
         bonTyp: 'AVTraining',
-        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19 }],
+        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 5, depositPriceEuros: 2, depositTaxRate: 19, depositTaxCategory: 'standard' }],
       });
       const realV = beleg({
         id: 'v-real',
-        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 3, depositPriceEuros: null, depositTaxRate: null }],
+        items: [{ articleId: 'art-1', articleName: 'Bier', categoryName: 'Getränke', taxRate: 19, taxCategory: 'standard', priceEuros: 3, depositPriceEuros: null, depositTaxRate: null, depositTaxCategory: null }],
       });
       const out = buildDsfinvkExport(baseSource([trainingV, realV]));
       // Only the real Vorgang's 3.00 € Umsatz reaches the Z_GV_TYP aggregate —

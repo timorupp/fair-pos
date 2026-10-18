@@ -324,8 +324,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         }
       }
       // Article's own tax_category resolves to a concrete percentage
-      // (order_item snapshot); a deposit is always taxed at `standard`
-      // regardless of the article (Task #113).
+      // (order_item snapshot); a deposit is taxed at `standard` by default
+      // (Task #113), regardless of the article — unless the sale is made
+      // under § 19 UStG (Task #119), in which case both the article's own
+      // category and the deposit's are forced to `zero`.
       const taxRates = await loadTaxRates();
 
       // TSE-Signierung (Kassenbeleg-V1) läuft VOR der DB-Transaktion. `signTseTransaction`
@@ -341,11 +343,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         vorgangstyp: receiptType === 'training' ? 'AVTraining' : 'Beleg',
         positions: positions.map((p) => {
           const article = articleById.get(p.article_id)!;
+          const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
           return {
             quantity: p.quantity,
             unitPriceEuros: Number(article.price),
             depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
-            taxCategory: article.tax_category,
+            taxCategory: taxRates.isKleinunternehmer ? 'zero' : article.tax_category,
+            depositTaxCategory: depositRaw !== 0 ? (taxRates.isKleinunternehmer ? 'zero' : 'standard') : null,
           };
         }),
       });
@@ -367,9 +371,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
              tse_transaction_number, tse_start_time, tse_end_time,
              tse_signature, tse_signature_counter, tse_serial_number,
              company_name, company_street, company_postal_code, company_city,
-             company_tax_number, company_vat_id, logo_version_id
+             company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer
            )
-           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
            RETURNING id`,
           [
             registerId, receiptNumber, receiptType, receiptToken,
@@ -377,7 +381,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
             companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
             companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
-            companySnapshot.logoVersionId,
+            companySnapshot.logoVersionId, companySnapshot.isKleinunternehmer,
           ],
         );
         const invoiceId = invoiceResult.rows[0]!.id;
@@ -392,22 +396,30 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         for (const pos of positions) {
           const article = articleById.get(pos.article_id)!;
           const displayName = article.name;
-          const articleTaxRate = percentFor(article.tax_category, taxRates);
+          // Task #119: under § 19 UStG, the article's own category is
+          // overridden to `zero` regardless of its actual `article_category`
+          // configuration — a Kleinunternehmer charges no USt on anything.
+          const effectiveTaxCategory: TaxCategory = taxRates.isKleinunternehmer ? 'zero' : article.tax_category;
+          const articleTaxRate = percentFor(effectiveTaxCategory, taxRates);
           const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
-          // Deposit is always taxed at the Regelsteuersatz (Task #113),
-          // frozen here at booking time independent of the article's own rate.
+          // Deposit is taxed at the Regelsteuersatz by default (Task #113),
+          // frozen here at booking time independent of the article's own
+          // rate — `zero` instead when under § 19 UStG (Task #119).
           const depositTaxRate = depositRaw !== 0 ? taxRates.standard : null;
+          const depositTaxCategory: TaxCategory | null =
+            depositRaw !== 0 ? (taxRates.isKleinunternehmer ? 'zero' : 'standard') : null;
           for (let i = 0; i < pos.quantity; i++) {
             await client.query(
               `INSERT INTO order_item (
                  invoice_id, register_id, user_name, article_id,
                  article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
-                 status
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'paid')`,
+                 deposit_tax_category, status
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'paid')`,
               [
                 invoiceId, registerId, req.registerUser.name, article.id,
                 displayName, article.category_name,
-                articleTaxRate, article.tax_category, article.price, article.deposit_price, depositTaxRate,
+                articleTaxRate, effectiveTaxCategory, article.price, article.deposit_price, depositTaxRate,
+                depositTaxCategory,
               ],
             );
             slipUnits.push({
@@ -785,21 +797,26 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       for (const pos of positions) {
         const article = articleById.get(pos.article_id)!;
         const options = pos.options?.trim() ? pos.options.trim() : null;
-        const articleTaxRate = percentFor(article.tax_category, taxRates);
+        // Task #119: see the Bonkasse checkout's identical comment above —
+        // frozen here at order time, before the item is ever paid.
+        const effectiveTaxCategory: TaxCategory = taxRates.isKleinunternehmer ? 'zero' : article.tax_category;
+        const articleTaxRate = percentFor(effectiveTaxCategory, taxRates);
         const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
         const depositTaxRate = depositRaw !== 0 ? taxRates.standard : null;
+        const depositTaxCategory: TaxCategory | null =
+          depositRaw !== 0 ? (taxRates.isKleinunternehmer ? 'zero' : 'standard') : null;
         for (let i = 0; i < pos.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (
                service_order_id, dining_table_id, register_id, user_name, article_id,
                article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
-               options, status
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'open')`,
+               deposit_tax_category, options, status
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'open')`,
             [
               serviceOrderId, tableId, registerId, req.registerUser.name, article.id,
               article.name, article.category_name,
-              articleTaxRate, article.tax_category, article.price, article.deposit_price, depositTaxRate,
-              options,
+              articleTaxRate, effectiveTaxCategory, article.price, article.deposit_price, depositTaxRate,
+              depositTaxCategory, options,
             ],
           );
           slipItems.push({
@@ -887,8 +904,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const open = await query<{
       id: string; article_id: string | null; article_name: string; options: string | null;
       tax_category: TaxCategory; price: string; deposit_price: string | null; created_at: Date;
+      deposit_tax_category: TaxCategory | null;
     }>(
-      `SELECT id, article_id, article_name, options, tax_category, price, deposit_price, created_at
+      `SELECT id, article_id, article_name, options, tax_category, price, deposit_price, created_at, deposit_tax_category
          FROM order_item
         WHERE dining_table_id = $1 AND status = 'open'`,
       [tableId],
@@ -910,6 +928,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           unitPriceEuros: Number(item.price),
           depositPriceEuros: item.deposit_price === null ? null : Number(item.deposit_price),
           taxCategory: item.tax_category,
+          // Task #119: already frozen on the order_item at order time (see
+          // the /tables/:tableId/order endpoint above) — read back as-is,
+          // not re-derived from the current setting, which may have changed
+          // since the item was ordered.
+          depositTaxCategory: item.deposit_tax_category,
         };
       }),
     });
@@ -942,9 +965,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number,
            company_name, company_street, company_postal_code, company_city,
-           company_tax_number, company_vat_id, logo_version_id
+           company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer
          )
-         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
          RETURNING id`,
         [
           registerId, receiptNumber, receiptType, receiptToken,
@@ -952,7 +975,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
           companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
           companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
-          companySnapshot.logoVersionId,
+          companySnapshot.logoVersionId, companySnapshot.isKleinunternehmer,
         ],
       );
       const invoiceId = inv.rows[0]!.id;

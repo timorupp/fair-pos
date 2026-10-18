@@ -87,6 +87,7 @@ const p = (
 ): ReceiptPosition => ({
   name, quantity: qty, unitPrice: unit, unitDeposit: deposit, taxRate: rate, taxCategory: categoryFor(rate),
   depositTaxRate: deposit === null ? null : (depositRate ?? rate),
+  depositTaxCategory: deposit === null ? null : 'standard',
   lineGross: qty * (unit + (deposit ?? 0)),
 });
 
@@ -151,6 +152,16 @@ describe('computeTaxBreakdown', () => {
     ]);
     expect(rows.find((r) => r.rate === 7)!.category).toBe('reduced');
     expect(rows.find((r) => r.rate === 19)!.category).toBe('standard');
+  });
+
+  it('tags the deposit bucket \'zero\' when its frozen category is zero (Task #119 — Kleinunternehmer sale), not the usual \'standard\'', () => {
+    const rows = computeTaxBreakdown([
+      { name: 'Bier', quantity: 1, unitPrice: 4, unitDeposit: 2, taxRate: 0, taxCategory: 'zero',
+        depositTaxRate: 0, depositTaxCategory: 'zero', lineGross: 6 },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.category).toBe('zero');
+    expect(rows[0]!.gross).toBe(6);
   });
 });
 

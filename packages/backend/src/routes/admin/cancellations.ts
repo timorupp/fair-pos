@@ -137,11 +137,16 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       vorgangstyp: isTrainingRegister ? 'AVTraining' : 'Beleg',
       positions: items.map((it) => {
         const article = articleById.get(it.article_id)!;
+        const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
         return {
           quantity: it.quantity,
           unitPriceEuros: -Number(article.price),
           depositPriceEuros: article.deposit_price === null ? null : -Number(article.deposit_price),
-          taxCategory: article.tax_category,
+          // Task #119: see register-session.ts's identical comment — a
+          // Bonstorno re-derives the article's current category fresh, same
+          // as a normal sale, rather than looking up the original invoice.
+          taxCategory: taxRates.isKleinunternehmer ? 'zero' : article.tax_category,
+          depositTaxCategory: depositRaw !== 0 ? (taxRates.isKleinunternehmer ? 'zero' : 'standard') : null,
         };
       }),
     });
@@ -160,8 +165,8 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number,
            company_name, company_street, company_postal_code, company_city,
-           company_tax_number, company_vat_id, logo_version_id
-         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer
+         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
          RETURNING id`,
         [
           register_id, receiptNumber, note ?? null, receiptToken,
@@ -169,7 +174,7 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
           companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
           companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
-          companySnapshot.logoVersionId,
+          companySnapshot.logoVersionId, companySnapshot.isKleinunternehmer,
         ],
       );
       const invoiceId = invoiceResult.rows[0]!.id;
@@ -183,22 +188,27 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
       for (const it of items) {
         const article = articleById.get(it.article_id)!;
         const displayName = article.name;
-        const articleTaxRate = percentFor(article.tax_category, taxRates);
+        // Task #119: see register-session.ts's identical comment.
+        const effectiveTaxCategory: TaxCategory = taxRates.isKleinunternehmer ? 'zero' : article.tax_category;
+        const articleTaxRate = percentFor(effectiveTaxCategory, taxRates);
         const negatedPrice = -Number(article.price);
         const negatedDeposit = article.deposit_price === null ? null : -Number(article.deposit_price);
-        const depositTaxRate = negatedDeposit !== null && negatedDeposit !== 0 ? taxRates.standard : null;
+        const hasDeposit = negatedDeposit !== null && negatedDeposit !== 0;
+        const depositTaxRate = hasDeposit ? taxRates.standard : null;
+        const depositTaxCategory: TaxCategory | null =
+          hasDeposit ? (taxRates.isKleinunternehmer ? 'zero' : 'standard') : null;
         for (let i = 0; i < it.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (
                invoice_id, register_id, article_id,
                article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
-               status, cancellation_reason_id, cancellation_reason_name, cancelled_by_name, cancelled_at
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'paid', $11, $12, $13, now())`,
+               deposit_tax_category, status, cancellation_reason_id, cancellation_reason_name, cancelled_by_name, cancelled_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'paid', $12, $13, $14, now())`,
             [
               invoiceId, register_id, article.id,
               displayName, article.category_name,
-              articleTaxRate, article.tax_category, negatedPrice, negatedDeposit, depositTaxRate,
-              cancellation_reason_id, reason.name, req.adminUser.name,
+              articleTaxRate, effectiveTaxCategory, negatedPrice, negatedDeposit, depositTaxRate,
+              depositTaxCategory, cancellation_reason_id, reason.name, req.adminUser.name,
             ],
           );
         }

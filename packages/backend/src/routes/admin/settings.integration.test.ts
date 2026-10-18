@@ -68,4 +68,66 @@ describe('PUT /api/admin/settings', () => {
     });
     expect(getResponse.json()['company_name']).toBe('Verein B');
   });
+
+  describe('Kleinunternehmerregelung (Task #119)', () => {
+    it('forces both VAT rates to 0 when kleinunternehmer_enabled is set to true in the same request', async () => {
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'PUT', url: '/api/admin/settings',
+        headers: { cookie: adminCookie },
+        payload: { vat_rate_standard: '19', vat_rate_reduced: '7', kleinunternehmer_enabled: 'true' },
+      });
+      expect(response.statusCode).toBe(204);
+
+      const getResponse = await app.inject({
+        method: 'GET', url: '/api/admin/settings',
+        headers: { cookie: adminCookie },
+      });
+      expect(getResponse.json()['vat_rate_standard']).toBe('0');
+      expect(getResponse.json()['vat_rate_reduced']).toBe('0');
+    });
+
+    it('forces a submitted nonzero rate back to 0 when kleinunternehmer_enabled is already true from a previous save', async () => {
+      const app = await getTestApp();
+      await app.inject({
+        method: 'PUT', url: '/api/admin/settings',
+        headers: { cookie: adminCookie },
+        payload: { kleinunternehmer_enabled: 'true' },
+      });
+
+      // A later request only touches the rate, without re-sending the flag —
+      // must still be overridden server-side, not just when both are
+      // submitted together (the whole point of enforcing this here, not
+      // only in the admin UI).
+      const response = await app.inject({
+        method: 'PUT', url: '/api/admin/settings',
+        headers: { cookie: adminCookie },
+        payload: { vat_rate_standard: '19' },
+      });
+      expect(response.statusCode).toBe(204);
+
+      const getResponse = await app.inject({
+        method: 'GET', url: '/api/admin/settings',
+        headers: { cookie: adminCookie },
+      });
+      expect(getResponse.json()['vat_rate_standard']).toBe('0');
+    });
+
+    it('leaves submitted rates untouched when kleinunternehmer_enabled is false', async () => {
+      const app = await getTestApp();
+      const response = await app.inject({
+        method: 'PUT', url: '/api/admin/settings',
+        headers: { cookie: adminCookie },
+        payload: { vat_rate_standard: '19', vat_rate_reduced: '7', kleinunternehmer_enabled: 'false' },
+      });
+      expect(response.statusCode).toBe(204);
+
+      const getResponse = await app.inject({
+        method: 'GET', url: '/api/admin/settings',
+        headers: { cookie: adminCookie },
+      });
+      expect(getResponse.json()['vat_rate_standard']).toBe('19');
+      expect(getResponse.json()['vat_rate_reduced']).toBe('7');
+    });
+  });
 });

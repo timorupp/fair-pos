@@ -34,6 +34,28 @@ describe('buildReceiptBlocks', () => {
     expect(text).not.toContain('Tisch');
   });
 
+  it('prints the § 19 UStG hint only when isKleinunternehmer is true (Task #119)', async () => {
+    const withoutHint = allText(await buildReceiptBlocks(base));
+    expect(withoutHint).not.toContain('§ 19 UStG');
+
+    const withHint = allText(await buildReceiptBlocks({ ...base, isKleinunternehmer: true }));
+    expect(withHint).toContain('Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.');
+  });
+
+  it('prints the Pfand Kennbuchstabe from the frozen deposit category, not always \'A\' (Task #119 — Kleinunternehmer sale)', async () => {
+    const data: ReceiptData = {
+      ...base,
+      isKleinunternehmer: true,
+      positions: [
+        { name: 'Bier', quantity: 1, unitPrice: 4, unitDeposit: 2, taxRate: 0, taxCategory: 'zero',
+          depositTaxRate: 0, depositTaxCategory: 'zero', lineGross: 6 },
+      ],
+    };
+    const blocks = await buildReceiptBlocks(data);
+    const pfandRow = blocks.find((b) => b.kind === 'row' && b.left.includes('Pfand'));
+    expect(pfandRow).toMatchObject({ kind: 'row', right: expect.stringContaining(' C') });
+  });
+
   it('prints the table line in the last section, after the final separator — not right after the positions (Nutzervorgabe 2026-09-06)', async () => {
     const data: ReceiptData = {
       ...base,

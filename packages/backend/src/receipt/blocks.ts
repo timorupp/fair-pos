@@ -77,13 +77,14 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
     });
     if (p.unitDeposit !== null && p.unitDeposit !== 0) {
       // Own row, not just an info sub-line (Nutzervorgabe 2026-09-06) — Pfand
-      // is always taxed at the Regelsteuersatz (Task #113/D-060), which can
+      // is taxed at its own frozen category (Task #113/D-060: `standard` by
+      // default; Task #119: `zero` for a Kleinunternehmer sale), which can
       // differ from the article's own tax category, so it needs its own
       // Kennbuchstabe rather than sharing the position's combined total.
       blocks.push({
         kind: 'row',
         left: `${p.quantity}x Pfand`,
-        right: `${formatEuro(p.unitDeposit * p.quantity)} ${taxCategoryLetter('standard')}`,
+        right: `${formatEuro(p.unitDeposit * p.quantity)} ${taxCategoryLetter(p.depositTaxCategory ?? 'standard')}`,
       });
     }
   }
@@ -99,6 +100,15 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
     });
   }
   blocks.push({ kind: 'hr' });
+
+  // Task #119: mandatory hint for a § 19 UStG (Kleinunternehmerregelung)
+  // receipt — printed right after the tax breakdown, since that's the part
+  // it explains (no MwSt is separately charged, even though positions may
+  // still show a 0 % breakdown row).
+  if (d.isKleinunternehmer) {
+    blocks.push({ kind: 'text', text: 'Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.' });
+    blocks.push({ kind: 'hr' });
+  }
 
   // DSFinV-K Tz. 2.7.2: the Kassenbeleg-V1 transaction's own TSE start/end
   // time below reflects only the payment itself, not the whole table visit

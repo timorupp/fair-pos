@@ -6638,3 +6638,56 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   komplette Integrationstest-Suite (34 Dateien, 447 Tests) grün,
   `tsc --noEmit` sauber.
 
+- [Task] **#119** Unterstützung für Kleinunternehmerregelung (§ 19 UStG) — **Erledigt 2026-10-18**
+  **Analyse (2026-09-06):** reines Nullsetzen von `vat_rate_standard`/
+  `vat_rate_reduced` reicht nicht — der DSFinV-K-Export ordnet den
+  USt-Schlüssel nach `tax_category` zu, nicht nach dem Prozentsatz, und
+  Pfand war an vier (tatsächlich fünf, siehe unten) unabhängigen Stellen
+  fest auf `'standard'` verdrahtet (Task #113/D-060), unabhängig von
+  jeder Artikel-/Einstellungsänderung.
+  **Design-Entscheidung (Nutzervorgabe 2026-09-30):** dedizierter
+  System-Schalter `kleinunternehmer_enabled`, Status pro Rechnung zum
+  Verkaufszeitpunkt festgeschrieben (analog zum Firmendaten-/Logo-
+  Snapshot aus Task #112), jederzeit umschaltbar, da nur zukünftige
+  Belege betroffen sind. Platzierung in den Admin-Einstellungen direkt
+  bei den USt-Sätzen; beim Aktivieren werden beide Sätze automatisch auf
+  0 gesetzt und gesperrt.
+  **Umgesetzt:**
+  - Migration `0038_kleinunternehmer.sql`: `invoice.is_kleinunternehmer`
+    (Snapshot-Flag) sowie `order_item.deposit_tax_category` — Letzteres
+    behebt die eigentliche Pfand-Lücke dauerhaft (nicht nur für
+    Kleinunternehmer): die Pfand-Kategorie wird jetzt genau wie
+    `tax_category` beim Artikel zum Buchungszeitpunkt eingefroren statt
+    an jeder Lesestelle hart auf `'standard'` angenommen.
+  - `tax/rates.ts::loadTaxRates()` liefert zusätzlich `isKleinunternehmer`
+    aus derselben `system_setting`-Abfrage.
+  - `routes/admin/settings.ts`: `PUT` erzwingt serverseitig `vat_rate_*
+    = '0'`, sobald `kleinunternehmer_enabled` (aktuell oder in derselben
+    Anfrage) `true` ist — unabhängig vom Frontend, das die Felder nur
+    zusätzlich deaktiviert.
+  - `receipt/data.ts::snapshotCompanyDataForInvoice()`/`CompanySnapshot`
+    um `isKleinunternehmer` erweitert (keine eigene Snapshot-Funktion —
+    folgt exakt demselben Aufruf wie die Firmendaten).
+  - Vier Call-Sites, die Rechnungen/Bestellpositionen anlegen
+    (`routes/register-session.ts` ×3, `routes/admin/cancellations.ts`),
+    erzwingen `tax_category = 'zero'` und `deposit_tax_category = 'zero'`
+    beim Einfrieren, wenn der Schalter zum Buchungszeitpunkt aktiv war —
+    inklusive der TSE-Kassenbeleg-Signatur (`tse/processData.ts`,
+    `buildKassenbelegProcessData`, dort ein bislang nicht in BACKLOG.md
+    gelistetes fünftes Pfand-Hardcoding gefunden: Pfand floss
+    unbedingt in den `allgemein`-Steuerslot).
+  - `closing/totals.ts`, `receipt/format.ts`, `receipt/blocks.ts`,
+    `exports/dsfinvk/rows.ts`/`load.ts` lesen die eingefrorene
+    `deposit_tax_category` statt des Literals — korrekt für Z-Bon-
+    Summen, Bon-Druck (inkl. neuem Pflichthinweis "Gemäß § 19 UStG wird
+    keine Umsatzsteuer berechnet.") und DSFinV-K-Export (USt-Schlüssel 5).
+  - `admin/settings/company/+page.svelte`: neue Checkbox bei den
+    USt-Sätzen mit Auto-Null/Sperr-Verhalten.
+  **Tests:** 6 neue Unit-Tests (`tse/processData.test.ts`,
+  `closing/totals.test.ts`, `receipt/format.test.ts`,
+  `exports/dsfinvk/rows.test.ts`, `receipt/blocks.test.ts` ×2) sowie 3
+  neue Integrationstests (`settings.integration.test.ts` — Server-Seite-
+  Invariante). Voller Unit-Testlauf (420 Tests) sowie komplette
+  Integrationstest-Suite (34 Dateien, 457 Tests) grün, `tsc --noEmit`
+  (Backend) und `svelte-check` (Frontend) sauber.
+
