@@ -6690,4 +6690,27 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Invariante). Voller Unit-Testlauf (420 Tests) sowie komplette
   Integrationstest-Suite (34 Dateien, 457 Tests) grün, `tsc --noEmit`
   (Backend) und `svelte-check` (Frontend) sauber.
+  **Manuell/live geprüft 2026-10-27 — alle Punkte bestanden:**
+  - Admin-Einstellungen: Schalter aktivieren → beide USt-Sätze springen auf
+    0 und sind gesperrt; speichern, neu laden, wieder deaktivierbar.
+  - Bonkasse-/Bedienungskasse-Verkauf bei aktivem Schalter: Beleg zeigt
+    bei allen Positionen (inkl. Pfand) Kennbuchstabe C, MwSt-Zeile 0 %,
+    neuer Hinweistext "Gemäß §19 UStG keine Umsatzsteuer berechnet.".
+  - Bonstorno bei aktivem Schalter: gleiches Bild auf dem Storno-Beleg.
+  - Z-Bon-Summen bei aktivem Schalter: kompletter Umsatz (inkl. Pfand)
+    unter "steuerfrei", nichts unter Regel-/ermäßigtem Satz.
+  - DSFinV-K-Export: `UST_SCHLUESSEL = 5` für Artikel- **und** Pfand-Zeilen;
+    `vat.csv` zeigt nur die Steuerfrei-Zeile.
+  - **Wichtigster Check:** Beleg bei aktivem Schalter verkaufen, Schalter
+    danach deaktivieren, denselben Beleg erneut öffnen/drucken → muss
+    weiterhin 0 %/C/Hinweistext zeigen (Einfrieren zum Verkaufszeitpunkt,
+    nicht rückwirkend veränderbar) — und umgekehrt.
+  - Regressionscheck bei **deaktiviertem** Schalter: ermäßigter Artikel mit
+    Pfand zeigt weiterhin Artikel=B, Pfand=A (unverändertes Task-#113-
+    Verhalten).
+  **Nachbesserungen aus dem manuellen Test (2026-10-27,
+  `receipt/blocks.ts`):** Pflichthinweis auf "Gemäß §19 UStG keine
+  Umsatzsteuer berechnet." gekürzt (vorher Zeilenumbruch der letzten
+  beiden Zeichen); Bedienungskassen-Tischzeile in zwei Zeilen aufgeteilt
+  ("Tisch <Name>" / "von <Start> bis <Ende>"), da sie ebenfalls umbrach.
 

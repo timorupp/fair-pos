@@ -75,7 +75,7 @@ export interface ReceiptData {
    * Task #119) — frozen at sale time (`receipt/data.ts::snapshotCompanyDataForInvoice`)
    * so a later toggle of the `kleinunternehmer_enabled` system_setting never
    * changes the legal status of an already-issued receipt. The renderers print
-   * a mandatory hint ("Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.")
+   * a mandatory hint ("Gemäß §19 UStG keine Umsatzsteuer berechnet.")
    * when true.
    */
   isKleinunternehmer: boolean;

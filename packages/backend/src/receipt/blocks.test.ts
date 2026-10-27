@@ -25,8 +25,10 @@ describe('buildReceiptBlocks', () => {
       tableName: '7',
       firstOrderTime: new Date(2026, 5, 24, 10, 11, 0),
     };
-    const text = allText(await buildReceiptBlocks(data));
-    expect(text).toContain('Tisch 7 von 24.06.2026 10:11 bis 24.06.2026 12:00');
+    const lines = textBlocks(await buildReceiptBlocks(data)).map((b) => b.text);
+    const tableLineIndex = lines.indexOf('Tisch 7');
+    expect(tableLineIndex).toBeGreaterThanOrEqual(0);
+    expect(lines[tableLineIndex + 1]).toBe('von 24.06.2026 10:11 bis 24.06.2026 12:00');
   });
 
   it('omits the table line for a Bonkasse walk-up sale (no table)', async () => {
@@ -39,7 +41,7 @@ describe('buildReceiptBlocks', () => {
     expect(withoutHint).not.toContain('§ 19 UStG');
 
     const withHint = allText(await buildReceiptBlocks({ ...base, isKleinunternehmer: true }));
-    expect(withHint).toContain('Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.');
+    expect(withHint).toContain('Gemäß §19 UStG keine Umsatzsteuer berechnet.');
   });
 
   it('prints the Pfand Kennbuchstabe from the frozen deposit category, not always \'A\' (Task #119 — Kleinunternehmer sale)', async () => {

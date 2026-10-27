@@ -47,8 +47,8 @@ export function formatGermanDateTime(d: Date): string {
 /**
  * Formats a date the same way {@link formatGermanDateTime} does, but without
  * seconds — used where the extra precision only adds width without adding
- * information (e.g. the printed "Tisch ... von ... bis ..." line, which
- * would otherwise wrap to a second line on the receipt's narrow paper width).
+ * information (e.g. the printed "von ... bis ..." line under the table
+ * name, which would otherwise wrap on the receipt's narrow paper width).
  *
  * @param d - Date to format (host's local timezone).
  * @returns `DD.MM.YYYY HH:MM` string.

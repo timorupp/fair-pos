@@ -106,7 +106,7 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
   // it explains (no MwSt is separately charged, even though positions may
   // still show a 0 % breakdown row).
   if (d.isKleinunternehmer) {
-    blocks.push({ kind: 'text', text: 'Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.' });
+    blocks.push({ kind: 'text', text: 'Gemäß §19 UStG keine Umsatzsteuer berechnet.' });
     blocks.push({ kind: 'hr' });
   }
 
@@ -114,16 +114,20 @@ export async function buildReceiptBlocks(d: ReceiptData): Promise<PrintBlock[]> 
   // time below reflects only the payment itself, not the whole table visit
   // (correct per the "Durchbedienen"-Erleichterung FairPOS relies on) — but
   // the spec makes printing the first order's start time on the receipt a
-  // precondition for using that simplification. Combined here with the
-  // table name into one readable line, per Nutzervorgabe (2026-09-04).
-  // Printed in this last section (after the final separator), not right
-  // after the positions — Nutzervorgabe 2026-09-06. Without seconds (also
-  // Nutzervorgabe 2026-09-06) — the extra digits pushed the line onto a
-  // second, harder-to-read row on the receipt's narrow paper width.
+  // precondition for using that simplification. Printed together with the
+  // table name, per Nutzervorgabe (2026-09-04). Printed in this last section
+  // (after the final separator), not right after the positions —
+  // Nutzervorgabe 2026-09-06. Without seconds (also Nutzervorgabe
+  // 2026-09-06) — the extra digits pushed the line onto a second,
+  // harder-to-read row on the receipt's narrow paper width. Table name on
+  // its own line, time range below it (Nutzervorgabe 2026-10-27) — combined
+  // into one line it still wrapped, and longer table names would make that
+  // worse.
   if (d.tableName && d.firstOrderTime) {
+    blocks.push({ kind: 'text', text: `Tisch ${d.tableName}` });
     blocks.push({
       kind: 'text',
-      text: `Tisch ${d.tableName} von ${formatGermanDateTimeShort(d.firstOrderTime)} bis ${formatGermanDateTimeShort(d.createdAt)}`,
+      text: `von ${formatGermanDateTimeShort(d.firstOrderTime)} bis ${formatGermanDateTimeShort(d.createdAt)}`,
     });
   }
 
