@@ -14,6 +14,7 @@ import {
   KASSENBELEG_PROCESS_TYPE, BESTELLUNG_PROCESS_TYPE, SONSTIGER_VORGANG_PROCESS_TYPE,
 } from '../../tse/processData.js';
 import { extractLeafCertificateChunks } from './leafCertificate.js';
+import { EAS_MANUFACTURER, EAS_MODEL, EAS_SOFTWARE } from '../../system/eas.js';
 import type { TaxCategory } from '@fairpos/shared';
 
 /**
@@ -223,14 +224,15 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
 
   const cashregister: CashregisterRow[] = [{
     ...schluessel,
-    KASSE_BRAND: 'FairPOS',
+    // Same values as the ELSTER eAs notification (system/eas.ts, Task #154).
+    KASSE_BRAND: EAS_MANUFACTURER,
     // "Modellbezeichnung" (index-xml.ts) — the product's model designation,
     // like KASSE_BRAND/KASSE_SW_BRAND, not the operator-chosen register name
     // (that identity already lives in Z_KASSE_ID/source.registerId above).
     // Bug found live 2026-09-21: this used to read `source.registerName`.
-    KASSE_MODELL: 'FairPOS',
+    KASSE_MODELL: EAS_MODEL,
     KASSE_SERIENNR: source.systemSerial,
-    KASSE_SW_BRAND: 'FairPOS',
+    KASSE_SW_BRAND: EAS_SOFTWARE,
     KASSE_SW_VERSION: source.softwareVersion,
     KASSE_BASISWAEH_CODE: 'EUR',
     KEINE_UST_ZUORDNUNG: '0',

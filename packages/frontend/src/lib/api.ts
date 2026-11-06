@@ -64,6 +64,21 @@ export interface TseStatus {
   error?: string;
 }
 
+/** One field of the ELSTER eAs notification (Task #154), in form order. */
+export interface EasField {
+  /** Field label exactly as in the ELSTER form. */
+  label: string;
+  /** Value to enter, or `null` if FairPOS couldn't determine it (e.g. TSE unreachable). */
+  value: string | null;
+}
+
+/** Response shape of `GET /api/admin/tse/eas` (Task #154). */
+export interface TseEas {
+  fields: EasField[];
+  /** Why the TSE fields are empty; absent when the TSE answered. */
+  tseError?: string;
+}
+
 /** Result of a real test signature against the TSE (Task #133) — see `tse.testSignature()`. */
 export interface TseTestSignatureResult {
   transactionNumber: number;
@@ -430,6 +445,12 @@ export const api = {
        * only invoke it from an explicit user action ("TSE testen"), not on page load.
        */
       status: (): Promise<TseStatus> => request('GET', '/admin/tse/status'),
+      /**
+       * Fields for the ELSTER notification of FairPOS as an eAs (§ 146a Abs. 4
+       * AO, Task #154) — reads the TSE live like `status()`, so only call it
+       * from an explicit user action.
+       */
+      eas: (): Promise<TseEas> => request('GET', '/admin/tse/eas'),
       /** Currently-mounted removable filesystems, for the Mount-Pfad dropdown. */
       candidates: (): Promise<{ candidates: TseMountCandidate[] }> => request('GET', '/admin/tse/candidates'),
       /** "Auto-erkennen" — probes every removable mount and returns the first one that's a real TSE, if any. */

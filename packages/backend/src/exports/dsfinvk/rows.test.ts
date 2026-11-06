@@ -82,6 +82,12 @@ describe('buildDsfinvkExport', () => {
     expect(out['cashregister.csv'][0]!.KASSE_MODELL).not.toBe('Theke');
   });
 
+  it('KASSE_BRAND is the manufacturer from the ELSTER eAs notification (Task #154)', () => {
+    const row = buildDsfinvkExport(baseSource([beleg()]))['cashregister.csv'][0]!;
+    expect(row.KASSE_BRAND).toBe('FairPOS Community');
+    expect(row.KASSE_SW_BRAND).toBe('FairPOS');
+  });
+
   it('KASSE_SW_VERSION is never empty — a mandatory field per the official DSFinV-K 2.4 spec (found live 2026-09-22)', () => {
     const out = buildDsfinvkExport(baseSource([beleg()]));
     expect(out['cashregister.csv'][0]!.KASSE_SW_VERSION).toBe('0.1.3');

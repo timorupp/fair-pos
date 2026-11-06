@@ -659,3 +659,69 @@ describe('GET /api/admin/tse/dump-process-data (Task #102/#131)', () => {
     expect(response.statusCode).toBe(401);
   });
 });
+
+describe('GET /api/admin/tse/eas (Task #154)', () => {
+  /** Returns the eAs fields as a label → value map, for compact assertions. */
+  function byLabel(body: { fields: { label: string; value: string | null }[] }): Map<string, string | null> {
+    return new Map(body.fields.map((f) => [f.label, f.value]));
+  }
+
+  it('lists version, serial and commissioning date from the serial row, and explains missing TSE fields', async () => {
+    await pool.query(
+      `INSERT INTO system_setting (key, value, updated_at) VALUES ('system_serial', 'FairPOS-2026-77STAH4KE3', $1)`,
+      [new Date(2026, 8, 21, 14, 30, 0)],
+    );
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/eas',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    const fields = byLabel(body);
+    expect(fields.get('Software-Version des eAs')).toBe(config.version);
+    expect(fields.get('Seriennummer des eAs / Software-App')).toBe('FairPOS-2026-77STAH4KE3');
+    expect(fields.get('Inbetriebnahme des eAs')).toBe('21.09.2026');
+    expect(fields.get('Hersteller des eAs')).toBe('FairPOS Community');
+    expect(fields.get('Seriennummer der TSE')).toBeNull();
+    expect(body.tseError).toBe('TSE ist nicht konfiguriert');
+  });
+
+  it('fills the TSE fields from a live info call against the stub CLI', async () => {
+    config.tseCliPath = TSE_CLI_STUB_PATH;
+    config.tseMountPoint = '/mnt/fake-tse';
+    config.tseClientId = 'FairPOS-Test';
+    process.env['TSE_STUB_STDOUT'] = JSON.stringify({
+      ok: true,
+      result: {
+        hasPassedSelfTest: true, hasValidTime: true, certificateExpirationDate: 0,
+        tseSerialNumber: 'dfe622', formFactor: 'USB', tseCertificationId: 'BSI-K-TR-0800-2026',
+      },
+    });
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/tse/eas',
+      headers: { cookie: adminCookie },
+    });
+    delete process.env['TSE_STUB_STDOUT'];
+    config.tseCliPath = null;
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.tseError).toBeUndefined();
+    const fields = byLabel(body);
+    expect(fields.get('Seriennummer der TSE')).toBe('dfe622');
+    expect(fields.get('Art / Bauform der TSE')).toBe('USB');
+    expect(fields.get('BSI-Zertifizierungs-ID: „BSI-K-TR-“')).toBe('0800-2026');
+    // No serial row seeded (truncateAllTables wipes it) — reported as unknown, not an error.
+    expect(fields.get('Seriennummer des eAs / Software-App')).toBeNull();
+    expect(fields.get('Inbetriebnahme des eAs')).toBeNull();
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/tse/eas' });
+    expect(response.statusCode).toBe(401);
+  });
+});

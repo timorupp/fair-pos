@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, type TseStatus, type TseMountCandidate, type TseTestSignatureResult } from '$lib/api';
+  import { api, type TseEas, type TseStatus, type TseMountCandidate, type TseTestSignatureResult } from '$lib/api';
   import { copyToClipboard } from '$lib/clipboard';
   import { saveBlob } from '$lib/download';
   import Modal from '$lib/components/Modal.svelte';
@@ -224,6 +224,40 @@
     } catch (e) {
       testSignatureError = e instanceof Error ? e.message : 'Fehler';
     } finally { testSignatureBusy = false; }
+  }
+
+  // ── TSE-Tools — Finanzamt-Meldung (eAs, Task #154) ─────────────────────────
+  let easOpen = $state(false);
+  let easLoading = $state(false);
+  let easError = $state('');
+  let easResult: TseEas | null = $state(null);
+  let easCopiedLabel = $state('');
+
+  async function openEas(): Promise<void> {
+    easOpen = true;
+    await loadEas();
+  }
+
+  /** Loads the eAs fields — reads the TSE live, hence only on opening the dialog. */
+  async function loadEas(): Promise<void> {
+    easLoading = true; easError = ''; easResult = null;
+    try {
+      easResult = await api.admin.tse.eas();
+    } catch (e) {
+      easError = e instanceof Error ? e.message : 'Fehler';
+    } finally { easLoading = false; }
+  }
+
+  /**
+   * Copies one field value and briefly marks that row as copied.
+   *
+   * @param label - The field's label, to identify the row.
+   * @param value - The value to copy.
+   */
+  async function copyEasValue(label: string, value: string): Promise<void> {
+    await copyToClipboard(value);
+    easCopiedLabel = label;
+    setTimeout(() => { if (easCopiedLabel === label) easCopiedLabel = ''; }, 1500);
   }
 
   // ── TSE-Tools — TSE initialisieren (Task #131) ──────────────────────────────
@@ -528,6 +562,7 @@
       <button class="btn-ghost" onclick={() => openUnblock('timeAdmin')}>TimeAdmin-PIN entsperren</button>
       <button class="btn-ghost" onclick={openExport}>TSE-Rohdaten exportieren</button>
       <button class="btn-ghost" onclick={openDump}>Process-Data-Dump</button>
+      <button class="btn-ghost" onclick={openEas}>Finanzamt-Meldung (eAs)</button>
       <button class="btn-ghost" onclick={openFactoryReset}>Werkseinstellung (Entwickler-TSE)</button>
     </div>
   </section>
@@ -649,6 +684,46 @@
       <dt>Signatur</dt><dd><code class="pubkey">{testSignatureResult.signature}</code></dd>
     </dl>
   {/if}
+</Modal>
+
+<!-- Finanzamt-Meldung (eAs, Task #154) ──────────────────────────────────────── -->
+<Modal bind:open={easOpen} title="Finanzamt-Meldung (eAs)" maxWidth="880px">
+  <p class="hint">
+    Angaben für das ELSTER-Formular „Mitteilung nach § 146a Abs. 4 AO“,
+    Abschnitt „Angaben zum elektronischen Aufzeichnungssystem (eAs)“, in der
+    Reihenfolge des Formulars. Nicht enthalten sind Felder, die FairPOS nicht
+    kennt (Anschaffung des eAs, Inbetriebnahme der TSE, Bemerkungen) — diese
+    bitte selbst ergänzen.
+  </p>
+  {#if easLoading}
+    <p class="muted">Lade…</p>
+  {:else if easError}
+    <p class="error-text">{easError}</p>
+  {:else if easResult}
+    {#if easResult.tseError}
+      <p class="warning-text">TSE-Angaben nicht verfügbar: {easResult.tseError}</p>
+    {/if}
+    <dl class="kv eas">
+      {#each easResult.fields as field (field.label)}
+        <dt>{field.label}</dt>
+        <dd>
+          {#if field.value === null}
+            <span class="muted">unbekannt</span>
+          {:else}
+            <code>{field.value}</code>
+            <button
+              class="btn-ghost eas-copy"
+              onclick={() => copyEasValue(field.label, field.value!)}
+              title="In Zwischenablage kopieren"
+            >{easCopiedLabel === field.label ? 'Kopiert' : 'Kopieren'}</button>
+          {/if}
+        </dd>
+      {/each}
+    </dl>
+  {/if}
+  <div class="dialog-footer">
+    <button class="btn-ghost" onclick={loadEas} disabled={easLoading}>{easLoading ? 'Lade…' : 'Neu laden'}</button>
+  </div>
 </Modal>
 
 <!-- TSE initialisieren (Task #131) ───────────────────────────────────────────── -->
@@ -837,6 +912,9 @@
   .kv dd { margin: 0; min-width: 0; }
   .kv code { font-size: 0.9rem; word-break: break-all; overflow-wrap: anywhere; }
   .kv .pubkey { word-break: break-all; overflow-wrap: anywhere; font-size: 0.75rem; }
+  .kv.eas { align-items: center; }
+  .kv.eas dd { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  .eas-copy { flex-shrink: 0; padding: 0.2rem 0.6rem; font-size: 0.8rem; }
 
   .tse-detect-row { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
   .tse-detect-row select { flex: 1; max-width: 360px; }

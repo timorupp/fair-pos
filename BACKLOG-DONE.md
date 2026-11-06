@@ -6714,3 +6714,105 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   beiden Zeichen); Bedienungskassen-Tischzeile in zwei Zeilen aufgeteilt
   ("Tisch <Name>" / "von <Start> bis <Ende>"), da sie ebenfalls umbrach.
 
+- [Task] **#154** Sammel-Maske "Angaben zum elektronischen Aufzeichnungssystem (eAs)" für die ELSTER-Anmeldung — **Erledigt 2026-11-06**
+  **Klassifikation: Feature, angelegt 2026-09-21 (Nutzerwunsch)** —
+  aufgefallen beim tatsächlichen Anmelden von FairPOS beim Finanzamt
+  (Mitteilung nach § 146a Abs. 4 AO, ELSTER-Formular "Angaben zum
+  elektronischen Aufzeichnungssystem (eAs)", Screenshot vom Nutzer
+  beigefügt).
+
+  **Nutzer-Interpretation der Feldbelegung** (DSFinV-K-Terminologie in
+  Klammern):
+  - **Software des eAs** (`Stamm_Kassen`/`KASSE_SW_BRAND` bzw.
+    `Stamm_Terminals`/`TERMINAL_SW_BRAND`) → `"FairPOS"`
+  - **Software-Version des eAs** (`KASSE_SW_VERSION`/
+    `TERMINAL_SW_VERSION`) → die aktuelle Versionsnummer (Task #148,
+    `VERSION`-Datei)
+  - **Hersteller des eAs** (`KASSE_BRAND`/`TERMINAL_BRAND`, bei DSFinV-TW
+    `TW_HERSTELLER`) → `"FairPOS Community"`
+  - **Seriennummer des eAs / Software-App** → vermutlich der bereits
+    bestehende `system_serial` (`FairPOS-<Jahr>-<10 alphanum.>`,
+    `system/serial.ts`, bereits unter Einstellungen → System sichtbar)
+  - Weitere Felder im ELSTER-Formular laut Screenshot: **Art des eAs**
+    (Dropdown, Vorschlag "Computergestützte/PC-Kassensysteme"),
+    **Anschaffung des eAs**/**Inbetriebnahme des eAs** (Datumsfelder) —
+    Screenshot war nach diesem Punkt abgeschnitten, es folgen im echten
+    Formular vermutlich noch weitere Felder (z. B. TSE-bezogene
+    Angaben) — vor der Umsetzung das vollständige ELSTER-Formular
+    durchgehen, nicht nur den Screenshot-Ausschnitt.
+  - **Modell des eAs — Pflichtfeld (Nutzerhinweis 2026-09-21).**
+    DSFinV-K-Pendant: `Stamm_Kassen`/`KASSE_MODELL` bzw.
+    `Stamm_Terminals`/`TERMINAL_MODELL` (DSFinV-TW: `Stamm_Fahrzeuge`/
+    `TW_MODELL`).
+    **Bug bereits behoben (2026-09-21):** `KASSE_MODELL` wurde in
+    `rows.ts` mit `source.registerName` befüllt — also dem vom Bediener
+    frei gewählten Kassennamen (z. B. "Theke 1") statt der
+    Produkt-Modellbezeichnung; die Kassen-Identität pro Zeile steckt
+    bereits korrekt im Schlüsselfeld `Z_KASSE_ID`. Jetzt fest auf
+    `'FairPOS'` gesetzt (analog `KASSE_BRAND`/`KASSE_SW_BRAND`), mit
+    Regressionstest (`rows.test.ts`, "KASSE_MODELL is the product model
+    designation, never the operator-chosen register name"). `source.
+    registerName` selbst blieb erhalten — wird unabhängig davon für den
+    ZIP-Download-Dateinamen gebraucht (`routes/admin/exports.ts:355`).
+    **Unverbindlich, noch zu klären:** ob `'FairPOS'` der inhaltlich
+    richtige Wert für die ELSTER-Meldung ist (keine offizielle Quelle
+    geprüft) — vor Verwendung in der echten Anmeldung mit ELSTER-
+    Hilfetext/BZSt/Steuerberater gegenprüfen.
+
+  **Dringlichkeitsprüfung (2026-09-22, Nutzerauftrag: prüfen, ob etwas
+  davon dringend ist oder warten kann):** Original der offiziellen
+  BZSt-Spezifikation direkt von bzst.de geladen und geprüft
+  (`dsfinv_k_v_2_4.zip`, Dokument `20231215_DSFinV_K_2_4.pdf`) — der
+  eigene Feldkatalog des Dokuments markiert optionale Felder explizit
+  mit dem Zusatz "(optional)" (Beispiel: `TSE_VORGANGSDATEN Zeichen
+  Daten des Vorgangs (optional)`). **Kein** `KASSE_*`-Feld in
+  `Stamm_Kassen` trägt diesen Zusatz — alle sind laut der Spezifikation
+  selbst Pflichtfelder, nicht optional.
+
+  **Daraus 1 dringender, bereits behobener Fund:**
+  - **`KASSE_SW_VERSION: ''`** (`rows.ts`, war hart auf einen leeren
+    String gesetzt) — ein Pflichtfeld, das leer exportiert wurde.
+    **Behoben 2026-09-22:** neues `DsfinvkSource.softwareVersion`
+    (`config.version`, Task #148) durchgereicht von `load.ts` bis
+    `rows.ts`; Regressionstest in `rows.test.ts` ("KASSE_SW_VERSION is
+    never empty"). Voller Unit-Testlauf (404) + gezielter
+    Integrationstest grün, `tsc --noEmit` sauber.
+
+  **Ein offener, nicht dringender Punkt** (schon nicht-leer befüllt,
+  daher kein Compliance-Verstoß, nur eine Wortlaut-/Konsistenzfrage —
+  kann warten, wie vom Nutzer vorgegeben):
+  - **`KASSE_BRAND: 'FairPOS'`** (`rows.ts`) — exportiert denselben Wert
+    wie `KASSE_SW_BRAND` (ebenfalls `'FairPOS'`). Widerspricht der
+    eigenen Nutzer-Interpretation oben, wo **Hersteller** ("FairPOS
+    Community") und **Software-Marke** ("FairPOS") bewusst
+    unterschiedliche Werte sein sollen. Noch zu klären: soll
+    `KASSE_BRAND` im Export ebenfalls auf `"FairPOS Community"`
+    geändert werden (Konsistenz mit der ELSTER-Meldung), oder ist die
+    Unterscheidung nur für das ELSTER-Formular relevant und der Export
+    bleibt bewusst bei `"FairPOS"`? Vor der Umsetzung entscheiden.
+
+  **Gewünscht:** eine Admin-UI-Maske, die alle diese Angaben **gesammelt
+  und in der Reihenfolge des ELSTER-Formulars** anzeigt (Copy-Paste-
+  Hilfe bei der Anmeldung) — wo möglich mit den bereits im System
+  vorhandenen, sich selbst aktuell haltenden Werten (Version,
+  Seriennummer) statt einer weiteren manuell zu pflegenden Kopie.
+  **Umsetzung (2026-11-06, Nutzerentscheidungen 2026-11-05):** nur Felder,
+  die FairPOS selbst kennt — manuell zu pflegende (Anschaffung des eAs,
+  Inbetriebnahme der TSE, Bemerkungen) bewusst weggelassen. Ein eAs für
+  das gesamte System, nicht pro Kasse.
+  - `system/eas.ts`: Konstanten (Art, Software, Hersteller "FairPOS
+    Community", Modell) und `buildEasFields()` in ELSTER-Reihenfolge;
+    BSI-ID von der TSE (`tseCertificationId`) ohne das im Formular schon
+    vorgedruckte Präfix "BSI-K-TR-"; Bauform als Rohwert `formFactor`.
+  - "Inbetriebnahme des eAs" = `system_setting.updated_at` der Zeile
+    `system_serial` (Erzeugung der Seriennummer); in `system/bootstrap.ts`
+    dokumentiert, dass nur `ensureSystemSerial()` diese Zeile schreiben darf.
+  - Neuer Endpunkt `GET /api/admin/tse/eas` (liest die TSE live, TSE-Felder
+    `null` + `tseError` bei fehlender/unerreichbarer TSE).
+  - TSE-Seite → TSE-Tools: neuer Dialog "Finanzamt-Meldung (eAs)" mit
+    Kopier-Button pro Feld.
+  - Offener Punkt `KASSE_BRAND` entschieden: DSFinV-K-Export nutzt jetzt
+    ebenfalls "FairPOS Community" (gemeinsame Konstante aus `system/eas.ts`).
+  **Tests:** `system/eas.test.ts` (5), `rows.test.ts` (+1),
+  `tse.integration.test.ts` (+3). Unit (426 + 86) und Integration (460) grün.
+

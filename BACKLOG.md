@@ -48,89 +48,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   bestehende Garantie (Kachel == nächster echter Z-Bon) für normale
   Kassen zu verändern.
 
-- [Task] **#154** Sammel-Maske "Angaben zum elektronischen Aufzeichnungssystem (eAs)" für die ELSTER-Anmeldung
-  **Klassifikation: Feature, angelegt 2026-09-21 (Nutzerwunsch)** —
-  aufgefallen beim tatsächlichen Anmelden von FairPOS beim Finanzamt
-  (Mitteilung nach § 146a Abs. 4 AO, ELSTER-Formular "Angaben zum
-  elektronischen Aufzeichnungssystem (eAs)", Screenshot vom Nutzer
-  beigefügt).
-
-  **Nutzer-Interpretation der Feldbelegung** (DSFinV-K-Terminologie in
-  Klammern):
-  - **Software des eAs** (`Stamm_Kassen`/`KASSE_SW_BRAND` bzw.
-    `Stamm_Terminals`/`TERMINAL_SW_BRAND`) → `"FairPOS"`
-  - **Software-Version des eAs** (`KASSE_SW_VERSION`/
-    `TERMINAL_SW_VERSION`) → die aktuelle Versionsnummer (Task #148,
-    `VERSION`-Datei)
-  - **Hersteller des eAs** (`KASSE_BRAND`/`TERMINAL_BRAND`, bei DSFinV-TW
-    `TW_HERSTELLER`) → `"FairPOS Community"`
-  - **Seriennummer des eAs / Software-App** → vermutlich der bereits
-    bestehende `system_serial` (`FairPOS-<Jahr>-<10 alphanum.>`,
-    `system/serial.ts`, bereits unter Einstellungen → System sichtbar)
-  - Weitere Felder im ELSTER-Formular laut Screenshot: **Art des eAs**
-    (Dropdown, Vorschlag "Computergestützte/PC-Kassensysteme"),
-    **Anschaffung des eAs**/**Inbetriebnahme des eAs** (Datumsfelder) —
-    Screenshot war nach diesem Punkt abgeschnitten, es folgen im echten
-    Formular vermutlich noch weitere Felder (z. B. TSE-bezogene
-    Angaben) — vor der Umsetzung das vollständige ELSTER-Formular
-    durchgehen, nicht nur den Screenshot-Ausschnitt.
-  - **Modell des eAs — Pflichtfeld (Nutzerhinweis 2026-09-21).**
-    DSFinV-K-Pendant: `Stamm_Kassen`/`KASSE_MODELL` bzw.
-    `Stamm_Terminals`/`TERMINAL_MODELL` (DSFinV-TW: `Stamm_Fahrzeuge`/
-    `TW_MODELL`).
-    **Bug bereits behoben (2026-09-21):** `KASSE_MODELL` wurde in
-    `rows.ts` mit `source.registerName` befüllt — also dem vom Bediener
-    frei gewählten Kassennamen (z. B. "Theke 1") statt der
-    Produkt-Modellbezeichnung; die Kassen-Identität pro Zeile steckt
-    bereits korrekt im Schlüsselfeld `Z_KASSE_ID`. Jetzt fest auf
-    `'FairPOS'` gesetzt (analog `KASSE_BRAND`/`KASSE_SW_BRAND`), mit
-    Regressionstest (`rows.test.ts`, "KASSE_MODELL is the product model
-    designation, never the operator-chosen register name"). `source.
-    registerName` selbst blieb erhalten — wird unabhängig davon für den
-    ZIP-Download-Dateinamen gebraucht (`routes/admin/exports.ts:355`).
-    **Unverbindlich, noch zu klären:** ob `'FairPOS'` der inhaltlich
-    richtige Wert für die ELSTER-Meldung ist (keine offizielle Quelle
-    geprüft) — vor Verwendung in der echten Anmeldung mit ELSTER-
-    Hilfetext/BZSt/Steuerberater gegenprüfen.
-
-  **Dringlichkeitsprüfung (2026-09-22, Nutzerauftrag: prüfen, ob etwas
-  davon dringend ist oder warten kann):** Original der offiziellen
-  BZSt-Spezifikation direkt von bzst.de geladen und geprüft
-  (`dsfinv_k_v_2_4.zip`, Dokument `20231215_DSFinV_K_2_4.pdf`) — der
-  eigene Feldkatalog des Dokuments markiert optionale Felder explizit
-  mit dem Zusatz "(optional)" (Beispiel: `TSE_VORGANGSDATEN Zeichen
-  Daten des Vorgangs (optional)`). **Kein** `KASSE_*`-Feld in
-  `Stamm_Kassen` trägt diesen Zusatz — alle sind laut der Spezifikation
-  selbst Pflichtfelder, nicht optional.
-
-  **Daraus 1 dringender, bereits behobener Fund:**
-  - **`KASSE_SW_VERSION: ''`** (`rows.ts`, war hart auf einen leeren
-    String gesetzt) — ein Pflichtfeld, das leer exportiert wurde.
-    **Behoben 2026-09-22:** neues `DsfinvkSource.softwareVersion`
-    (`config.version`, Task #148) durchgereicht von `load.ts` bis
-    `rows.ts`; Regressionstest in `rows.test.ts` ("KASSE_SW_VERSION is
-    never empty"). Voller Unit-Testlauf (404) + gezielter
-    Integrationstest grün, `tsc --noEmit` sauber.
-
-  **Ein offener, nicht dringender Punkt** (schon nicht-leer befüllt,
-  daher kein Compliance-Verstoß, nur eine Wortlaut-/Konsistenzfrage —
-  kann warten, wie vom Nutzer vorgegeben):
-  - **`KASSE_BRAND: 'FairPOS'`** (`rows.ts`) — exportiert denselben Wert
-    wie `KASSE_SW_BRAND` (ebenfalls `'FairPOS'`). Widerspricht der
-    eigenen Nutzer-Interpretation oben, wo **Hersteller** ("FairPOS
-    Community") und **Software-Marke** ("FairPOS") bewusst
-    unterschiedliche Werte sein sollen. Noch zu klären: soll
-    `KASSE_BRAND` im Export ebenfalls auf `"FairPOS Community"`
-    geändert werden (Konsistenz mit der ELSTER-Meldung), oder ist die
-    Unterscheidung nur für das ELSTER-Formular relevant und der Export
-    bleibt bewusst bei `"FairPOS"`? Vor der Umsetzung entscheiden.
-
-  **Gewünscht:** eine Admin-UI-Maske, die alle diese Angaben **gesammelt
-  und in der Reihenfolge des ELSTER-Formulars** anzeigt (Copy-Paste-
-  Hilfe bei der Anmeldung) — wo möglich mit den bereits im System
-  vorhandenen, sich selbst aktuell haltenden Werten (Version,
-  Seriennummer) statt einer weiteren manuell zu pflegenden Kopie.
-
 - [Task] **#47** Vollen manuellen Regressionstest durchführen (inkl. DSFinV-K)
   **Umfasst auch Task #102** (2026-09-01 dorthin verschoben, Nutzereinordnung:
   "gehört für mich zum Testing"): prüfen, dass wirklich **jede**
@@ -145,6 +62,16 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   direkten Beträge-Abgleich gegen die TSE selbst — Details/Aufruf in
   `docs/TSE-CLI-Referenz.md` Abschnitt 2/3. Der eigentliche Abgleich selbst
   ist Teil dieses Tasks (#47) und steht noch aus, **nicht** bereits erledigt.
+
+  **Noch offen aus Task #154 (Finanzamt-Meldung eAs, 2026-11-06
+  umgesetzt, noch nicht live/mit echter TSE geprüft):**
+  - Dialog "Finanzamt-Meldung (eAs)" auf der TSE-Seite öffnen: alle 10
+    Felder befüllt, Kopier-Buttons funktionieren.
+  - "Art / Bauform der TSE": welchen Rohwert liefert die Swissbit-TSE?
+    Weicht er von "USB-Stick" ab, ggf. eine Übersetzung ergänzen.
+  - "BSI-Zertifizierungs-ID": Präfix "BSI-K-TR-" korrekt abgeschnitten?
+  - "Inbetriebnahme des eAs": mit dem gemeldeten Datum (21.09.2026)
+    vergleichen.
 
 - [Task] **#128** (niedrige Priorität, Nutzervorgabe 2026-09-12) Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
   **Klassifikation: Sicherheits-/Datenschutz-Frage (noch nicht bewertet,
