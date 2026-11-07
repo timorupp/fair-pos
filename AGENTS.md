@@ -182,17 +182,33 @@ hier, mit voller, granularer Commit-Historie (seit 2026-08-30, vorher
 wurde direkt auf `master` gearbeitet).
 
 **`master`** ist der Release-Branch — bekommt Inhalte **ausschließlich**
-per `git merge --squash` von `develop`, nie per normalem Merge:
+per `git merge --squash` von `develop`, nie per normalem Merge (der würde
+die komplette Detail-Historie von `develop` an `master` hängen). Direkt
+danach wird `master` mit der Strategie `ours` zurück nach `develop`
+gemergt:
 
 ```bash
 git checkout master
 git merge --squash develop
-git commit -m "Release: ..."
+git commit -m "Release: FairPOS X.Y.0"   # + ausführlicher Body
+git checkout develop
+git merge -s ours master -m "Merge release X.Y.0 back into develop"
 ```
 
 Ein Squash-Merge verändert `develop` nicht — die volle Detail-Historie
 bleibt dort für immer erhalten, `master` zeigt dauerhaft nur einen Commit
 pro Release.
+
+**Warum der Rück-Merge (seit 2026-11-07):** Ein Squash-Merge verknüpft die
+Branches nicht. Ohne Rück-Merge bliebe die gemeinsame Basis für immer
+beim vorletzten Release stehen, und jeder weitere `merge --squash` würde
+zunehmend Konflikte produzieren. `-s ours` übernimmt dabei **keine**
+Dateiänderungen (beide Branches haben nach dem Release ohnehin denselben
+Inhalt), sondern macht nur den neuen Release-Commit zum Vorfahren von
+`develop` — die gemeinsame Basis rückt so bei jedem Release nach. Dieser
+Merge-Commit auf `develop` erhöht die Versionsnummer **nicht** (siehe
+Versionsnummer unten), damit `develop` und `master` direkt nach dem
+Release dieselbe Nummer zeigen.
 
 **Der Produktivserver ist bewusst auf `develop` ausgecheckt, nicht auf
 `master`** — er dient laufend als Testumgebung für Zwischenstände direkt
@@ -203,7 +219,13 @@ Zwischenschritte.
 `master` wurde am 2026-08-30 bewusst als Orphan-Branch neu gestartet (ein
 einziger Commit mit dem damaligen Codestand, keine Elternhistorie) — die
 komplette bisherige Entwicklungsgeschichte bis dahin liegt vollständig in
-`develop`.
+`develop`. Bis einschließlich Release 1.0.0 hatten die beiden Branches
+daher keine gemeinsame Historie, `git merge --squash develop` brach mit
+"refusing to merge unrelated histories" ab (Releases 0.2.0 und 1.0.0
+wurden deshalb per `git read-tree -u --reset develop` übernommen —
+inhaltlich identisch mit einem Squash-Merge). Am 2026-11-07 einmalig per
+`git merge -s ours --allow-unrelated-histories master` auf `develop`
+verbunden; seitdem gilt der Ablauf oben.
 
 ### Versionsnummer (Task #148)
 
@@ -216,6 +238,8 @@ einfacher Text, kein führendes `v`).
   Git-Workflow oben) automatisch um eins erhöht. Ein Release-Stand =
   ein Merge nach `master`.
 - **Build** — wird bei jedem Commit auf `develop` automatisch erhöht.
+  Ausnahme: der Rück-Merge `master` → `develop` direkt nach einem Release
+  (siehe Git-Workflow) — er ändert keine Dateien und erhöht nichts.
 
 **Kaskadierendes Zurücksetzen** (wie bei Semver — ein höherwertiger Bump
 setzt alle niedrigerwertigeren auf 0 zurück):
