@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { loadTableHeading, formatTableHeading } from '$lib/table-heading';
   import { api } from '$lib/api';
   import Modal from '$lib/components/Modal.svelte';
   import { longpress } from '$lib/longpress';
@@ -21,6 +22,8 @@
 
   let registerId = $state('');
   let tableId = $state('');
+  /** "Tisch <Name>" (Task #158) — plain "Tisch" until the name has loaded. */
+  let heading = $state(formatTableHeading(null));
   let groups: OpenGroup[] = $state([]);
   // Map from group_key → quantity selected for this checkout.
   let selected: Map<string, number> = $state(new Map());
@@ -42,6 +45,7 @@
     tableId = ($page.params['tableId'] ?? '') as string;
   });
 
+  onMount(async () => { heading = await loadTableHeading(registerId, tableId); });
   onMount(async () => {
     await Promise.all([loadOpen(), loadReasons()]);
   });
@@ -157,7 +161,7 @@
 <div class="page">
   <header class="header">
     <button class="btn-ghost" onclick={() => goto(`/register/${registerId}/tables/${tableId}`)}>← Tisch</button>
-    <h1>Kassieren</h1>
+    <h1>{heading}</h1>
   </header>
 
   {#if loading}

@@ -8,7 +8,7 @@ const sampleRows: ExportRow[] = [
   {
     receipt_number: 'POS-00042', closing_z_number: 3,
     created_at: new Date(2026, 5, 24, 18, 30, 0).toISOString(),
-    table_name: 'A1', ordering_user_name: 'Anna', register_name: 'Theke',
+    table_name: 'A1', ordering_user_name: 'Anna', cashier_name: 'Ben', register_name: 'Theke',
     article_name: 'Bier', article_category_name: 'Getränke',
     quantity: 3, unit_price: 4.5, unit_deposit: 2, tax_rate: 7, deposit_tax_rate: 19, line_total: 19.5,
     is_cancellation: false,
@@ -16,7 +16,7 @@ const sampleRows: ExportRow[] = [
   {
     receipt_number: 'POS-00042', closing_z_number: null,
     created_at: new Date(2026, 5, 24, 18, 30, 0).toISOString(),
-    table_name: 'A1', ordering_user_name: 'Anna', register_name: 'Theke',
+    table_name: 'A1', ordering_user_name: 'Anna', cashier_name: 'Ben', register_name: 'Theke',
     article_name: 'Brezel', article_category_name: 'Snacks',
     quantity: 1, unit_price: 2.5, unit_deposit: null, tax_rate: 7, deposit_tax_rate: null, line_total: 2.5,
     is_cancellation: false,
@@ -51,9 +51,9 @@ describe('buildExcelWorkbook', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buf as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    const headers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map((col) => sheet.getCell(3, col).value);
+    const headers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].map((col) => sheet.getCell(3, col).value);
     expect(headers).toEqual([
-      'Belegnummer', 'Storno', 'Tagesabschluss', 'Datum', 'Uhrzeit', 'Tisch', 'Besteller', 'Kasse',
+      'Belegnummer', 'Storno', 'Tagesabschluss', 'Datum', 'Uhrzeit', 'Tisch', 'Besteller', 'Kassierer', 'Kasse',
       'Artikelname', 'Artikelgruppe', 'Menge', 'Einzelpreis', 'USt. Artikel', 'Pfandbetrag', 'USt. Pfand', 'Gesamtbetrag',
     ]);
   });
@@ -65,19 +65,21 @@ describe('buildExcelWorkbook', () => {
     const sheet = wb.worksheets[0]!;
     // Row 4 — first data row
     expect(sheet.getCell(4, 1).value).toBe('POS-00042'); // Belegnummer (prefix + padded sequence)
-    expect(sheet.getCell(4, 9).value).toBe('Bier');      // Artikelname
-    expect(sheet.getCell(4, 10).value).toBe('Getränke'); // Artikelgruppe
-    expect(sheet.getCell(4, 11).value).toBe(3);          // Menge
-    expect(sheet.getCell(4, 13).value).toBe(7);          // USt. Artikel
-    expect(sheet.getCell(4, 14).value).toBe(2);          // Pfandbetrag
-    expect(sheet.getCell(4, 15).value).toBe(19);         // USt. Pfand
-    expect(sheet.getCell(4, 16).value).toBe(19.5);       // Gesamtbetrag
+    expect(sheet.getCell(4, 7).value).toBe('Anna');      // Besteller
+    expect(sheet.getCell(4, 8).value).toBe('Ben');       // Kassierer (Task #159)
+    expect(sheet.getCell(4, 10).value).toBe('Bier');      // Artikelname
+    expect(sheet.getCell(4, 11).value).toBe('Getränke'); // Artikelgruppe
+    expect(sheet.getCell(4, 12).value).toBe(3);          // Menge
+    expect(sheet.getCell(4, 14).value).toBe(7);          // USt. Artikel
+    expect(sheet.getCell(4, 15).value).toBe(2);          // Pfandbetrag
+    expect(sheet.getCell(4, 16).value).toBe(19);         // USt. Pfand
+    expect(sheet.getCell(4, 17).value).toBe(19.5);       // Gesamtbetrag
     // Row 5 — second data row (no deposit — Pfandbetrag/USt. Pfand stay empty, not "0,00 €")
-    expect(sheet.getCell(5, 9).value).toBe('Brezel');
-    expect(sheet.getCell(5, 10).value).toBe('Snacks');
-    expect(sheet.getCell(5, 11).value).toBe(1);
-    expect(sheet.getCell(5, 14).value).toBeNull();
+    expect(sheet.getCell(5, 10).value).toBe('Brezel');
+    expect(sheet.getCell(5, 11).value).toBe('Snacks');
+    expect(sheet.getCell(5, 12).value).toBe(1);
     expect(sheet.getCell(5, 15).value).toBeNull();
+    expect(sheet.getCell(5, 16).value).toBeNull();
   });
 
   it('leaves the Storno column blank for a normal sale and writes "ja" for a Bonstorno row, never "nein" (Task #138)', async () => {
@@ -86,7 +88,7 @@ describe('buildExcelWorkbook', () => {
       {
         receipt_number: 'POS-00043', closing_z_number: null,
         created_at: new Date(2026, 5, 24, 19, 0, 0).toISOString(),
-        table_name: '', ordering_user_name: 'Admin', register_name: 'Theke',
+        table_name: '', ordering_user_name: 'Admin', cashier_name: 'Admin', register_name: 'Theke',
         article_name: 'Bier', article_category_name: 'Getränke',
         quantity: -2, unit_price: -4.5, unit_deposit: null, tax_rate: 7,
         deposit_tax_rate: null, line_total: -9, is_cancellation: true,
@@ -98,7 +100,7 @@ describe('buildExcelWorkbook', () => {
     expect(sheet.getCell(4, 2).value).toBe(''); // Bier, normal sale
     expect(sheet.getCell(5, 2).value).toBe(''); // Brezel, normal sale
     expect(sheet.getCell(6, 2).value).toBe('ja'); // Bonstorno row
-    expect(sheet.getCell(6, 11).value).toBe(-2); // Menge negativ
+    expect(sheet.getCell(6, 12).value).toBe(-2); // Menge negativ
   });
 
   it('shows the Z-Bon number for a closed invoice and leaves the cell blank while not yet closed (Task #142)', async () => {

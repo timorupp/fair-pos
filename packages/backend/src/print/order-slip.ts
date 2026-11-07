@@ -85,19 +85,36 @@ function logoBlock(logo: CompanyLogo | null): PrintBlock[] {
 }
 
 /**
+ * Training marker for slips printed at a training register (D-085) — same
+ * "T R A I N I N G" line as the receipt (`receipt/blocks.ts`, Task #130), so
+ * a slip printed while practising can never be mistaken for, or redeemed as,
+ * a real one.
+ *
+ * @param isTraining - Whether the slip comes from a training register.
+ * @returns The marker block, or nothing for a regular register.
+ */
+function trainingMarker(isTraining: boolean): PrintBlock[] {
+  return isTraining
+    ? [{ kind: 'text', text: 'T R A I N I N G', align: 'center', bold: true, size: 'xlarge' }]
+    : [];
+}
+
+/**
  * Builds the block list for one printer's bucket (kitchen/bar order slip).
  *
  * @param bucket - The aggregated lines for one printer (from `bucketItemsByPrinter`).
- * @param context - Additional info printed at the top (table, server, time).
+ * @param context - Additional info printed at the top (table, server, time),
+ *   plus whether the register is a training register (D-085: marker at top
+ *   and bottom).
  * @param logo - Optional logo (both target-format variants pre-rendered), or `null` to omit.
  * @returns Blocks in print order, ready for either renderer.
  */
 export function buildOrderSlipBlocks(
   bucket: OrderSlipBucket,
-  context: { tableName: string; serverName: string; createdAt: Date },
+  context: { tableName: string; serverName: string; createdAt: Date; isTraining: boolean },
   logo: CompanyLogo | null = null,
 ): PrintBlock[] {
-  const blocks: PrintBlock[] = [...logoBlock(logo)];
+  const blocks: PrintBlock[] = [...logoBlock(logo), ...trainingMarker(context.isTraining)];
 
   // Header is the table identifier, extra-large so it's readable across the
   // kitchen/bar. The Artikelgruppe (category) sits as a smaller sub-header
@@ -115,6 +132,7 @@ export function buildOrderSlipBlocks(
   // Footer: timestamp + operator on one line, slash-separated to save paper.
   blocks.push({ kind: 'hr' });
   blocks.push({ kind: 'text', text: `${formatGermanDateTime(context.createdAt)} / ${context.serverName}` });
+  blocks.push(...trainingMarker(context.isTraining));
 
   return blocks;
 }
@@ -133,16 +151,18 @@ export function buildOrderSlipBlocks(
  *
  * @param item - Article info. `priceEuros` is the per-unit gross article
  *   price; `depositEuros` is the per-unit deposit (null/0 → no Pfand line).
- * @param context - Footer metadata (register name, server name, timestamp).
+ * @param context - Footer metadata (register name, server name, timestamp),
+ *   plus whether the register is a training register (D-085: marker at top
+ *   and bottom).
  * @param logo - Optional logo (both target-format variants pre-rendered), or `null` to omit.
  * @returns Blocks in print order, ready for either renderer.
  */
 export function buildPickupSlipBlocks(
   item: { name: string; priceEuros: number; depositEuros: number | null },
-  context: { registerName: string; serverName: string; createdAt: Date },
+  context: { registerName: string; serverName: string; createdAt: Date; isTraining: boolean },
   logo: CompanyLogo | null = null,
 ): PrintBlock[] {
-  const blocks: PrintBlock[] = [...logoBlock(logo)];
+  const blocks: PrintBlock[] = [...logoBlock(logo), ...trainingMarker(context.isTraining)];
 
   // A 0-€-article with a negative deposit is unmistakably a pure Pfandrückgabe
   // (Task #114) — "W E R T B O N" would be misleading (nothing is being
@@ -172,6 +192,7 @@ export function buildPickupSlipBlocks(
     kind: 'text',
     text: `${formatGermanDateTime(context.createdAt)} / ${context.registerName} / ${context.serverName}`,
   });
+  blocks.push(...trainingMarker(context.isTraining));
 
   return blocks;
 }
@@ -188,16 +209,18 @@ export function buildPickupSlipBlocks(
  * of the article keeps the bon unambiguous as a refund voucher.
  *
  * @param item - Per-unit deposit amount in euros.
- * @param context - Footer metadata (register name, server name, timestamp).
+ * @param context - Footer metadata (register name, server name, timestamp),
+ *   plus whether the register is a training register (D-085: marker at top
+ *   and bottom).
  * @param logo - Optional logo (both target-format variants pre-rendered), or `null` to omit.
  * @returns Blocks in print order, ready for either renderer.
  */
 export function buildDepositSlipBlocks(
   item: { depositEuros: number },
-  context: { registerName: string; serverName: string; createdAt: Date },
+  context: { registerName: string; serverName: string; createdAt: Date; isTraining: boolean },
   logo: CompanyLogo | null = null,
 ): PrintBlock[] {
-  const blocks: PrintBlock[] = [...logoBlock(logo)];
+  const blocks: PrintBlock[] = [...logoBlock(logo), ...trainingMarker(context.isTraining)];
   const isReturn = item.depositEuros < 0;
   blocks.push({
     kind: 'text', text: isReturn ? 'PFANDRÜCKGABE' : 'PFAND',
@@ -214,6 +237,7 @@ export function buildDepositSlipBlocks(
     kind: 'text',
     text: `${formatGermanDateTime(context.createdAt)} / ${context.registerName} / ${context.serverName}`,
   });
+  blocks.push(...trainingMarker(context.isTraining));
 
   return blocks;
 }

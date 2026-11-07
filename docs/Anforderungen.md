@@ -277,6 +277,7 @@ Alle Verwaltungsfunktionen für Objekte (Tische, Drucker, Artikel, Kassen, Benut
     - Datum und Uhrzeit der Rechnung
     - Tischnummer
     - Besteller (Name des Benutzers, der die Bestellung aufgenommen hat)
+    - Kassierer (Name des Benutzers, der die Rechnung kassiert hat — an der Bedienungskasse nicht zwingend der Besteller; Task #159)
     - Kasse (Name der Kasse, über die die Bezahlung abgewickelt wurde)
     - Artikelname
     - Menge

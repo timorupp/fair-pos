@@ -47,6 +47,7 @@ const EXPORT_SOURCE_COLUMNS = `
            dc.z_number            AS closing_z_number,
            t.name                 AS table_name,
            COALESCE(oi.user_name, oi.cancelled_by_name) AS ordering_user_name,
+           i.cashier_name,
            r.name                 AS register_name,
            oi.article_name,
            oi.article_category_name,
@@ -71,6 +72,7 @@ interface ExportSourceQueryRow {
   closing_z_number: number | null;
   table_name: string | null;
   ordering_user_name: string | null;
+  cashier_name: string | null;
   register_name: string;
   article_name: string;
   article_category_name: string;
@@ -91,6 +93,7 @@ function toExportSourceRow(r: ExportSourceQueryRow): ExportSourceRow {
     closing_z_number: r.closing_z_number,
     table_name: r.table_name,
     ordering_user_name: r.ordering_user_name,
+    cashier_name: r.cashier_name,
     register_name: r.register_name,
     article_name: r.article_name,
     article_category_name: r.article_category_name,

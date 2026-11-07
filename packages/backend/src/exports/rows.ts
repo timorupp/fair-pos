@@ -14,6 +14,12 @@ export interface ExportSourceRow {
    * `EXPORT_SOURCE_COLUMNS` in `routes/admin/exports.ts`.
    */
   ordering_user_name: string | null;
+  /**
+   * Name of the user who charged the invoice (`invoice.cashier_name`, Task
+   * #159) — at the Bedienungskasse not necessarily the orderer. `null` for
+   * older Bedienungskasse invoices, where it was never recorded.
+   */
+  cashier_name: string | null;
   register_name: string;
   article_name: string;
   /** Artikelgruppe (Task #145, 2026-09-12). */
@@ -45,6 +51,8 @@ export interface ExportRow {
   created_at: string;
   table_name: string;
   ordering_user_name: string;
+  /** Who charged the invoice (Task #159); empty when not recorded. */
+  cashier_name: string;
   register_name: string;
   article_name: string;
   /** Artikelgruppe (Task #145). */
@@ -118,6 +126,7 @@ export function buildExportRows(items: ExportSourceRow[], receiptPrefix: string 
       created_at: toIso(item.invoice_created_at),
       table_name: item.table_name ?? '',
       ordering_user_name: item.ordering_user_name ?? '',
+      cashier_name: item.cashier_name ?? '',
       register_name: item.register_name,
       article_name: item.options ? `${item.article_name} (${item.options})` : item.article_name,
       article_category_name: item.article_category_name,

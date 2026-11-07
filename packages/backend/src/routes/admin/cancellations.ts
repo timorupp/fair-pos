@@ -165,8 +165,8 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number,
            company_name, company_street, company_postal_code, company_city,
-           company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer
-         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+           company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer, cashier_name
+         ) VALUES ($1, $2, 'cancellation', 'cash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          RETURNING id`,
         [
           register_id, receiptNumber, note ?? null, receiptToken,
@@ -175,6 +175,7 @@ export async function cancellationsAdminRoute(app: FastifyInstance): Promise<voi
           companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
           companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
           companySnapshot.logoVersionId, companySnapshot.isKleinunternehmer,
+          req.adminUser.name, // Task #159: the admin who performed the Bonstorno
         ],
       );
       const invoiceId = invoiceResult.rows[0]!.id;

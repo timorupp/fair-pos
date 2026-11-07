@@ -6820,3 +6820,70 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   Z-Bon-Zeilen "Kostenfreie Warenabgabe" und "Stornierte Bestellungen" bleiben bei Stornos vor der Abrechnung immer 0,00. `routes/admin/closings.ts` sammelt die Positionen für `computeClosingTotals()` nur über `order_item.invoice_id` der Rechnungen im Abschluss-Zeitraum; der Storno vor der Abrechnung (`POST /registers/:id/tables/:tableId/cancel`, `routes/register-session.ts`) setzt `status='cancelled'`/`'free'` aber nur mit `order_cancellation_id`, ohne Rechnung — diese Positionen erreichen die Aggregation nie. Der `order_cancellation`-Vorgang selbst wird korrekt per `daily_closing_id` dem Abschluss zugeordnet, nur die Beträge fehlen. Die Vorschau "Offen seit letztem Tagesabschluss" (`routes/admin/registers.ts`) ist nicht betroffen — sie zeigt nur Bar-/Kartenumsatz, in den Stornos ohnehin nicht einfließen. Seit der Aufteilung in drei Storno-Zeilen (Migration 0032, Commit `707a43d`) vorhanden; unentdeckt, weil die Tests `free`/`cancelled`-Positionen direkt an Rechnungen hängen — ein Zustand, den der echte Ablauf nie erzeugt.
   **Lösung:** Positionen der `order_cancellation`-Vorgänge im Abschluss-Zeitraum zusätzlich in die Aggregation geben, Integrationstest über den echten Storno-Endpunkt. Bereits gespeicherte Z-Bons bleiben unverändert (Summen werden beim Abschluss festgeschrieben).
   **Umsetzung (2026-11-07):** `computeClosingTotals()` (`closing/totals.ts`) nimmt die Positionen vor der Abrechnung als zweiten Parameter `preCheckoutItems` entgegen (nur `total_free`/`total_order_cancellations`); `closeRegister()` (`routes/admin/closings.ts`) lädt sie über `order_cancellation_id` der Vorgänge im Abschluss-Zeitraum (`invoice_id IS NULL`). Tests: 2 Unit-Tests (`totals.test.ts`), 1 Integrationstest über den echten Bestell- und Storno-Endpunkt mit beiden Stornogrund-Typen (`closings.integration.test.ts`, schlägt ohne Fix mit 0 statt 5 fehl). Unit (428 + 86) und Integration (461) grün.
+
+- [Task] **#158** Bedienungskasse: Tischnummer als Überschrift aller Tisch-Seiten — **Erledigt 2026-11-07**
+  **Klassifikation: UX, angelegt 2026-11-07 (Nutzerwunsch).** **Zeitnah
+  umsetzen**, gebündelt mit weiteren noch zu sammelnden Themen
+  (Nutzervorgabe 2026-11-07) — nicht einzeln vorziehen.
+
+  Die Überschriften der Seiten im Kontext eines Tisches transportieren
+  kaum Inhalt; die Bedienung soll immer sehen, an welchem Tisch sie
+  gerade arbeitet. Die bisherigen Wörter entfallen ersatzlos, Überschrift
+  immer `"Tisch " + Tischnummer` (z. B. "Tisch A1"):
+  - `register/[id]/tables/[tableId]/+page.svelte` — bisher "Tisch"
+  - `register/[id]/tables/[tableId]/order/+page.svelte` — bisher "Bestellen"
+  - `register/[id]/tables/[tableId]/checkout/+page.svelte` — bisher "Kassieren"
+
+  Hinweis für die Umsetzung (Stand 2026-11-07): keine der drei Seiten
+  lädt bisher den Tischnamen — muss ergänzt werden (z. B. aus dem
+  bestehenden Tisch-/Raumplan-Endpunkt oder als Feld der vorhandenen
+  Tisch-Requests).
+  **Umsetzung (2026-11-07):** neuer Endpunkt `GET /api/register-session/registers/:id/tables/:tableId` (Id + Name, nur Tische der aktiven Veranstaltung, 404 sonst); Frontend-Helfer `$lib/table-heading.ts` (`formatTableHeading`/`loadTableHeading`, fällt bei Fehler auf "Tisch" zurück); alle drei Seiten zeigen "Tisch <Name>". Tests: `table-heading.test.ts` (2), `register-session.integration.test.ts` (+2).
+
+- [Task] **#159** Excel-Export: Spalte "Kassierer" direkt nach "Besteller" — **Erledigt 2026-11-07**
+  **Klassifikation: Feature, angelegt 2026-11-07 (Nutzerwunsch).**
+
+  An der Bedienungskasse können Besteller (wer die Bestellung aufgenommen
+  hat) und Kassierer (wer abgerechnet hat) verschiedene Personen sein. Der
+  Excel-Export (`exports/workbook.ts`, `COLUMNS`) zeigt bisher nur
+  "Besteller" (`order_item.user_name`, bei Bonstorno Fallback auf
+  `cancelled_by_name`, `routes/admin/exports.ts`). Neue Spalte
+  "Kassierer" direkt dahinter.
+
+  **Befund bei der Aufnahme (2026-11-07):** der Kassierer wird bisher
+  **nirgends gespeichert** — `invoice` hat keine Benutzer-Spalte, beide
+  Checkout-Pfade in `routes/register-session.ts` (Bonkasse und
+  Bedienungskasse) schreiben ihn nicht. Benötigt daher:
+  - Migration: `invoice.cashier_name TEXT` (Text-Snapshot wie
+    `order_item.user_name`, Task #97 — Benutzer sind löschbar). Altbestand
+    bleibt `NULL` (nicht rekonstruierbar); ggf. für Bonkasse-Rechnungen aus
+    `order_item.user_name` befüllen, da dort Besteller = Kassierer.
+  - Beide Checkout-Pfade setzen `cashier_name = req.registerUser.name`;
+    Admin-Bonstorno (`routes/admin/cancellations.ts`) setzt den Namen des
+    Admins.
+  - Export-Query und `ExportRow` um die Spalte erweitern.
+
+  **Verwandt, vor der Umsetzung entscheiden:** der DSFinV-K-Export
+  (`exports/dsfinvk/load.ts`) setzt `BEDIENER_NAME` eines Belegs ebenfalls
+  auf den Besteller der ersten Position, nicht auf den Kassierer. Mit
+  `invoice.cashier_name` ließe sich das korrigieren — vorher in der
+  DSFinV-K-Spezifikation (bzst.de) prüfen, wer als Bediener eines
+  Kassenbelegs gemeint ist.
+  **Umsetzung (2026-11-07):** Migration `0039_invoice_cashier_name.sql` (`invoice.cashier_name TEXT`, Rückbefüllung für Bonkasse-Rechnungen aus `order_item.user_name` und für Bonstornos aus `cancelled_by_name`; Bedienungskassen-Altbestand bleibt `NULL`). Beide Checkout-Pfade (`routes/register-session.ts`) setzen `req.registerUser.name`, der Admin-Bonstorno (`routes/admin/cancellations.ts`) `req.adminUser.name`. Excel-Export: Spalte "Kassierer" nach "Besteller" (`exports/workbook.ts`, `exports/rows.ts`, `routes/admin/exports.ts`). Doku: `docs/Anforderungen.md`, `docs/Datenmodell.dbml`. Die verwandte DSFinV-K-Frage wurde geprüft und als D-086 behoben. Tests: `rows.test.ts` (+1), `workbook.test.ts` (Spalten), `exports.excel.integration.test.ts` (+1, Spaltenindizes verschoben), `register-session.integration.test.ts` (+2), `cancellations.integration.test.ts` (Admin als Kassierer).
+
+- [Finding] **D-085** (hoch, Backend / Druck; **zeitnah umsetzen**, Nutzervorgabe 2026-11-07 — zusammen mit den anderen gesammelten Themen, vgl. #158) — **Erledigt 2026-11-07** — Gefunden 2026-11-07 — Kontext: manueller Test des Nutzers mit einer Trainingskasse
+  Nur Kassenbeleg (`receipt/blocks.ts`, "T R A I N I N G" oben und unten) und Z-Bon (`closing/blocks.ts`, "TRAININGSKASSE") tragen bei einer Trainingskasse (`register.is_training`, Task #130) eine Training-Markierung. Alle drei Bon-Arten aus `print/order-slip.ts` drucken ohne Markierung, ihre Builder kennen den Trainings-Status gar nicht (kein Feld im `context`):
+  - `buildOrderSlipBlocks()` — Bestellbon Küche/Theke der Bedienungskasse (`routes/register-session.ts`, Bestell-Endpunkt) — **vom Nutzer live beobachtet**.
+  - `buildPickupSlipBlocks()` — Selbstabholer-/Wertbon der Bonkasse (`routes/register-session.ts`, Checkout).
+  - `buildDepositSlipBlocks()` — separater Pfandbon der Bonkasse (ebenda).
+  Besonders kritisch beim Wertbon/Pfandbon: ein im Training gedruckter, unmarkierter Bon sieht aus wie ein echter und könnte an der Ausgabe gegen Ware bzw. Pfand eingelöst werden.
+  **Lösung (Vorschlag):** `isTraining` in den `context` aller drei Builder aufnehmen und — analog zum Kassenbeleg — "T R A I N I N G" groß oben und unten drucken; an den Aufrufstellen den `is_training`-Status der Kasse durchreichen. Unit-Tests je Builder, Integrationstest für Bestell- und Checkout-Pfad einer Trainingskasse (Druckauftrag enthält die Markierung).
+  **Umsetzung (2026-11-07):** `print/order-slip.ts`: neues Pflichtfeld `isTraining` im `context` aller drei Builder, Helfer `trainingMarker()` druckt "T R A I N I N G" oben (nach dem Logo) und unten. `routes/register-session.ts` reicht den Trainings-Status durch (Checkout: aus `receiptType`, Bestellung: `receiptTypeForRegister()`). Tests: `order-slip.test.ts` (+4), `register-session.integration.test.ts` (+3, Druckaufträge von Bonkasse und Bedienungskasse einer Trainingskasse bzw. normalen Kasse).
+
+- [Finding] **D-086** (mittel, Backend / DSFinV-K-Export) — **Erledigt 2026-11-07** — Gefunden 2026-11-07 — Kontext: Prüfung im Rahmen von Task #159 (Nutzerauftrag)
+  `BEDIENER_NAME` eines Belegs (`transactions.csv`) war der Besteller der ersten Position (`exports/dsfinvk/load.ts`), bei einem Bonstorno leer (dessen Positionen haben keinen Besteller). Geprüft gegen das Original der DSFinV-K 2.4 von bzst.de (`dsfinv_k_v_2_4.zip`, `20231215_DSFinV_K_2_4.pdf`): S. 86/87, Datei Bonkopf — `BEDIENER_ID` "Unternehmensinterne Kennung der Person, die den Vorgang erfasst", `BEDIENER_NAME` "Unternehmensinterner Name der Person, die den Vorgang erfasst". Bestellung und Bezahlung sind getrennte Vorgänge (S. 44/45 `AVBestellung`: bei einer Zahlung ist der Vorgangstyp "Beleg" zu verwenden; Tz. 2.7.1/2.7.2, S. 13: Zusammenhang über `ABRECHNUNGSKREIS`, nicht über den Bediener). Bediener des Belegs ist damit der Kassierer. Bonpos (`lines.csv`) hat kein Bediener-Feld. Unverändert korrekt: `AVBestellung` (Besteller), `AVSonstige` (wer storniert hat).
+  **Umsetzung (2026-11-07):** `operatorUserName` eines Belegs = `invoice.cashier_name` (Task #159), Fallback auf den bisherigen Wert nur für Altbestand ohne Kassierer. Integrationstest `exports.dsfinvk.integration.test.ts` (Bedienungskasse: Besteller ≠ Kassierer; Bonstorno: Admin), schlägt ohne Fix fehl.
+  **Hinweis:** Auf bzst.de ist inzwischen die DSFinV-K 3.0 (Stand Oktober 2026) veröffentlicht — gilt für Aufzeichnungen nach dem 31.12.2028, anwendbar ab dem 31.12.2027. Nur 2.4 geprüft; bei Umstellung auf 3.0 erneut prüfen.
+
+- [Task] **#160** Kassen-Buttons "Kassieren" und "Kunde wünscht keinen Beleg" wirkten deaktiviert — **Erledigt 2026-11-07**
+  **Klassifikation: UX, Nutzerfeedback 2026-11-07.** Die bewusste Abstufung der Button-Gewichtung wurde von Anwendern als "deaktiviert" wahrgenommen. "Kassieren" auf der Tischseite (`register/[id]/tables/[tableId]/+page.svelte`, bisher `action-btn` ohne Variante) und "Kunde wünscht keinen Beleg" im Belegdialog (`lib/components/ReceiptConfirmation.svelte`, bisher `btn-ghost`) nutzen jetzt denselben blauen Primär-Stil wie "Bestellen" bzw. "Rechnung drucken".

@@ -115,10 +115,11 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     created_at: Date; payment_method: 'cash' | 'card';
     tse_transaction_number: string | null; tse_signature_counter: string | null; tse_signature: string | null;
     tse_start_time: Date | null; tse_end_time: Date | null; tse_serial_number: string | null;
+    cashier_name: string | null;
   }>(
     `SELECT id, receipt_number::text, receipt_type, created_at, payment_method,
             tse_transaction_number::text, tse_signature_counter::text, tse_signature,
-            tse_start_time, tse_end_time, tse_serial_number
+            tse_start_time, tse_end_time, tse_serial_number, cashier_name
        FROM invoice
       WHERE daily_closing_id = $1`,
     [closingId],
@@ -164,7 +165,12 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
       // name is a text snapshot) — left null rather than reusing the name as
       // a fake id, so BEDIENER_ID honestly reflects that no such id exists.
       operatorUserId: null,
-      operatorUserName: context?.user_name ?? null,
+      // BEDIENER_NAME is "die Person, die den Vorgang erfasst" (DSFinV-K 2.4,
+      // Bonkopf) — for a Beleg that is whoever charged it, not whoever took
+      // the order (the order is its own AVBestellung Vorgang with its own
+      // Bediener). Falls back to the first item's orderer only for older
+      // invoices without a recorded cashier (Task #159 / D-086).
+      operatorUserName: inv.cashier_name ?? context?.user_name ?? null,
       paymentMethod: inv.payment_method,
       tse: toTseSignature(inv),
       items: (invoiceItemsById.get(inv.id) ?? []).map(toLineItem),

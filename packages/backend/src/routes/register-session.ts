@@ -371,9 +371,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
              tse_transaction_number, tse_start_time, tse_end_time,
              tse_signature, tse_signature_counter, tse_serial_number,
              company_name, company_street, company_postal_code, company_city,
-             company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer
+             company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer, cashier_name
            )
-           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
            RETURNING id`,
           [
             registerId, receiptNumber, receiptType, receiptToken,
@@ -382,6 +382,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
             companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
             companySnapshot.logoVersionId, companySnapshot.isKleinunternehmer,
+            req.registerUser.name, // Task #159: who charged, may differ from the orderer
           ],
         );
         const invoiceId = invoiceResult.rows[0]!.id;
@@ -446,7 +447,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // succeeds — `slip_printer_missing` surfaces the state so the UI can
       // warn without losing the sale.
       const now = new Date();
-      const slipCtx = { registerName, serverName: req.registerUser.name, createdAt: now };
+      const slipCtx = {
+        registerName, serverName: req.registerUser.name, createdAt: now,
+        isTraining: receiptType === 'training', // D-085: training marker on every slip
+      };
       // Logos are looked up once per checkout; pickup and deposit slips have
       // independent flags, so we resolve both up-front (both `null` is fine).
       const pickupLogo  = await loadLogoFor('pickup_slip');
@@ -595,6 +599,23 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         has_open_items: Number(t.open_count) > 0,
       })),
     });
+  });
+
+  /**
+   * GET /registers/:id/tables/:tableId — the table's id and name, for the
+   * "Tisch <Name>" heading on every table page (Task #158).
+   */
+  app.get<{ Params: { id: string; tableId: string } }>('/registers/:id/tables/:tableId', async (req, reply) => {
+    const { id: registerId, tableId } = req.params;
+    if (!(await userHasRegister(req.registerUser.id, registerId))) {
+      return reply.status(403).send({ error: 'Keine Berechtigung für diese Kasse' });
+    }
+    const result = await query<{ id: string; name: string }>(
+      `SELECT id, name FROM dining_table WHERE id = $1 AND event_id = $2`,
+      [tableId, config.activeEventId],
+    );
+    if (!result.rows[0]) return reply.status(404).send({ error: 'Tisch nicht gefunden' });
+    return reply.send(result.rows[0]);
   });
 
   /** GET /articles/:id/options — list of product options for the given article. */
@@ -834,11 +855,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const buckets = bucketItemsByPrinter(slipItems, defaultPrinterId);
     const now = new Date();
     const orderLogo = await loadLogoFor('order_slip');
+    // D-085: order slips of a training register carry the training marker too.
+    const isTraining = (await receiptTypeForRegister(registerId)) === 'training';
     let enqueued = 0, skipped = 0;
     for (const bucket of buckets) {
       if (!bucket.printer_id) { skipped += bucket.lines.length; continue; }
       const blocks = buildOrderSlipBlocks(bucket, {
-        tableName, serverName: req.registerUser.name, createdAt: now,
+        tableName, serverName: req.registerUser.name, createdAt: now, isTraining,
       }, orderLogo);
       await enqueuePrintJob(bucket.printer_id, 'order_slip', renderBlocksToEscPos(blocks), blocks);
       enqueued += 1;
@@ -965,9 +988,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number,
            company_name, company_street, company_postal_code, company_city,
-           company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer
+           company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer, cashier_name
          )
-         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          RETURNING id`,
         [
           registerId, receiptNumber, receiptType, receiptToken,
@@ -976,6 +999,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
           companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
           companySnapshot.logoVersionId, companySnapshot.isKleinunternehmer,
+          req.registerUser.name, // Task #159: who charged the table, may differ from the orderer
         ],
       );
       const invoiceId = inv.rows[0]!.id;

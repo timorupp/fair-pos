@@ -827,6 +827,10 @@ export const api = {
     cancellationReasons: (): Promise<{ id: string; name: string; booking_type: 'cancellation' | 'free_of_charge' }[]> =>
       request('GET', '/register-session/cancellation-reasons'),
 
+    /** A table's id and name — for the "Tisch <Name>" page heading (Task #158). */
+    table: (registerId: string, tableId: string): Promise<{ id: string; name: string }> =>
+      request('GET', `/register-session/registers/${registerId}/tables/${tableId}`),
+
     /** Open items at a table, already grouped by (article+options). */
     openItems: (registerId: string, tableId: string): Promise<{
       groups: {

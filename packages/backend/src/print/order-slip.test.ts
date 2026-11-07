@@ -86,7 +86,7 @@ describe('bucketItemsByPrinter', () => {
 });
 
 describe('buildOrderSlipEscPos', () => {
-  const ctx = { tableName: 'A5', serverName: 'Anna', createdAt: new Date(2026, 5, 24, 18, 30, 0) };
+  const ctx = { tableName: 'A5', serverName: 'Anna', createdAt: new Date(2026, 5, 24, 18, 30, 0), isTraining: false };
 
   it('starts with ESC @ initialise and ends with GS V 0 cut', () => {
     const buf = buildOrderSlipEscPos(
@@ -146,7 +146,7 @@ describe('buildOrderSlipEscPos', () => {
 });
 
 describe('buildPickupSlipEscPos (Bonkasse self-pickup slip)', () => {
-  const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z') };
+  const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z'), isTraining: false };
 
   it('emits a "W E R T B O N" header and the article line with price', () => {
     const buf = buildPickupSlipEscPos({ name: 'Bier', priceEuros: 4, depositEuros: null }, ctx);
@@ -207,7 +207,7 @@ describe('buildPickupSlipEscPos (Bonkasse self-pickup slip)', () => {
 });
 
 describe('buildDepositSlipEscPos (Bonkasse separate Pfandbon)', () => {
-  const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z') };
+  const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z'), isTraining: false };
 
   it('uses "1x Pfand" as the item line and shows the deposit amount', () => {
     const buf = buildDepositSlipEscPos({ depositEuros: 2 }, ctx);
@@ -222,5 +222,43 @@ describe('buildDepositSlipEscPos (Bonkasse separate Pfandbon)', () => {
     expect(buf.includes('ckgabe')).toBe(true);
     expect(buf.includes('2.00 ')).toBe(true); // absolute amount, no leading minus
     expect(buf.includes('-2.00')).toBe(false);
+  });
+});
+
+describe('training marker on every slip type (D-085)', () => {
+  const MARKER = 'T R A I N I N G';
+  const createdAt = new Date('2026-06-25T17:00:00Z');
+  const bucket = { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 1 }] };
+
+  /** Returns the indices of every training-marker block, to check it sits at top and bottom. */
+  const markerIndices = (blocks: ReturnType<typeof buildOrderSlipBlocks>): number[] =>
+    blocks.flatMap((b, i) => (b.kind === 'text' && b.text === MARKER ? [i] : []));
+
+  it('prints the marker first and last on an order slip of a training register', () => {
+    const blocks = buildOrderSlipBlocks(bucket, { tableName: 'A1', serverName: 'Anna', createdAt, isTraining: true });
+    expect(markerIndices(blocks)).toEqual([0, blocks.length - 1]);
+  });
+
+  it('prints the marker first and last on a pickup slip of a training register', () => {
+    const blocks = buildPickupSlipBlocks(
+      { name: 'Bier', priceEuros: 4, depositEuros: null },
+      { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt, isTraining: true },
+    );
+    expect(markerIndices(blocks)).toEqual([0, blocks.length - 1]);
+  });
+
+  it('prints the marker first and last on a deposit slip of a training register', () => {
+    const blocks = buildDepositSlipBlocks(
+      { depositEuros: 2 },
+      { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt, isTraining: true },
+    );
+    expect(markerIndices(blocks)).toEqual([0, blocks.length - 1]);
+  });
+
+  it('prints no marker for a regular register', () => {
+    const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt, isTraining: false };
+    expect(markerIndices(buildOrderSlipBlocks(bucket, { tableName: 'A1', serverName: 'Anna', createdAt, isTraining: false }))).toEqual([]);
+    expect(markerIndices(buildPickupSlipBlocks({ name: 'Bier', priceEuros: 4, depositEuros: null }, ctx))).toEqual([]);
+    expect(markerIndices(buildDepositSlipBlocks({ depositEuros: 2 }, ctx))).toEqual([]);
   });
 });
