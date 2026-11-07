@@ -6887,3 +6887,33 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
 
 - [Task] **#160** Kassen-Buttons "Kassieren" und "Kunde wünscht keinen Beleg" wirkten deaktiviert — **Erledigt 2026-11-07**
   **Klassifikation: UX, Nutzerfeedback 2026-11-07.** Die bewusste Abstufung der Button-Gewichtung wurde von Anwendern als "deaktiviert" wahrgenommen. "Kassieren" auf der Tischseite (`register/[id]/tables/[tableId]/+page.svelte`, bisher `action-btn` ohne Variante) und "Kunde wünscht keinen Beleg" im Belegdialog (`lib/components/ReceiptConfirmation.svelte`, bisher `btn-ghost`) nutzen jetzt denselben blauen Primär-Stil wie "Bestellen" bzw. "Rechnung drucken".
+
+- [Task] **#161** Bestellbons pro Artikel als Einzelbon ("pro Teller") statt Sammelbon — **Erledigt 2026-11-07**
+  **Klassifikation: Feature, Konzept gemeinsam erarbeitet 2026-11-07 (Nutzerwunsch).**
+
+  Problem: In der Küche werden Speisen ggf. einzeln fertig; der heutige
+  Sammelbon je Bestellung × Drucker × Artikelgruppe (`print/order-slip.ts`,
+  `bucketItemsByPrinter()`) passt für die Theke, nicht für die Küche.
+
+  **Entscheidungen (Nutzervorgaben 2026-11-07):**
+  - Granularität: **Checkbox je Artikel** "Bestellbons nicht zusammenfassen
+    (Einzelbon)" — neue Spalte `article.order_slip_per_unit` (Migration).
+    Wirkt nur an der Bedienungskasse (Bestellbons); die Bonkasse druckt ihre
+    Selbstabholerbons ohnehin pro Einheit.
+  - **Entweder-oder:** jede bestellte Einheit landet auf genau einem Bon —
+    kein zusätzlicher Sammelbon zu Einzelbons (Gefahr doppelter Auslieferung).
+    In einer Artikelgruppe können Sammelbon (übrige Artikel) und Einzelbons
+    nebeneinander entstehen.
+  - **Zählung "Bon x von y"** über alle Bons einer Bestellung am selben
+    Drucker (Einzel- und Sammelbons, über alle Artikelgruppen), damit die
+    Küche sieht, ob für den Tisch alles da ist.
+  - **Inhalt** des Einzelbons wie Sammelbon (Tisch, Artikelgruppe,
+    "1x Artikel" mit Optionen, Zeit / Bedienung, Logo laut
+    `logo_on_order_slip`, Trainings-Markierung D-085). Ein Druckauftrag je
+    Bon (Vorbild: Selbstabholerbons der Bonkasse).
+  - **Artikelliste** (Admin): nach "Aktiv" drei neue Spalten — "ohne Bon"
+    (Tooltip "Selbstabholerbon nicht drucken", Wert von `skip_pickup_slip`),
+    "BB einzeln" (Tooltip "Bestellbons nicht zusammenfassen (Einzelbon)",
+    neue Checkbox), "Drucker" (Name des am Artikel hinterlegten Druckers;
+    leer/"—", wenn keiner hinterlegt ist und der Standarddrucker gilt).
+  **Umsetzung (2026-11-07):** Migration `0040_article_order_slip_per_unit.sql`. `print/order-slip.ts`: `OrderSlipItem.per_unit`, `bucketItemsByPrinter()` legt für jede solche Einheit einen eigenen Bucket an und nummeriert alle Buckets je Drucker (`slip_number`/`slip_count`); `buildOrderSlipBlocks()` druckt "Bon x von y" unter der Artikelgruppe (auch "Bon 1 von 1" bei nur einem Bon). Bestell-Endpunkt (`routes/register-session.ts`) liest das Flag. Artikelverwaltung: Feld in POST/PUT (`routes/admin/articles.ts`), Liste liefert zusätzlich `printer_name` (nur am Artikel hinterlegter Drucker); Frontend `admin/articles/+page.svelte` mit Checkbox und den drei neuen Spalten. Doku: `docs/Anforderungen.md`, `docs/Manueller-Testplan.md`, `docs/Datenmodell.dbml`, `docs/Dictionary.md`. Tests: `order-slip.test.ts` (+2), `admin-routes.integration.test.ts` (+1), `register-session.integration.test.ts` (+1). Unit (435 + 88) und Integration (472) grün.

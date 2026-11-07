@@ -131,6 +131,7 @@ Table article {
   is_active              boolean       [not null, default: true]
   created_at             timestamptz   [not null, default: `now()`]
   skip_pickup_slip       boolean       [not null, default: false, note: 'Task #114 — "Selbstabholerbon nicht drucken"; only affects the Bonkasse, no effect on the Bedienungskasse (different print path)']
+  order_slip_per_unit    boolean       [not null, default: false, note: 'Task #161 — "Bestellbons nicht zusammenfassen (Einzelbon)"; one Bedienungskasse order slip per ordered unit instead of the Sammelbon; no effect on the Bonkasse']
 }
 
 // A selectable option for an article (e.g. "with ketchup").

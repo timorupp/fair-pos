@@ -703,6 +703,10 @@ Obwohl die Datenhaltung positionsweise erfolgt, werden Bestellbons aggregiert ge
 
 Beispiel: 3× `BestellungPosition{Artikel: Bier, Optionen: []}` → eine Zeile „3× Bier" auf dem Bestellbon.
 
+**Einzelbon statt Sammelbon (Task #161):** Für Artikel mit der Option „Bestellbons nicht zusammenfassen (Einzelbon)" (z. B. Speisen, die in der Küche einzeln fertig werden) erhält jede bestellte Einheit einen eigenen Bestellbon („1× Schnitzel"), gleicher Inhalt wie der Sammelbon. Entweder-oder: eine Einheit steht immer auf genau einem Bon, nie zusätzlich auf einem Sammelbon (sonst Gefahr doppelter Auslieferung). Übrige Artikel derselben Artikelgruppe kommen weiterhin auf den Sammelbon.
+
+**Zählung (Task #161):** Jeder Bestellbon trägt „Bon x von y" — gezählt über alle Bons einer Bestellung am selben Drucker (Einzel- und Sammelbons, über alle Artikelgruppen), damit die Station erkennt, ob für den Tisch alles angekommen ist.
+
 An der Bonkasse werden keine Bestellbons gedruckt — die Bestellung ist sofort abgeschlossen und der Kassierbon wird direkt ausgegeben.
 
 ---

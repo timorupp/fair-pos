@@ -571,6 +571,41 @@ describe('Bedienungskasse: order + checkout flow', () => {
     expect(row.rows[0]!.user_name).toBe(orderer.rows[0]!.name);
   });
 
+  it('prints one Einzelbon per unit of a per-unit article, numbered with the other slips of that printer (Task #161)', async () => {
+    const app = await getTestApp();
+    const kitchen = await createTestPrinter({ name: 'Küche' });
+    const schnitzel = await createTestArticle({ name: 'Schnitzel', price: 12, printerId: kitchen.id, orderSlipPerUnit: true });
+    const salat = await createTestArticle({ name: 'Salat', price: 6, printerId: kitchen.id });
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [
+        { article_id: schnitzel.id, quantity: 2 },
+        { article_id: salat.id, quantity: 2 },
+        { article_id: articleId, quantity: 1 },
+      ] },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const jobs = await pool.query<{ printer_id: string; blocks: { kind: string; text?: string }[] }>(
+      `SELECT printer_id, blocks FROM print_job WHERE type = 'order_slip' ORDER BY created_at, id`,
+    );
+    const texts = (b: { kind: string; text?: string }[]) => b.filter((x) => x.kind === 'text').map((x) => x.text!);
+    const kitchenSlips = jobs.rows.filter((j) => j.printer_id === kitchen.id).map((j) => texts(j.blocks));
+    // 2 Einzelbons (Schnitzel) + 1 Sammelbon (2x Salat) on the kitchen printer — every unit on exactly one slip.
+    expect(kitchenSlips).toHaveLength(3);
+    expect(kitchenSlips.filter((t) => t.includes('1x Schnitzel'))).toHaveLength(2);
+    expect(kitchenSlips.filter((t) => t.includes('2x Salat'))).toHaveLength(1);
+    expect(kitchenSlips.flatMap((t) => t.filter((x) => x.startsWith('Bon ')))).toEqual(
+      expect.arrayContaining(['Bon 1 von 3', 'Bon 2 von 3', 'Bon 3 von 3']),
+    );
+    // The bar article on its own printer is counted separately.
+    const barSlips = jobs.rows.filter((j) => j.printer_id === printerId).map((j) => texts(j.blocks));
+    expect(barSlips).toHaveLength(1);
+    expect(barSlips[0]).toContain('Bon 1 von 1');
+  });
+
   it('places an order and creates one open order_item per unit', async () => {
     const app = await getTestApp();
     const response = await app.inject({

@@ -115,6 +115,46 @@ describe('Admin articles', () => {
     expect(body[0].tax_category).toBe('reduced');
   });
 
+  it('stores the "Einzelbon" flag on create/update and lists it with the article\'s own printer name (Task #161)', async () => {
+    const app = await getTestApp();
+    const cat = await createTestCategory();
+    const printer = await createTestPrinter({ name: 'Küche' });
+    const created = await app.inject({
+      method: 'POST', url: '/api/admin/articles',
+      headers: { cookie: adminCookie },
+      payload: { name: 'Schnitzel', category_id: cat.id, price: 12, order_slip_per_unit: true, printer_id: printer.id },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().order_slip_per_unit).toBe(true);
+    await createTestArticle({ name: 'Bier', categoryId: cat.id });
+
+    const list = await app.inject({ method: 'GET', url: '/api/admin/articles', headers: { cookie: adminCookie } });
+    const byName = new Map((list.json() as { name: string; order_slip_per_unit: boolean; printer_name: string | null }[])
+      .map((a) => [a.name, a]));
+    expect(byName.get('Schnitzel')).toMatchObject({ order_slip_per_unit: true, printer_name: 'Küche' });
+    // No printer on the article itself → null (the default printer applies), shown as "—".
+    expect(byName.get('Bier')).toMatchObject({ order_slip_per_unit: false, printer_name: null });
+
+    const updated = await app.inject({
+      method: 'PUT', url: `/api/admin/articles/${created.json().id}`,
+      headers: { cookie: adminCookie },
+      payload: { order_slip_per_unit: false, printer_id: printer.id },
+    });
+    expect(updated.json().order_slip_per_unit).toBe(false);
+    // Omitting the field on a later update leaves it unchanged.
+    await app.inject({
+      method: 'PUT', url: `/api/admin/articles/${created.json().id}`,
+      headers: { cookie: adminCookie },
+      payload: { order_slip_per_unit: true, printer_id: printer.id },
+    });
+    const untouched = await app.inject({
+      method: 'PUT', url: `/api/admin/articles/${created.json().id}`,
+      headers: { cookie: adminCookie },
+      payload: { name: 'Wiener Schnitzel', printer_id: printer.id },
+    });
+    expect(untouched.json().order_slip_per_unit).toBe(true);
+  });
+
   it('scopes articles to the active event (Task #95): GET only shows the active event\'s articles', async () => {
     const otherEvent = await pool.query<{ id: string }>(
       `INSERT INTO event (name, start_time, end_time) VALUES ('Anderes Fest', now(), now() + interval '1 day') RETURNING id`,

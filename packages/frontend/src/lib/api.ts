@@ -253,12 +253,14 @@ export const api = {
     },
 
     articles: {
-      list: (): Promise<(Article & { category_name: string; tax_category: TaxCategory })[]> =>
+      /** Articles of the active event; `printer_name` is the article's own printer, `null` when the default applies (Task #161). */
+      list: (): Promise<(Article & { category_name: string; tax_category: TaxCategory; printer_name: string | null })[]> =>
         request('GET', '/admin/articles'),
       create: (data: {
         name: string; category_id: string; price: number;
         deposit_price?: number | null; print_deposit_receipt?: boolean;
         printer_id?: string | null; is_active?: boolean; skip_pickup_slip?: boolean;
+        order_slip_per_unit?: boolean;
       }): Promise<Article> => request('POST', '/admin/articles', data),
       update: (id: string, data: Partial<Article>): Promise<Article> =>
         request('PUT', `/admin/articles/${id}`, data),

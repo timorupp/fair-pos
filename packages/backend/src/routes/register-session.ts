@@ -761,10 +761,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const articleIds = [...new Set(positions.map((p) => p.article_id))];
     const articlesResult = await query<{
       id: string; name: string; price: string;
-      deposit_price: string | null; printer_id: string | null;
+      deposit_price: string | null; printer_id: string | null; order_slip_per_unit: boolean;
       category_name: string; tax_category: TaxCategory;
     }>(
-      `SELECT a.id, a.name, a.price, a.deposit_price, a.printer_id,
+      `SELECT a.id, a.name, a.price, a.deposit_price, a.printer_id, a.order_slip_per_unit,
               c.name AS category_name, c.tax_category
          FROM article a
          JOIN article_category c ON c.id = a.category_id
@@ -845,6 +845,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             options,
             printer_id: article.printer_id,
             category_name: article.category_name,
+            per_unit: article.order_slip_per_unit, // Task #161: Einzelbon
           });
         }
       }

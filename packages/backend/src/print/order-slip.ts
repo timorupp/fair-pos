@@ -2,8 +2,10 @@
  * Builds print jobs for kitchen / bar order slips (Bestellbons) and the
  * self-pickup variants emitted by the Bonkasse.
  *
- * One slip is emitted per printer. Within a slip, identical positions
- * (same article + same options) are merged into one line with a quantity.
+ * One slip is emitted per printer × Artikelgruppe. Within a slip, identical
+ * positions (same article + same options) are merged into one line with a
+ * quantity — except for articles flagged "Bestellbons nicht zusammenfassen"
+ * (Task #161), which get one slip per ordered unit instead.
  *
  * Byte-level rendering goes through the shared block model (Task #105, see
  * `print/blocks.ts`) — callers build blocks here and render them via
@@ -25,15 +27,25 @@ export interface OrderSlipItem {
   printer_id: string | null;
   /** Article-category (Artikelgruppe) name. Used to split slips per category. */
   category_name: string;
+  /**
+   * `article.order_slip_per_unit` (Task #161) — this unit gets its own slip
+   * ("Einzelbon", e.g. one per plate in the kitchen) instead of being merged
+   * into the Sammelbon of its printer × category.
+   */
+  per_unit: boolean;
 }
 
-/** Result of grouping: one entry per (printer, category) combination. */
+/** Result of grouping: one entry per slip — a (printer, category) Sammelbon or one Einzelbon. */
 export interface OrderSlipBucket {
   printer_id: string | null;
   /** Article-category for this bucket; printed as a sub-header on the slip. */
   category_name: string;
   /** Aggregated lines, sorted by display order (article+options first appearance). */
   lines: { name: string; options: string | null; quantity: number }[];
+  /** 1-based position of this slip among all slips of the order on the same printer (Task #161). */
+  slip_number: number;
+  /** Total number of slips of the order on the same printer — printed as "Bon x von y" (Task #161). */
+  slip_count: number;
 }
 
 /**
@@ -49,29 +61,51 @@ export interface OrderSlipBucket {
  * caller can decide (typically: warn the operator that nothing was printed).
  *
  * Within each bucket, identical `(name, options)` rows merge into one line
- * with a `quantity`.
+ * with a `quantity`. Items flagged `per_unit` (Task #161) never merge: each
+ * gets its own bucket (Einzelbon), so every unit is on exactly one slip —
+ * never on a Sammelbon and an Einzelbon at once.
+ *
+ * Finally every bucket is numbered among all buckets of the same printer
+ * (`slip_number`/`slip_count`), so the station can tell whether all slips
+ * of an order have arrived.
  *
  * @param items - The flat list of one-unit-per-row order items.
  * @param defaultPrinterId - System-default printer id, or `null` when none configured.
- * @returns One bucket per distinct `(printer, category)`; lines aggregated.
+ * @returns One bucket per distinct `(printer, category)` plus one per
+ *   `per_unit` item, in first-appearance order, numbered per printer.
  */
 export function bucketItemsByPrinter(items: OrderSlipItem[], defaultPrinterId: string | null): OrderSlipBucket[] {
-  const buckets = new Map<string, OrderSlipBucket>();
+  const buckets: OrderSlipBucket[] = [];
+  const sammelbonByKey = new Map<string, OrderSlipBucket>();
   for (const item of items) {
     const printerId = item.printer_id ?? defaultPrinterId;
+    const line = { name: item.name, options: item.options, quantity: 1 };
+    if (item.per_unit) {
+      buckets.push({ printer_id: printerId, category_name: item.category_name, lines: [line], slip_number: 0, slip_count: 0 });
+      continue;
+    }
     // Use a delimiter that can't appear in either field; the printer id is a
     // UUID and the category is a free-text DB column without ``.
     const key = `${printerId ?? ''}${item.category_name}`;
-    let bucket = buckets.get(key);
+    let bucket = sammelbonByKey.get(key);
     if (!bucket) {
-      bucket = { printer_id: printerId, category_name: item.category_name, lines: [] };
-      buckets.set(key, bucket);
+      bucket = { printer_id: printerId, category_name: item.category_name, lines: [], slip_number: 0, slip_count: 0 };
+      sammelbonByKey.set(key, bucket);
+      buckets.push(bucket);
     }
     const existing = bucket.lines.find((l) => l.name === item.name && (l.options ?? '') === (item.options ?? ''));
     if (existing) existing.quantity += 1;
-    else bucket.lines.push({ name: item.name, options: item.options, quantity: 1 });
+    else bucket.lines.push(line);
   }
-  return [...buckets.values()];
+
+  const countByPrinter = new Map<string | null, number>();
+  for (const bucket of buckets) {
+    const n = (countByPrinter.get(bucket.printer_id) ?? 0) + 1;
+    countByPrinter.set(bucket.printer_id, n);
+    bucket.slip_number = n;
+  }
+  for (const bucket of buckets) bucket.slip_count = countByPrinter.get(bucket.printer_id)!;
+  return buckets;
 }
 
 /** Pushes a centred image block for the given logo, if configured. */
@@ -122,6 +156,9 @@ export function buildOrderSlipBlocks(
   // a glance which station the order belongs to.
   blocks.push({ kind: 'text', text: `Tisch ${context.tableName}`, align: 'center', bold: true, size: 'xlarge' });
   blocks.push({ kind: 'text', text: bucket.category_name, align: 'center', bold: true, size: 'large' });
+  // Task #161: lets the station check that every slip of this order has
+  // arrived — counted over all slips of the order on this printer.
+  blocks.push({ kind: 'text', text: `Bon ${bucket.slip_number} von ${bucket.slip_count}`, align: 'center' });
   blocks.push({ kind: 'hr' });
 
   for (const line of bucket.lines) {
