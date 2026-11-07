@@ -41,6 +41,11 @@ export function localDateString(d: Date): string {
  *   least one invoice/service_order/order_cancellation row still has
  *   `daily_closing_id IS NULL` — re-opens an already-`closedDays` day.
  * @param today - Reference "now"; injected for testability. Time portion ignored.
+ * @param retiredDate - Task #151 "Kasse stilllegen": the register's last
+ *   allowed calendar day, or `null` if it isn't retired. When set, the walk
+ *   never extends past the day after it, regardless of how much later
+ *   `today` actually is — a retired register stops accumulating new pending
+ *   days once its own retirement date has passed.
  * @returns Sorted list of `YYYY-MM-DD` strings that still need a Z-Bon, oldest first.
  */
 export function pendingClosingDays(
@@ -48,12 +53,20 @@ export function pendingClosingDays(
   closedDays: Set<string>,
   daysWithUnlinkedRows: Set<string>,
   today: Date,
+  retiredDate: Date | null = null,
 ): string[] {
   if (!firstActivity) return [];
 
-  // Walk a Date through each calendar day from firstActivity up to (but excluding) today.
+  // Walk a Date through each calendar day from firstActivity up to (but excluding) today —
+  // or, for a retired register, up to (but excluding) the day after its retirement date,
+  // whichever comes first.
   const cursor = new Date(firstActivity.getFullYear(), firstActivity.getMonth(), firstActivity.getDate());
-  const stop = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  let stop = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (retiredDate) {
+    const dayAfterRetired = new Date(retiredDate.getFullYear(), retiredDate.getMonth(), retiredDate.getDate());
+    dayAfterRetired.setDate(dayAfterRetired.getDate() + 1);
+    if (dayAfterRetired.getTime() < stop.getTime()) stop = dayAfterRetired;
+  }
 
   const pending: string[] = [];
   while (cursor.getTime() < stop.getTime()) {

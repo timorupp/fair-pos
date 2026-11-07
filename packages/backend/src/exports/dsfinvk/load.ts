@@ -24,6 +24,7 @@ interface RawItemRow {
   price: string;
   deposit_price: string | null;
   deposit_tax_rate: string | null;
+  deposit_tax_category: TaxCategory | null;
 }
 
 function toLineItem(row: RawItemRow): SourceLineItem {
@@ -36,6 +37,7 @@ function toLineItem(row: RawItemRow): SourceLineItem {
     priceEuros: Number(row.price),
     depositPriceEuros: row.deposit_price === null ? null : Number(row.deposit_price),
     depositTaxRate: row.deposit_tax_rate === null ? null : Number(row.deposit_tax_rate),
+    depositTaxCategory: row.deposit_tax_category,
   };
 }
 
@@ -113,10 +115,11 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     created_at: Date; payment_method: 'cash' | 'card';
     tse_transaction_number: string | null; tse_signature_counter: string | null; tse_signature: string | null;
     tse_start_time: Date | null; tse_end_time: Date | null; tse_serial_number: string | null;
+    cashier_name: string | null;
   }>(
     `SELECT id, receipt_number::text, receipt_type, created_at, payment_method,
             tse_transaction_number::text, tse_signature_counter::text, tse_signature,
-            tse_start_time, tse_end_time, tse_serial_number
+            tse_start_time, tse_end_time, tse_serial_number, cashier_name
        FROM invoice
       WHERE daily_closing_id = $1`,
     [closingId],
@@ -124,7 +127,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
 
   const invoiceItemsResult = await query<RawItemRow & { invoice_id: string }>(
     `SELECT invoice_id, article_id, article_name, article_category_name,
-            tax_rate::text, tax_category, price::text, deposit_price::text, deposit_tax_rate::text
+            tax_rate::text, tax_category, price::text, deposit_price::text, deposit_tax_rate::text, deposit_tax_category
        FROM order_item
       WHERE invoice_id = ANY($1)`,
     [invoicesResult.rows.map((r) => r.id)],
@@ -162,7 +165,12 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
       // name is a text snapshot) — left null rather than reusing the name as
       // a fake id, so BEDIENER_ID honestly reflects that no such id exists.
       operatorUserId: null,
-      operatorUserName: context?.user_name ?? null,
+      // BEDIENER_NAME is "die Person, die den Vorgang erfasst" (DSFinV-K 2.4,
+      // Bonkopf) — for a Beleg that is whoever charged it, not whoever took
+      // the order (the order is its own AVBestellung Vorgang with its own
+      // Bediener). Falls back to the first item's orderer only for older
+      // invoices without a recorded cashier (Task #159 / D-086).
+      operatorUserName: inv.cashier_name ?? context?.user_name ?? null,
       paymentMethod: inv.payment_method,
       tse: toTseSignature(inv),
       items: (invoiceItemsById.get(inv.id) ?? []).map(toLineItem),
@@ -185,7 +193,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   );
   const orderItemsResult = await query<RawItemRow & { service_order_id: string }>(
     `SELECT service_order_id, article_id, article_name, article_category_name,
-            tax_rate::text, tax_category, price::text, deposit_price::text, deposit_tax_rate::text
+            tax_rate::text, tax_category, price::text, deposit_price::text, deposit_tax_rate::text, deposit_tax_category
        FROM order_item
       WHERE service_order_id = ANY($1)`,
     [ordersResult.rows.map((r) => r.id)],
@@ -228,7 +236,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
   );
   const cancellationItemsResult = await query<RawItemRow & { order_cancellation_id: string }>(
     `SELECT order_cancellation_id, article_id, article_name, article_category_name,
-            tax_rate::text, tax_category, price::text, deposit_price::text, deposit_tax_rate::text
+            tax_rate::text, tax_category, price::text, deposit_price::text, deposit_tax_rate::text, deposit_tax_category
        FROM order_item
       WHERE order_cancellation_id = ANY($1)`,
     [cancellationsResult.rows.map((r) => r.id)],
@@ -258,14 +266,17 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
   // Distinct VAT categories actually present in this closing (Task #110) —
-  // a deposit always counts as `standard` (Task #113) even when every sold
-  // article itself is `reduced`/`zero`, so `vat.csv` doesn't end up missing
-  // the Regelsteuersatz row whenever that happens.
+  // a deposit counts as its own frozen category (`standard` by default per
+  // Task #113, `zero` for a Kleinunternehmer sale per Task #119) even when
+  // every sold article itself is `reduced`/`zero`, so `vat.csv` doesn't end
+  // up missing that row whenever that happens.
   const allItemRows = [...invoiceItemsResult.rows, ...orderItemsResult.rows, ...cancellationItemsResult.rows];
   const usedCategories = new Set<TaxCategory>();
   for (const row of allItemRows) {
     usedCategories.add(row.tax_category);
-    if (row.deposit_price !== null && Number(row.deposit_price) !== 0) usedCategories.add('standard');
+    if (row.deposit_price !== null && Number(row.deposit_price) !== 0) {
+      usedCategories.add(row.deposit_tax_category ?? 'standard');
+    }
   }
   const taxRates = await loadTaxRates();
 
@@ -294,6 +305,7 @@ export async function loadDsfinvkSource(closingId: string): Promise<DsfinvkSourc
     registerId: closing.register_id,
     registerName: closing.register_name,
     systemSerial: settings.get('system_serial') ?? '',
+    softwareVersion: config.version,
     tseClientId: config.tseClientId,
     tseSerial,
     tseCertificate,

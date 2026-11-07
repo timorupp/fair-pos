@@ -9,6 +9,7 @@ const item = (overrides: Partial<RawOrderItem> = {}): RawOrderItem => ({
   price: 5,
   deposit_price: null,
   deposit_tax_rate: null,
+  deposit_tax_category: null,
   options: null,
   ...overrides,
 });

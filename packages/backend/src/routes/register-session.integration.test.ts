@@ -516,6 +516,96 @@ describe('Bedienungskasse: order + checkout flow', () => {
     tableId = t.rows[0]!.id;
   });
 
+  it('returns the table name for the page heading (Task #158)', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ id: tableId, name: 'A1' });
+  });
+
+  it('returns 404 for a table that does not exist (Task #158)', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/00000000-0000-0000-0000-000000000000`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('stores who charged the table separately from who ordered (Task #159)', async () => {
+    const app = await getTestApp();
+    const cashier = await createTestUser({ name: 'Kassierer Ben', isAdmin: false });
+    await assignRegisterToUser(cashier.id, serviceRegisterId);
+    const cashierCookie = await loginAsRegisterUser(app, cashier.pin);
+    await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    const openItems = await app.inject({
+      method: 'GET',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/open-items`,
+      headers: { cookie: cashierCookie },
+    });
+    const checkout = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/checkout`,
+      headers: { cookie: cashierCookie },
+      payload: { quantities: [{ group_key: openItems.json().groups[0].group_key, count: 1 }] },
+    });
+    expect(checkout.statusCode).toBe(200);
+    const row = await pool.query<{ cashier_name: string | null; user_name: string | null }>(
+      `SELECT i.cashier_name, oi.user_name
+         FROM invoice i JOIN order_item oi ON oi.invoice_id = i.id
+        WHERE i.id = $1`,
+      [checkout.json().invoice_id],
+    );
+    expect(row.rows[0]!.cashier_name).toBe('Kassierer Ben');
+    const orderer = await pool.query<{ name: string }>(`SELECT name FROM "user" WHERE id = $1`, [userId]);
+    expect(row.rows[0]!.user_name).toBe(orderer.rows[0]!.name);
+  });
+
+  it('prints one Einzelbon per unit of a per-unit article, numbered with the other slips of that printer (Task #161)', async () => {
+    const app = await getTestApp();
+    const kitchen = await createTestPrinter({ name: 'Küche' });
+    const schnitzel = await createTestArticle({ name: 'Schnitzel', price: 12, printerId: kitchen.id, orderSlipPerUnit: true });
+    const salat = await createTestArticle({ name: 'Salat', price: 6, printerId: kitchen.id });
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/register-session/registers/${serviceRegisterId}/tables/${tableId}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [
+        { article_id: schnitzel.id, quantity: 2 },
+        { article_id: salat.id, quantity: 2 },
+        { article_id: articleId, quantity: 1 },
+      ] },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const jobs = await pool.query<{ printer_id: string; blocks: { kind: string; text?: string }[] }>(
+      `SELECT printer_id, blocks FROM print_job WHERE type = 'order_slip' ORDER BY created_at, id`,
+    );
+    const texts = (b: { kind: string; text?: string }[]) => b.filter((x) => x.kind === 'text').map((x) => x.text!);
+    const kitchenSlips = jobs.rows.filter((j) => j.printer_id === kitchen.id).map((j) => texts(j.blocks));
+    // 2 Einzelbons (Schnitzel) + 1 Sammelbon (2x Salat) on the kitchen printer — every unit on exactly one slip.
+    expect(kitchenSlips).toHaveLength(3);
+    expect(kitchenSlips.filter((t) => t.includes('1x Schnitzel'))).toHaveLength(2);
+    expect(kitchenSlips.filter((t) => t.includes('2x Salat'))).toHaveLength(1);
+    expect(kitchenSlips.flatMap((t) => t.filter((x) => x.startsWith('Bon ')))).toEqual(
+      expect.arrayContaining(['Bon 1 von 3', 'Bon 2 von 3', 'Bon 3 von 3']),
+    );
+    // The bar article on its own printer is counted separately.
+    const barSlips = jobs.rows.filter((j) => j.printer_id === printerId).map((j) => texts(j.blocks));
+    expect(barSlips).toHaveLength(1);
+    expect(barSlips[0]).toContain('Bon 1 von 1');
+  });
+
   it('places an order and creates one open order_item per unit', async () => {
     const app = await getTestApp();
     const response = await app.inject({
@@ -827,6 +917,64 @@ describe('Bedienungskasse: TSE-Signierung (AVBestellung / Kassenbeleg-V1 / AVSon
 });
 
 describe('Trainingsmodus (Task #130)', () => {
+  /** Order/pickup slip print jobs whose blocks carry the training marker (D-085), and all order-slip jobs. */
+  async function orderSlipJobs(): Promise<{ total: number; marked: number }> {
+    const r = await pool.query<{ total: number; marked: number }>(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE blocks::text LIKE '%T R A I N I N G%')::int AS marked
+         FROM print_job WHERE type = 'order_slip'`,
+    );
+    return r.rows[0]!;
+  }
+
+  it('prints the training marker on the Bonkasse pickup slips of a training register (D-085)', async () => {
+    await pool.query('UPDATE register SET is_training = true WHERE id = $1', [registerId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 2 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    const jobs = await orderSlipJobs();
+    expect(jobs.total).toBe(2);
+    expect(jobs.marked).toBe(2);
+  });
+
+  it('prints the training marker on the order slip of a training Bedienungskasse (D-085 — found live 2026-11-07)', async () => {
+    await pool.query('UPDATE register SET is_training = true WHERE id = $1', [serviceRegisterId]);
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
+    const table = await pool.query<{ id: string }>(
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('T1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
+    );
+    const app = await getTestApp();
+    const order = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${serviceRegisterId}/tables/${table.rows[0]!.id}/orders`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(order.statusCode).toBe(200);
+    const jobs = await orderSlipJobs();
+    expect(jobs.total).toBe(1);
+    expect(jobs.marked).toBe(1);
+  });
+
+  it('prints no training marker on the slips of a regular register (D-085)', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    const jobs = await orderSlipJobs();
+    expect(jobs.total).toBe(1);
+    expect(jobs.marked).toBe(0);
+  });
+
   it('Bonkasse checkout on a training register sets receipt_type=training', async () => {
     await pool.query('UPDATE register SET is_training = true WHERE id = $1', [registerId]);
     const app = await getTestApp();
@@ -870,6 +1018,21 @@ describe('Trainingsmodus (Task #130)', () => {
     expect(processData).toMatch(/^AVTraining\^/);
 
     delete process.env['TSE_STUB_LOG_FILE'];
+  });
+
+  it('Bonkasse checkout stores the operator as cashier (Task #159)', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(200);
+    const inv = await pool.query<{ cashier_name: string | null }>(
+      'SELECT cashier_name FROM invoice WHERE id = $1', [response.json().invoice_id],
+    );
+    const user = await pool.query<{ name: string }>(`SELECT name FROM "user" WHERE id = $1`, [userId]);
+    expect(inv.rows[0]!.cashier_name).toBe(user.rows[0]!.name);
   });
 
   it('Bonkasse checkout on a normal register still sets receipt_type=sales_receipt', async () => {
@@ -942,6 +1105,62 @@ describe('Register-Sperre durch ausstehende Tagesabschlüsse', () => {
     expect(response.statusCode).toBe(409);
     expect(response.json().locked).toBe(true);
     expect(response.json().pending_days).toContain(dateStr);
+  });
+});
+
+describe('Stillgelegte Kassen (Task #151)', () => {
+  it('excludes a retired register from GET /me', async () => {
+    await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [registerId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/register-session/me',
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const ids = response.json().registers.map((r: { id: string }) => r.id);
+    expect(ids).not.toContain(registerId);
+    expect(ids).toContain(serviceRegisterId);
+  });
+
+  it('returns 404 for GET /registers/:id on a retired register even though the user is still assigned', async () => {
+    await pool.query(`UPDATE register SET retired_date = '2026-06-20' WHERE id = $1`, [registerId]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/register-session/registers/${registerId}`,
+      headers: { cookie: userCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('hard-locks Bonkasse checkout with 409 once the retirement date has passed, even for an already-open session with 0 pending days', async () => {
+    // Retired yesterday, no pending days at all (no activity ever booked) —
+    // the pending-days lock alone would report unlocked; this must still
+    // block, unlike the plain is_active flag (D-151 gap fixed by this hard lock).
+    const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
+    const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+    await pool.query(`UPDATE register SET retired_date = $2 WHERE id = $1`, [registerId, dateStr]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().locked).toBe(true);
+    expect(response.json().error).toMatch(new RegExp(dateStr));
+  });
+
+  it('does not lock checkout on the retirement day itself', async () => {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    await pool.query(`UPDATE register SET retired_date = $2 WHERE id = $1`, [registerId, dateStr]);
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: `/api/register-session/registers/${registerId}/checkout`,
+      headers: { cookie: userCookie },
+      payload: { positions: [{ article_id: articleId, quantity: 1 }] },
+    });
+    expect(response.statusCode).not.toBe(409);
   });
 });
 

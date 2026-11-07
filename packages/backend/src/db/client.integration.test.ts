@@ -70,3 +70,27 @@ describe('withTransaction', () => {
     expect(result).toBe('ok');
   });
 });
+
+describe('session timezone (D-076)', () => {
+  it('pins every new connection\'s session timezone to Node\'s own resolved timezone', async () => {
+    // Runs the check on several connections pulled from the pool, not just
+    // one — the fix is a `pool.on('connect', ...)` handler, so it must hold
+    // for every physical connection the pool opens, not merely the first.
+    const nodeTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    for (let i = 0; i < 3; i++) {
+      const result = await pool.query<{ tz: string }>(`SELECT current_setting('timezone') AS tz`);
+      expect(result.rows[0]!.tz).toBe(nodeTz);
+    }
+  });
+
+  it('makes a Postgres-side ::date cast agree with Node-side local-date bucketing for the same instant', async () => {
+    // The actual D-076 scenario: a single instant, bucketed by two
+    // previously-independent clocks, must now agree.
+    const now = new Date();
+    const nodeSideDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const result = await pool.query<{ day: string }>(
+      `SELECT to_char($1::timestamptz::date, 'YYYY-MM-DD') AS day`, [now.toISOString()],
+    );
+    expect(result.rows[0]!.day).toBe(nodeSideDay);
+  });
+});

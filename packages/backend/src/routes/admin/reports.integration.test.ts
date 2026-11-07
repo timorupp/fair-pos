@@ -249,6 +249,27 @@ describe('GET /api/admin/reports/tse-outages', () => {
   });
 });
 
+describe('GET /api/admin/reports/tse-outages/pdf', () => {
+  it('returns a PDF attachment named after the export date (Task #157)', async () => {
+    await recordTseFailure('USB getrennt');
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/reports/tse-outages/pdf',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toBe('application/pdf');
+    expect(response.headers['content-disposition']).toContain('attachment; filename="tse-ausfall-log_');
+    expect(Buffer.from(response.rawPayload).subarray(0, 5).toString('ascii')).toBe('%PDF-');
+  });
+
+  it('rejects without an admin session', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'GET', url: '/api/admin/reports/tse-outages/pdf' });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
 describe('Authentication required', () => {
   it('all report endpoints reject unauthenticated requests', async () => {
     const app = await getTestApp();
@@ -257,6 +278,7 @@ describe('Authentication required', () => {
       '/api/admin/reports/cancellations',
       '/api/admin/reports/open-positions',
       '/api/admin/reports/tse-outages',
+      '/api/admin/reports/tse-outages/pdf',
     ]) {
       const r = await app.inject({ method: 'GET', url });
       expect(r.statusCode, `expected 401 for ${url}`).toBe(401);

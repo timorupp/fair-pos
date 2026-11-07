@@ -63,7 +63,28 @@ export async function findPendingDaysForRegister(
   );
   const daysWithUnlinkedRows = new Set<string>(unlinkedResult.rows.map((r) => r.day));
 
-  return pendingClosingDays(first, closedDays, daysWithUnlinkedRows, today);
+  // Task #151 "Kasse stilllegen" — a retired register never accrues pending
+  // days past its own retirement date, regardless of how much later `today` is.
+  const retiredDate = await loadRegisterRetiredDate(registerId);
+
+  return pendingClosingDays(first, closedDays, daysWithUnlinkedRows, today, retiredDate);
+}
+
+/**
+ * Loads a register's retirement date (Task #151 "Kasse stilllegen"), or
+ * `null` if it isn't retired. Shared by `findPendingDaysForRegister` above
+ * and `register-session.ts`'s hard-lock check, so both agree on the same
+ * value without duplicating the query.
+ *
+ * @param registerId - The register to inspect.
+ * @returns The register's `retired_date`, or `null`.
+ */
+export async function loadRegisterRetiredDate(registerId: string): Promise<Date | null> {
+  const result = await query<{ retired_date: Date | null }>(
+    `SELECT retired_date FROM register WHERE id = $1`,
+    [registerId],
+  );
+  return result.rows[0]?.retired_date ?? null;
 }
 
 /**

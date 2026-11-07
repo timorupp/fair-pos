@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { loadTableHeading, formatTableHeading } from '$lib/table-heading';
   import { api } from '$lib/api';
   import type { Article } from '@fairpos/shared';
   import { num } from '$lib/order';
@@ -18,6 +19,8 @@
 
   let registerId = $state('');
   let tableId = $state('');
+  /** "Tisch <Name>" (Task #158) — plain "Tisch" until the name has loaded. */
+  let heading = $state(formatTableHeading(null));
   let gridCols = $state(4);
   let gridRows = $state(4);
   let slots: Slot[] = $state([]);
@@ -79,6 +82,7 @@
     Array.from({ length: gridCols }, (_, c) => slotByCell.get(`${r}:${c}`) ?? null),
   ));
 
+  onMount(async () => { heading = await loadTableHeading(registerId, tableId); });
   onMount(load);
 
   async function load() {
@@ -326,7 +330,7 @@
 <div class="order-page">
   <header class="header">
     <button class="btn-ghost" onclick={() => goto(`/register/${registerId}/tables/${tableId}`)}>← Tisch</button>
-    <h1>Bestellen</h1>
+    <h1>{heading}</h1>
   </header>
 
   {#if loading}

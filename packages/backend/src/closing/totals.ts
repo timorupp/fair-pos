@@ -21,8 +21,10 @@ export interface ClosingItem {
   tax_category: TaxCategory;
   /** Per-unit gross price (article only, excludes deposit). Signed — see the type doc comment above. */
   price: number;
-  /** Per-unit gross deposit; null when absent. Always taxed at `standard` regardless of `tax_category` (Task #113 — Pfand unterliegt immer dem Regelsteuersatz). Signed — see the type doc comment above. */
+  /** Per-unit gross deposit; null when absent. Signed — see the type doc comment above. */
   deposit_price: number | null;
+  /** VAT category the deposit is taxed at (Task #119) — `'standard'` (Task #113) unless the sale was made under § 19 UStG, in which case `'zero'`. `null` unless `deposit_price` is set. */
+  deposit_tax_category: TaxCategory | null;
 }
 
 /** One invoice that belongs to the closing window — needed to split cash vs. card receipts. */
@@ -89,11 +91,21 @@ export interface ClosingTotals {
  *    change any other total.
  *  - `total_gross` is always equal to the sum of the three rate buckets (cent-precise).
  *  - `is_zero_closing` is true iff every total is exactly zero.
+ *  - Items cancelled or given away **before checkout** (Bedienungskasse
+ *    Storno, `order_cancellation`) have no invoice at all — they are passed
+ *    separately via `preCheckoutItems` and only feed `total_free`/
+ *    `total_order_cancellations` (D-084: they used to be missed entirely,
+ *    since only invoice-linked items were ever aggregated).
  *
  * @param invoices - Invoices in the closing window with their order items pre-joined.
+ * @param preCheckoutItems - Items of the `order_cancellation` rows in the
+ *   closing window (status `free`/`cancelled`, never linked to an invoice).
  * @returns The aggregated totals plus the `is_zero_closing` flag.
  */
-export function computeClosingTotals(invoices: ClosingInvoice[]): ClosingTotals {
+export function computeClosingTotals(
+  invoices: ClosingInvoice[],
+  preCheckoutItems: ClosingItem[] = [],
+): ClosingTotals {
   let total_gross = 0;
   let total_tax_standard = 0;
   let total_tax_reduced = 0;
@@ -128,18 +140,28 @@ export function computeClosingTotals(invoices: ClosingInvoice[]): ClosingTotals 
       // reach a closing at all (routes/admin/closings.ts only selects
       // already-invoiced rows).
       total_gross += lineGross;
-      // Article and deposit are bucketed separately — the deposit always
-      // counts toward `total_tax_standard` (Task #113), independent of
-      // the article's own category.
+      // Article and deposit are bucketed separately by their own frozen
+      // category — the deposit's is `standard` by default (Task #113),
+      // independent of the article's own category, unless the sale was made
+      // under § 19 UStG (Task #119), in which case it's `zero`.
       if (item.tax_category === 'standard') total_tax_standard += item.price;
       else if (item.tax_category === 'reduced') total_tax_reduced += item.price;
       else total_tax_zero += item.price;
-      total_tax_standard += depositGross;
+      const depositCategory = item.deposit_tax_category ?? 'standard';
+      if (depositCategory === 'standard') total_tax_standard += depositGross;
+      else if (depositCategory === 'reduced') total_tax_reduced += depositGross;
+      else total_tax_zero += depositGross;
       invoiceGross += lineGross;
     }
 
     if (inv.receipt_type === 'cancellation') total_bonstorno += invoiceGross;
     if (inv.payment_method === 'cash') total_cash += invoiceGross;
+  }
+
+  for (const item of preCheckoutItems) {
+    const lineGross = item.price + (item.deposit_price ?? 0);
+    if (item.status === 'free') total_free += lineGross;
+    else if (item.status === 'cancelled') total_order_cancellations += lineGross;
   }
 
   const round = (n: number) => Math.round(n * 100) / 100;

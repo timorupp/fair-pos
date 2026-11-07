@@ -138,6 +138,7 @@ export async function createTestArticle(overrides: {
   printDepositReceipt?: boolean;
   /** Skips the Bonkasse self-pickup slip for this article (Task #114). */
   skipPickupSlip?: boolean;
+  orderSlipPerUnit?: boolean;
   categoryId?: string;
   printerId?: string | null;
   taxCategory?: TaxCategory;
@@ -147,8 +148,8 @@ export async function createTestArticle(overrides: {
   const categoryId = overrides.categoryId ?? (await createTestCategory({ taxCategory: overrides.taxCategory ?? 'standard', eventId })).id;
   const name = overrides.name ?? `art-${Math.random().toString(36).slice(2, 8)}`;
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO article (category_id, name, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, event_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8) RETURNING id`,
+    `INSERT INTO article (category_id, name, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, event_id, order_slip_per_unit)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9) RETURNING id`,
     [
       categoryId, name, overrides.price ?? 5,
       overrides.depositPrice ?? null,
@@ -156,6 +157,7 @@ export async function createTestArticle(overrides: {
       overrides.skipPickupSlip ?? false,
       overrides.printerId ?? null,
       eventId,
+      overrides.orderSlipPerUnit ?? false,
     ],
   );
   return { id: result.rows[0]!.id, name, categoryId };

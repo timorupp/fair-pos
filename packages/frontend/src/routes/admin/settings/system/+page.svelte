@@ -189,6 +189,12 @@
         Tagesabschluss, vor Updates, oder um es auf einen externen Datenträger
         mitzunehmen).
       </p>
+      <p class="hint">
+        Wird das Backup groß, lohnt sich vorher ein Blick in die
+        <a href="/admin/settings/print-queue">Druckwarteschlange</a> — erledigte
+        und abgebrochene Druckaufträge dort zu löschen kann die Backup-Größe
+        spürbar reduzieren.
+      </p>
       <a class="btn-primary" href={api.admin.backup.downloadUrl()}>Backup herunterladen</a>
     </section>
   {/if}

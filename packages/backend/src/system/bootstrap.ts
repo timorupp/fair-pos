@@ -8,6 +8,11 @@ import { generateSystemSerial, isValidSystemSerial } from './serial.js';
  * If absent (or malformed from a manual DB edit), generates a fresh one and
  * persists it. Idempotent — safe to call on every server start.
  *
+ * The row's `updated_at` doubles as FairPOS' commissioning date
+ * ("Inbetriebnahme des eAs" in the ELSTER notification, Task #154, see
+ * `GET /api/admin/tse/eas`) — so this must stay the only place that writes
+ * the `system_serial` row, and only when it generates a new serial.
+ *
  * @returns The serial currently stored in the DB (existing or newly generated).
  */
 export async function ensureSystemSerial(): Promise<string> {

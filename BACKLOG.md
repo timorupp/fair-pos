@@ -6,6 +6,47 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
 
 ## Tasks
 
+- [Task] **#153** "Offen seit letztem Tagesabschluss" auch für Übungskassen anzeigen
+  **Klassifikation: Bug/UX-Lücke, angelegt 2026-09-21 (Nutzerwunsch).**
+
+  **Vor der Umsetzung erst bewerten, ob die Anforderung so überhaupt
+  sinnvoll ist** (Nutzervorgabe 2026-09-21) — nicht direkt umsetzen.
+  Offene Frage dabei z. B.: rechtfertigt der Testnutzen wirklich einen
+  Sonderpfad in der gemeinsamen `computeClosingTotals`-Aggregation, oder
+  gibt es einen einfacheren Weg, den Z-Bon-Ablauf über eine Übungskasse
+  testbar zu machen, ohne die Anzeige-Logik selbst anzufassen.
+
+  Root Cause per Code bestätigt: `loadOpenSinceLastClosing()`
+  (`packages/backend/src/routes/admin/registers.ts:22-58`) füttert alle
+  noch unverknüpften Rechnungen der Kasse in `computeClosingTotals()`
+  (`closing/totals.ts`). Diese Funktion überspringt
+  `receipt_type === 'training'`-Rechnungen bewusst komplett
+  (`closing/totals.ts:109`, Task #130 — korrekt für den echten Z-Bon,
+  Übungsbuchungen dürfen nie in die echten Finanz-Summen einfließen).
+  Da bei einer Übungskasse **jede** Rechnung `receipt_type = 'training'`
+  ist, liefert `loadOpenSinceLastClosing()` für sie immer `{ cash: 0,
+  card: 0 }` — die Kachel zeigt nie den tatsächlichen offenen Saldo.
+
+  **Gewünscht (Nutzerwunsch):**
+  - Die "Offen seit letztem Tagesabschluss"-Anzeige auf der
+    Kassendetailseite soll auch für Übungskassen den tatsächlichen
+    offenen Saldo zeigen.
+  - Zusätzlicher Zweck: die gesamte Funktion (Anzeige + der zugehörige
+    Z-Bon-Ablauf) soll sich **komplett über eine Übungskasse testen
+    lassen**, ohne echte Buchungen/echtes Geld zu benötigen.
+
+  **Zu beachten bei der Umsetzung:** `computeClosingTotals()` ist
+  bewusst die gemeinsame, einzige Aggregationsfunktion für den echten
+  Z-Bon UND diese Anzeige (Doc-Kommentar in `registers.ts:9-17` —
+  garantiert, dass die Kachel immer zum nächsten echten Z-Bon passt).
+  Ein einfaches Entfernen des `training`-Skips in `computeClosingTotals`
+  selbst wäre falsch — das würde Übungsbuchungen in die echten
+  Z-Bon-Summen einer gemischt genutzten Kasse einfließen lassen. Der Fix
+  muss also entweder eine separate Aggregation für den Übungsfall
+  ergänzen, oder `computeClosingTotals`/`loadOpenSinceLastClosing` um
+  einen expliziten "Übungsmodus"-Parameter erweitern, ohne die
+  bestehende Garantie (Kachel == nächster echter Z-Bon) für normale
+  Kassen zu verändern.
 
 - [Task] **#47** Vollen manuellen Regressionstest durchführen (inkl. DSFinV-K)
   **Umfasst auch Task #102** (2026-09-01 dorthin verschoben, Nutzereinordnung:
@@ -22,81 +63,15 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   `docs/TSE-CLI-Referenz.md` Abschnitt 2/3. Der eigentliche Abgleich selbst
   ist Teil dieses Tasks (#47) und steht noch aus, **nicht** bereits erledigt.
 
-- [Task] **#119** Unterstützung für Kleinunternehmerregelung (§ 19 UStG)
-  **Priorisierung (Nutzervorgabe 2026-09-06): nicht mehr für das erste
-  Release, aber bald danach angehen — kein Release-Blocker, aber zeitnahe
-  Folgearbeit.**
-
-  **Klassifikation: Feature (aktuell nicht unterstützt).** Nutzerfrage
-  2026-09-06: kann ein Verein, der der Kleinunternehmerregelung
-  unterliegt (keine USt.-Abführung), einfach `vat_rate_standard`/
-  `vat_rate_reduced` in den Einstellungen auf 0 setzen, oder braucht es
-  dafür eine eigene Funktion?
-
-  **Antwort der Analyse: reines Nullsetzen der beiden Einstellungen
-  reicht nicht.**
-
-  - Der DSFinV-K-Export ordnet den USt-Schlüssel nach `tax_category`
-    (`standard`/`reduced`/`zero`) zu, nicht nach dem tatsächlichen
-    Prozentsatz (`exports/dsfinvk/rows.ts::ustSchluessel()`). Bei
-    genullten Sätzen würden Artikel weiterhin unter Schlüssel 1/2
-    ("regelbesteuert"/"ermäßigt", nur mit 0,00 % Satz) exportiert statt
-    unter Schlüssel 5 ("nicht steuerbar" — laut
-    `docs/Rechtliche-Anforderungen.md` der fachlich korrekte Fall für
-    Kleinunternehmer). Für einen echten Kleinunternehmer-Betrieb müssten
-    alle Artikelgruppen tatsächlich auf `tax_category = 'zero'`
-    umkategorisiert werden — das ist eine Datenumstellung, keine reine
-    Einstellungsänderung.
-  - Es gibt aktuell keinen Pflicht-/Hinweistext auf dem Beleg für diesen
-    Fall (üblich: "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.").
-    FairPOS druckt unabhängig vom Satz immer die MwSt-Aufschlüsselungs-
-    zeilen.
-  - TSE-Signierung ist unabhängig vom Steuersatz und bereits unkritisch
-    (läuft immer, keine Änderung nötig).
-
-  **Ausdrücklich kein Bug, sondern Nutzervorgabe (2026-09-06):** bei der
-  Analyse fiel auf, dass `receipt/format.ts::computeTaxBreakdown()` die
-  gedruckte Aufschlüsselung nach dem **Zahlenwert** des Steuersatzes
-  bündelt, nicht nach `tax_category` (anders als `closing/totals.ts` und
-  die TSE-`processData`, die nach Kategorie bündeln) — bei zwei
-  Kategorien mit zufällig identischem Satz würden sie auf dem Bon in
-  eine Zeile mit einem Kennbuchstaben zusammenfallen, obwohl TSE/
-  DSFinV-K sie intern weiterhin getrennt (unterschiedlicher USt-
-  Schlüssel) führen. **Nutzerentscheidung dazu: das ist so gewollt** —
-  identische Sätze brauchen auf dem Bon keine unterschiedlichen
-  Kennbuchstaben. Diese Stelle also nicht "reparieren".
-
-  **Ergänzung 2026-09-06 (Nutzerhinweis) — manuelle Umkategorisierung
-  allein greift nicht, wegen Pfand:** Pfand wird an vier unabhängigen
-  Stellen fest auf die Kategorie `'standard'` verdrahtet, unabhängig vom
-  `tax_category` des zugehörigen Artikels (Task #113/D-060, jeweils ein
-  Literal im Code, keine Einstellung/Daten): `closing/totals.ts:82`
-  (`total_tax_standard += depositGross` unbedingt), `receipt/format.ts:113`
-  (`computeTaxBreakdown` bucketet Pfand fest auf `'standard'`),
-  `receipt/blocks.ts:79` (`taxCategoryLetter('standard')` für die
-  gedruckte Pfand-Zeile) und `exports/dsfinvk/rows.ts:278`
-  (`ustSchluessel('standard')` für die DSFinV-K-Pfandzeile). Ein Admin
-  könnte also jede Artikelgruppe auf `tax_category = 'zero'`
-  umkategorisieren — der Pfandanteil jeder Position bliebe trotzdem
-  überall als USt-Schlüssel 1 (Regelsteuersatz) verbucht, da dieser Wert
-  nirgends aus den Artikeldaten gelesen wird. Für Vereine mit
-  Pfandartikeln (Becher, Flaschen — der Normalfall bei Festen) ist die
-  reine Umkategorisierung damit **nicht nur mühsam, sondern unvollständig
-  und erreicht nie echte Nullsteuer**.
-
-  **Ausdrücklich noch offen — Lösungsansatz nicht vorweggenommen:**
-  - Manuelle Umkategorisierung aller Artikelgruppen auf `tax_category =
-    'zero'` — reicht wegen des oben beschriebenen Pfand-Problems allein
-    nicht aus; bräuchte zusätzlich eine Code-Änderung, die die vier
-    Pfand-`'standard'`-Stellen an einen System-Zustand koppelt.
-  - Ein dedizierter System-Schalter ("Kleinunternehmer nach § 19 UStG"),
-    der beim Aktivieren automatisch DSFinV-K-Schlüssel 5 erzwingt (auch
-    für Pfand), den Beleghinweistext ergänzt und die vier Pfand-Stellen
-    mit umschaltet — deckt beide Fälle (Artikel und Pfand) aus einer
-    Hand ab, ohne jede Artikelgruppe einzeln anfassen zu müssen.
-  - Kombination/anderer Ansatz.
-
-  Vor der Umsetzung: Nutzerentscheidung, welcher Ansatz gewünscht ist.
+  **Noch offen aus Task #154 (Finanzamt-Meldung eAs, 2026-11-06
+  umgesetzt, noch nicht live/mit echter TSE geprüft):**
+  - Dialog "Finanzamt-Meldung (eAs)" auf der TSE-Seite öffnen: alle 10
+    Felder befüllt, Kopier-Buttons funktionieren.
+  - "Art / Bauform der TSE": welchen Rohwert liefert die Swissbit-TSE?
+    Weicht er von "USB-Stick" ab, ggf. eine Übersetzung ergänzen.
+  - "BSI-Zertifizierungs-ID": Präfix "BSI-K-TR-" korrekt abgeschnitten?
+  - "Inbetriebnahme des eAs": mit dem gemeldeten Datum (21.09.2026)
+    vergleichen.
 
 - [Task] **#128** (niedrige Priorität, Nutzervorgabe 2026-09-12) Druckaufträge/Datenschutz beim Geräteverleih zwischen Vereinen
   **Klassifikation: Sicherheits-/Datenschutz-Frage (noch nicht bewertet,
@@ -238,11 +213,6 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   `settings.receipt-preview.integration.test.ts` — Test `renders identically whether no logo is stored at all, or one is stored but the flag stays off (default)` ist zeitabhängig-flaky, reproduzierbar aber mit jeweils unterschiedlicher Byte-Differenz (einmal 6329 vs. 6328, dann 6327 vs. 6326). Ursache: `receipt/demo.ts`s `buildDemoReceipt(now: Date = new Date())` nutzt beim Aufruf ohne explizites Argument den echten aktuellen Zeitpunkt; die Route ruft sie ohne Override auf, und der Test macht zwei sequentielle `fetchPreview()`-HTTP-Aufrufe, die dadurch minimal unterschiedliche Zeitstempel einbetten — vermutlich wirkt sich das über schriftgrößen-/kerning-abhängige Fließkomma-Koordinaten im PDF-Content-Stream auf die Byte-Länge aus. Kein Zusammenhang mit Task #94/#95 — nur während der Vollständigkeits-Testläufe für Phase 2.3 aufgefallen (Test lief davor offenbar nie zufällig zu einem ungünstigen Zeitpunkt).
   Der Test sollte einen festen `now`-Zeitpunkt injizieren (z. B. Route-Parameter oder Test-Override) statt sich auf `new Date()` zu verlassen — noch nicht umgesetzt, da unabhängig vom aktuellen Task.
 
-- [Finding] **D-076** (niedrig, Backend / Kassenabschluss) — Gefunden 2026-09-12 — Kontext: Während der D-075-Diskussion zum "Ausstehende Tagesabschlüsse"-Banner (Task #146) aufgefallen
-  `closing/pending-db.ts`s neue `daysWithUnlinkedRows`-Abfrage (D-075) bucketet Kalendertage über `to_char(created_at::date, 'YYYY-MM-DD')` — folgt damit der **Postgres-Session-Zeitzone**. `closing/pending.ts`s `localDateString()` (für den Tage-Walk und den `closedDays`-Vergleich) bucketet dagegen über die **Node-Prozess-Zeitzone**. Weichen beide Zeitzonen voneinander ab, könnte eine Buchung nahe Mitternacht serverseitig einem anderen Kalendertag zugeordnet werden als clientseitig erwartet — betrifft potenziell auch die schon bestehende `created_at::date = $2::date`-Filterung beim tageweisen Abschluss (`routes/admin/closings.ts`) und den `business_date`-Fallback auf Postgres' `current_date`.
-  **Niedrige Priorität (Nutzereinordnung 2026-09-12):** nur relevant, wenn die Datenbank auf einem anderen Host als die Anwendung läuft (unterschiedliche Systemzeitzonen möglich) — im dokumentierten Produktivbetrieb läuft Postgres nativ auf demselben Ubuntu-Host wie der Node-Prozess (`docs/SETUP.md`), beide erben dieselbe OS-Zeitzone, kein praktisches Risiko. Nur in der lokalen Docker-Dev-Umgebung potenziell divergent (Alpine-Postgres-Container ohne gesetztes `TZ`, vermutlich UTC, gegen die Zeitzone des Host-Rechners). Kein Handlungsbedarf jetzt — ggf. später durch ein explizites `SET timezone`/`TZ`-Env auf dem DB-Pool vereinheitlichen, falls sich das Deployment-Modell je ändert.
-
 - [Finding] **D-078** (mittel, Backend / Auth; **Priorisierung: Post-Release**, Nutzervorgabe 2026-09-15 — kein Release-Blocker) — Gefunden 2026-09-15 — Kontext: Task #33, zweite (authentifizierte) Runde des Security-Tests gegen die Produktivinstanz des Nutzers
   `POST /api/auth/admin/verify` (Admin-Step-up, Task #90) rotiert das Session-Token nicht — es wird lediglich das `admin_verified`-Flag auf derselben Session-Zeile umgeschaltet (`auth/session.ts::setAdminVerified()`), das signierte Cookie selbst bleibt vor und nach der Passworteingabe byte-identisch. Praktisches Risiko: ein bereits vor dem Step-up entwendetes Session-Cookie (z. B. via XSS, Sniffing auf ungesichertem Netz, physischer Zugriff aufs Gerät) wird automatisch admin-fähig, sobald sich der legitime Nutzer selbst verifiziert — ohne dass sich am Cookie irgendetwas ändert, das ein Angreifer neu abgreifen müsste. Kein Bug im eigentlichen Sinne (das ursprüngliche Auth-Design von Task #90 sah das so vor), aber ein reales Risiko bei Cookie-Diebstahl.
   **Empfehlung, noch nicht umgesetzt:** beim erfolgreichen Step-up ein neues Session-Token ausstellen (alte Session invalidieren, neues signiertes Cookie setzen) statt nur das Flag auf der bestehenden Session zu ändern — analog zum verbreiteten "session regeneration on privilege escalation"-Muster.
-

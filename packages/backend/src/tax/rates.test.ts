@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { percentFor, type TaxRates } from './rates.js';
 
-const rates: TaxRates = { standard: 19, reduced: 7 };
+const rates: TaxRates = { standard: 19, reduced: 7, isKleinunternehmer: false };
 
 describe('percentFor', () => {
   it('resolves standard to the configured standard rate', () => {
@@ -17,6 +17,6 @@ describe('percentFor', () => {
   });
 
   it('reflects a changed standard rate (e.g. a future Regelsteuersatz increase)', () => {
-    expect(percentFor('standard', { standard: 20, reduced: 7 })).toBe(20);
+    expect(percentFor('standard', { standard: 20, reduced: 7, isKleinunternehmer: false })).toBe(20);
   });
 });

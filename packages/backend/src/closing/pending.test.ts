@@ -95,4 +95,39 @@ describe('pendingClosingDays', () => {
       expect(pendingClosingDays(new Date(2026, 5, 23), closed, stragglers, today)).toEqual([]);
     });
   });
+
+  describe('retiredDate (Task #151 "Kasse stilllegen")', () => {
+    it('stops the walk the day after retiredDate, even though today is much later', () => {
+      // Register retired 2026-06-21, but "today" is still 2026-06-24 — must
+      // not report 2026-06-22/23 as pending, only up to (and including) the
+      // retirement day itself.
+      const retiredDate = new Date(2026, 5, 21);
+      expect(pendingClosingDays(new Date(2026, 5, 20), new Set(), noStragglers, today, retiredDate))
+        .toEqual(['2026-06-20', '2026-06-21']);
+    });
+
+    it('has no effect when retiredDate is after today anyway — today still wins', () => {
+      const retiredDate = new Date(2026, 6, 1); // 1 July, after "today" (24 June)
+      expect(pendingClosingDays(new Date(2026, 5, 20), new Set(), noStragglers, today, retiredDate))
+        .toEqual(['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23']);
+    });
+
+    it('still reports the retirement day itself as pending if it has no closing', () => {
+      const retiredDate = new Date(2026, 5, 20); // same day as first activity
+      expect(pendingClosingDays(new Date(2026, 5, 20), new Set(), noStragglers, today, retiredDate))
+        .toEqual(['2026-06-20']);
+    });
+
+    it('reports nothing once the retirement day itself is also closed', () => {
+      const retiredDate = new Date(2026, 5, 20);
+      const closed = new Set(['2026-06-20']);
+      expect(pendingClosingDays(new Date(2026, 5, 20), closed, noStragglers, today, retiredDate))
+        .toEqual([]);
+    });
+
+    it('defaults to null (unretired) when the parameter is omitted — no behaviour change for existing callers', () => {
+      expect(pendingClosingDays(new Date(2026, 5, 20), new Set(), noStragglers, today))
+        .toEqual(['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23']);
+    });
+  });
 });

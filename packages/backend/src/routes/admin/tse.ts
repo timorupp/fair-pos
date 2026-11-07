@@ -20,6 +20,7 @@ import { describeTseError, isPinAuthError } from '../../tse/signing.js';
 import { isValidClientId, isValidPin, isValidPuk } from '../../tse/validation.js';
 import { applyTseSettings } from '../../tse/settings.js';
 import { logSystemEvent } from '../../system/log.js';
+import { buildEasFields, type EasField } from '../../system/eas.js';
 
 /** Body of `POST /api/admin/tse/setup`. */
 interface TseSetupBody {
@@ -77,6 +78,14 @@ interface TseTestSignatureResponse {
   endTime: string;
 }
 
+/** Shape returned by `GET /api/admin/tse/eas` (Task #154). */
+interface TseEasResponse {
+  /** ELSTER eAs notification fields, in form order. */
+  fields: EasField[];
+  /** Why the TSE fields are empty (not configured / `info` failed); absent when the TSE answered. */
+  tseError?: string;
+}
+
 /** Shape returned by `GET /api/admin/tse/candidates`. */
 interface TseCandidatesResponse {
   candidates: TseMountCandidate[];
@@ -123,6 +132,42 @@ export async function tseAdminRoute(app: FastifyInstance): Promise<void> {
       };
       return reply.send(response);
     }
+  });
+
+  /**
+   * GET /api/admin/tse/eas — the fields for the ELSTER notification of FairPOS
+   * as an "elektronisches Aufzeichnungssystem" (§ 146a Abs. 4 AO, Task #154),
+   * as a copy-paste aid. Reads the TSE live like `/status`, so it's only called
+   * from an explicit user action. TSE fields stay empty (with `tseError`) when
+   * the TSE is unconfigured or unreachable — the rest is still useful then.
+   */
+  app.get('/eas', async (_req, reply) => {
+    const serial = await query<{ value: string; updated_at: Date }>(
+      `SELECT value, updated_at FROM system_setting WHERE key = 'system_serial'`,
+    );
+    let tse: TseInfo | null = null;
+    let tseError: string | undefined;
+    if (!config.tseMountPoint || !config.tseClientId) {
+      tseError = 'TSE ist nicht konfiguriert';
+    } else {
+      try {
+        tse = await getTseInfo();
+      } catch (e) {
+        tseError = e instanceof Error ? e.message : 'Unbekannter TSE-Fehler';
+      }
+    }
+    const response: TseEasResponse = {
+      fields: buildEasFields({
+        softwareVersion: config.version,
+        systemSerial: serial.rows[0]?.value ?? null,
+        // See system/bootstrap.ts — the serial row is only ever written when
+        // the serial is generated, so its timestamp is the commissioning date.
+        commissionedAt: serial.rows[0]?.updated_at ?? null,
+        tse,
+      }),
+      ...(tseError !== undefined ? { tseError } : {}),
+    };
+    return reply.send(response);
   });
 
   /**

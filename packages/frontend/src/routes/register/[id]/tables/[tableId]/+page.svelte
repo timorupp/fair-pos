@@ -4,10 +4,13 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { loadTableHeading, formatTableHeading } from '$lib/table-heading';
   import { api } from '$lib/api';
 
   let registerId = $state('');
   let tableId = $state('');
+  /** "Tisch <Name>" (Task #158) — plain "Tisch" until the name has loaded. */
+  let heading = $state(formatTableHeading(null));
 
   // Show a quick summary on this screen so the operator knows whether anything is open.
   let openGroups: { name: string; options: string | null; quantity: number; line_total: number }[] = $state([]);
@@ -21,6 +24,7 @@
     tableId = ($page.params['tableId'] ?? '') as string;
   });
 
+  onMount(async () => { heading = await loadTableHeading(registerId, tableId); });
   onMount(load);
 
   async function load() {
@@ -42,7 +46,7 @@
 <div class="page">
   <header class="header">
     <button class="btn-ghost" onclick={() => goto(`/register/${registerId}/floor-plan`)}>← Saalplan</button>
-    <h1>Tisch</h1>
+    <h1>{heading}</h1>
   </header>
 
   {#if error}<p class="error-text">{error}</p>{/if}
@@ -73,7 +77,7 @@
       <button class="action-btn primary" onclick={() => goto(`/register/${registerId}/tables/${tableId}/order`)}>
         Bestellen
       </button>
-      <button class="action-btn" onclick={() => goto(`/register/${registerId}/tables/${tableId}/checkout`)}
+      <button class="action-btn primary" onclick={() => goto(`/register/${registerId}/tables/${tableId}/checkout`)}
               disabled={openGroups.length === 0}>
         Kassieren
       </button>

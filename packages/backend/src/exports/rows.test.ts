@@ -8,6 +8,7 @@ const row = (overrides: Partial<ExportSourceRow> = {}): ExportSourceRow => ({
   invoice_created_at: new Date(2026, 5, 24, 12, 0, 0),
   table_name: 'A1',
   ordering_user_name: 'Anna',
+  cashier_name: 'Ben',
   register_name: 'Theke',
   article_name: 'Bier',
   options: null,
@@ -108,9 +109,16 @@ describe('buildExportRows', () => {
   });
 
   it('uses empty strings for missing table and user', () => {
-    const out = buildExportRows([row({ table_name: null, ordering_user_name: null })]);
+    const out = buildExportRows([row({ table_name: null, ordering_user_name: null, cashier_name: null })]);
     expect(out[0]!.table_name).toBe('');
     expect(out[0]!.ordering_user_name).toBe('');
+    expect(out[0]!.cashier_name).toBe('');
+  });
+
+  it('keeps orderer and cashier apart (Task #159)', () => {
+    const out = buildExportRows([row({ ordering_user_name: 'Anna', cashier_name: 'Ben' })]);
+    expect(out[0]!.ordering_user_name).toBe('Anna');
+    expect(out[0]!.cashier_name).toBe('Ben');
   });
 
   it('leaves unit_deposit null when there is no Pfand at all, instead of 0 (Task #138)', () => {

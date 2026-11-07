@@ -214,6 +214,64 @@ describe('GET /api/admin/exports/dsfinvk/:closingId', () => {
     expect(lineRows).toHaveLength(3); // header + 2 article positions
   });
 
+  it('uses the cashier, not the orderer, as BEDIENER_NAME of a Beleg (D-086 — DSFinV-K: "Person, die den Vorgang erfasst")', async () => {
+    const category = await createTestCategory({ name: 'Getränke', taxCategory: 'standard' });
+    const article = await createTestArticle({ name: 'Bier', price: 5, categoryId: category.id });
+    const register = await createTestRegister({ type: 'service_register' });
+    const closing = await pool.query<{ id: string }>(
+      `INSERT INTO daily_closing (
+         register_id, z_number, is_zero_closing, business_date,
+         total_gross, total_tax_standard, total_tax_reduced, total_tax_zero, total_cash,
+         total_bonstorno, total_free, total_order_cancellations
+       ) VALUES ($1, 1, false, '2026-08-05', 0, 0, 0, 0, 0, 0, 0, 0)
+       RETURNING id`,
+      [register.id],
+    );
+    const closingId = closing.rows[0]!.id;
+    // A Bedienungskasse sale ordered by Anna, charged by Carla …
+    const sale = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, daily_closing_id, cashier_name)
+       VALUES ($1, 42, 'sales_receipt', 'cash', $2, 'Carla') RETURNING id`,
+      [register.id, closingId],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, user_name, article_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, 'Anna', $3, 'Bier', 'Getränke', 19, 'standard', 5, 'paid')`,
+      [sale.rows[0]!.id, register.id, article.id],
+    );
+    // … and a Bonstorno by an admin, whose items carry no orderer at all.
+    const storno = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, daily_closing_id, cashier_name)
+       VALUES ($1, 43, 'cancellation', 'cash', $2, 'Admin Dora') RETURNING id`,
+      [register.id, closingId],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, cancelled_by_name, article_id, article_name, article_category_name, tax_rate, tax_category, price, status)
+       VALUES ($1, $2, 'Admin Dora', $3, 'Bier', 'Getränke', 19, 'standard', -5, 'paid')`,
+      [storno.rows[0]!.id, register.id, article.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/exports/dsfinvk/${closingId}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const directory = await unzipper.Open.buffer(response.rawPayload);
+    const transactionsFile = directory.files.find((f) => f.path === 'transactions.csv')!;
+    const [header, ...rows] = (await transactionsFile.buffer()).toString('utf-8').trim().split('\r\n');
+    const separator = header!.includes(';') ? ';' : ',';
+    const columns = header!.split(separator);
+    const bonNr = columns.indexOf('BON_NR');
+    const bediener = columns.indexOf('BEDIENER_NAME');
+    const bedienerByBonNr = new Map(rows.map((r) => {
+      const cells = r.split(separator);
+      return [cells[bonNr], cells[bediener]?.replace(/"/g, '')];
+    }));
+    expect(bedienerByBonNr.get('42')).toBe('Carla');
+    expect(bedienerByBonNr.get('43')).toBe('Admin Dora');
+  });
+
   it('assigns service_order/order_cancellation rows to the correct one of two same-day closings via daily_closing_id (Task #123)', async () => {
     // Regression test for the register+business_date approximation this
     // replaced: two closings for the same register on the same calendar day

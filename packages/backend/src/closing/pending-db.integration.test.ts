@@ -134,4 +134,13 @@ describe('findPendingDaysForRegister (integration)', () => {
     const pending = await findPendingDaysForRegister(registerId, new Date('2026-06-24T12:00:00'));
     expect(pending).toEqual([]);
   });
+
+  it('stops accruing pending days past a real retired_date column value (Task #151)', async () => {
+    await insertInvoice('2026-06-20 18:00:00');
+    await pool.query(`UPDATE register SET retired_date = '2026-06-21' WHERE id = $1`, [registerId]);
+    // "today" is much later than the retirement date — without the D-151 fix
+    // this would report every day 2026-06-20..2026-06-23 as pending.
+    const pending = await findPendingDaysForRegister(registerId, new Date('2026-06-24T12:00:00'));
+    expect(pending).toEqual(['2026-06-20', '2026-06-21']);
+  });
 });

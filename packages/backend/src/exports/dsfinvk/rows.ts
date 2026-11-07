@@ -14,6 +14,7 @@ import {
   KASSENBELEG_PROCESS_TYPE, BESTELLUNG_PROCESS_TYPE, SONSTIGER_VORGANG_PROCESS_TYPE,
 } from '../../tse/processData.js';
 import { extractLeafCertificateChunks } from './leafCertificate.js';
+import { EAS_MANUFACTURER, EAS_MODEL, EAS_SOFTWARE } from '../../system/eas.js';
 import type { TaxCategory } from '@fairpos/shared';
 
 /**
@@ -58,6 +59,8 @@ export interface SourceLineItem {
   depositPriceEuros: number | null;
   /** Percent the deposit portion was taxed at — always the Regelsteuersatz in effect at booking time (Task #113), independent of `taxCategory`. `null` unless `depositPriceEuros` is set. */
   depositTaxRate: number | null;
+  /** VAT category the deposit portion was taxed at — `'standard'` (Task #113) unless the sale was made under § 19 UStG (Task #119), in which case `'zero'`. `null` unless `depositPriceEuros` is set. */
+  depositTaxCategory: TaxCategory | null;
 }
 
 /** One fiscal Vorgang — an invoice (Kassenbeleg-V1/Beleg), a service_order (AVBestellung), or an order_cancellation (AVSonstige). */
@@ -112,8 +115,11 @@ export interface DsfinvkSource {
     lastVorgangId: string;
   };
   registerId: string;
+  /** Used for the downloadable ZIP's filename (`routes/admin/exports.ts`) — not part of any DSFinV-K row itself. */
   registerName: string;
   systemSerial: string;
+  /** FairPOS's own `[Major].[Release].[Build]` version (Task #148, `config.version`) — `KASSE_SW_VERSION`. */
+  softwareVersion: string;
   /** The TSE client ID actually passed to the hardware (config.tseClientId) — see rows.ts TERMINAL_ID rationale. */
   tseClientId: string | null;
   tseSerial: string | null;
@@ -218,11 +224,16 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
 
   const cashregister: CashregisterRow[] = [{
     ...schluessel,
-    KASSE_BRAND: 'FairPOS',
-    KASSE_MODELL: source.registerName,
+    // Same values as the ELSTER eAs notification (system/eas.ts, Task #154).
+    KASSE_BRAND: EAS_MANUFACTURER,
+    // "Modellbezeichnung" (index-xml.ts) — the product's model designation,
+    // like KASSE_BRAND/KASSE_SW_BRAND, not the operator-chosen register name
+    // (that identity already lives in Z_KASSE_ID/source.registerId above).
+    // Bug found live 2026-09-21: this used to read `source.registerName`.
+    KASSE_MODELL: EAS_MODEL,
     KASSE_SERIENNR: source.systemSerial,
-    KASSE_SW_BRAND: 'FairPOS',
-    KASSE_SW_VERSION: '',
+    KASSE_SW_BRAND: EAS_SOFTWARE,
+    KASSE_SW_VERSION: source.softwareVersion,
     KASSE_BASISWAEH_CODE: 'EUR',
     KEINE_UST_ZUORDNUNG: '0',
   }];
@@ -333,11 +344,12 @@ export function buildDsfinvkExport(source: DsfinvkSource): DsfinvkExport {
       }
 
       // Separate Pfand / PfandRueckzahlung line, if this position carries a
-      // deposit — always taxed at `standard` (Task #113: Pfand unterliegt
-      // immer dem Regelsteuersatz), independent of the article's own `key`.
+      // deposit — taxed at its own frozen category (`standard` by default,
+      // Task #113: Pfand unterliegt immer dem Regelsteuersatz; `zero` for a
+      // Kleinunternehmer sale, Task #119), independent of the article's own `key`.
       if (it.depositPriceEuros !== null && it.depositPriceEuros !== 0) {
         posZeile += 1;
-        const depositKey = ustSchluessel('standard');
+        const depositKey = ustSchluessel(it.depositTaxCategory ?? 'standard');
         const depositRate = it.depositTaxRate ?? 0;
         const depositBrutto = it.depositPriceEuros;
         const depositNetto = depositBrutto / (1 + depositRate / 100);

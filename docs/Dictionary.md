@@ -19,6 +19,7 @@ Dieses Dokument legt die verbindlichen Übersetzungen zwischen deutschen Fachbeg
 | Benutzer | user | Systembenutzer |
 | Bestellung | order | Aufgenommene Bestellung |
 | Bestellbon | order_slip | An Küche/Theke gedruckter Bon |
+| Einzelbon (Bestellbon pro Einheit) | per-unit order slip (`order_slip_per_unit`) | Ein Bestellbon je bestellter Einheit, z. B. pro Teller (Task #161) |
 | Bestellposition | order_item | Eine Einheit eines bestellten Artikels |
 | Betrag | amount | Allgemeiner Geldbetrag |
 | Bon | receipt | Gedruckter Kassenbeleg |

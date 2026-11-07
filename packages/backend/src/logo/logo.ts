@@ -27,14 +27,20 @@ export const MIN_LOGO_ZOOM_PERCENT = 1;
 export const MAX_LOGO_ZOOM_PERCENT = 500;
 
 /**
- * PDF reference width in pixels — generous headroom so the PNG keeps its
- * full aspect detail even when later rendered at full A6 width. PDFKit scales
- * the image to whatever pt-width the renderer asks for, so this value only
- * affects raster quality, not on-page size.
+ * PDF reference width in pixels for 100% zoom (logo spans the full A6
+ * printable width) — sized for 150 dpi, not print quality (Task #156,
+ * Nutzerentscheidung 2026-09-29: every archived invoice PDF re-embeds this
+ * PNG in full, so a lower-than-print DPI meaningfully shrinks archive size
+ * across a large number of invoices; 150 dpi stays crisp on screen, which is
+ * this PDF's actual use — the ESC/POS thermal printout below is the one
+ * that needs full print resolution). 261.64pt printable width (A6, 18pt
+ * margins) ÷ 72 pt/inch × 150 dpi ≈ 545px. PDFKit scales the image to
+ * whatever pt-width the renderer asks for, so this value only affects raster
+ * quality, not on-page size.
  */
-const PDF_BASE_WIDTH = 1200;
-/** Cap on the PDF logo height in pixels, regardless of zoom. */
-const PDF_MAX_HEIGHT = 1800;
+const PDF_BASE_WIDTH = 545;
+/** Cap on the PDF logo height in pixels, regardless of zoom — same 1.5x width:height ratio as before, scaled down with `PDF_BASE_WIDTH`. */
+const PDF_MAX_HEIGHT = 820;
 /**
  * ESC/POS raster width in pixels for 100% zoom — matches a standard 80 mm
  * Epson-compatible thermal printer's print head (576 dots @ 8 dots/mm = 72 mm).

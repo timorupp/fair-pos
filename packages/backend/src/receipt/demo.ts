@@ -10,10 +10,10 @@ export function buildDemoReceipt(now: Date = new Date()): ReceiptData {
     // rate (Task #113) — deliberately demonstrated here with a `reduced`
     // article carrying a `standard`-taxed deposit, so the preview visibly
     // shows both split into their correct tax-breakdown rows below.
-    { name: 'Bier 0,5l',      quantity: 3, unitPrice: 4.50, unitDeposit: 2.00,  taxRate: 7,  taxCategory: 'reduced',  depositTaxRate: 19, lineGross: 3 * 6.50 },
-    { name: 'Brezel',         quantity: 2, unitPrice: 2.50, unitDeposit: null,  taxRate: 7,  taxCategory: 'reduced',  depositTaxRate: null, lineGross: 2 * 2.50 },
-    { name: 'Bratwurst',      quantity: 1, unitPrice: 4.00, unitDeposit: null,  taxRate: 7,  taxCategory: 'reduced',  depositTaxRate: null, lineGross: 4.00 },
-    { name: 'Flasche zurück', quantity: 1, unitPrice: 0,    unitDeposit: -1.00, taxRate: 19, taxCategory: 'standard', depositTaxRate: 19, lineGross: -1.00 },
+    { name: 'Bier 0,5l',      quantity: 3, unitPrice: 4.50, unitDeposit: 2.00,  taxRate: 7,  taxCategory: 'reduced',  depositTaxRate: 19, depositTaxCategory: 'standard', lineGross: 3 * 6.50 },
+    { name: 'Brezel',         quantity: 2, unitPrice: 2.50, unitDeposit: null,  taxRate: 7,  taxCategory: 'reduced',  depositTaxRate: null, depositTaxCategory: null, lineGross: 2 * 2.50 },
+    { name: 'Bratwurst',      quantity: 1, unitPrice: 4.00, unitDeposit: null,  taxRate: 7,  taxCategory: 'reduced',  depositTaxRate: null, depositTaxCategory: null, lineGross: 4.00 },
+    { name: 'Flasche zurück', quantity: 1, unitPrice: 0,    unitDeposit: -1.00, taxRate: 19, taxCategory: 'standard', depositTaxRate: 19, depositTaxCategory: 'standard', lineGross: -1.00 },
   ];
   return {
     companyName: 'Musterverein e.V.',
@@ -27,6 +27,7 @@ export function buildDemoReceipt(now: Date = new Date()): ReceiptData {
     paymentMethod: 'cash',
     isCancellation: false,
     isTraining: false,
+    isKleinunternehmer: false,
     tableName: null,
     firstOrderTime: null,
     logoPng: null,

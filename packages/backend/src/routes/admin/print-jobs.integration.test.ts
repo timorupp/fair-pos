@@ -358,3 +358,45 @@ describe('POST /api/admin/print-jobs/cancel-all (Task #107)', () => {
     expect(response.statusCode).toBe(401);
   });
 });
+
+describe('POST /api/admin/print-jobs/delete-inactive', () => {
+  it('permanently deletes done and cancelled jobs, leaving pending/printing/failed untouched', async () => {
+    const done = await insertJob('done');
+    const cancelled = await insertJob('cancelled');
+    const pending = await insertJob('pending');
+    const printing = await insertJob('printing');
+    const failed = await insertJob('failed');
+    const app = await getTestApp();
+
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/print-jobs/delete-inactive',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().deleted).toBe(2);
+
+    const rows = await pool.query<{ id: string }>(`SELECT id FROM print_job`);
+    const remainingIds = rows.rows.map((r) => r.id);
+    expect(remainingIds).not.toContain(done);
+    expect(remainingIds).not.toContain(cancelled);
+    expect(remainingIds).toContain(pending);
+    expect(remainingIds).toContain(printing);
+    expect(remainingIds).toContain(failed);
+  });
+
+  it('returns deleted: 0 when there is nothing done or cancelled', async () => {
+    await insertJob('pending');
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'POST', url: '/api/admin/print-jobs/delete-inactive',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.json().deleted).toBe(0);
+  });
+
+  it('rejects unauthenticated requests with 401', async () => {
+    const app = await getTestApp();
+    const response = await app.inject({ method: 'POST', url: '/api/admin/print-jobs/delete-inactive' });
+    expect(response.statusCode).toBe(401);
+  });
+});

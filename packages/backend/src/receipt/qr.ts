@@ -50,6 +50,7 @@ export async function buildQrPayload(data: ReceiptData): Promise<string> {
       unitPriceEuros: p.unitPrice,
       depositPriceEuros: p.unitDeposit,
       taxCategory: p.taxCategory,
+      depositTaxCategory: p.depositTaxCategory,
     })),
   }).toString('utf-8');
 

@@ -20,6 +20,7 @@ const item = (overrides: Partial<OrderSlipItem> = {}): OrderSlipItem => ({
   options: null,
   printer_id: 'p-bar',
   category_name: 'Getränke',
+  per_unit: false,
   ...overrides,
 });
 
@@ -75,6 +76,33 @@ describe('bucketItemsByPrinter', () => {
     expect(lines.find((l) => l.options === 'mit Mayo')!.quantity).toBe(1);
   });
 
+  it('gives every unit of a per-unit article its own slip, never merged (Task #161)', () => {
+    const buckets = bucketItemsByPrinter([
+      item({ name: 'Schnitzel', printer_id: 'p-kitchen', category_name: 'Speisen', per_unit: true }),
+      item({ name: 'Schnitzel', printer_id: 'p-kitchen', category_name: 'Speisen', per_unit: true }),
+      item({ name: 'Salat',     printer_id: 'p-kitchen', category_name: 'Speisen' }),
+      item({ name: 'Salat',     printer_id: 'p-kitchen', category_name: 'Speisen' }),
+    ], 'p-default');
+    expect(buckets.map((b) => b.lines.map((l) => `${l.quantity}x ${l.name}`))).toEqual([
+      ['1x Schnitzel'], ['1x Schnitzel'], ['2x Salat'],
+    ]);
+    // Every ordered unit lands on exactly one slip — no Sammelbon duplicate.
+    expect(buckets.flatMap((b) => b.lines).reduce((n, l) => n + l.quantity, 0)).toBe(4);
+  });
+
+  it('numbers the slips per printer across all categories, Einzel- and Sammelbons alike (Task #161)', () => {
+    const buckets = bucketItemsByPrinter([
+      item({ name: 'Schnitzel', printer_id: 'p-kitchen', category_name: 'Speisen', per_unit: true }),
+      item({ name: 'Bier' }),
+      item({ name: 'Pommes',    printer_id: 'p-kitchen', category_name: 'Snacks' }),
+      item({ name: 'Schnitzel', printer_id: 'p-kitchen', category_name: 'Speisen', per_unit: true }),
+    ], 'p-default');
+    const kitchen = buckets.filter((b) => b.printer_id === 'p-kitchen');
+    expect(kitchen.map((b) => [b.slip_number, b.slip_count])).toEqual([[1, 3], [2, 3], [3, 3]]);
+    const bar = buckets.find((b) => b.printer_id === 'p-bar')!;
+    expect([bar.slip_number, bar.slip_count]).toEqual([1, 1]);
+  });
+
   it('preserves first-occurrence order across lines', () => {
     const buckets = bucketItemsByPrinter([
       item({ name: 'Pommes' }),
@@ -86,11 +114,11 @@ describe('bucketItemsByPrinter', () => {
 });
 
 describe('buildOrderSlipEscPos', () => {
-  const ctx = { tableName: 'A5', serverName: 'Anna', createdAt: new Date(2026, 5, 24, 18, 30, 0) };
+  const ctx = { tableName: 'A5', serverName: 'Anna', createdAt: new Date(2026, 5, 24, 18, 30, 0), isTraining: false };
 
   it('starts with ESC @ initialise and ends with GS V 0 cut', () => {
     const buf = buildOrderSlipEscPos(
-      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 2 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 2 }], slip_number: 1, slip_count: 1 },
       ctx,
     );
     expect(buf[0]).toBe(0x1b); expect(buf[1]).toBe(0x40);
@@ -100,17 +128,18 @@ describe('buildOrderSlipEscPos', () => {
 
   it('contains table name, server name and timestamp', () => {
     const ascii = buildOrderSlipEscPos(
-      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 1 }], slip_number: 1, slip_count: 1 },
       ctx,
     ).toString('ascii');
     expect(ascii).toContain('Tisch A5');
+    expect(ascii).toContain('Bon 1 von 1'); // Task #161
     expect(ascii).toContain('Anna');
     expect(ascii).toContain('24.06.2026 18:30:00');
   });
 
   it('renders quantity x name lines for each entry', () => {
     const ascii = buildOrderSlipEscPos(
-      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 3 }, { name: 'Pommes', options: null, quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 3 }, { name: 'Pommes', options: null, quantity: 1 }], slip_number: 1, slip_count: 1 },
       ctx,
     ).toString('ascii');
     expect(ascii).toContain('3x Bier');
@@ -119,7 +148,7 @@ describe('buildOrderSlipEscPos', () => {
 
   it('renders option lines indented under their parent', () => {
     const ascii = buildOrderSlipEscPos(
-      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Pommes', options: 'mit Ketchup', quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Pommes', options: 'mit Ketchup', quantity: 1 }], slip_number: 1, slip_count: 1 },
       ctx,
     ).toString('ascii');
     expect(ascii).toContain('1x Pommes');
@@ -128,7 +157,7 @@ describe('buildOrderSlipEscPos', () => {
 
   it('encodes umlauts as CP858 bytes (not as ASCII transliteration)', () => {
     const buf = buildOrderSlipEscPos(
-      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Käsesemmel', options: 'mit Soße', quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Käsesemmel', options: 'mit Soße', quantity: 1 }], slip_number: 1, slip_count: 1 },
       ctx,
     );
     // CP858: ä=0x84, ö=0x94, ü=0x81, ß=0xe1
@@ -138,7 +167,7 @@ describe('buildOrderSlipEscPos', () => {
 
   it('selects CP858 as code page at the start of the stream', () => {
     const buf = buildOrderSlipEscPos(
-      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'X', options: null, quantity: 1 }] },
+      { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'X', options: null, quantity: 1 }], slip_number: 1, slip_count: 1 },
       ctx,
     );
     expect(buf.subarray(0, 5).equals(Buffer.from([0x1b, 0x40, 0x1b, 0x74, 0x13]))).toBe(true);
@@ -146,7 +175,7 @@ describe('buildOrderSlipEscPos', () => {
 });
 
 describe('buildPickupSlipEscPos (Bonkasse self-pickup slip)', () => {
-  const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z') };
+  const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z'), isTraining: false };
 
   it('emits a "W E R T B O N" header and the article line with price', () => {
     const buf = buildPickupSlipEscPos({ name: 'Bier', priceEuros: 4, depositEuros: null }, ctx);
@@ -207,7 +236,7 @@ describe('buildPickupSlipEscPos (Bonkasse self-pickup slip)', () => {
 });
 
 describe('buildDepositSlipEscPos (Bonkasse separate Pfandbon)', () => {
-  const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z') };
+  const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt: new Date('2026-06-25T17:00:00Z'), isTraining: false };
 
   it('uses "1x Pfand" as the item line and shows the deposit amount', () => {
     const buf = buildDepositSlipEscPos({ depositEuros: 2 }, ctx);
@@ -222,5 +251,43 @@ describe('buildDepositSlipEscPos (Bonkasse separate Pfandbon)', () => {
     expect(buf.includes('ckgabe')).toBe(true);
     expect(buf.includes('2.00 ')).toBe(true); // absolute amount, no leading minus
     expect(buf.includes('-2.00')).toBe(false);
+  });
+});
+
+describe('training marker on every slip type (D-085)', () => {
+  const MARKER = 'T R A I N I N G';
+  const createdAt = new Date('2026-06-25T17:00:00Z');
+  const bucket = { printer_id: 'p', category_name: 'Getränke', lines: [{ name: 'Bier', options: null, quantity: 1 }], slip_number: 1, slip_count: 1 };
+
+  /** Returns the indices of every training-marker block, to check it sits at top and bottom. */
+  const markerIndices = (blocks: ReturnType<typeof buildOrderSlipBlocks>): number[] =>
+    blocks.flatMap((b, i) => (b.kind === 'text' && b.text === MARKER ? [i] : []));
+
+  it('prints the marker first and last on an order slip of a training register', () => {
+    const blocks = buildOrderSlipBlocks(bucket, { tableName: 'A1', serverName: 'Anna', createdAt, isTraining: true });
+    expect(markerIndices(blocks)).toEqual([0, blocks.length - 1]);
+  });
+
+  it('prints the marker first and last on a pickup slip of a training register', () => {
+    const blocks = buildPickupSlipBlocks(
+      { name: 'Bier', priceEuros: 4, depositEuros: null },
+      { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt, isTraining: true },
+    );
+    expect(markerIndices(blocks)).toEqual([0, blocks.length - 1]);
+  });
+
+  it('prints the marker first and last on a deposit slip of a training register', () => {
+    const blocks = buildDepositSlipBlocks(
+      { depositEuros: 2 },
+      { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt, isTraining: true },
+    );
+    expect(markerIndices(blocks)).toEqual([0, blocks.length - 1]);
+  });
+
+  it('prints no marker for a regular register', () => {
+    const ctx = { registerName: 'Bonkasse 1', serverName: 'Tom', createdAt, isTraining: false };
+    expect(markerIndices(buildOrderSlipBlocks(bucket, { tableName: 'A1', serverName: 'Anna', createdAt, isTraining: false }))).toEqual([]);
+    expect(markerIndices(buildPickupSlipBlocks({ name: 'Bier', priceEuros: 4, depositEuros: null }, ctx))).toEqual([]);
+    expect(markerIndices(buildDepositSlipBlocks({ depositEuros: 2 }, ctx))).toEqual([]);
   });
 });

@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import type { Event } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
+  import { toLocalDateTimeInput } from '$lib/datetime';
 
   let events: Event[] = $state([]);
   let loading = $state(true);
@@ -51,10 +52,6 @@
     }
   }
 
-  function toLocalInput(iso: string) {
-    return new Date(iso).toISOString().slice(0, 16);
-  }
-
   function openCreate() {
     editing = null; formName = ''; formStart = ''; formEnd = ''; formError = '';
     modalOpen = true;
@@ -62,7 +59,7 @@
 
   function openEdit(ev: Event) {
     editing = ev; formName = ev.name;
-    formStart = toLocalInput(ev.start_time); formEnd = toLocalInput(ev.end_time);
+    formStart = toLocalDateTimeInput(ev.start_time); formEnd = toLocalDateTimeInput(ev.end_time);
     formError = '';
     modalOpen = true;
   }

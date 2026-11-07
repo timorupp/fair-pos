@@ -67,6 +67,13 @@ export interface Register {
    * `routes/admin/registers.ts`.
    */
   is_training: boolean;
+  /**
+   * Task #151 "Kasse stilllegen": last calendar day (`YYYY-MM-DD`) this
+   * register may still be used/closed, or `null` if it isn't retired. Once
+   * past, no further booking is required or accepted — see
+   * `routes/admin/registers.ts`/`routes/register-session.ts`.
+   */
+  retired_date: string | null;
   created_at: string;
 }
 
@@ -88,6 +95,8 @@ export interface Article {
   print_deposit_receipt: boolean;
   /** Skips the Bonkasse self-pickup slip for this article entirely (Task #114) — e.g. for direct-takeaway items or Pfandrückgabe, where nothing needs to be "picked up". No effect on the Bedienungskasse, which never prints this slip type. */
   skip_pickup_slip: boolean;
+  /** Prints one Bedienungskasse order slip per ordered unit ("Einzelbon", e.g. one per plate) instead of merging it into the Sammelbon of its printer × category (Task #161). No effect on the Bonkasse, whose pickup slips are per unit anyway. */
+  order_slip_per_unit: boolean;
   printer_id: string | null;
   is_active: boolean;
   created_at: string;

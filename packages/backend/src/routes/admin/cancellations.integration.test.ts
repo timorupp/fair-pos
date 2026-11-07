@@ -43,7 +43,7 @@ beforeEach(async () => {
   config.tseClientId = null;
   delete process.env['TSE_STUB_STDOUT'];
   delete process.env['TSE_STUB_EXIT_CODE'];
-  const admin = await createTestUser({ isAdmin: true, password: 'pw' });
+  const admin = await createTestUser({ name: 'Admin Anna', isAdmin: true, password: 'pw' });
   adminCookie = await loginAsAdmin(await getTestApp(), admin.pin, admin.password);
 
   const printer = await createTestPrinter();
@@ -87,11 +87,12 @@ describe('POST /api/admin/cancellations', () => {
     const body = response.json();
     expect(body.receipt_number).toBe(1);
 
-    const inv = await pool.query<{ receipt_type: string; cancellation_note: string | null }>(
-      `SELECT receipt_type, cancellation_note FROM invoice WHERE id = $1`, [body.invoice_id],
+    const inv = await pool.query<{ receipt_type: string; cancellation_note: string | null; cashier_name: string | null }>(
+      `SELECT receipt_type, cancellation_note, cashier_name FROM invoice WHERE id = $1`, [body.invoice_id],
     );
     expect(inv.rows[0]!.receipt_type).toBe('cancellation');
     expect(inv.rows[0]!.cancellation_note).toBe('Original Beleg 23');
+    expect(inv.rows[0]!.cashier_name).toBe('Admin Anna'); // Task #159
 
     const items = await pool.query(
       `SELECT id FROM order_item WHERE invoice_id = $1`, [body.invoice_id],
@@ -173,13 +174,15 @@ describe('POST /api/admin/cancellations', () => {
     const allItems = await pool.query<{
       invoice_id: string; status: ClosingItem['status'];
       tax_category: ClosingItem['tax_category']; price: string; deposit_price: string | null;
-    }>(`SELECT invoice_id, status, tax_category, price::text, deposit_price::text
+      deposit_tax_category: ClosingItem['deposit_tax_category'];
+    }>(`SELECT invoice_id, status, tax_category, price::text, deposit_price::text, deposit_tax_category
           FROM order_item WHERE register_id = $1`, [registerId]);
     const itemsByInvoice = new Map<string, ClosingItem[]>();
     for (const r of allItems.rows) {
       const list = itemsByInvoice.get(r.invoice_id) ?? [];
       list.push({ status: r.status, tax_category: r.tax_category, price: Number(r.price),
-                  deposit_price: r.deposit_price ? Number(r.deposit_price) : null });
+                  deposit_price: r.deposit_price ? Number(r.deposit_price) : null,
+                  deposit_tax_category: r.deposit_tax_category });
       itemsByInvoice.set(r.invoice_id, list);
     }
     const totals = computeClosingTotals(invs.rows.map((i) => ({ ...i, items: itemsByInvoice.get(i.id) ?? [] })));

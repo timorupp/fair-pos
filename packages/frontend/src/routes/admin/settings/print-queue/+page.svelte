@@ -24,6 +24,7 @@
   let statusFilter: '' | 'all' | 'pending' | 'printing' | 'failed' | 'done' | 'cancelled' = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let cancellingAll = $state(false);
+  let deletingInactive = $state(false);
 
   onMount(() => {
     load();
@@ -61,6 +62,26 @@
       alert(e instanceof Error ? e.message : 'Fehler');
     } finally {
       cancellingAll = false;
+    }
+  }
+
+  /**
+   * Permanently deletes every job with status `done` or `cancelled` — used
+   * to shrink the print-job table (and future DB backups) once old jobs
+   * are no longer needed. Warns that this cannot be undone before sending
+   * the request.
+   */
+  async function deleteInactive() {
+    if (!confirm('Alle erledigten und abgebrochenen Druckaufträge endgültig löschen? Dies kann nicht rückgängig gemacht werden.')) return;
+    deletingInactive = true;
+    try {
+      const result = await api.admin.printJobs.deleteInactive();
+      await load();
+      alert(`${result.deleted} Druckauftrag(e) gelöscht.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Fehler');
+    } finally {
+      deletingInactive = false;
     }
   }
 
@@ -191,6 +212,9 @@
     <div class="header-actions">
       <button class="btn-ghost danger" onclick={cancelAll} disabled={cancellingAll}>
         {cancellingAll ? 'Bricht ab…' : 'Alle abbrechen'}
+      </button>
+      <button class="btn-ghost danger" onclick={deleteInactive} disabled={deletingInactive}>
+        {deletingInactive ? 'Löscht…' : 'Abgeschlossene löschen'}
       </button>
       <button class="btn-ghost" onclick={load} disabled={loading}>{loading ? 'Lade…' : 'Aktualisieren'}</button>
     </div>

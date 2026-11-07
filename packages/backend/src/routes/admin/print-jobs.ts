@@ -87,6 +87,23 @@ export async function printJobsAdminRoute(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * POST /api/admin/print-jobs/delete-inactive — permanently deletes every
+   * job whose status is `done` or `cancelled` (not `failed` — those stay so
+   * the operator can still see/retry them). Unlike `/cancel-all` and the
+   * single-job `DELETE /:id` above, this hard-deletes the rows instead of
+   * just flipping their status, since the whole point is shrinking the
+   * `print_job` table (and with it, future `pg_dump` backups — the DB
+   * backup accumulates every historic receipt/order-slip print job
+   * indefinitely otherwise).
+   *
+   * @returns The number of rows deleted.
+   */
+  app.post('/delete-inactive', async (_req, reply) => {
+    const result = await query(`DELETE FROM print_job WHERE status IN ('done', 'cancelled')`);
+    return reply.send({ deleted: result.rowCount ?? 0 });
+  });
+
+  /**
    * DELETE /api/admin/print-jobs/:id — cancels a queued or terminally-failed
    * job by setting its status to `cancelled` (Task #79). Refuses a job
    * currently being printed. Previously deleted the row outright — now kept

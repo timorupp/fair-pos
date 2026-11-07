@@ -43,6 +43,24 @@
     };
   }
 
+  /**
+   * Toggles § 19 UStG (Kleinunternehmerregelung, Task #119). Enabling it also
+   * zeroes both VAT rates locally so the form doesn't briefly show a stale
+   * nonzero rate next to the two now-disabled fields (the backend enforces
+   * the same zeroing server-side regardless, see `routes/admin/settings.ts`).
+   *
+   * @param e - The checkbox's change event.
+   */
+  function toggleKleinunternehmer(e: Event) {
+    const enabled = (e.target as HTMLInputElement).checked;
+    settings['kleinunternehmer_enabled'] = enabled ? 'true' : 'false';
+    if (enabled) {
+      settings['vat_rate_standard'] = '0';
+      settings['vat_rate_reduced'] = '0';
+    }
+    success = false;
+  }
+
   /** Whether the receipt-preview modal is currently visible. */
   let previewOpen = $state(false);
 
@@ -317,18 +335,28 @@
           Gelten für Artikelgruppen mit Steuersatz "Regelsteuersatz"/"Ermäßigt" sowie für Pfand
           (immer Regelsteuersatz, unabhängig vom Steuersatz des Artikels).
         </p>
+        <label class="checkbox-row">
+          <input type="checkbox" checked={settings['kleinunternehmer_enabled'] === 'true'}
+                 onchange={toggleKleinunternehmer} disabled={saving} />
+          Kleinunternehmer nach § 19 UStG (keine Umsatzsteuer)
+        </label>
+        <p class="hint">
+          Setzt beide Sätze auf 0 % und sperrt sie. Der Status wird pro Beleg zum
+          Verkaufszeitpunkt festgeschrieben — eine spätere Änderung hier wirkt sich nur auf
+          künftige, nicht auf bereits ausgestellte Belege aus.
+        </p>
         <div class="field-row">
           <div class="field field-short">
             <label for="s-vat-standard">Regelsteuersatz (%)</label>
             <input id="s-vat-standard" inputmode="decimal" value={settings['vat_rate_standard'] ?? ''}
                    oninput={(e) => { settings['vat_rate_standard'] = e.currentTarget.value; success = false; }}
-                   disabled={saving} placeholder="z. B. 19" />
+                   disabled={saving || settings['kleinunternehmer_enabled'] === 'true'} placeholder="z. B. 19" />
           </div>
           <div class="field field-short">
             <label for="s-vat-reduced">Ermäßigter Steuersatz (%)</label>
             <input id="s-vat-reduced" inputmode="decimal" value={settings['vat_rate_reduced'] ?? ''}
                    oninput={(e) => { settings['vat_rate_reduced'] = e.currentTarget.value; success = false; }}
-                   disabled={saving} placeholder="z. B. 7" />
+                   disabled={saving || settings['kleinunternehmer_enabled'] === 'true'} placeholder="z. B. 7" />
           </div>
         </div>
       </section>
@@ -386,4 +414,5 @@
   .logo-flags label { display: flex; align-items: center; gap: 0.4rem; }
   .small { font-size: 0.8rem; }
   .hint.warn { color: #c87a00; }
+  .checkbox-row { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; margin-bottom: 0.5rem; }
 </style>

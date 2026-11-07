@@ -127,13 +127,15 @@
       <tbody>
         {#each registers as r}
           {@const pending = pendingByRegister[r.id] ?? []}
-          <tr class:locked-row={pending.length > 0} class:inactive={!r.is_active}>
+          <tr class:locked-row={pending.length > 0} class:inactive={!r.is_active || !!r.retired_date}>
             <td>{r.name}</td>
             <td>{typeLabel(r.type)}</td>
             <td>{r.printer_name ?? '—'}</td>
             <td>{r.layout_name ?? '—'}</td>
             <td>
-              {#if !r.is_active}
+              {#if r.retired_date}
+                <span class="archived-badge" title={`Stillgelegt zum ${r.retired_date}`}>Stillgelegt</span>
+              {:else if !r.is_active}
                 <span class="archived-badge">Archiviert</span>
               {:else if pending.length > 0}
                 <span class="lock-badge" title={pending.join(', ')}>

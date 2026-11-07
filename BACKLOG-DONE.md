@@ -6373,3 +6373,547 @@ Archiv erledigter Tasks und Findings aus `BACKLOG.md`. Gleiches Format, IDs unve
   "Signatur testen" verifizieren, da ein grüner Status allein keine
   Client-Registrierung beweist).
 
+- [Finding] **D-082** (hoch, Backend / PDF-Rendering) — Gefunden 2026-09-24 — **Behoben 2026-09-24, live auf dem Produktivserver mit der ursprünglich meldenden Rechnung bestätigt** — Kontext: Live-Bugreport, QR-Code auf einer PDF-Rechnung unten abgeschnitten, enthält TSE-Fiskaldaten
+  Root Cause: `print/blocks.ts`s `renderBlocksToPdf()` zeichnete ein
+  `ImageBlock` (Firmenlogo oder QR-Code) immer an der aktuellen
+  Cursor-Position (`doc.y`), ohne zu prüfen, ob es noch auf die Seite
+  passt. PDFKits `doc.text()` paginiert automatisch, `doc.image()`
+  dagegen nie — ein Bild, das über den unteren Rand hinausragt, wird
+  einfach an der physischen Seitenkante abgeschnitten statt auf eine
+  neue Seite zu wandern. Live reproduziert: eine lange Rechnung (17
+  Positionen, Beleg F00001) schob den Cursor bis kurz vor den QR-Code
+  fast an den Seitenrand; nachfolgender Text ("Danke für Ihren
+  Einkauf!") rutschte korrekt auf Seite 2, das bereits gezeichnete
+  QR-Bild blieb aber abgeschnitten auf Seite 1.
+  **Behoben:** Vor dem Zeichnen prüft `renderBlocksToPdf()` jetzt, ob
+  `doc.y + targetHeight` die verbleibende Seitenhöhe überschreitet, und
+  fügt in dem Fall vorher einen Seitenumbruch (`doc.addPage()`) ein.
+  Betrifft jedes PDF, das über diesen gemeinsam genutzten Renderer läuft
+  (Rechnung, Z-Bon, Bestellzettel, Testdruck, PIN-Zettel), nicht nur die
+  Kundenrechnung.
+  **Tests:** zwei neue Tests in `blocks.test.ts` — Überlauf-Fall (viele
+  Blank-Zeilen vor dem Bild → jetzt 2 Seiten statt abgeschnitten) und
+  Normalfall (Bild passt noch → weiterhin 1 Seite, keine Regression).
+  Zusätzlich mit der echten `buildDemoReceipt()`-Pipeline gerendert und
+  visuell verifiziert. Voller Unit-Testlauf (406) grün, `tsc --noEmit`
+  sauber.
+
+- [Task] **#155** Z-Bon-PDF-Dateiname soll den Kassennamen enthalten — **Erledigt 2026-09-29**
+  Root Cause/Fundstelle: `GET /api/admin/closings/:id/pdf`
+  (`routes/admin/closings.ts`) setzte den Dateinamen nur auf
+  `z-bon-${z_number}.pdf` — ohne Kassennamen. Der Kassenname lag bereits
+  in `stored.ctx.register_name` vor (`closing/load.ts`), genau wie
+  `source.registerName` beim DSFinV-K-ZIP-Download
+  (`routes/admin/exports.ts`, `dsfinvk_${registerName}_z${zNumber}.zip`).
+  **Umgesetzt:** `safeFilename()` aus `exports.ts` exportiert und in
+  `closings.ts` wiederverwendet; neuer Dateiname
+  `z-bon_${register_name}_z${z_number}.pdf` (Sonderzeichen/Leerzeichen
+  im Kassennamen dadurch abgesichert, wie beim DSFinV-K-Download).
+  **Tests:** neuer Integrationstest in `closings.integration.test.ts`
+  ("names the download after the register and Z-number") prüft den
+  exakten `Content-Disposition`-Header. Voller Testlauf der Datei (20
+  Tests) grün, `tsc --noEmit` sauber.
+
+- [Task] **#156** Rechnungs-PDFs verkleinern (Archivierbarkeit großer Stückzahlen) — **Erledigt 2026-09-29**
+  **Analyse:** Zwei eingebettete Rastergrafiken pro Rechnungs-PDF — der
+  QR-Code (220×220px, reines Schwarz/Weiß, ohnehin verlustfrei sehr gut
+  komprimierbar, kein nennenswerter Größentreiber) und das Firmenlogo
+  (`logo/logo.ts`), das bei Standard-Zoom (100 %) bis zu 1200×1800px
+  groß gerendert wurde (~290 dpi, auf Druckqualität ausgelegt) und
+  **vollständig und unabhängig in jede einzelne Rechnungs-PDF
+  eingebettet** wird (kein Shared-Ressourcen-Mechanismus über
+  PDF-Dateigrenzen hinweg möglich) — bei tausenden Rechnungen pro
+  Veranstaltung der Haupttreiber der Gesamtarchivgröße, sofern ein Logo
+  konfiguriert ist.
+  **Nutzerentscheidung 2026-09-29: 150 dpi reichen.**
+  **Umgesetzt:** `PDF_BASE_WIDTH` in `logo/logo.ts` von 1200px auf 545px
+  gesenkt (261,64pt druckbare A6-Breite ÷ 72 pt/inch × 150 dpi ≈ 545px),
+  `PDF_MAX_HEIGHT` proportional (gleiches 1,5-fache Breite:Höhe-
+  Verhältnis wie zuvor) von 1800px auf 820px. Die ESC/POS-Variante fürs
+  Thermopapier (`ESCPOS_BASE_WIDTH`/`ESCPOS_MAX_HEIGHT`) bewusst
+  unangetastet gelassen — die braucht weiterhin die volle Auflösung für
+  den Rasterdruck. Betrifft nur die PDF-Variante des Firmenlogos.
+  **Tests:** kein bestehender Test hing an den konkreten
+  1200/1800-Werten (nur an relativer Skalierung); voller Unit-Testlauf
+  (409 Tests) sowie gezielte Integrationstests
+  (`logo.integration.test.ts`, `settings.integration.test.ts`, 8 Tests)
+  grün, `tsc --noEmit` sauber.
+
+- [Task] **#157** PDF-Export des TSE-Ausfallberichts — **Erledigt 2026-09-29**
+  Root Cause/Fundstelle: "TSE-Ausfall-Log" (Task #72,
+  `admin/reports/tse-outages/+page.svelte`,
+  `GET /api/admin/reports/tse-outages`) war eine reine
+  Bildschirm-Tabelle ohne jeden Export — weder Excel noch PDF, anders
+  als andere Auswertungen. Für eine Betriebsprüfung (Beleg der
+  ordnungsgemäßen Dokumentation von TSE-Ausfällen nach AEAO zu § 146a AO
+  Nr. 1.14.2) gab es keinen Weg, die Liste als eigenständiges Dokument
+  zu sichern.
+  **Umgesetzt — bewusst NICHT über den gemeinsamen A6-Block-Renderer
+  (`print/blocks.ts::renderBlocksToPdf`)**, wie ursprünglich im Task
+  vorgeschlagen: der ist auf ein schmales, thermodruckerförmiges
+  Dokument zugeschnitten und kennt kein mehrspaltiges Tabellen-Primitiv
+  — beides passt nicht zu einer potenziell langen (bis zu 500 Zeilen)
+  Prüfliste. Stattdessen neuer, eigenständiger A4-Tabellen-Renderer
+  `reports/tseOutagesPdf.ts` (reine Funktion, direktes `pdfkit`,
+  Helvetica statt der beleg-typischen Courier-Schriftart, da dieses
+  Dokument nie auf einem Thermodrucker landet und nichts optisch
+  nachbilden muss). Eigene manuelle Seitenumbruch-Logik inkl.
+  Tabellenkopf-Wiederholung auf jeder neuen Seite. `routes/admin/
+  reports.ts`: gemeinsamer `loadTseOutages()`-Loader für JSON- und
+  PDF-Endpunkt (können nie auseinanderlaufen); neue Route `GET
+  /api/admin/reports/tse-outages/pdf` (`attachment`,
+  `tse-ausfall-log_<Datum>.pdf` über `safeFilename()`). Frontend:
+  "PDF-Export"-Button neben "Aktualisieren" auf der TSE-Ausfall-Log-Seite,
+  gleiches Anker-Klick-Muster wie beim Excel-Export.
+  **Tests:** 3 neue Unit-Tests in `tseOutagesPdf.test.ts` (leere Liste →
+  1 Seite; 80 Zeilen → Umbruch auf mehrere Seiten; offener Ausfall →
+  "läuft noch" + Dauer bis `generatedAt`, PDF-Validität/Seitenzahl per
+  `/Type /Page`-Zählung, da PDFKit Content-Streams komprimiert und Text
+  nicht direkt grep-bar ist). 2 neue Integrationstests in
+  `reports.integration.test.ts` (Content-Type/Disposition/PDF-Signatur;
+  401 ohne Admin-Session, in die bestehende Auth-Sammelprüfung
+  aufgenommen). Voller Unit-Testlauf (409) sowie gezielter
+  Integrationstest (13 Tests) grün, `tsc --noEmit`/`svelte-check`
+  sauber.
+
+- [Task] **#152** Artikelgruppe beim Artikel-Anlegen standardmäßig leer statt vorbelegt — **Erledigt 2026-09-29**
+  `openCreate()` (`admin/articles/+page.svelte`) belegte
+  `formCategoryId` beim Öffnen des Dialogs mit der ersten (alphabetisch)
+  Artikelgruppe vor — Ursache für leicht übersehene Fehleingaben.
+  **Umgesetzt:** `formCategoryId` bleibt jetzt leer; zusätzlich eine
+  echte, deaktivierte Platzhalter-Option ("Bitte wählen…") im
+  `<select>` ergänzt — ohne die hätte der Browser mangels passender
+  leerer `<option>` trotzdem optisch die erste Artikelgruppe
+  vorausgewählt (`bind:value` liest den DOM-Wert zurück), was den Fix
+  wirkungslos gemacht hätte. `svelte-check` sauber.
+
+- [Task] **#151** Kasse stilllegen (mit wählbarem, auch rückwirkendem Schließdatum) — **Erledigt 2026-09-29**
+  **Problem:** `register.is_active` (Task #55) ist bewusst nur ein
+  Anzeige-/Auswahlfilter, ohne Wirkung auf die Tagesabschluss-Pflicht
+  oder echten Schreibschutz — eine nicht mehr benutzte Kasse verlangte
+  unbegrenzt weiter tägliche Z-Bons.
+
+  **Umgesetzt:**
+  - Migration `0037_register_retired.sql` — neue Spalte
+    `register.retired_date DATE NULL` (Kalendertag, nicht Zeitstempel —
+    passend zum bestehenden `business_date`-Konzept). `docs/
+    Datenmodell.dbml` entsprechend ergänzt.
+  - `closing/pending.ts::pendingClosingDays()` — neuer optionaler
+    `retiredDate`-Parameter; der Tage-Walk endet am Tag nach dem
+    Schließdatum statt an "heute", wenn gesetzt (der Schließtag selbst
+    zählt weiter als prüfbarer Tag). Rückwärtskompatibel (Default
+    `null`, kein Verhaltensunterschied für bestehende Aufrufer).
+  - `closing/pending-db.ts::findPendingDaysForRegister()` liest
+    `retired_date` jetzt mit (neue geteilte `loadRegisterRetiredDate()`,
+    auch von `register-session.ts` genutzt) und reicht es durch.
+  - Neues Modul `closing/retire.ts` — `retireRegister(registerId,
+    retiredDate)` validiert beide Bedingungen vor dem Setzen (keine
+    offenen Tage vor dem Schließdatum via `findPendingDaysForRegister`;
+    keine Buchungen/Abschlüsse nach dem Schließdatum via eigener
+    UNION-Query über `invoice`/`service_order`/`order_cancellation`/
+    `daily_closing`), sonst `RegisterRetireError` mit klarer,
+    deutschsprachiger Meldung inkl. betroffenem Datum.
+    `reactivateRegister()` setzt `retired_date` ohne weitere Prüfung
+    zurück (reversibel per Nutzerentscheidung).
+  - `routes/admin/registers.ts` — neue Endpunkte `POST /:id/retire`
+    (jeder Admin, wie das bisherige Archivieren) und `POST
+    /:id/reactivate` (System-Administrator only — route-lokaler
+    `preHandler: authenticateSystemAdmin` zusätzlich zum
+    Instanz-weiten `authenticateAdmin`, Fastify führt beide
+    nacheinander aus). `retired_date` in GET-Liste/-Detail/PUT-Response
+    ergänzt.
+  - `routes/register-session.ts` — echter Hard-Lock: `lockedResponse()`
+    (zentrale Sperrprüfung vor jedem Checkout/Bestellung/Storno) prüft
+    jetzt zuerst, ob das Schließdatum bereits verstrichen ist (eigene
+    Prüfung, da die Pending-Days-Zahl für eine stillgelegte Kasse ab
+    dann dauerhaft bei 0 bleibt und diese Sperre sonst nicht mehr
+    greifen würde). `GET /me`/`GET /registers/:id` filtern stillgelegte
+    Kassen zusätzlich zu `is_active` aus der Kassenwahl.
+  - Frontend: `admin/registers/[id]/+page.svelte` — "Kasse
+    stilllegen"-Button + Dialog (Schließdatum, Default = heutiges
+    Server-Datum) im Seitenkopf; nach dem Stilllegen Banner mit Datum
+    + "Reaktivieren"-Button (sichtbar/aktiv nur für
+    `$adminUser?.is_admin`, serverseitig zusätzlich durchgesetzt).
+    `admin/registers/+page.svelte` — "Stillgelegt"-Badge in der
+    Übersicht (Vorrang vor "Archiviert"/Pending-Badge).
+    `packages/shared/src/types.ts` — `Register.retired_date` ergänzt.
+
+  **Tests:** 5 neue Unit-Tests (`pending.test.ts`, `retiredDate`-Block),
+  1 neuer Integrationstest in `pending-db.integration.test.ts` (echte
+  DB-Spalte), 9 neue Integrationstests in `retire.integration.test.ts`
+  (Validierung beider Richtungen, Reaktivierung), 10 neue
+  Integrationstests in `registers.integration.test.ts` (beide
+  Endpunkte, 403 für Veranstaltungs-Administrator bei `/reactivate`,
+  404, 401), 4 neue Integrationstests in `register-session.integration.
+  test.ts` (Discovery-Ausschluss, Hard-Lock inkl. "0-Pending-Days trotz
+  Sperre"-Fall, kein Lock am Schließtag selbst). Voller Unit-Testlauf
+  (414) sowie alle fünf betroffenen Integrationstest-Dateien (115 Tests)
+  grün, `tsc --noEmit`/`svelte-check` sauber.
+
+- [Finding] **D-083** (niedrig, Backend / TSE) — Gefunden 2026-09-29 — **Behoben 2026-09-29** — Kontext: Live-Bugreport, 3 protokollierte TSE-Ausfälle von je ~1 Minute bei der ersten Veranstaltung, alle exakt ~34 Minuten auseinander
+  Root Cause: `worm_transaction_start failed (Code 4098)` =
+  `WORM_ERROR_NO_TIME_SET` — die TSE hat ein internes
+  Zeit-Gültigkeitsfenster, das nach fester Zeitspanne automatisch
+  abläuft. `tse/healthJob.ts` arbeitete rein reaktiv: fragte nur einmal
+  pro Minute den günstigen `info`-Status ab und löste `maintainTse()`
+  erst aus, nachdem `hasValidTime` bereits `false` geworden war —
+  dadurch entstand bei jedem Ablauf ein Fenster von bis zu 60 Sekunden,
+  in dem ein echter Checkout mit `WORM_ERROR_NO_TIME_SET` fehlschlagen
+  konnte, bis der nächste Poll-Tick es bemerkte und behob.
+
+  **Behoben:** Der "gesund"-Zweig in `tick()` prüft jetzt zusätzlich das
+  Countdown-Feld `timeUntilNextTimeSynchronization` — liegt es innerhalb
+  von `PROACTIVE_RESYNC_MARGIN_SECONDS` (2 Poll-Intervalle = 120s) und
+  ist die automatische Wartung aktiv, wird `maintainTse()` proaktiv
+  ausgeführt, statt auf den tatsächlichen Ablauf zu warten. Ein
+  PIN-Authentifizierungsfehler deaktiviert wie beim reaktiven Pfad
+  automatisch die automatische Wartung; jeder andere Fehlerfall bleibt
+  bewusst still (der bestehende reaktive Pfad mit seinem eigenen Cooldown
+  greift ohnehin, sobald das Fenster tatsächlich abläuft — kein
+  doppelter, verwirrender Log-Strom für dasselbe Problem).
+
+  **Kein Compliance-Problem** (TSE-Ausfälle sind laut AEAO zu § 146a AO
+  Nr. 1.14.3 ausdrücklich tolerierter Betriebszustand, automatisch
+  dokumentiert) — der Fix verhindert lediglich einen wiederkehrenden,
+  vermeidbaren Reibungspunkt bei jeder Veranstaltung.
+
+  **Tests:** 6 neue Integrationstests in `healthJob.integration.test.ts`
+  (kein Versuch bei ausreichendem Puffer; proaktiver Erfolg innerhalb
+  der Marge; kein Versuch ohne konfigurierte PIN; kein Versuch bei
+  deaktivierter automatischer Wartung; Deaktivierung bei
+  PIN-Authentifizierungsfehler; stiller Fehlschlag bei anderem
+  Fehlergrund). Voller Integrationstest-Lauf der Datei (18 Tests) grün.
+
+- [Finding] **D-081** (hoch, Frontend / Veranstaltungsverwaltung) — Gefunden 2026-09-21 — **Behoben 2026-09-29** — Kontext: Live-Bugreport ("Uhrzeit beim Bearbeiten einer Veranstaltung wird beim Speichern um -2h verschoben")
+  Root Cause: `admin/events/+page.svelte`s `toLocalInput()` nutzte
+  `new Date(iso).toISOString().slice(0, 16)` — `toISOString()` formatiert
+  immer in UTC, trotz des Funktionsnamens. Der gespeicherte
+  UTC-Zeitstempel wurde dadurch beim Öffnen des Bearbeiten-Dialogs
+  fälschlich als lokale Uhrzeit angezeigt (bei UTC+2 sofort 2h zu früh),
+  und beim Speichern ohne sichtbare Änderung wurde exakt diese falsche
+  Zeit übernommen.
+  **Behoben:** Die Funktion in ein neues, testbares Modul
+  `lib/datetime.ts` extrahiert (`toLocalDateTimeInput()`) und auf lokale
+  Datums-/Zeitkomponenten (`getFullYear`/`getMonth`/`getDate`/
+  `getHours`/`getMinutes`) umgestellt, analog zum bereits bestehenden
+  `localDateString()`-Muster in `closing/pending.ts`. Die zweite,
+  bereits korrekte Instanz derselben Idee (`admin/settings/system/
+  +page.svelte`s `toDatetimeLocal()`) bewusst unangetastet gelassen —
+  kein Bug dort, keine Notwendigkeit für eine Refaktorierung im Zuge
+  dieses Fixes.
+  **Tests:** 3 neue Unit-Tests in `lib/datetime.test.ts` (Rundreise
+  lokaler Komponenten zeitzonen-unabhängig, Nullen-Padding, expliziter
+  Vergleich gegen die alte UTC-basierte Fehlberechnung). Volle
+  Frontend-Testsuite (86 Tests) grün, `svelte-check` sauber.
+
+- [Finding] **D-076** (niedrig, Backend / Kassenabschluss) — Gefunden 2026-09-12 — **Behoben 2026-09-29** — Kontext: Während der D-075-Diskussion zum "Ausstehende Tagesabschlüsse"-Banner (Task #146) aufgefallen
+  Zwei unabhängige Uhren bucketeten Kalendertage: `closing/pending-db.ts`s
+  `daysWithUnlinkedRows`-Abfrage über `to_char(created_at::date, ...)`
+  folgte der Postgres-Session-Zeitzone, `closing/pending.ts`s
+  `localDateString()` der Node-Prozess-Zeitzone — betraf potenziell auch
+  `created_at::date = $2::date`-Filterungen beim tageweisen Abschluss
+  und den `business_date`-Fallback auf Postgres' `current_date`.
+  **Behoben — an der Wurzel statt an jeder einzelnen betroffenen Query:**
+  `db/client.ts`s gemeinsamer `pg.Pool` bekommt jetzt
+  `options: '-c timezone=<Node-Zeitzone>'` — ein libpq-Startup-Parameter,
+  der die Postgres-Session-Zeitzone bei jeder neuen Verbindung exakt auf
+  `Intl.DateTimeFormat().resolvedOptions().timeZone` fixiert. Damit
+  stimmen alle bestehenden `::date`-Casts und `current_date`-Aufrufe
+  automatisch mit der Node-seitigen Bucketing-Logik überein, ohne dass
+  eine einzige der potenziell betroffenen Queries (`pending-db.ts`,
+  `routes/admin/closings.ts`, `closing/retire.ts`) angefasst werden
+  musste.
+  **Verworfener erster Ansatz:** `pool.on('connect', client =>
+  client.query('SET timezone = ...'))` — live ein
+  Deprecation-Warning ausgelöst ("Calling client.query() when the
+  client is already executing a query is deprecated"), da diese
+  Nachfolge-Query mit der vom Pool direkt danach auf derselben
+  Verbindung ausgeführten eigentlichen Anfrage um dieselbe Verbindung
+  konkurrierte. Der Startup-Parameter-Ansatz braucht keine
+  Nachfolge-Query und hat dieses Problem nicht.
+  **Tests:** 2 neue Integrationstests in `db/client.integration.test.ts`
+  (Session-Zeitzone mehrerer Pool-Verbindungen == Node-Zeitzone;
+  Postgres-`::date`-Cast stimmt für denselben Zeitpunkt mit
+  Node-seitigem Bucketing überein). Voller Unit-Testlauf (414) sowie die
+  komplette Integrationstest-Suite (34 Dateien, 447 Tests) grün,
+  `tsc --noEmit` sauber.
+
+- [Task] **#119** Unterstützung für Kleinunternehmerregelung (§ 19 UStG) — **Erledigt 2026-10-18**
+  **Analyse (2026-09-06):** reines Nullsetzen von `vat_rate_standard`/
+  `vat_rate_reduced` reicht nicht — der DSFinV-K-Export ordnet den
+  USt-Schlüssel nach `tax_category` zu, nicht nach dem Prozentsatz, und
+  Pfand war an vier (tatsächlich fünf, siehe unten) unabhängigen Stellen
+  fest auf `'standard'` verdrahtet (Task #113/D-060), unabhängig von
+  jeder Artikel-/Einstellungsänderung.
+  **Design-Entscheidung (Nutzervorgabe 2026-09-30):** dedizierter
+  System-Schalter `kleinunternehmer_enabled`, Status pro Rechnung zum
+  Verkaufszeitpunkt festgeschrieben (analog zum Firmendaten-/Logo-
+  Snapshot aus Task #112), jederzeit umschaltbar, da nur zukünftige
+  Belege betroffen sind. Platzierung in den Admin-Einstellungen direkt
+  bei den USt-Sätzen; beim Aktivieren werden beide Sätze automatisch auf
+  0 gesetzt und gesperrt.
+  **Umgesetzt:**
+  - Migration `0038_kleinunternehmer.sql`: `invoice.is_kleinunternehmer`
+    (Snapshot-Flag) sowie `order_item.deposit_tax_category` — Letzteres
+    behebt die eigentliche Pfand-Lücke dauerhaft (nicht nur für
+    Kleinunternehmer): die Pfand-Kategorie wird jetzt genau wie
+    `tax_category` beim Artikel zum Buchungszeitpunkt eingefroren statt
+    an jeder Lesestelle hart auf `'standard'` angenommen.
+  - `tax/rates.ts::loadTaxRates()` liefert zusätzlich `isKleinunternehmer`
+    aus derselben `system_setting`-Abfrage.
+  - `routes/admin/settings.ts`: `PUT` erzwingt serverseitig `vat_rate_*
+    = '0'`, sobald `kleinunternehmer_enabled` (aktuell oder in derselben
+    Anfrage) `true` ist — unabhängig vom Frontend, das die Felder nur
+    zusätzlich deaktiviert.
+  - `receipt/data.ts::snapshotCompanyDataForInvoice()`/`CompanySnapshot`
+    um `isKleinunternehmer` erweitert (keine eigene Snapshot-Funktion —
+    folgt exakt demselben Aufruf wie die Firmendaten).
+  - Vier Call-Sites, die Rechnungen/Bestellpositionen anlegen
+    (`routes/register-session.ts` ×3, `routes/admin/cancellations.ts`),
+    erzwingen `tax_category = 'zero'` und `deposit_tax_category = 'zero'`
+    beim Einfrieren, wenn der Schalter zum Buchungszeitpunkt aktiv war —
+    inklusive der TSE-Kassenbeleg-Signatur (`tse/processData.ts`,
+    `buildKassenbelegProcessData`, dort ein bislang nicht in BACKLOG.md
+    gelistetes fünftes Pfand-Hardcoding gefunden: Pfand floss
+    unbedingt in den `allgemein`-Steuerslot).
+  - `closing/totals.ts`, `receipt/format.ts`, `receipt/blocks.ts`,
+    `exports/dsfinvk/rows.ts`/`load.ts` lesen die eingefrorene
+    `deposit_tax_category` statt des Literals — korrekt für Z-Bon-
+    Summen, Bon-Druck (inkl. neuem Pflichthinweis "Gemäß § 19 UStG wird
+    keine Umsatzsteuer berechnet.") und DSFinV-K-Export (USt-Schlüssel 5).
+  - `admin/settings/company/+page.svelte`: neue Checkbox bei den
+    USt-Sätzen mit Auto-Null/Sperr-Verhalten.
+  **Tests:** 6 neue Unit-Tests (`tse/processData.test.ts`,
+  `closing/totals.test.ts`, `receipt/format.test.ts`,
+  `exports/dsfinvk/rows.test.ts`, `receipt/blocks.test.ts` ×2) sowie 3
+  neue Integrationstests (`settings.integration.test.ts` — Server-Seite-
+  Invariante). Voller Unit-Testlauf (420 Tests) sowie komplette
+  Integrationstest-Suite (34 Dateien, 457 Tests) grün, `tsc --noEmit`
+  (Backend) und `svelte-check` (Frontend) sauber.
+  **Manuell/live geprüft 2026-10-27 — alle Punkte bestanden:**
+  - Admin-Einstellungen: Schalter aktivieren → beide USt-Sätze springen auf
+    0 und sind gesperrt; speichern, neu laden, wieder deaktivierbar.
+  - Bonkasse-/Bedienungskasse-Verkauf bei aktivem Schalter: Beleg zeigt
+    bei allen Positionen (inkl. Pfand) Kennbuchstabe C, MwSt-Zeile 0 %,
+    neuer Hinweistext "Gemäß §19 UStG keine Umsatzsteuer berechnet.".
+  - Bonstorno bei aktivem Schalter: gleiches Bild auf dem Storno-Beleg.
+  - Z-Bon-Summen bei aktivem Schalter: kompletter Umsatz (inkl. Pfand)
+    unter "steuerfrei", nichts unter Regel-/ermäßigtem Satz.
+  - DSFinV-K-Export: `UST_SCHLUESSEL = 5` für Artikel- **und** Pfand-Zeilen;
+    `vat.csv` zeigt nur die Steuerfrei-Zeile.
+  - **Wichtigster Check:** Beleg bei aktivem Schalter verkaufen, Schalter
+    danach deaktivieren, denselben Beleg erneut öffnen/drucken → muss
+    weiterhin 0 %/C/Hinweistext zeigen (Einfrieren zum Verkaufszeitpunkt,
+    nicht rückwirkend veränderbar) — und umgekehrt.
+  - Regressionscheck bei **deaktiviertem** Schalter: ermäßigter Artikel mit
+    Pfand zeigt weiterhin Artikel=B, Pfand=A (unverändertes Task-#113-
+    Verhalten).
+  **Nachbesserungen aus dem manuellen Test (2026-10-27,
+  `receipt/blocks.ts`):** Pflichthinweis auf "Gemäß §19 UStG keine
+  Umsatzsteuer berechnet." gekürzt (vorher Zeilenumbruch der letzten
+  beiden Zeichen); Bedienungskassen-Tischzeile in zwei Zeilen aufgeteilt
+  ("Tisch <Name>" / "von <Start> bis <Ende>"), da sie ebenfalls umbrach.
+
+- [Task] **#154** Sammel-Maske "Angaben zum elektronischen Aufzeichnungssystem (eAs)" für die ELSTER-Anmeldung — **Erledigt 2026-11-06**
+  **Klassifikation: Feature, angelegt 2026-09-21 (Nutzerwunsch)** —
+  aufgefallen beim tatsächlichen Anmelden von FairPOS beim Finanzamt
+  (Mitteilung nach § 146a Abs. 4 AO, ELSTER-Formular "Angaben zum
+  elektronischen Aufzeichnungssystem (eAs)", Screenshot vom Nutzer
+  beigefügt).
+
+  **Nutzer-Interpretation der Feldbelegung** (DSFinV-K-Terminologie in
+  Klammern):
+  - **Software des eAs** (`Stamm_Kassen`/`KASSE_SW_BRAND` bzw.
+    `Stamm_Terminals`/`TERMINAL_SW_BRAND`) → `"FairPOS"`
+  - **Software-Version des eAs** (`KASSE_SW_VERSION`/
+    `TERMINAL_SW_VERSION`) → die aktuelle Versionsnummer (Task #148,
+    `VERSION`-Datei)
+  - **Hersteller des eAs** (`KASSE_BRAND`/`TERMINAL_BRAND`, bei DSFinV-TW
+    `TW_HERSTELLER`) → `"FairPOS Community"`
+  - **Seriennummer des eAs / Software-App** → vermutlich der bereits
+    bestehende `system_serial` (`FairPOS-<Jahr>-<10 alphanum.>`,
+    `system/serial.ts`, bereits unter Einstellungen → System sichtbar)
+  - Weitere Felder im ELSTER-Formular laut Screenshot: **Art des eAs**
+    (Dropdown, Vorschlag "Computergestützte/PC-Kassensysteme"),
+    **Anschaffung des eAs**/**Inbetriebnahme des eAs** (Datumsfelder) —
+    Screenshot war nach diesem Punkt abgeschnitten, es folgen im echten
+    Formular vermutlich noch weitere Felder (z. B. TSE-bezogene
+    Angaben) — vor der Umsetzung das vollständige ELSTER-Formular
+    durchgehen, nicht nur den Screenshot-Ausschnitt.
+  - **Modell des eAs — Pflichtfeld (Nutzerhinweis 2026-09-21).**
+    DSFinV-K-Pendant: `Stamm_Kassen`/`KASSE_MODELL` bzw.
+    `Stamm_Terminals`/`TERMINAL_MODELL` (DSFinV-TW: `Stamm_Fahrzeuge`/
+    `TW_MODELL`).
+    **Bug bereits behoben (2026-09-21):** `KASSE_MODELL` wurde in
+    `rows.ts` mit `source.registerName` befüllt — also dem vom Bediener
+    frei gewählten Kassennamen (z. B. "Theke 1") statt der
+    Produkt-Modellbezeichnung; die Kassen-Identität pro Zeile steckt
+    bereits korrekt im Schlüsselfeld `Z_KASSE_ID`. Jetzt fest auf
+    `'FairPOS'` gesetzt (analog `KASSE_BRAND`/`KASSE_SW_BRAND`), mit
+    Regressionstest (`rows.test.ts`, "KASSE_MODELL is the product model
+    designation, never the operator-chosen register name"). `source.
+    registerName` selbst blieb erhalten — wird unabhängig davon für den
+    ZIP-Download-Dateinamen gebraucht (`routes/admin/exports.ts:355`).
+    **Unverbindlich, noch zu klären:** ob `'FairPOS'` der inhaltlich
+    richtige Wert für die ELSTER-Meldung ist (keine offizielle Quelle
+    geprüft) — vor Verwendung in der echten Anmeldung mit ELSTER-
+    Hilfetext/BZSt/Steuerberater gegenprüfen.
+
+  **Dringlichkeitsprüfung (2026-09-22, Nutzerauftrag: prüfen, ob etwas
+  davon dringend ist oder warten kann):** Original der offiziellen
+  BZSt-Spezifikation direkt von bzst.de geladen und geprüft
+  (`dsfinv_k_v_2_4.zip`, Dokument `20231215_DSFinV_K_2_4.pdf`) — der
+  eigene Feldkatalog des Dokuments markiert optionale Felder explizit
+  mit dem Zusatz "(optional)" (Beispiel: `TSE_VORGANGSDATEN Zeichen
+  Daten des Vorgangs (optional)`). **Kein** `KASSE_*`-Feld in
+  `Stamm_Kassen` trägt diesen Zusatz — alle sind laut der Spezifikation
+  selbst Pflichtfelder, nicht optional.
+
+  **Daraus 1 dringender, bereits behobener Fund:**
+  - **`KASSE_SW_VERSION: ''`** (`rows.ts`, war hart auf einen leeren
+    String gesetzt) — ein Pflichtfeld, das leer exportiert wurde.
+    **Behoben 2026-09-22:** neues `DsfinvkSource.softwareVersion`
+    (`config.version`, Task #148) durchgereicht von `load.ts` bis
+    `rows.ts`; Regressionstest in `rows.test.ts` ("KASSE_SW_VERSION is
+    never empty"). Voller Unit-Testlauf (404) + gezielter
+    Integrationstest grün, `tsc --noEmit` sauber.
+
+  **Ein offener, nicht dringender Punkt** (schon nicht-leer befüllt,
+  daher kein Compliance-Verstoß, nur eine Wortlaut-/Konsistenzfrage —
+  kann warten, wie vom Nutzer vorgegeben):
+  - **`KASSE_BRAND: 'FairPOS'`** (`rows.ts`) — exportiert denselben Wert
+    wie `KASSE_SW_BRAND` (ebenfalls `'FairPOS'`). Widerspricht der
+    eigenen Nutzer-Interpretation oben, wo **Hersteller** ("FairPOS
+    Community") und **Software-Marke** ("FairPOS") bewusst
+    unterschiedliche Werte sein sollen. Noch zu klären: soll
+    `KASSE_BRAND` im Export ebenfalls auf `"FairPOS Community"`
+    geändert werden (Konsistenz mit der ELSTER-Meldung), oder ist die
+    Unterscheidung nur für das ELSTER-Formular relevant und der Export
+    bleibt bewusst bei `"FairPOS"`? Vor der Umsetzung entscheiden.
+
+  **Gewünscht:** eine Admin-UI-Maske, die alle diese Angaben **gesammelt
+  und in der Reihenfolge des ELSTER-Formulars** anzeigt (Copy-Paste-
+  Hilfe bei der Anmeldung) — wo möglich mit den bereits im System
+  vorhandenen, sich selbst aktuell haltenden Werten (Version,
+  Seriennummer) statt einer weiteren manuell zu pflegenden Kopie.
+  **Umsetzung (2026-11-06, Nutzerentscheidungen 2026-11-05):** nur Felder,
+  die FairPOS selbst kennt — manuell zu pflegende (Anschaffung des eAs,
+  Inbetriebnahme der TSE, Bemerkungen) bewusst weggelassen. Ein eAs für
+  das gesamte System, nicht pro Kasse.
+  - `system/eas.ts`: Konstanten (Art, Software, Hersteller "FairPOS
+    Community", Modell) und `buildEasFields()` in ELSTER-Reihenfolge;
+    BSI-ID von der TSE (`tseCertificationId`) ohne das im Formular schon
+    vorgedruckte Präfix "BSI-K-TR-"; Bauform als Rohwert `formFactor`.
+  - "Inbetriebnahme des eAs" = `system_setting.updated_at` der Zeile
+    `system_serial` (Erzeugung der Seriennummer); in `system/bootstrap.ts`
+    dokumentiert, dass nur `ensureSystemSerial()` diese Zeile schreiben darf.
+  - Neuer Endpunkt `GET /api/admin/tse/eas` (liest die TSE live, TSE-Felder
+    `null` + `tseError` bei fehlender/unerreichbarer TSE).
+  - TSE-Seite → TSE-Tools: neuer Dialog "Finanzamt-Meldung (eAs)" mit
+    Kopier-Button pro Feld.
+  - Offener Punkt `KASSE_BRAND` entschieden: DSFinV-K-Export nutzt jetzt
+    ebenfalls "FairPOS Community" (gemeinsame Konstante aus `system/eas.ts`).
+  **Tests:** `system/eas.test.ts` (5), `rows.test.ts` (+1),
+  `tse.integration.test.ts` (+3). Unit (426 + 86) und Integration (460) grün.
+
+- [Finding] **D-084** (hoch, Backend / Tagesabschluss) — **Erledigt 2026-11-07** — Gefunden 2026-11-07 — Kontext: manueller Test des Nutzers (Bedienungskasse, Storno vor Abrechnung)
+  Z-Bon-Zeilen "Kostenfreie Warenabgabe" und "Stornierte Bestellungen" bleiben bei Stornos vor der Abrechnung immer 0,00. `routes/admin/closings.ts` sammelt die Positionen für `computeClosingTotals()` nur über `order_item.invoice_id` der Rechnungen im Abschluss-Zeitraum; der Storno vor der Abrechnung (`POST /registers/:id/tables/:tableId/cancel`, `routes/register-session.ts`) setzt `status='cancelled'`/`'free'` aber nur mit `order_cancellation_id`, ohne Rechnung — diese Positionen erreichen die Aggregation nie. Der `order_cancellation`-Vorgang selbst wird korrekt per `daily_closing_id` dem Abschluss zugeordnet, nur die Beträge fehlen. Die Vorschau "Offen seit letztem Tagesabschluss" (`routes/admin/registers.ts`) ist nicht betroffen — sie zeigt nur Bar-/Kartenumsatz, in den Stornos ohnehin nicht einfließen. Seit der Aufteilung in drei Storno-Zeilen (Migration 0032, Commit `707a43d`) vorhanden; unentdeckt, weil die Tests `free`/`cancelled`-Positionen direkt an Rechnungen hängen — ein Zustand, den der echte Ablauf nie erzeugt.
+  **Lösung:** Positionen der `order_cancellation`-Vorgänge im Abschluss-Zeitraum zusätzlich in die Aggregation geben, Integrationstest über den echten Storno-Endpunkt. Bereits gespeicherte Z-Bons bleiben unverändert (Summen werden beim Abschluss festgeschrieben).
+  **Umsetzung (2026-11-07):** `computeClosingTotals()` (`closing/totals.ts`) nimmt die Positionen vor der Abrechnung als zweiten Parameter `preCheckoutItems` entgegen (nur `total_free`/`total_order_cancellations`); `closeRegister()` (`routes/admin/closings.ts`) lädt sie über `order_cancellation_id` der Vorgänge im Abschluss-Zeitraum (`invoice_id IS NULL`). Tests: 2 Unit-Tests (`totals.test.ts`), 1 Integrationstest über den echten Bestell- und Storno-Endpunkt mit beiden Stornogrund-Typen (`closings.integration.test.ts`, schlägt ohne Fix mit 0 statt 5 fehl). Unit (428 + 86) und Integration (461) grün.
+
+- [Task] **#158** Bedienungskasse: Tischnummer als Überschrift aller Tisch-Seiten — **Erledigt 2026-11-07**
+  **Klassifikation: UX, angelegt 2026-11-07 (Nutzerwunsch).** **Zeitnah
+  umsetzen**, gebündelt mit weiteren noch zu sammelnden Themen
+  (Nutzervorgabe 2026-11-07) — nicht einzeln vorziehen.
+
+  Die Überschriften der Seiten im Kontext eines Tisches transportieren
+  kaum Inhalt; die Bedienung soll immer sehen, an welchem Tisch sie
+  gerade arbeitet. Die bisherigen Wörter entfallen ersatzlos, Überschrift
+  immer `"Tisch " + Tischnummer` (z. B. "Tisch A1"):
+  - `register/[id]/tables/[tableId]/+page.svelte` — bisher "Tisch"
+  - `register/[id]/tables/[tableId]/order/+page.svelte` — bisher "Bestellen"
+  - `register/[id]/tables/[tableId]/checkout/+page.svelte` — bisher "Kassieren"
+
+  Hinweis für die Umsetzung (Stand 2026-11-07): keine der drei Seiten
+  lädt bisher den Tischnamen — muss ergänzt werden (z. B. aus dem
+  bestehenden Tisch-/Raumplan-Endpunkt oder als Feld der vorhandenen
+  Tisch-Requests).
+  **Umsetzung (2026-11-07):** neuer Endpunkt `GET /api/register-session/registers/:id/tables/:tableId` (Id + Name, nur Tische der aktiven Veranstaltung, 404 sonst); Frontend-Helfer `$lib/table-heading.ts` (`formatTableHeading`/`loadTableHeading`, fällt bei Fehler auf "Tisch" zurück); alle drei Seiten zeigen "Tisch <Name>". Tests: `table-heading.test.ts` (2), `register-session.integration.test.ts` (+2).
+
+- [Task] **#159** Excel-Export: Spalte "Kassierer" direkt nach "Besteller" — **Erledigt 2026-11-07**
+  **Klassifikation: Feature, angelegt 2026-11-07 (Nutzerwunsch).**
+
+  An der Bedienungskasse können Besteller (wer die Bestellung aufgenommen
+  hat) und Kassierer (wer abgerechnet hat) verschiedene Personen sein. Der
+  Excel-Export (`exports/workbook.ts`, `COLUMNS`) zeigt bisher nur
+  "Besteller" (`order_item.user_name`, bei Bonstorno Fallback auf
+  `cancelled_by_name`, `routes/admin/exports.ts`). Neue Spalte
+  "Kassierer" direkt dahinter.
+
+  **Befund bei der Aufnahme (2026-11-07):** der Kassierer wird bisher
+  **nirgends gespeichert** — `invoice` hat keine Benutzer-Spalte, beide
+  Checkout-Pfade in `routes/register-session.ts` (Bonkasse und
+  Bedienungskasse) schreiben ihn nicht. Benötigt daher:
+  - Migration: `invoice.cashier_name TEXT` (Text-Snapshot wie
+    `order_item.user_name`, Task #97 — Benutzer sind löschbar). Altbestand
+    bleibt `NULL` (nicht rekonstruierbar); ggf. für Bonkasse-Rechnungen aus
+    `order_item.user_name` befüllen, da dort Besteller = Kassierer.
+  - Beide Checkout-Pfade setzen `cashier_name = req.registerUser.name`;
+    Admin-Bonstorno (`routes/admin/cancellations.ts`) setzt den Namen des
+    Admins.
+  - Export-Query und `ExportRow` um die Spalte erweitern.
+
+  **Verwandt, vor der Umsetzung entscheiden:** der DSFinV-K-Export
+  (`exports/dsfinvk/load.ts`) setzt `BEDIENER_NAME` eines Belegs ebenfalls
+  auf den Besteller der ersten Position, nicht auf den Kassierer. Mit
+  `invoice.cashier_name` ließe sich das korrigieren — vorher in der
+  DSFinV-K-Spezifikation (bzst.de) prüfen, wer als Bediener eines
+  Kassenbelegs gemeint ist.
+  **Umsetzung (2026-11-07):** Migration `0039_invoice_cashier_name.sql` (`invoice.cashier_name TEXT`, Rückbefüllung für Bonkasse-Rechnungen aus `order_item.user_name` und für Bonstornos aus `cancelled_by_name`; Bedienungskassen-Altbestand bleibt `NULL`). Beide Checkout-Pfade (`routes/register-session.ts`) setzen `req.registerUser.name`, der Admin-Bonstorno (`routes/admin/cancellations.ts`) `req.adminUser.name`. Excel-Export: Spalte "Kassierer" nach "Besteller" (`exports/workbook.ts`, `exports/rows.ts`, `routes/admin/exports.ts`). Doku: `docs/Anforderungen.md`, `docs/Datenmodell.dbml`. Die verwandte DSFinV-K-Frage wurde geprüft und als D-086 behoben. Tests: `rows.test.ts` (+1), `workbook.test.ts` (Spalten), `exports.excel.integration.test.ts` (+1, Spaltenindizes verschoben), `register-session.integration.test.ts` (+2), `cancellations.integration.test.ts` (Admin als Kassierer).
+
+- [Finding] **D-085** (hoch, Backend / Druck; **zeitnah umsetzen**, Nutzervorgabe 2026-11-07 — zusammen mit den anderen gesammelten Themen, vgl. #158) — **Erledigt 2026-11-07** — Gefunden 2026-11-07 — Kontext: manueller Test des Nutzers mit einer Trainingskasse
+  Nur Kassenbeleg (`receipt/blocks.ts`, "T R A I N I N G" oben und unten) und Z-Bon (`closing/blocks.ts`, "TRAININGSKASSE") tragen bei einer Trainingskasse (`register.is_training`, Task #130) eine Training-Markierung. Alle drei Bon-Arten aus `print/order-slip.ts` drucken ohne Markierung, ihre Builder kennen den Trainings-Status gar nicht (kein Feld im `context`):
+  - `buildOrderSlipBlocks()` — Bestellbon Küche/Theke der Bedienungskasse (`routes/register-session.ts`, Bestell-Endpunkt) — **vom Nutzer live beobachtet**.
+  - `buildPickupSlipBlocks()` — Selbstabholer-/Wertbon der Bonkasse (`routes/register-session.ts`, Checkout).
+  - `buildDepositSlipBlocks()` — separater Pfandbon der Bonkasse (ebenda).
+  Besonders kritisch beim Wertbon/Pfandbon: ein im Training gedruckter, unmarkierter Bon sieht aus wie ein echter und könnte an der Ausgabe gegen Ware bzw. Pfand eingelöst werden.
+  **Lösung (Vorschlag):** `isTraining` in den `context` aller drei Builder aufnehmen und — analog zum Kassenbeleg — "T R A I N I N G" groß oben und unten drucken; an den Aufrufstellen den `is_training`-Status der Kasse durchreichen. Unit-Tests je Builder, Integrationstest für Bestell- und Checkout-Pfad einer Trainingskasse (Druckauftrag enthält die Markierung).
+  **Umsetzung (2026-11-07):** `print/order-slip.ts`: neues Pflichtfeld `isTraining` im `context` aller drei Builder, Helfer `trainingMarker()` druckt "T R A I N I N G" oben (nach dem Logo) und unten. `routes/register-session.ts` reicht den Trainings-Status durch (Checkout: aus `receiptType`, Bestellung: `receiptTypeForRegister()`). Tests: `order-slip.test.ts` (+4), `register-session.integration.test.ts` (+3, Druckaufträge von Bonkasse und Bedienungskasse einer Trainingskasse bzw. normalen Kasse).
+
+- [Finding] **D-086** (mittel, Backend / DSFinV-K-Export) — **Erledigt 2026-11-07** — Gefunden 2026-11-07 — Kontext: Prüfung im Rahmen von Task #159 (Nutzerauftrag)
+  `BEDIENER_NAME` eines Belegs (`transactions.csv`) war der Besteller der ersten Position (`exports/dsfinvk/load.ts`), bei einem Bonstorno leer (dessen Positionen haben keinen Besteller). Geprüft gegen das Original der DSFinV-K 2.4 von bzst.de (`dsfinv_k_v_2_4.zip`, `20231215_DSFinV_K_2_4.pdf`): S. 86/87, Datei Bonkopf — `BEDIENER_ID` "Unternehmensinterne Kennung der Person, die den Vorgang erfasst", `BEDIENER_NAME` "Unternehmensinterner Name der Person, die den Vorgang erfasst". Bestellung und Bezahlung sind getrennte Vorgänge (S. 44/45 `AVBestellung`: bei einer Zahlung ist der Vorgangstyp "Beleg" zu verwenden; Tz. 2.7.1/2.7.2, S. 13: Zusammenhang über `ABRECHNUNGSKREIS`, nicht über den Bediener). Bediener des Belegs ist damit der Kassierer. Bonpos (`lines.csv`) hat kein Bediener-Feld. Unverändert korrekt: `AVBestellung` (Besteller), `AVSonstige` (wer storniert hat).
+  **Umsetzung (2026-11-07):** `operatorUserName` eines Belegs = `invoice.cashier_name` (Task #159), Fallback auf den bisherigen Wert nur für Altbestand ohne Kassierer. Integrationstest `exports.dsfinvk.integration.test.ts` (Bedienungskasse: Besteller ≠ Kassierer; Bonstorno: Admin), schlägt ohne Fix fehl.
+  **Hinweis:** Auf bzst.de ist inzwischen die DSFinV-K 3.0 (Stand Oktober 2026) veröffentlicht — gilt für Aufzeichnungen nach dem 31.12.2028, anwendbar ab dem 31.12.2027. Nur 2.4 geprüft; bei Umstellung auf 3.0 erneut prüfen.
+
+- [Task] **#160** Kassen-Buttons "Kassieren" und "Kunde wünscht keinen Beleg" wirkten deaktiviert — **Erledigt 2026-11-07**
+  **Klassifikation: UX, Nutzerfeedback 2026-11-07.** Die bewusste Abstufung der Button-Gewichtung wurde von Anwendern als "deaktiviert" wahrgenommen. "Kassieren" auf der Tischseite (`register/[id]/tables/[tableId]/+page.svelte`, bisher `action-btn` ohne Variante) und "Kunde wünscht keinen Beleg" im Belegdialog (`lib/components/ReceiptConfirmation.svelte`, bisher `btn-ghost`) nutzen jetzt denselben blauen Primär-Stil wie "Bestellen" bzw. "Rechnung drucken".
+
+- [Task] **#161** Bestellbons pro Artikel als Einzelbon ("pro Teller") statt Sammelbon — **Erledigt 2026-11-07**
+  **Klassifikation: Feature, Konzept gemeinsam erarbeitet 2026-11-07 (Nutzerwunsch).**
+
+  Problem: In der Küche werden Speisen ggf. einzeln fertig; der heutige
+  Sammelbon je Bestellung × Drucker × Artikelgruppe (`print/order-slip.ts`,
+  `bucketItemsByPrinter()`) passt für die Theke, nicht für die Küche.
+
+  **Entscheidungen (Nutzervorgaben 2026-11-07):**
+  - Granularität: **Checkbox je Artikel** "Bestellbons nicht zusammenfassen
+    (Einzelbon)" — neue Spalte `article.order_slip_per_unit` (Migration).
+    Wirkt nur an der Bedienungskasse (Bestellbons); die Bonkasse druckt ihre
+    Selbstabholerbons ohnehin pro Einheit.
+  - **Entweder-oder:** jede bestellte Einheit landet auf genau einem Bon —
+    kein zusätzlicher Sammelbon zu Einzelbons (Gefahr doppelter Auslieferung).
+    In einer Artikelgruppe können Sammelbon (übrige Artikel) und Einzelbons
+    nebeneinander entstehen.
+  - **Zählung "Bon x von y"** über alle Bons einer Bestellung am selben
+    Drucker (Einzel- und Sammelbons, über alle Artikelgruppen), damit die
+    Küche sieht, ob für den Tisch alles da ist.
+  - **Inhalt** des Einzelbons wie Sammelbon (Tisch, Artikelgruppe,
+    "1x Artikel" mit Optionen, Zeit / Bedienung, Logo laut
+    `logo_on_order_slip`, Trainings-Markierung D-085). Ein Druckauftrag je
+    Bon (Vorbild: Selbstabholerbons der Bonkasse).
+  - **Artikelliste** (Admin): nach "Aktiv" drei neue Spalten — "ohne Bon"
+    (Tooltip "Selbstabholerbon nicht drucken", Wert von `skip_pickup_slip`),
+    "BB einzeln" (Tooltip "Bestellbons nicht zusammenfassen (Einzelbon)",
+    neue Checkbox), "Drucker" (Name des am Artikel hinterlegten Druckers;
+    leer/"—", wenn keiner hinterlegt ist und der Standarddrucker gilt).
+  **Umsetzung (2026-11-07):** Migration `0040_article_order_slip_per_unit.sql`. `print/order-slip.ts`: `OrderSlipItem.per_unit`, `bucketItemsByPrinter()` legt für jede solche Einheit einen eigenen Bucket an und nummeriert alle Buckets je Drucker (`slip_number`/`slip_count`); `buildOrderSlipBlocks()` druckt "Bon x von y" unter der Artikelgruppe (auch "Bon 1 von 1" bei nur einem Bon). Bestell-Endpunkt (`routes/register-session.ts`) liest das Flag. Artikelverwaltung: Feld in POST/PUT (`routes/admin/articles.ts`), Liste liefert zusätzlich `printer_name` (nur am Artikel hinterlegter Drucker); Frontend `admin/articles/+page.svelte` mit Checkbox und den drei neuen Spalten. Doku: `docs/Anforderungen.md`, `docs/Manueller-Testplan.md`, `docs/Datenmodell.dbml`, `docs/Dictionary.md`. Tests: `order-slip.test.ts` (+2), `admin-routes.integration.test.ts` (+1), `register-session.integration.test.ts` (+1). Unit (435 + 88) und Integration (472) grün.

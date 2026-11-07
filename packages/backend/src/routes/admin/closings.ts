@@ -22,12 +22,13 @@ import {
 } from '../../closing/totals.js';
 import { buildZBonBlocks } from '../../closing/blocks.js';
 import { localDateString } from '../../closing/pending.js';
-import { findPendingDaysForRegister } from '../../closing/pending-db.js';
+import { findPendingDaysForRegister, loadRegisterRetiredDate } from '../../closing/pending-db.js';
 import { loadClosingById } from '../../closing/load.js';
 import { renderZBonPdf } from '../../closing/pdf.js';
 import { enqueuePrintJob } from '../../print/enqueue.js';
 import { renderBlocksToEscPos } from '../../print/blocks.js';
 import { resolvePrinterForRegister } from '../../print/resolve-printer.js';
+import { safeFilename } from './exports.js';
 
 /** Result of one successful closing call. */
 interface CloseResult {
@@ -96,8 +97,9 @@ async function closeRegister(registerId: string, userName: string, date?: string
       const itemsResult = await client.query<{
         invoice_id: string; status: ClosingItem['status'];
         tax_category: ClosingItem['tax_category']; price: string; deposit_price: string | null;
+        deposit_tax_category: ClosingItem['deposit_tax_category'];
       }>(
-        `SELECT invoice_id, status, tax_category, price::text, deposit_price::text
+        `SELECT invoice_id, status, tax_category, price::text, deposit_price::text, deposit_tax_category
            FROM order_item
           WHERE invoice_id = ANY($1)`,
         [ids],
@@ -110,6 +112,7 @@ async function closeRegister(registerId: string, userName: string, date?: string
           tax_category: row.tax_category,
           price: Number(row.price),
           deposit_price: row.deposit_price === null ? null : Number(row.deposit_price),
+          deposit_tax_category: row.deposit_tax_category,
         });
         itemsByInvoice.set(row.invoice_id, list);
       }
@@ -146,7 +149,31 @@ async function closeRegister(registerId: string, userName: string, date?: string
           [registerId],
         );
 
-    const totals = computeClosingTotals(invoices);
+    // Items cancelled/given away before checkout (D-084) — linked only to
+    // their order_cancellation, never to an invoice, so the invoice-based
+    // item query above can't see them.
+    let preCheckoutItems: ClosingItem[] = [];
+    if (cancellationResult.rows.length > 0) {
+      const preCheckoutResult = await client.query<{
+        status: ClosingItem['status']; tax_category: ClosingItem['tax_category'];
+        price: string; deposit_price: string | null;
+        deposit_tax_category: ClosingItem['deposit_tax_category'];
+      }>(
+        `SELECT status, tax_category, price::text, deposit_price::text, deposit_tax_category
+           FROM order_item
+          WHERE order_cancellation_id = ANY($1) AND invoice_id IS NULL`,
+        [cancellationResult.rows.map((r) => r.id)],
+      );
+      preCheckoutItems = preCheckoutResult.rows.map((row) => ({
+        status: row.status,
+        tax_category: row.tax_category,
+        price: Number(row.price),
+        deposit_price: row.deposit_price === null ? null : Number(row.deposit_price),
+        deposit_tax_category: row.deposit_tax_category,
+      }));
+    }
+
+    const totals = computeClosingTotals(invoices, preCheckoutItems);
 
     // Compute the next Z-number for this register.
     const seqResult = await client.query<{ max_z: string | null }>(
@@ -247,6 +274,15 @@ async function closePastPendingDays(
  * already closed before — same-day interim closings remain possible, only
  * the pointless repeat-Nullabschluss case is suppressed.
  *
+ * Task #151 "Kasse stilllegen" (found live 2026-09-30): a register retired
+ * days ago has nothing to catch up (`closePastPendingDays` above already
+ * stops at the day after `retired_date`), but this function's own "close
+ * whatever's outstanding" step doesn't know that — it would still mint a
+ * fresh Nullabschluss dated *today*, days after the register's last usable
+ * day, producing exactly the kind of dateless gap in the Z-Bon sequence
+ * retiring a register is supposed to prevent. So: once today is already
+ * past the register's retirement date, this is a no-op.
+ *
  * @param registerId - The register to close.
  * @param userName - Name of the administrator performing the closing.
  * @param today - Reference "now"; injected for testability.
@@ -255,6 +291,9 @@ async function closePastPendingDays(
 async function closeTodayUnlessAlreadyClosed(
   registerId: string, userName: string, today: Date = new Date(),
 ): Promise<CloseResult | null> {
+  const retiredDate = await loadRegisterRetiredDate(registerId);
+  if (retiredDate && localDateString(today) > localDateString(retiredDate)) return null;
+
   const unassigned = await query(
     `SELECT 1 FROM invoice WHERE register_id = $1 AND daily_closing_id IS NULL LIMIT 1`,
     [registerId],
@@ -405,7 +444,7 @@ export async function closingsAdminRoute(app: FastifyInstance): Promise<void> {
     const pdf = await renderZBonPdf(stored.ctx, stored.totals, stored.business_date, stored.logo);
     return reply
       .header('Content-Type', 'application/pdf')
-      .header('Content-Disposition', `inline; filename="z-bon-${stored.ctx.z_number}.pdf"`)
+      .header('Content-Disposition', `inline; filename="${safeFilename(`z-bon_${stored.ctx.register_name}_z${stored.ctx.z_number}.pdf`)}"`)
       .header('Cache-Control', 'no-store')
       .send(pdf);
   });

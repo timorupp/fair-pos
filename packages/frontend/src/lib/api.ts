@@ -64,6 +64,21 @@ export interface TseStatus {
   error?: string;
 }
 
+/** One field of the ELSTER eAs notification (Task #154), in form order. */
+export interface EasField {
+  /** Field label exactly as in the ELSTER form. */
+  label: string;
+  /** Value to enter, or `null` if FairPOS couldn't determine it (e.g. TSE unreachable). */
+  value: string | null;
+}
+
+/** Response shape of `GET /api/admin/tse/eas` (Task #154). */
+export interface TseEas {
+  fields: EasField[];
+  /** Why the TSE fields are empty; absent when the TSE answered. */
+  tseError?: string;
+}
+
 /** Result of a real test signature against the TSE (Task #133) — see `tse.testSignature()`. */
 export interface TseTestSignatureResult {
   transactionNumber: number;
@@ -238,12 +253,14 @@ export const api = {
     },
 
     articles: {
-      list: (): Promise<(Article & { category_name: string; tax_category: TaxCategory })[]> =>
+      /** Articles of the active event; `printer_name` is the article's own printer, `null` when the default applies (Task #161). */
+      list: (): Promise<(Article & { category_name: string; tax_category: TaxCategory; printer_name: string | null })[]> =>
         request('GET', '/admin/articles'),
       create: (data: {
         name: string; category_id: string; price: number;
         deposit_price?: number | null; print_deposit_receipt?: boolean;
         printer_id?: string | null; is_active?: boolean; skip_pickup_slip?: boolean;
+        order_slip_per_unit?: boolean;
       }): Promise<Article> => request('POST', '/admin/articles', data),
       update: (id: string, data: Partial<Article>): Promise<Article> =>
         request('PUT', `/admin/articles/${id}`, data),
@@ -293,6 +310,12 @@ export const api = {
       update: (id: string, data: Partial<Register>): Promise<Register> =>
         request('PUT', `/admin/registers/${id}`, data),
       delete: (id: string): Promise<void> => request('DELETE', `/admin/registers/${id}`),
+      /** "Kasse stilllegen" (Task #151) — `retiredDate` is the last usable calendar day (`YYYY-MM-DD`), inclusive, possibly in the past. */
+      retire: (id: string, retiredDate: string): Promise<void> =>
+        request('POST', `/admin/registers/${id}/retire`, { retired_date: retiredDate }),
+      /** Reverses "Kasse stilllegen" (Task #151) — System-Administrator only. */
+      reactivate: (id: string): Promise<void> =>
+        request('POST', `/admin/registers/${id}/reactivate`),
     },
 
     events: {
@@ -424,6 +447,12 @@ export const api = {
        * only invoke it from an explicit user action ("TSE testen"), not on page load.
        */
       status: (): Promise<TseStatus> => request('GET', '/admin/tse/status'),
+      /**
+       * Fields for the ELSTER notification of FairPOS as an eAs (§ 146a Abs. 4
+       * AO, Task #154) — reads the TSE live like `status()`, so only call it
+       * from an explicit user action.
+       */
+      eas: (): Promise<TseEas> => request('GET', '/admin/tse/eas'),
       /** Currently-mounted removable filesystems, for the Mount-Pfad dropdown. */
       candidates: (): Promise<{ candidates: TseMountCandidate[] }> => request('GET', '/admin/tse/candidates'),
       /** "Auto-erkennen" — probes every removable mount and returns the first one that's a real TSE, if any. */
@@ -620,6 +649,13 @@ export const api = {
        */
       reprint: (id: string, printerId?: string): Promise<{ print_job_id: string }> =>
         request('POST', `/admin/print-jobs/${id}/reprint`, printerId ? { printer_id: printerId } : undefined),
+
+      /**
+       * Permanently deletes every print job with status `done` or
+       * `cancelled` — used to shrink the table (and future DB backups)
+       * once old jobs are no longer needed.
+       */
+      deleteInactive: (): Promise<{ deleted: number }> => request('POST', '/admin/print-jobs/delete-inactive'),
     },
 
     logs: {
@@ -792,6 +828,10 @@ export const api = {
     /** Active cancellation reasons available to the operator. */
     cancellationReasons: (): Promise<{ id: string; name: string; booking_type: 'cancellation' | 'free_of_charge' }[]> =>
       request('GET', '/register-session/cancellation-reasons'),
+
+    /** A table's id and name — for the "Tisch <Name>" page heading (Task #158). */
+    table: (registerId: string, tableId: string): Promise<{ id: string; name: string }> =>
+      request('GET', `/register-session/registers/${registerId}/tables/${tableId}`),
 
     /** Open items at a table, already grouped by (article+options). */
     openItems: (registerId: string, tableId: string): Promise<{

@@ -29,15 +29,20 @@ async function categoryBelongsToActiveEvent(categoryId: string): Promise<boolean
 export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticateAdmin);
 
-  /** GET /api/admin/articles — list articles of the active event with their category name. */
+  /**
+   * GET /api/admin/articles — list articles of the active event with their
+   * category name and, if one is set on the article itself, its printer's
+   * name (Task #161 — `null` when the system-default printer applies).
+   */
   app.get('/', async (_req, reply) => {
     const result = await query(`
       SELECT a.id, a.name, a.price, a.deposit_price, a.print_deposit_receipt,
-             a.skip_pickup_slip,
+             a.skip_pickup_slip, a.order_slip_per_unit,
              a.is_active, a.created_at, a.category_id, ac.name AS category_name, ac.tax_category,
-             a.printer_id
+             a.printer_id, p.name AS printer_name
       FROM article a
       JOIN article_category ac ON ac.id = a.category_id
+      LEFT JOIN printer p ON p.id = a.printer_id
       WHERE a.event_id = $1
       ORDER BY ac.name, a.name
     `, [config.activeEventId]);
@@ -56,6 +61,7 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
       deposit_price?: number | null;
       print_deposit_receipt?: boolean;
       skip_pickup_slip?: boolean;
+      order_slip_per_unit?: boolean;
       printer_id?: string | null;
       is_active?: boolean;
     };
@@ -68,9 +74,9 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
     }
 
     const result = await query(
-      `INSERT INTO article (name, category_id, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, event_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, created_at`,
+      `INSERT INTO article (name, category_id, price, deposit_price, print_deposit_receipt, skip_pickup_slip, order_slip_per_unit, printer_id, is_active, event_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, skip_pickup_slip, order_slip_per_unit, printer_id, is_active, created_at`,
       [
         body.name,
         body.category_id,
@@ -78,6 +84,7 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
         body.deposit_price ?? null,
         body.print_deposit_receipt ?? false,
         body.skip_pickup_slip ?? false,
+        body.order_slip_per_unit ?? false,
         body.printer_id ?? null,
         body.is_active ?? true,
         config.activeEventId,
@@ -96,6 +103,7 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
       deposit_price?: number | null;
       print_deposit_receipt?: boolean;
       skip_pickup_slip?: boolean;
+      order_slip_per_unit?: boolean;
       printer_id?: string | null;
       is_active?: boolean;
     };
@@ -113,9 +121,10 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
            print_deposit_receipt = COALESCE($5, print_deposit_receipt),
            skip_pickup_slip     = COALESCE($6, skip_pickup_slip),
            printer_id           = $7,
-           is_active            = COALESCE($8, is_active)
+           is_active            = COALESCE($8, is_active),
+           order_slip_per_unit  = COALESCE($11, order_slip_per_unit)
        WHERE id = $9 AND event_id = $10
-       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, skip_pickup_slip, printer_id, is_active, created_at`,
+       RETURNING id, name, category_id, price, deposit_price, print_deposit_receipt, skip_pickup_slip, order_slip_per_unit, printer_id, is_active, created_at`,
       [
         body.name ?? null,
         body.category_id ?? null,
@@ -127,6 +136,7 @@ export async function articlesAdminRoute(app: FastifyInstance): Promise<void> {
         body.is_active !== undefined ? body.is_active : null,
         id,
         config.activeEventId,
+        body.order_slip_per_unit !== undefined ? body.order_slip_per_unit : null,
       ],
     );
 

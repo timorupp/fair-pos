@@ -128,6 +128,7 @@ Abschnitt „Diese Liste aktuell halten" am Ende).
 - [ ] PIN-Login, Kasse aus der Auswahl wählen, Saalplan wird angezeigt, Tisch-Belegungsstatus korrekt
 - [ ] Tisch auswählen → Bestellansicht → Artikel mit Optionen bestellen
 - [ ] Bestellbon wird am artikelspezifischen Drucker gedruckt (Fallback: Standarddrucker)
+- [ ] Artikel mit „Bestellbons nicht zusammenfassen (Einzelbon)": 2× bestellt → zwei Einzelbons „1× …", kein zusätzlicher Sammelbon; übrige Artikel derselben Gruppe auf einem Sammelbon; alle Bons des Druckers tragen „Bon x von y" mit stimmiger Gesamtzahl (Task #161)
 - [ ] Bestellung ohne verfügbaren Drucker: Bestellung wird trotzdem angelegt, Warnhinweis (Alert) erscheint
 - [ ] **TSE-Warnung bei Bestellung:** wie oben — erscheint als Alert, Bestellung wird trotzdem angelegt (AVBestellung)
 - [ ] Zurück zur Tischaktionsauswahl, mehrere Bestellrunden am selben Tisch möglich

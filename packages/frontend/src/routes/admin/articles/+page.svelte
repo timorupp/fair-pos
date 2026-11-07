@@ -6,7 +6,7 @@
   import type { Article, ArticleCategory, Printer, ProductOption, TaxCategory } from '@fairpos/shared';
   import Modal from '$lib/components/Modal.svelte';
 
-  type ArticleRow = Article & { category_name: string; tax_category: TaxCategory };
+  type ArticleRow = Article & { category_name: string; tax_category: TaxCategory; printer_name: string | null };
 
   /** German label per tax category, used in the category-selection dropdown. */
   const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
@@ -29,6 +29,7 @@
   let formPrinterId = $state('');
   let formActive = $state(true);
   let formSkipPickupSlip = $state(false);
+  let formOrderSlipPerUnit = $state(false);
   let formError = $state('');
   let saving = $state(false);
   let deleting = $state(false);
@@ -63,9 +64,12 @@
 
   function openCreate() {
     editing = null;
-    formName = ''; formCategoryId = categories[0]?.id ?? '';
+    // Deliberately left empty (Task #152) — a pre-selected category (e.g.
+    // the alphabetically first one) invited accidental wrong-category
+    // entries; the required <select> now forces an explicit choice.
+    formName = ''; formCategoryId = '';
     formPrice = ''; formDepositPrice = ''; formPrintDepositReceipt = false;
-    formPrinterId = ''; formActive = true; formSkipPickupSlip = false; formError = '';
+    formPrinterId = ''; formActive = true; formSkipPickupSlip = false; formOrderSlipPerUnit = false; formError = '';
     options = []; newOptionName = '';
     modalOpen = true;
   }
@@ -80,6 +84,7 @@
     formPrinterId = a.printer_id ?? '';
     formActive = a.is_active;
     formSkipPickupSlip = a.skip_pickup_slip;
+    formOrderSlipPerUnit = a.order_slip_per_unit;
     formError = '';
     newOptionName = '';
     modalOpen = true;
@@ -141,6 +146,7 @@
         printer_id: formPrinterId || null,
         is_active: formActive,
         skip_pickup_slip: formSkipPickupSlip,
+        order_slip_per_unit: formOrderSlipPerUnit,
       };
       if (editing) { await api.admin.articles.update(editing.id, data); }
       else { await api.admin.articles.create(data); }
@@ -177,7 +183,13 @@
   {:else}
     <table>
       <thead>
-        <tr><th>Name</th><th>Artikelgruppe</th><th class="num">Preis</th><th class="num">Pfand</th><th>Aktiv</th><th></th></tr>
+        <tr>
+          <th>Name</th><th>Artikelgruppe</th><th class="num">Preis</th><th class="num">Pfand</th><th>Aktiv</th>
+          <th title="Selbstabholerbon nicht drucken">ohne Bon</th>
+          <th title="Bestellbons nicht zusammenfassen (Einzelbon)">BB einzeln</th>
+          <th>Drucker</th>
+          <th></th>
+        </tr>
       </thead>
       <tbody>
         {#each articles as a}
@@ -187,6 +199,9 @@
             <td class="num">{fmt(a.price)} €</td>
             <td class="num">{a.deposit_price !== null ? fmt(a.deposit_price) + ' €' : '—'}</td>
             <td>{a.is_active ? '✓' : ''}</td>
+            <td title="Selbstabholerbon nicht drucken">{a.skip_pickup_slip ? '✓' : ''}</td>
+            <td title="Bestellbons nicht zusammenfassen (Einzelbon)">{a.order_slip_per_unit ? '✓' : ''}</td>
+            <td>{a.printer_name ?? '—'}</td>
             <td class="actions">
               <button class="btn-ghost" onclick={() => openEdit(a)}>Bearbeiten</button>
             </td>
@@ -206,6 +221,7 @@
     <div class="field">
       <label for="art-cat">Artikelgruppe</label>
       <select id="art-cat" bind:value={formCategoryId} required disabled={saving || deleting}>
+        <option value="" disabled>Bitte wählen…</option>
         {#each categories as c}
           <option value={c.id}>{c.name} ({TAX_CATEGORY_LABELS[c.tax_category]})</option>
         {/each}
@@ -244,6 +260,14 @@
     </div>
     <p class="hint">
       Hat nur Auswirkung für die Bonkasse. Verwendung z.B. für Artikel zur Direktmitnahme oder für Pfand-Rückgabe.
+    </p>
+    <div class="field-check">
+      <input type="checkbox" id="art-order-slip-per-unit" bind:checked={formOrderSlipPerUnit} disabled={saving || deleting} />
+      <label for="art-order-slip-per-unit">Bestellbons nicht zusammenfassen (Einzelbon)</label>
+    </div>
+    <p class="hint">
+      Hat nur Auswirkung für die Bedienungskasse: jede bestellte Einheit bekommt einen eigenen Bestellbon
+      (z.B. ein Bon pro Teller in der Küche) statt eines Sammelbons.
     </p>
 
     {#if editing}

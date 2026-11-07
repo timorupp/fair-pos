@@ -30,7 +30,7 @@ import {
 } from '../tse/processData.js';
 import { formatReceiptNumber, readReceiptPrefix } from '../receipt/format-receipt-number.js';
 import { makeGroupKey, pickItemsToCharge } from '../order/grouping.js';
-import { isRegisterUnlocked, findPendingDaysForRegister } from '../closing/pending-db.js';
+import { isRegisterUnlocked, findPendingDaysForRegister, loadRegisterRetiredDate, localDateString } from '../closing/pending-db.js';
 import { config } from '../config.js';
 
 /**
@@ -91,6 +91,25 @@ async function receiptTypeForRegister(registerId: string): Promise<'training' | 
  * @returns The error payload to send, or `null` to proceed.
  */
 async function lockedResponse(registerId: string): Promise<{ status: 409; body: { error: string; pending_days: string[]; locked: true } } | null> {
+  // Task #151 "Kasse stilllegen" — a real hard lock, unlike is_active (which
+  // is only a display filter on the two discovery endpoints below): once a
+  // retired register's own retirement day has passed, no further booking is
+  // allowed, even from an already-open session that still knows the
+  // register's id. Checked ahead of the pending-days lock below because a
+  // retired register's pending-days count stops growing past its retirement
+  // date (see pendingClosingDays), so that check alone would no longer catch it.
+  const retiredDate = await loadRegisterRetiredDate(registerId);
+  if (retiredDate && localDateString(new Date()) > localDateString(retiredDate)) {
+    return {
+      status: 409,
+      body: {
+        error: `Diese Kasse wurde zum ${localDateString(retiredDate)} stillgelegt und kann nicht mehr verwendet werden.`,
+        pending_days: [],
+        locked: true,
+      },
+    };
+  }
+
   const pending = await findPendingDaysForRegister(registerId);
   if (pending.length === 0) return null;
   return {
@@ -117,9 +136,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
    * GET /me — current user plus the list of registers they may operate.
    * Each register is annotated with its pending-Z-Bon state so the UI can
    * show a "locked" indicator on the chooser screen. Archived registers
-   * (`is_active = false`, Task #55) are excluded entirely — they stay
-   * assigned in `user_register` but no longer appear as choosable. Task #95:
-   * also excludes registers of an event other than the active one.
+   * (`is_active = false`, Task #55) and retired registers
+   * (`retired_date IS NOT NULL`, Task #151) are excluded entirely — they
+   * stay assigned in `user_register` but no longer appear as choosable.
+   * Task #95: also excludes registers of an event other than the active one.
    */
   app.get('/me', async (req, reply) => {
     const result = await query<{
@@ -129,7 +149,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       SELECT r.id, r.name, r.type, r.printer_id, r.layout_id, r.is_training
         FROM register r
         JOIN user_register ur ON ur.register_id = r.id
-       WHERE ur.user_id = $1 AND r.is_active = true AND r.event_id = $2
+       WHERE ur.user_id = $1 AND r.is_active = true AND r.retired_date IS NULL AND r.event_id = $2
        ORDER BY r.name
     `, [req.registerUser.id, config.activeEventId]);
 
@@ -150,9 +170,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
   /**
    * GET /registers/:id — full operating context for the active register (layout, articles).
-   * An archived register (Task #55) is treated as not found — it has already
-   * disappeared from `GET /me`, so reaching this by a stale/typed-in id should
-   * behave the same as a deleted register, not silently allow operating it.
+   * An archived (Task #55) or retired (Task #151) register is treated as
+   * not found — it has already disappeared from `GET /me`, so reaching this
+   * by a stale/typed-in id should behave the same as a deleted register,
+   * not silently allow operating it.
    * Task #95: same treatment for a register of a different (non-active) event.
    */
   app.get('/registers/:id', async (req, reply) => {
@@ -165,7 +186,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       id: string; name: string; type: RegisterType;
       printer_id: string | null; layout_id: string | null; is_training: boolean;
     }>(
-      `SELECT id, name, type, printer_id, layout_id, is_training FROM register WHERE id = $1 AND is_active = true AND event_id = $2`,
+      `SELECT id, name, type, printer_id, layout_id, is_training FROM register WHERE id = $1 AND is_active = true AND retired_date IS NULL AND event_id = $2`,
       [id, config.activeEventId],
     );
     const register = regResult.rows[0];
@@ -303,8 +324,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         }
       }
       // Article's own tax_category resolves to a concrete percentage
-      // (order_item snapshot); a deposit is always taxed at `standard`
-      // regardless of the article (Task #113).
+      // (order_item snapshot); a deposit is taxed at `standard` by default
+      // (Task #113), regardless of the article — unless the sale is made
+      // under § 19 UStG (Task #119), in which case both the article's own
+      // category and the deposit's are forced to `zero`.
       const taxRates = await loadTaxRates();
 
       // TSE-Signierung (Kassenbeleg-V1) läuft VOR der DB-Transaktion. `signTseTransaction`
@@ -320,11 +343,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         vorgangstyp: receiptType === 'training' ? 'AVTraining' : 'Beleg',
         positions: positions.map((p) => {
           const article = articleById.get(p.article_id)!;
+          const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
           return {
             quantity: p.quantity,
             unitPriceEuros: Number(article.price),
             depositPriceEuros: article.deposit_price === null ? null : Number(article.deposit_price),
-            taxCategory: article.tax_category,
+            taxCategory: taxRates.isKleinunternehmer ? 'zero' : article.tax_category,
+            depositTaxCategory: depositRaw !== 0 ? (taxRates.isKleinunternehmer ? 'zero' : 'standard') : null,
           };
         }),
       });
@@ -346,9 +371,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
              tse_transaction_number, tse_start_time, tse_end_time,
              tse_signature, tse_signature_counter, tse_serial_number,
              company_name, company_street, company_postal_code, company_city,
-             company_tax_number, company_vat_id, logo_version_id
+             company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer, cashier_name
            )
-           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
            RETURNING id`,
           [
             registerId, receiptNumber, receiptType, receiptToken,
@@ -356,7 +381,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
             companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
             companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
-            companySnapshot.logoVersionId,
+            companySnapshot.logoVersionId, companySnapshot.isKleinunternehmer,
+            req.registerUser.name, // Task #159: who charged, may differ from the orderer
           ],
         );
         const invoiceId = invoiceResult.rows[0]!.id;
@@ -371,22 +397,30 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         for (const pos of positions) {
           const article = articleById.get(pos.article_id)!;
           const displayName = article.name;
-          const articleTaxRate = percentFor(article.tax_category, taxRates);
+          // Task #119: under § 19 UStG, the article's own category is
+          // overridden to `zero` regardless of its actual `article_category`
+          // configuration — a Kleinunternehmer charges no USt on anything.
+          const effectiveTaxCategory: TaxCategory = taxRates.isKleinunternehmer ? 'zero' : article.tax_category;
+          const articleTaxRate = percentFor(effectiveTaxCategory, taxRates);
           const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
-          // Deposit is always taxed at the Regelsteuersatz (Task #113),
-          // frozen here at booking time independent of the article's own rate.
+          // Deposit is taxed at the Regelsteuersatz by default (Task #113),
+          // frozen here at booking time independent of the article's own
+          // rate — `zero` instead when under § 19 UStG (Task #119).
           const depositTaxRate = depositRaw !== 0 ? taxRates.standard : null;
+          const depositTaxCategory: TaxCategory | null =
+            depositRaw !== 0 ? (taxRates.isKleinunternehmer ? 'zero' : 'standard') : null;
           for (let i = 0; i < pos.quantity; i++) {
             await client.query(
               `INSERT INTO order_item (
                  invoice_id, register_id, user_name, article_id,
                  article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
-                 status
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'paid')`,
+                 deposit_tax_category, status
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'paid')`,
               [
                 invoiceId, registerId, req.registerUser.name, article.id,
                 displayName, article.category_name,
-                articleTaxRate, article.tax_category, article.price, article.deposit_price, depositTaxRate,
+                articleTaxRate, effectiveTaxCategory, article.price, article.deposit_price, depositTaxRate,
+                depositTaxCategory,
               ],
             );
             slipUnits.push({
@@ -413,7 +447,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // succeeds — `slip_printer_missing` surfaces the state so the UI can
       // warn without losing the sale.
       const now = new Date();
-      const slipCtx = { registerName, serverName: req.registerUser.name, createdAt: now };
+      const slipCtx = {
+        registerName, serverName: req.registerUser.name, createdAt: now,
+        isTraining: receiptType === 'training', // D-085: training marker on every slip
+      };
       // Logos are looked up once per checkout; pickup and deposit slips have
       // independent flags, so we resolve both up-front (both `null` is fine).
       const pickupLogo  = await loadLogoFor('pickup_slip');
@@ -564,6 +601,23 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     });
   });
 
+  /**
+   * GET /registers/:id/tables/:tableId — the table's id and name, for the
+   * "Tisch <Name>" heading on every table page (Task #158).
+   */
+  app.get<{ Params: { id: string; tableId: string } }>('/registers/:id/tables/:tableId', async (req, reply) => {
+    const { id: registerId, tableId } = req.params;
+    if (!(await userHasRegister(req.registerUser.id, registerId))) {
+      return reply.status(403).send({ error: 'Keine Berechtigung für diese Kasse' });
+    }
+    const result = await query<{ id: string; name: string }>(
+      `SELECT id, name FROM dining_table WHERE id = $1 AND event_id = $2`,
+      [tableId, config.activeEventId],
+    );
+    if (!result.rows[0]) return reply.status(404).send({ error: 'Tisch nicht gefunden' });
+    return reply.send(result.rows[0]);
+  });
+
   /** GET /articles/:id/options — list of product options for the given article. */
   app.get<{ Params: { id: string } }>('/articles/:id/options', async (req, reply) => {
     const { id } = req.params;
@@ -707,10 +761,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const articleIds = [...new Set(positions.map((p) => p.article_id))];
     const articlesResult = await query<{
       id: string; name: string; price: string;
-      deposit_price: string | null; printer_id: string | null;
+      deposit_price: string | null; printer_id: string | null; order_slip_per_unit: boolean;
       category_name: string; tax_category: TaxCategory;
     }>(
-      `SELECT a.id, a.name, a.price, a.deposit_price, a.printer_id,
+      `SELECT a.id, a.name, a.price, a.deposit_price, a.printer_id, a.order_slip_per_unit,
               c.name AS category_name, c.tax_category
          FROM article a
          JOIN article_category c ON c.id = a.category_id
@@ -764,21 +818,26 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       for (const pos of positions) {
         const article = articleById.get(pos.article_id)!;
         const options = pos.options?.trim() ? pos.options.trim() : null;
-        const articleTaxRate = percentFor(article.tax_category, taxRates);
+        // Task #119: see the Bonkasse checkout's identical comment above —
+        // frozen here at order time, before the item is ever paid.
+        const effectiveTaxCategory: TaxCategory = taxRates.isKleinunternehmer ? 'zero' : article.tax_category;
+        const articleTaxRate = percentFor(effectiveTaxCategory, taxRates);
         const depositRaw = article.deposit_price === null ? 0 : Number(article.deposit_price);
         const depositTaxRate = depositRaw !== 0 ? taxRates.standard : null;
+        const depositTaxCategory: TaxCategory | null =
+          depositRaw !== 0 ? (taxRates.isKleinunternehmer ? 'zero' : 'standard') : null;
         for (let i = 0; i < pos.quantity; i++) {
           await client.query(
             `INSERT INTO order_item (
                service_order_id, dining_table_id, register_id, user_name, article_id,
                article_name, article_category_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate,
-               options, status
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'open')`,
+               deposit_tax_category, options, status
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'open')`,
             [
               serviceOrderId, tableId, registerId, req.registerUser.name, article.id,
               article.name, article.category_name,
-              articleTaxRate, article.tax_category, article.price, article.deposit_price, depositTaxRate,
-              options,
+              articleTaxRate, effectiveTaxCategory, article.price, article.deposit_price, depositTaxRate,
+              depositTaxCategory, options,
             ],
           );
           slipItems.push({
@@ -786,6 +845,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             options,
             printer_id: article.printer_id,
             category_name: article.category_name,
+            per_unit: article.order_slip_per_unit, // Task #161: Einzelbon
           });
         }
       }
@@ -796,11 +856,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const buckets = bucketItemsByPrinter(slipItems, defaultPrinterId);
     const now = new Date();
     const orderLogo = await loadLogoFor('order_slip');
+    // D-085: order slips of a training register carry the training marker too.
+    const isTraining = (await receiptTypeForRegister(registerId)) === 'training';
     let enqueued = 0, skipped = 0;
     for (const bucket of buckets) {
       if (!bucket.printer_id) { skipped += bucket.lines.length; continue; }
       const blocks = buildOrderSlipBlocks(bucket, {
-        tableName, serverName: req.registerUser.name, createdAt: now,
+        tableName, serverName: req.registerUser.name, createdAt: now, isTraining,
       }, orderLogo);
       await enqueuePrintJob(bucket.printer_id, 'order_slip', renderBlocksToEscPos(blocks), blocks);
       enqueued += 1;
@@ -866,8 +928,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const open = await query<{
       id: string; article_id: string | null; article_name: string; options: string | null;
       tax_category: TaxCategory; price: string; deposit_price: string | null; created_at: Date;
+      deposit_tax_category: TaxCategory | null;
     }>(
-      `SELECT id, article_id, article_name, options, tax_category, price, deposit_price, created_at
+      `SELECT id, article_id, article_name, options, tax_category, price, deposit_price, created_at, deposit_tax_category
          FROM order_item
         WHERE dining_table_id = $1 AND status = 'open'`,
       [tableId],
@@ -889,6 +952,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           unitPriceEuros: Number(item.price),
           depositPriceEuros: item.deposit_price === null ? null : Number(item.deposit_price),
           taxCategory: item.tax_category,
+          // Task #119: already frozen on the order_item at order time (see
+          // the /tables/:tableId/order endpoint above) — read back as-is,
+          // not re-derived from the current setting, which may have changed
+          // since the item was ordered.
+          depositTaxCategory: item.deposit_tax_category,
         };
       }),
     });
@@ -921,9 +989,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
            tse_transaction_number, tse_start_time, tse_end_time,
            tse_signature, tse_signature_counter, tse_serial_number,
            company_name, company_street, company_postal_code, company_city,
-           company_tax_number, company_vat_id, logo_version_id
+           company_tax_number, company_vat_id, logo_version_id, is_kleinunternehmer, cashier_name
          )
-         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         VALUES ($1, $2, $3, 'cash', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          RETURNING id`,
         [
           registerId, receiptNumber, receiptType, receiptToken,
@@ -931,7 +999,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           tse?.signature ?? null, tse?.signatureCounter ?? null, tse?.serialNumber ?? null,
           companySnapshot.companyName, companySnapshot.companyStreet, companySnapshot.companyPostalCode,
           companySnapshot.companyCity, companySnapshot.companyTaxNumber, companySnapshot.companyVatId,
-          companySnapshot.logoVersionId,
+          companySnapshot.logoVersionId, companySnapshot.isKleinunternehmer,
+          req.registerUser.name, // Task #159: who charged the table, may differ from the orderer
         ],
       );
       const invoiceId = inv.rows[0]!.id;

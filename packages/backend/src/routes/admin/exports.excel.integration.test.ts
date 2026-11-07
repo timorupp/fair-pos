@@ -75,7 +75,7 @@ describe('GET /api/admin/exports/excel/event', () => {
     const sheet = wb.worksheets[0]!;
     const articleNames: unknown[] = [];
     for (let row = 4; row <= sheet.rowCount; row++) {
-      const value = sheet.getCell(row, 9).value;
+      const value = sheet.getCell(row, 10).value;
       if (value !== null && value !== undefined) articleNames.push(value);
     }
     expect(articleNames).toEqual(['Wein']);
@@ -109,7 +109,7 @@ describe('GET /api/admin/exports/excel/event', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    expect(sheet.getCell(4, 9).value).toBe('Radler');
+    expect(sheet.getCell(4, 10).value).toBe('Radler');
   });
 
   it('includes a Bonstorno invoice with its negative price (D-068/Task #126 — previously excluded entirely via receipt_type=sales_receipt)', async () => {
@@ -135,8 +135,8 @@ describe('GET /api/admin/exports/excel/event', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    expect(sheet.getCell(4, 9).value).toBe('Bier');
-    expect(sheet.getCell(4, 12).value).toBe(-5); // unit_price column
+    expect(sheet.getCell(4, 10).value).toBe('Bier');
+    expect(sheet.getCell(4, 13).value).toBe(-5); // unit_price column
     expect(sheet.getCell(4, 2).value).toBe('ja'); // Storno column (Task #138)
   });
 
@@ -164,6 +164,35 @@ describe('GET /api/admin/exports/excel/event', () => {
     await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
     expect(sheet.getCell(4, 7).value).toBe('Storno-Admin'); // Besteller column
+  });
+
+  it('shows the cashier right after the orderer, and they can differ (Task #159)', async () => {
+    const ownRegister = await createTestRegister({ name: 'EigenKassierer', eventId: config.activeEventId });
+    const inv = await pool.query<{ id: string }>(
+      `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, cashier_name, created_at)
+       VALUES ($1, 1, 'sales_receipt', 'cash', 'Kassierer Ben', now()) RETURNING id`,
+      [ownRegister.id],
+    );
+    await pool.query(
+      `INSERT INTO order_item (invoice_id, register_id, article_name, article_category_name, tax_rate, tax_category, price, status, user_name, created_at)
+       VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', 5, 'paid', 'Bedienung Anna', now())`,
+      [inv.rows[0]!.id, ownRegister.id],
+    );
+
+    const app = await getTestApp();
+    const response = await app.inject({
+      method: 'GET', url: '/api/admin/exports/excel/event',
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
+    const sheet = wb.worksheets[0]!;
+    expect(sheet.getCell(3, 7).value).toBe('Besteller');
+    expect(sheet.getCell(3, 8).value).toBe('Kassierer');
+    expect(sheet.getCell(4, 7).value).toBe('Bedienung Anna');
+    expect(sheet.getCell(4, 8).value).toBe('Kassierer Ben');
   });
 
   it('shows the Z-Bon number once an invoice is linked to a daily_closing, blank while not yet closed (Task #142)', async () => {
@@ -289,7 +318,7 @@ describe('GET /api/admin/exports/excel/day', () => {
     const sheet = wb.worksheets[0]!;
     const articleNames: unknown[] = [];
     for (let row = 4; row <= sheet.rowCount; row++) {
-      const value = sheet.getCell(row, 9).value;
+      const value = sheet.getCell(row, 10).value;
       if (value !== null && value !== undefined) articleNames.push(value);
     }
     expect(articleNames).toEqual(['Wein']);
@@ -319,8 +348,8 @@ describe('GET /api/admin/exports/excel/day', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(response.rawPayload as unknown as ArrayBuffer);
     const sheet = wb.worksheets[0]!;
-    expect(sheet.getCell(4, 9).value).toBe('Bier');
-    expect(sheet.getCell(4, 12).value).toBe(-5);
+    expect(sheet.getCell(4, 10).value).toBe('Bier');
+    expect(sheet.getCell(4, 13).value).toBe(-5);
   });
 
   it('returns 404 when no event is active', async () => {

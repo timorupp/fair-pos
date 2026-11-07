@@ -83,6 +83,7 @@ Table register {
   layout_id   uuid         [null, note: 'Explicit register_layout override; null falls back to the default layout of the active event for this register type']
   is_active   boolean      [not null, default: true, note: 'false = archived: hidden from the operator login/register picker, still visible in history/exports (Task #55)']
   is_training boolean      [not null, default: false, note: 'Task #130 — training register: bookings still TSE-signed/fully documented, but excluded from Kassenabschluss totals and exported as DSFinV-K BON_TYP=AVTraining. Locked (app-level) once the register has any invoice/service_order/order_cancellation row.']
+  retired_date date        [null, note: 'Task #151 — "Kasse stilllegen": last calendar day this register may still be used/closed. NULL = not retired. Reversible (System-Administrator only).']
   created_at  timestamptz  [not null, default: `now()`]
 }
 
@@ -130,6 +131,7 @@ Table article {
   is_active              boolean       [not null, default: true]
   created_at             timestamptz   [not null, default: `now()`]
   skip_pickup_slip       boolean       [not null, default: false, note: 'Task #114 — "Selbstabholerbon nicht drucken"; only affects the Bonkasse, no effect on the Bedienungskasse (different print path)']
+  order_slip_per_unit    boolean       [not null, default: false, note: 'Task #161 — "Bestellbons nicht zusammenfassen (Einzelbon)"; one Bedienungskasse order slip per ordered unit instead of the Sammelbon; no effect on the Bonkasse']
 }
 
 // A selectable option for an article (e.g. "with ketchup").
@@ -382,6 +384,7 @@ Table invoice {
   cancels_invoice_id    uuid         [null, note: 'Reference to cancelled invoice (cancellation type)']
   cancellation_note     text         [null]
   receipt_token         varchar(64)  [null, unique, note: 'Token for QR code URL: /receipt/{token}']
+  cashier_name          text         [null, note: 'Snapshot of the user who charged the invoice (Task #159); null for older Bedienungskasse invoices']
   created_at            timestamptz  [not null, default: `now()`]
   tse_transaction_number bigint      [null]
   tse_start_time        timestamptz  [null]

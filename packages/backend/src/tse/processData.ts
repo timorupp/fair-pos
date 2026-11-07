@@ -67,10 +67,12 @@ export const SONSTIGER_VORGANG_PROCESS_TYPE = 'SonstigerVorgang';
 export interface KassenbelegPosition {
   quantity: number;
   unitPriceEuros: number;
-  /** Positive = Pfand aufgeschlagen, negative = Leergutrückgabe, null/0 = kein Pfand. Always taxed at `standard` regardless of `taxCategory` (Task #113 — Pfand unterliegt immer dem Regelsteuersatz). */
+  /** Positive = Pfand aufgeschlagen, negative = Leergutrückgabe, null/0 = kein Pfand. Taxed at `standard` (Task #113 — Pfand unterliegt immer dem Regelsteuersatz) unless the sale is a Kleinunternehmer sale, see {@link depositTaxCategory}. */
   depositPriceEuros: number | null;
   /** VAT category of the article itself — does NOT apply to `depositPriceEuros`, see above. */
   taxCategory: TaxCategory;
+  /** VAT category the deposit portion is taxed at — `'standard'` (Task #113) unless the sale is under § 19 UStG (Task #119), in which case `'zero'`. `null` unless `depositPriceEuros` is set. */
+  depositTaxCategory: TaxCategory | null;
 }
 
 /** Everything about a completed sale (or Bonstorno) that gets signed as `Kassenbeleg-V1`. */
@@ -116,16 +118,17 @@ export function buildKassenbelegProcessData(snapshot: KassenbelegSnapshot): Buff
   const totals: TaxSlotTotals = { allgemein: 0, ermaessigt: 0, steuerfrei: 0 };
   let totalBrutto = 0;
   for (const pos of snapshot.positions) {
-    // Article and deposit are bucketed separately — the deposit always goes
-    // to `allgemein` (Regelsteuersatz) regardless of the article's own
-    // category (Task #113), so the two must never be summed before bucketing.
+    // Article and deposit are bucketed separately — the deposit's own
+    // frozen category (`standard` per Task #113, unless overridden to `zero`
+    // for a Kleinunternehmer sale, Task #119) is independent of the
+    // article's own category, so the two must never be summed before bucketing.
     const articleBrutto = pos.quantity * pos.unitPriceEuros;
     totals[taxSlot(pos.taxCategory)] += articleBrutto;
     totalBrutto += articleBrutto;
 
     if (pos.depositPriceEuros) {
       const depositBrutto = pos.quantity * pos.depositPriceEuros;
-      totals.allgemein += depositBrutto;
+      totals[taxSlot(pos.depositTaxCategory ?? 'standard')] += depositBrutto;
       totalBrutto += depositBrutto;
     }
   }

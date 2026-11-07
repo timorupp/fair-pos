@@ -165,7 +165,7 @@
       </div>
 
       <div class="actions">
-        <button class="btn-ghost" onclick={finish} disabled={printing}>Kunde wünscht keinen Beleg</button>
+        <button class="btn-primary" onclick={finish} disabled={printing}>Kunde wünscht keinen Beleg</button>
         <div class="spacer"></div>
         <button class="btn-primary" onclick={printReceipt} disabled={printing || printDone}>
           {printing ? 'Drucke…' : 'Rechnung drucken'}

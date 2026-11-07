@@ -13,6 +13,9 @@ const COMPANY_KEYS = [
   'company_name', 'company_street', 'company_postal_code', 'company_city',
   'company_tax_number', 'company_vat_id',
   'receipt_prefix', 'system_serial',
+  // Task #119 — read alongside the rest of the company data, since both are
+  // frozen onto the invoice at the same sale-time snapshot point.
+  'kleinunternehmer_enabled',
 ] as const;
 
 /** Returns the `ReceiptData` for the invoice identified by its public `receipt_token`, or null if not found. */
@@ -58,6 +61,7 @@ async function loadReceiptWhere(whereClause: string, params: unknown[]): Promise
     company_tax_number: string | null;
     company_vat_id: string | null;
     logo_version_id: string | null;
+    is_kleinunternehmer: boolean;
   }>(`
     SELECT i.id, i.receipt_number, i.receipt_type, i.payment_method, i.created_at,
            r.name AS register_name, r.is_training AS register_is_training,
@@ -65,7 +69,7 @@ async function loadReceiptWhere(whereClause: string, params: unknown[]): Promise
            i.tse_signature_counter, i.tse_signature,
            i.tse_start_time, i.tse_end_time,
            i.company_name, i.company_street, i.company_postal_code, i.company_city,
-           i.company_tax_number, i.company_vat_id, i.logo_version_id
+           i.company_tax_number, i.company_vat_id, i.logo_version_id, i.is_kleinunternehmer
       FROM invoice i
       JOIN register r ON r.id = i.register_id
      WHERE ${whereClause}
@@ -74,7 +78,7 @@ async function loadReceiptWhere(whereClause: string, params: unknown[]): Promise
   const row = inv.rows[0]!;
 
   const items = await query<RawOrderItem>(`
-    SELECT article_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate, options
+    SELECT article_name, tax_rate, tax_category, price, deposit_price, deposit_tax_rate, deposit_tax_category, options
       FROM order_item
      WHERE invoice_id = $1 AND status IN ('paid', 'free')
      ORDER BY created_at
@@ -101,6 +105,7 @@ async function loadReceiptWhere(whereClause: string, params: unknown[]): Promise
         vatId: row.company_vat_id,
         receiptNumberPrefix: liveSettings.receiptNumberPrefix,
         systemSerial: liveSettings.systemSerial,
+        isKleinunternehmer: row.is_kleinunternehmer,
       }
     : liveSettings;
   const logo: CompanyLogo | null = row.company_name !== null
@@ -145,6 +150,8 @@ interface CompanySettings {
   vatId: string | null;
   receiptNumberPrefix: string;
   systemSerial: string;
+  /** Whether this invoice was issued under § 19 UStG (Task #119). */
+  isKleinunternehmer: boolean;
 }
 
 /** Builds the printed address block from its three parts, omitting empty lines — shared by the live and snapshot paths. */
@@ -170,6 +177,7 @@ async function loadCompanySettings(): Promise<CompanySettings> {
     vatId: map.get('company_vat_id') ?? null,
     receiptNumberPrefix: map.get('receipt_prefix') ?? 'RE-',
     systemSerial: map.get('system_serial') ?? '(noch nicht initialisiert)',
+    isKleinunternehmer: map.get('kleinunternehmer_enabled') === 'true',
   };
 }
 
@@ -182,6 +190,8 @@ export interface CompanySnapshot {
   companyTaxNumber: string;
   companyVatId: string | null;
   logoVersionId: string | null;
+  /** Whether § 19 UStG applies to this invoice (Task #119) — read at the same sale-time snapshot point as the rest of the company data. */
+  isKleinunternehmer: boolean;
 }
 
 /**
@@ -200,7 +210,7 @@ export interface CompanySnapshot {
 export async function snapshotCompanyDataForInvoice(target: LogoTarget): Promise<CompanySnapshot> {
   const result = await query<{ key: string; value: string }>(
     `SELECT key, value FROM system_setting WHERE key = ANY($1)`,
-    [['company_name', 'company_street', 'company_postal_code', 'company_city', 'company_tax_number', 'company_vat_id']],
+    [['company_name', 'company_street', 'company_postal_code', 'company_city', 'company_tax_number', 'company_vat_id', 'kleinunternehmer_enabled']],
   );
   const map = new Map(result.rows.map((r) => [r.key, r.value]));
   const logo = (await isLogoEnabledFor(target)) ? await loadCompanyLogo() : null;
@@ -213,6 +223,7 @@ export async function snapshotCompanyDataForInvoice(target: LogoTarget): Promise
     companyTaxNumber: map.get('company_tax_number') ?? '',
     companyVatId: map.get('company_vat_id') ?? null,
     logoVersionId,
+    isKleinunternehmer: map.get('kleinunternehmer_enabled') === 'true',
   };
 }
 
@@ -252,6 +263,7 @@ function assembleReceiptData(
     paymentMethod: row.payment_method,
     isCancellation,
     isTraining: row.register_is_training,
+    isKleinunternehmer: settings.isKleinunternehmer,
     tableName: table?.name ?? null,
     firstOrderTime: table?.firstOrderTime ?? null,
     logoPng:         logo?.pdfPng ?? null,

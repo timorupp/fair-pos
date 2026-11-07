@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../../db/client.js';
 import { config } from '../../config.js';
 import { truncateAllTables } from '../../test/db-fixture.js';
-import { closeTestApp, getTestApp, loginAsAdmin } from '../../test/app-helpers.js';
+import { closeTestApp, getTestApp, loginAsAdmin, loginAsRegisterUser } from '../../test/app-helpers.js';
 import {
   assignRegisterToUser, createTestArticle, createTestPrinter,
   createTestRegister, createTestUser, seedReceiptCounter, setSystemSetting,
@@ -48,8 +48,12 @@ const YESTERDAY = fmtDay(new Date(Date.now() - 24 * 3600 * 1000));
 /**
  * Inserts an invoice + one paid order_item to give the register some turnover.
  * Returns the invoice id.
+ *
+ * @param date - Booking timestamp.
+ * @param gross - Gross price of the one order_item.
+ * @param forRegisterId - Register to book against — defaults to the outer `registerId` fixture.
  */
-async function insertPaidInvoice(date: string, gross: number): Promise<string> {
+async function insertPaidInvoice(date: string, gross: number, forRegisterId: string = registerId): Promise<string> {
   const counter = await pool.query<{ value: string }>(
     `UPDATE system_setting SET value = (value::int + 1)::text
       WHERE key = 'receipt_counter' RETURNING value`,
@@ -59,14 +63,14 @@ async function insertPaidInvoice(date: string, gross: number): Promise<string> {
     `INSERT INTO invoice (register_id, receipt_number, receipt_type, payment_method, created_at)
      VALUES ($1, $2, 'sales_receipt', 'cash', $3)
      RETURNING id`,
-    [registerId, num, date],
+    [forRegisterId, num, date],
   );
   await pool.query(
     `INSERT INTO order_item (
        invoice_id, register_id, article_name, article_category_name,
        tax_rate, tax_category, price, deposit_price, status, created_at
      ) VALUES ($1, $2, 'Bier', 'Getränke', 19, 'standard', $3, NULL, 'paid', $4)`,
-    [inv.rows[0]!.id, registerId, gross, date],
+    [inv.rows[0]!.id, forRegisterId, gross, date],
   );
   return inv.rows[0]!.id;
 }
@@ -154,6 +158,68 @@ describe('POST /api/admin/registers/:id/closings', () => {
       `SELECT daily_closing_id FROM order_cancellation WHERE id = $1`, [cancellation.rows[0]!.id],
     );
     expect(oc.rows[0]!.daily_closing_id).toBe(closingId);
+  });
+
+  it('counts items cancelled or given away before checkout on the Z-Bon (D-084 — found live 2026-11-07: both lines stayed at 0,00)', async () => {
+    const app = await getTestApp();
+    const cashier = await createTestUser({ isAdmin: false });
+    const cashierCookie = await loginAsRegisterUser(app, cashier.pin);
+    const serviceRegister = await createTestRegister({ type: 'service_register' });
+    await assignRegisterToUser(cashier.id, serviceRegister.id);
+    const article = await createTestArticle({ price: 5, taxCategory: 'standard', printerId });
+    await pool.query(`INSERT INTO floor_plan_column (label, col_order, event_id) VALUES ('A', 0, $1)`, [config.activeEventId]);
+    await pool.query(`INSERT INTO floor_plan_row    (label, row_order, event_id) VALUES ('1', 0, $1)`, [config.activeEventId]);
+    const table = await pool.query<{ id: string }>(
+      `INSERT INTO dining_table (name, col_label, row_label, status, event_id)
+       VALUES ('A1', 'A', '1', 'active', $1) RETURNING id`,
+      [config.activeEventId],
+    );
+    const tableUrl = `/api/register-session/registers/${serviceRegister.id}/tables/${table.rows[0]!.id}`;
+    const reasons = await pool.query<{ id: string; booking_type: string }>(
+      `INSERT INTO cancellation_reason (name, booking_type, event_id)
+       VALUES ('Nicht geliefert', 'cancellation', $1), ('100 % Rabatt', 'free_of_charge', $1)
+       RETURNING id, booking_type`,
+      [config.activeEventId],
+    );
+    const reasonId = (type: string) => reasons.rows.find((r) => r.booking_type === type)!.id;
+
+    const order = await app.inject({
+      method: 'POST', url: `${tableUrl}/orders`,
+      headers: { cookie: cashierCookie },
+      payload: { positions: [{ article_id: article.id, quantity: 3 }] },
+    });
+    expect(order.statusCode).toBe(200);
+    const openItems = await app.inject({
+      method: 'GET', url: `${tableUrl}/open-items`, headers: { cookie: cashierCookie },
+    });
+    const groupKey = openItems.json().groups[0].group_key;
+    for (const type of ['cancellation', 'free_of_charge']) {
+      const cancel = await app.inject({
+        method: 'POST', url: `${tableUrl}/cancel`,
+        headers: { cookie: cashierCookie },
+        payload: { quantities: [{ group_key: groupKey, count: 1 }], cancellation_reason_id: reasonId(type) },
+      });
+      expect(cancel.statusCode).toBe(200);
+    }
+
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${serviceRegister.id}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const closingId = response.json().closings[0].closing_id;
+    const closing = await pool.query<{
+      total_gross: string; total_free: string; total_order_cancellations: string; is_zero_closing: boolean;
+    }>(
+      `SELECT total_gross::text, total_free::text, total_order_cancellations::text, is_zero_closing
+         FROM daily_closing WHERE id = $1`,
+      [closingId],
+    );
+    expect(Number(closing.rows[0]!.total_order_cancellations)).toBe(5);
+    expect(Number(closing.rows[0]!.total_free)).toBe(5);
+    // The third unit is still open at the table — never invoiced, never counted.
+    expect(Number(closing.rows[0]!.total_gross)).toBe(0);
+    expect(closing.rows[0]!.is_zero_closing).toBe(false);
   });
 
   it('links service_order/order_cancellation to the day-scoped catch-up closing even on a gap day with zero invoices', async () => {
@@ -284,12 +350,57 @@ describe('POST /api/admin/registers/:id/closings', () => {
     expect(count.rows[0]!.n).toBe(1);
   });
 
+  it('does not mint a new Nullabschluss dated today for a register retired days ago (Task #151 — found live 2026-09-30: produced a dateless gap in the Z-Bon sequence between the retirement date and today)', async () => {
+    const app = await getTestApp();
+    await pool.query(`UPDATE register SET retired_date = (current_date - interval '5 days')::date WHERE id = $1`, [registerId]);
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().closings).toEqual([]);
+    const count = await pool.query(`SELECT COUNT(*)::int AS n FROM daily_closing WHERE register_id = $1`, [registerId]);
+    expect(count.rows[0]!.n).toBe(0);
+  });
+
+  it('still closes today normally when the register is retired as of today itself (last usable day, inclusive)', async () => {
+    const app = await getTestApp();
+    await insertPaidInvoice(`${TODAY} 12:00:00`, 10);
+    await pool.query(`UPDATE register SET retired_date = $1::date WHERE id = $2`, [TODAY, registerId]);
+    const response = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().closings).toHaveLength(1);
+  });
+
   it('rejects unauthenticated requests with 401', async () => {
     const app = await getTestApp();
     const response = await app.inject({
       method: 'POST', url: `/api/admin/registers/${registerId}/closings`,
     });
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('GET /api/admin/closings/:id/pdf', () => {
+  it('names the download after the register and Z-number (Task #155)', async () => {
+    const app = await getTestApp();
+    const register = await createTestRegister({ name: 'Theke 1', printerId, type: 'receipt_register' });
+    await insertPaidInvoice(`${TODAY} 12:00:00`, 10, register.id);
+    const created = await app.inject({
+      method: 'POST', url: `/api/admin/registers/${register.id}/closings`,
+      headers: { cookie: adminCookie },
+    });
+    const closingId = created.json().closings[0].closing_id;
+
+    const response = await app.inject({
+      method: 'GET', url: `/api/admin/closings/${closingId}/pdf`,
+      headers: { cookie: adminCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-disposition']).toContain('filename="z-bon_Theke_1_z1.pdf"');
   });
 });
 

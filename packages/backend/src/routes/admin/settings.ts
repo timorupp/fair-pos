@@ -16,6 +16,9 @@ const ALLOWED_KEYS = new Set([
   // (Task #113) verwendet direkt `vat_rate_standard`, braucht kein eigenes
   // Setting mehr (löst das frühere, nie verdrahtete `vat_rate_deposit` ab).
   'vat_rate_standard', 'vat_rate_reduced',
+  // Kleinunternehmerregelung (Task #119) — see the PUT handler below for the
+  // invariant this enforces (both rates forced to 0 whenever this is true).
+  'kleinunternehmer_enabled',
   // Per-document-type checkboxes for the company logo.
   'logo_on_receipt', 'logo_on_cancellation', 'logo_on_z_bon',
   'logo_on_order_slip', 'logo_on_pickup_slip', 'logo_on_deposit_slip',
@@ -66,12 +69,34 @@ export async function settingsAdminRoute(app: FastifyInstance): Promise<void> {
    * so the next issued receipt number respects the new floor. The counter is
    * never lowered, because KassenSichV forbids regression of an already-issued
    * sequence.
+   *
+   * Side effect (Task #119): whenever `kleinunternehmer_enabled` is (or ends
+   * up) `'true'` after this request, `vat_rate_standard`/`vat_rate_reduced`
+   * are forced to `'0'` regardless of what was submitted — enforced here,
+   * server-side, so the "Kleinunternehmer ⇒ 0 % USt" invariant can never be
+   * bypassed by saving a rate directly without also touching the flag (the
+   * admin UI already disables the two rate fields while the checkbox is
+   * checked, but that's only a UX nicety, not the actual guarantee).
    */
   app.put('/', async (req, reply) => {
     const body = req.body as Record<string, string>;
-    const entries = Object.entries(body).filter(
-      ([k]) => ALLOWED_KEYS.has(k) && (req.adminUser.is_admin || !SYSTEM_ONLY_KEYS.has(k)),
+    const entries = new Map(
+      Object.entries(body).filter(
+        ([k]) => ALLOWED_KEYS.has(k) && (req.adminUser.is_admin || !SYSTEM_ONLY_KEYS.has(k)),
+      ),
     );
+
+    let kleinunternehmerEnabled = entries.get('kleinunternehmer_enabled');
+    if (kleinunternehmerEnabled === undefined) {
+      const existing = await query<{ value: string }>(
+        `SELECT value FROM system_setting WHERE key = 'kleinunternehmer_enabled'`,
+      );
+      kleinunternehmerEnabled = existing.rows[0]?.value;
+    }
+    if (kleinunternehmerEnabled === 'true') {
+      entries.set('vat_rate_standard', '0');
+      entries.set('vat_rate_reduced', '0');
+    }
 
     for (const [key, value] of entries) {
       await query(
