@@ -48,6 +48,54 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   bestehende Garantie (Kachel == nächster echter Z-Bon) für normale
   Kassen zu verändern.
 
+- [Task] **#158** Bedienungskasse: Tischnummer als Überschrift aller Tisch-Seiten
+  **Klassifikation: UX, angelegt 2026-11-07 (Nutzerwunsch).** **Zeitnah
+  umsetzen**, gebündelt mit weiteren noch zu sammelnden Themen
+  (Nutzervorgabe 2026-11-07) — nicht einzeln vorziehen.
+
+  Die Überschriften der Seiten im Kontext eines Tisches transportieren
+  kaum Inhalt; die Bedienung soll immer sehen, an welchem Tisch sie
+  gerade arbeitet. Die bisherigen Wörter entfallen ersatzlos, Überschrift
+  immer `"Tisch " + Tischnummer` (z. B. "Tisch A1"):
+  - `register/[id]/tables/[tableId]/+page.svelte` — bisher "Tisch"
+  - `register/[id]/tables/[tableId]/order/+page.svelte` — bisher "Bestellen"
+  - `register/[id]/tables/[tableId]/checkout/+page.svelte` — bisher "Kassieren"
+
+  Hinweis für die Umsetzung (Stand 2026-11-07): keine der drei Seiten
+  lädt bisher den Tischnamen — muss ergänzt werden (z. B. aus dem
+  bestehenden Tisch-/Raumplan-Endpunkt oder als Feld der vorhandenen
+  Tisch-Requests).
+
+- [Task] **#159** Excel-Export: Spalte "Kassierer" direkt nach "Besteller"
+  **Klassifikation: Feature, angelegt 2026-11-07 (Nutzerwunsch).**
+
+  An der Bedienungskasse können Besteller (wer die Bestellung aufgenommen
+  hat) und Kassierer (wer abgerechnet hat) verschiedene Personen sein. Der
+  Excel-Export (`exports/workbook.ts`, `COLUMNS`) zeigt bisher nur
+  "Besteller" (`order_item.user_name`, bei Bonstorno Fallback auf
+  `cancelled_by_name`, `routes/admin/exports.ts`). Neue Spalte
+  "Kassierer" direkt dahinter.
+
+  **Befund bei der Aufnahme (2026-11-07):** der Kassierer wird bisher
+  **nirgends gespeichert** — `invoice` hat keine Benutzer-Spalte, beide
+  Checkout-Pfade in `routes/register-session.ts` (Bonkasse und
+  Bedienungskasse) schreiben ihn nicht. Benötigt daher:
+  - Migration: `invoice.cashier_name TEXT` (Text-Snapshot wie
+    `order_item.user_name`, Task #97 — Benutzer sind löschbar). Altbestand
+    bleibt `NULL` (nicht rekonstruierbar); ggf. für Bonkasse-Rechnungen aus
+    `order_item.user_name` befüllen, da dort Besteller = Kassierer.
+  - Beide Checkout-Pfade setzen `cashier_name = req.registerUser.name`;
+    Admin-Bonstorno (`routes/admin/cancellations.ts`) setzt den Namen des
+    Admins.
+  - Export-Query und `ExportRow` um die Spalte erweitern.
+
+  **Verwandt, vor der Umsetzung entscheiden:** der DSFinV-K-Export
+  (`exports/dsfinvk/load.ts`) setzt `BEDIENER_NAME` eines Belegs ebenfalls
+  auf den Besteller der ersten Position, nicht auf den Kassierer. Mit
+  `invoice.cashier_name` ließe sich das korrigieren — vorher in der
+  DSFinV-K-Spezifikation (bzst.de) prüfen, wer als Bediener eines
+  Kassenbelegs gemeint ist.
+
 - [Task] **#47** Vollen manuellen Regressionstest durchführen (inkl. DSFinV-K)
   **Umfasst auch Task #102** (2026-09-01 dorthin verschoben, Nutzereinordnung:
   "gehört für mich zum Testing"): prüfen, dass wirklich **jede**
@@ -217,3 +265,10 @@ Offene Tasks (Nutzerwünsche/geplante Arbeit) und Findings (gefundene Risiken, f
   `POST /api/auth/admin/verify` (Admin-Step-up, Task #90) rotiert das Session-Token nicht — es wird lediglich das `admin_verified`-Flag auf derselben Session-Zeile umgeschaltet (`auth/session.ts::setAdminVerified()`), das signierte Cookie selbst bleibt vor und nach der Passworteingabe byte-identisch. Praktisches Risiko: ein bereits vor dem Step-up entwendetes Session-Cookie (z. B. via XSS, Sniffing auf ungesichertem Netz, physischer Zugriff aufs Gerät) wird automatisch admin-fähig, sobald sich der legitime Nutzer selbst verifiziert — ohne dass sich am Cookie irgendetwas ändert, das ein Angreifer neu abgreifen müsste. Kein Bug im eigentlichen Sinne (das ursprüngliche Auth-Design von Task #90 sah das so vor), aber ein reales Risiko bei Cookie-Diebstahl.
   **Empfehlung, noch nicht umgesetzt:** beim erfolgreichen Step-up ein neues Session-Token ausstellen (alte Session invalidieren, neues signiertes Cookie setzen) statt nur das Flag auf der bestehenden Session zu ändern — analog zum verbreiteten "session regeneration on privilege escalation"-Muster.
 
+- [Finding] **D-085** (hoch, Backend / Druck; **zeitnah umsetzen**, Nutzervorgabe 2026-11-07 — zusammen mit den anderen gesammelten Themen, vgl. #158) — Gefunden 2026-11-07 — Kontext: manueller Test des Nutzers mit einer Trainingskasse
+  Nur Kassenbeleg (`receipt/blocks.ts`, "T R A I N I N G" oben und unten) und Z-Bon (`closing/blocks.ts`, "TRAININGSKASSE") tragen bei einer Trainingskasse (`register.is_training`, Task #130) eine Training-Markierung. Alle drei Bon-Arten aus `print/order-slip.ts` drucken ohne Markierung, ihre Builder kennen den Trainings-Status gar nicht (kein Feld im `context`):
+  - `buildOrderSlipBlocks()` — Bestellbon Küche/Theke der Bedienungskasse (`routes/register-session.ts`, Bestell-Endpunkt) — **vom Nutzer live beobachtet**.
+  - `buildPickupSlipBlocks()` — Selbstabholer-/Wertbon der Bonkasse (`routes/register-session.ts`, Checkout).
+  - `buildDepositSlipBlocks()` — separater Pfandbon der Bonkasse (ebenda).
+  Besonders kritisch beim Wertbon/Pfandbon: ein im Training gedruckter, unmarkierter Bon sieht aus wie ein echter und könnte an der Ausgabe gegen Ware bzw. Pfand eingelöst werden.
+  **Lösung (Vorschlag):** `isTraining` in den `context` aller drei Builder aufnehmen und — analog zum Kassenbeleg — "T R A I N I N G" groß oben und unten drucken; an den Aufrufstellen den `is_training`-Status der Kasse durchreichen. Unit-Tests je Builder, Integrationstest für Bestell- und Checkout-Pfad einer Trainingskasse (Druckauftrag enthält die Markierung).

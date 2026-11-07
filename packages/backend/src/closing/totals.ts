@@ -91,11 +91,21 @@ export interface ClosingTotals {
  *    change any other total.
  *  - `total_gross` is always equal to the sum of the three rate buckets (cent-precise).
  *  - `is_zero_closing` is true iff every total is exactly zero.
+ *  - Items cancelled or given away **before checkout** (Bedienungskasse
+ *    Storno, `order_cancellation`) have no invoice at all — they are passed
+ *    separately via `preCheckoutItems` and only feed `total_free`/
+ *    `total_order_cancellations` (D-084: they used to be missed entirely,
+ *    since only invoice-linked items were ever aggregated).
  *
  * @param invoices - Invoices in the closing window with their order items pre-joined.
+ * @param preCheckoutItems - Items of the `order_cancellation` rows in the
+ *   closing window (status `free`/`cancelled`, never linked to an invoice).
  * @returns The aggregated totals plus the `is_zero_closing` flag.
  */
-export function computeClosingTotals(invoices: ClosingInvoice[]): ClosingTotals {
+export function computeClosingTotals(
+  invoices: ClosingInvoice[],
+  preCheckoutItems: ClosingItem[] = [],
+): ClosingTotals {
   let total_gross = 0;
   let total_tax_standard = 0;
   let total_tax_reduced = 0;
@@ -146,6 +156,12 @@ export function computeClosingTotals(invoices: ClosingInvoice[]): ClosingTotals 
 
     if (inv.receipt_type === 'cancellation') total_bonstorno += invoiceGross;
     if (inv.payment_method === 'cash') total_cash += invoiceGross;
+  }
+
+  for (const item of preCheckoutItems) {
+    const lineGross = item.price + (item.deposit_price ?? 0);
+    if (item.status === 'free') total_free += lineGross;
+    else if (item.status === 'cancelled') total_order_cancellations += lineGross;
   }
 
   const round = (n: number) => Math.round(n * 100) / 100;

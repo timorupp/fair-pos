@@ -11,6 +11,22 @@ const invoice = (overrides: Partial<ClosingInvoice> = {}): ClosingInvoice => ({
 });
 
 describe('computeClosingTotals', () => {
+  it('adds pre-checkout items to total_free/total_order_cancellations only (D-084)', () => {
+    const t = computeClosingTotals([invoice({ items: [item({ price: 10 })] })], [
+      item({ price: 5, status: 'cancelled' }),
+      item({ price: 4, status: 'free', deposit_price: 2 }),
+    ]);
+    expect(t.total_order_cancellations).toBe(5);
+    expect(t.total_free).toBe(6);
+    expect(t.total_gross).toBe(10);
+    expect(t.total_cash).toBe(10);
+  });
+
+  it('is not a zero closing when only pre-checkout cancellations happened (D-084)', () => {
+    const t = computeClosingTotals([], [item({ price: 5, status: 'cancelled' })]);
+    expect(t.is_zero_closing).toBe(false);
+  });
+
   it('returns a zero-closing for no invoices', () => {
     const t = computeClosingTotals([]);
     expect(t).toEqual({

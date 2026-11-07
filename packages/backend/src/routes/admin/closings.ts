@@ -149,7 +149,31 @@ async function closeRegister(registerId: string, userName: string, date?: string
           [registerId],
         );
 
-    const totals = computeClosingTotals(invoices);
+    // Items cancelled/given away before checkout (D-084) — linked only to
+    // their order_cancellation, never to an invoice, so the invoice-based
+    // item query above can't see them.
+    let preCheckoutItems: ClosingItem[] = [];
+    if (cancellationResult.rows.length > 0) {
+      const preCheckoutResult = await client.query<{
+        status: ClosingItem['status']; tax_category: ClosingItem['tax_category'];
+        price: string; deposit_price: string | null;
+        deposit_tax_category: ClosingItem['deposit_tax_category'];
+      }>(
+        `SELECT status, tax_category, price::text, deposit_price::text, deposit_tax_category
+           FROM order_item
+          WHERE order_cancellation_id = ANY($1) AND invoice_id IS NULL`,
+        [cancellationResult.rows.map((r) => r.id)],
+      );
+      preCheckoutItems = preCheckoutResult.rows.map((row) => ({
+        status: row.status,
+        tax_category: row.tax_category,
+        price: Number(row.price),
+        deposit_price: row.deposit_price === null ? null : Number(row.deposit_price),
+        deposit_tax_category: row.deposit_tax_category,
+      }));
+    }
+
+    const totals = computeClosingTotals(invoices, preCheckoutItems);
 
     // Compute the next Z-number for this register.
     const seqResult = await client.query<{ max_z: string | null }>(
